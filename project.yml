@@ -1,0 +1,69 @@
+name: OpenGraphite
+options:
+  bundleIdPrefix: dev.opengraphite
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+targets:
+  OpenGraphite:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+        optional: true
+        buildPhase: resources
+      - path: CSS
+        type: folder
+        buildPhase: resources
+      - path: public
+        type: folder
+        buildPhase: resources
+      - path: SampleProject
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - sdk: WebKit.framework
+    settings:
+      base:
+        PRODUCT_NAME: OpenGraphite
+        PRODUCT_BUNDLE_IDENTIFIER: dev.opengraphite.OpenGraphite
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: OpenGraphite
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.graphics-design
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 OpenGraphite"
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Debug:
+          ENABLE_TESTABILITY: YES
+  OpenGraphiteTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests/OpenGraphiteTests
+    dependencies:
+      - target: OpenGraphite
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.opengraphite.OpenGraphiteTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OpenGraphite.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenGraphite"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  OpenGraphite:
+    build:
+      targets:
+        OpenGraphite: all
+        OpenGraphiteTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OpenGraphiteTests

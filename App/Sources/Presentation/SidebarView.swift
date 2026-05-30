@@ -1,0 +1,361 @@
+import SwiftUI
+
+/// 論理名（日本語）: サイドバービュー
+/// 概要: Pages と Layers をセグメントで切り替え、ページ選択またはレイヤー階層選択を行う左ペインです。
+struct SidebarView: View {
+    @EnvironmentObject private var store: EditorStore
+    @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.layers.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Picker("", selection: $selectedPanel) {
+                ForEach(SidebarPanel.allCases) { panel in
+                    Label(panel.title, systemImage: panel.systemImage)
+                        .tag(panel.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(10)
+
+            Divider()
+
+            Group {
+                if selectedPanel == SidebarPanel.pages.rawValue {
+                    List(selection: $store.selectedPageID) {
+                        ForEach(store.loadedProject?.project.pages ?? []) { page in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(page.id)
+                                    .font(.body)
+                                Text(page.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .tag(Optional(page.id))
+                        }
+                    }
+                    .listStyle(.sidebar)
+                    .frame(minHeight: 140)
+                    .onChange(of: store.selectedPageID) { _, newValue in
+                        store.selectPage(id: newValue)
+                    }
+                } else {
+                    LayerOutlineView(
+                        nodes: store.nodes,
+                        selectedNodeID: $store.selectedNodeID
+                    )
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+        }
+        .onChange(of: store.selectedNodeID) { _, newValue in
+            if newValue != nil {
+                selectedPanel = SidebarPanel.layers.rawValue
+            }
+        }
+    }
+}
+
+/// 論理名（日本語）: レイヤーアウトラインビュー
+/// 概要: DOM ノード一覧を階層ツリーへ変換し、選択ノードに合わせて祖先を展開する Layers 表示です。
+///
+/// プロパティ:
+/// - `nodes`: WebView から抽出されたノード一覧。
+/// - `selectedNodeID`: 選択中ノード ID のバインディング。
+private struct LayerOutlineView: View {
+    var nodes: [OpenGraphiteNode]
+    @Binding var selectedNodeID: String?
+    @State private var expandedNodeIDs: Set<String> = []
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            List {
+                ForEach(visibleRows) { row in
+                    LayerRow(
+                        row: row,
+                        isCollapsed: !expandedNodeIDs.contains(row.id),
+                        isSelected: row.id == selectedNodeID,
+                        onToggle: {
+                            toggle(row.id)
+                        },
+                        onSelect: {
+                            selectedNodeID = row.id
+                        }
+                    )
+                    .id(row.id)
+                    .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .onAppear {
+                revealSelection(selectedNodeID, proxy: proxy)
+            }
+            .onChange(of: selectedNodeID) { _, newValue in
+                revealSelection(newValue, proxy: proxy)
+            }
+            .onChange(of: nodes) { _, newValue in
+                if newValue.isEmpty {
+                    expandedNodeIDs = []
+                } else {
+                    revealSelection(selectedNodeID, proxy: proxy)
+                }
+            }
+        }
+    }
+
+    private var visibleRows: [VisibleLayerRow] {
+        let tree = LayerTreeNode.makeTree(from: nodes)
+        var rows: [VisibleLayerRow] = []
+
+        /// 論理名（日本語）: 表示行追加関数
+        /// 処理概要: 展開状態を確認しながらツリーノードを List 表示用の flat な行配列へ追加します。
+        ///
+        /// - Parameters:
+        ///   - items: 追加するツリーノード一覧。
+        ///   - level: 表示上の階層レベル。
+        func append(_ items: [LayerTreeNode], level: Int) {
+            for item in items {
+                rows.append(
+                    VisibleLayerRow(
+                        id: item.id,
+                        node: item.node,
+                        level: level,
+                        hasChildren: !item.children.isEmpty
+                    )
+                )
+
+                if expandedNodeIDs.contains(item.id) {
+                    append(item.children, level: level + 1)
+                }
+            }
+        }
+
+        append(tree, level: 0)
+        return rows
+    }
+
+    /// 論理名（日本語）: レイヤー展開切替関数
+    /// 処理概要: 指定ノード ID の折りたたみ状態を反転します。
+    ///
+    /// - Parameter id: 展開状態を切り替えるノード ID。
+    private func toggle(_ id: String) {
+        if expandedNodeIDs.contains(id) {
+            expandedNodeIDs.remove(id)
+        } else {
+            expandedNodeIDs.insert(id)
+        }
+    }
+
+    /// 論理名（日本語）: 選択レイヤー表示関数
+    /// 処理概要: 選択ノードの祖先を展開し、該当行が見える位置へスクロールします。
+    ///
+    /// - Parameters:
+    ///   - id: 表示する選択ノード ID。
+    ///   - proxy: List 内スクロールに使う `ScrollViewProxy`。
+    private func revealSelection(_ id: String?, proxy: ScrollViewProxy) {
+        guard let id else { return }
+
+        expandAncestors(of: id)
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                proxy.scrollTo(id, anchor: .center)
+            }
+        }
+    }
+
+    /// 論理名（日本語）: 祖先レイヤー展開関数
+    /// 処理概要: flat な DOM ノード一覧の depth を逆方向にたどり、選択ノードの祖先を展開状態にします。
+    ///
+    /// - Parameter id: 祖先を展開する対象ノード ID。
+    private func expandAncestors(of id: String) {
+        guard let selectedIndex = nodes.firstIndex(where: { $0.id == id }) else { return }
+        var requiredDepth = nodes[selectedIndex].depth - 1
+        guard requiredDepth >= 0 else { return }
+
+        for index in stride(from: selectedIndex - 1, through: 0, by: -1) {
+            let candidate = nodes[index]
+            if candidate.depth == requiredDepth {
+                expandedNodeIDs.insert(candidate.id)
+                requiredDepth -= 1
+
+                if requiredDepth < 0 {
+                    break
+                }
+            }
+        }
+    }
+}
+
+/// 論理名（日本語）: レイヤーツリーノード
+/// 概要: flat な DOM ノード一覧を Layers 用の階層構造へ変換する内部モデルです。
+///
+/// プロパティ:
+/// - `node`: 対応する OpenGraphite ノード。
+/// - `children`: 子レイヤー一覧。
+private struct LayerTreeNode: Identifiable {
+    var node: OpenGraphiteNode
+    var children: [LayerTreeNode]
+
+    var id: String { node.id }
+
+    /// 論理名（日本語）: レイヤーツリー生成関数
+    /// 処理概要: depth 付きノード配列からルート階層のツリーノード一覧を生成します。
+    ///
+    /// - Parameter nodes: WebView から収集された depth 付きノード一覧。
+    /// - Returns: ルート階層のレイヤーツリーノード一覧。
+    static func makeTree(from nodes: [OpenGraphiteNode]) -> [LayerTreeNode] {
+        var index = 0
+        return makeChildren(from: nodes, index: &index, parentDepth: -1)
+    }
+
+    /// 論理名（日本語）: 子レイヤー生成関数
+    /// 処理概要: 現在の index から parentDepth より深いノードを再帰的に子として収集します。
+    ///
+    /// - Parameters:
+    ///   - nodes: depth 付きノード一覧。
+    ///   - index: 現在の読み取り位置。
+    ///   - parentDepth: 親ノードの depth。
+    /// - Returns: 収集した子レイヤーツリーノード一覧。
+    private static func makeChildren(
+        from nodes: [OpenGraphiteNode],
+        index: inout Int,
+        parentDepth: Int
+    ) -> [LayerTreeNode] {
+        var result: [LayerTreeNode] = []
+
+        while index < nodes.count {
+            let node = nodes[index]
+            guard node.depth > parentDepth else {
+                break
+            }
+
+            index += 1
+            let children = makeChildren(from: nodes, index: &index, parentDepth: node.depth)
+            result.append(LayerTreeNode(node: node, children: children))
+        }
+
+        return result
+    }
+}
+
+/// 論理名（日本語）: 表示レイヤー行
+/// 概要: 折りたたみ状態を反映した List 表示用のレイヤー行モデルです。
+///
+/// プロパティ:
+/// - `id`: 行のノード ID。
+/// - `node`: 表示する OpenGraphite ノード。
+/// - `level`: List 上のインデント階層。
+/// - `hasChildren`: 子レイヤーを持つか。
+private struct VisibleLayerRow: Identifiable {
+    var id: String
+    var node: OpenGraphiteNode
+    var level: Int
+    var hasChildren: Bool
+}
+
+/// 論理名（日本語）: サイドバーパネル
+/// 概要: 左ペインで表示する Pages と Layers のセグメント種別を表します。
+///
+/// 定義内容:
+/// - `pages`: ページ一覧。
+/// - `layers`: DOM レイヤー一覧。
+private enum SidebarPanel: String, CaseIterable, Identifiable {
+    case pages
+    case layers
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .pages:
+            return "Pages"
+        case .layers:
+            return "Layers"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .pages:
+            return "rectangle.stack"
+        case .layers:
+            return "square.3.layers.3d"
+        }
+    }
+}
+
+/// 論理名（日本語）: レイヤー行ビュー
+/// 概要: レイヤーの展開ボタン、種別アイコン、タグ名、詳細行を一行に表示します。
+///
+/// プロパティ:
+/// - `row`: 表示するレイヤー行モデル。
+/// - `isCollapsed`: 子レイヤーが折りたたまれているか。
+/// - `isSelected`: 現在選択中の行か。
+/// - `onToggle`: 展開切替処理。
+/// - `onSelect`: 選択処理。
+private struct LayerRow: View {
+    var row: VisibleLayerRow
+    var isCollapsed: Bool
+    var isSelected: Bool
+    var onToggle: () -> Void
+    var onSelect: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if row.hasChildren {
+                    Button(action: onToggle) {
+                        Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .frame(width: 12, height: 18)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(isCollapsed ? "Expand" : "Collapse")
+                } else {
+                    Color.clear
+                        .frame(width: 12, height: 18)
+                }
+            }
+
+            Image(systemName: iconName)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.node.tagName)
+                    .font(.body)
+                    .lineLimit(1)
+                Text("\(row.node.id) · \(row.node.detailLine)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, CGFloat(row.level) * 14)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
+        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var iconName: String {
+        switch row.node.type {
+        case "text":
+            return "textformat"
+        case "button":
+            return "button.programmable"
+        case "image":
+            return "photo"
+        default:
+            return "rectangle.3.group"
+        }
+    }
+}
