@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>OpenGraphite</title>
+  <g id="platform">
+    <path d="M226 676 L512 532 L798 676 L798 716 L512 858 L226 716 Z" fill="#111820"/>
+    <path d="M226 676 L512 820 L798 676 L512 532 Z" fill="#1d252c"/>
+    <path d="M226 716 L512 858 L512 820 L226 676 Z" fill="#0c1218"/>
+    <path d="M798 716 L512 858 L512 820 L798 676 Z" fill="#151d24"/>
+    <path d="M226 650 L512 794 L798 650" fill="none" stroke="#d8e1e6" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M226 617 L512 474 L798 617 L512 760 Z" fill="#dbe4e9" fill-opacity="0.82" stroke="#8e9aa2" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M226 617 L512 760 L798 617" fill="none" stroke="#eef4f6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M512 474 L512 760" fill="none" stroke="#b9c4ca" stroke-width="3" stroke-opacity="0.55"/>
+  </g>
+  <g id="supports" fill="none" stroke-linecap="round">
+    <path d="M229 497 V650" stroke="#c9d3d8" stroke-width="10" stroke-opacity="0.55"/>
+    <path d="M324 432 V705" stroke="#c9d3d8" stroke-width="10" stroke-opacity="0.55"/>
+    <path d="M512 520 V758" stroke="#c9d3d8" stroke-width="10" stroke-opacity="0.55"/>
+    <path d="M700 432 V705" stroke="#c9d3d8" stroke-width="10" stroke-opacity="0.55"/>
+    <path d="M795 497 V650" stroke="#c9d3d8" stroke-width="10" stroke-opacity="0.55"/>
+  </g>
+  <g id="graph-links" fill="none" stroke="#111820" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M324 282 L512 188 L700 282"/>
+    <path d="M324 282 L512 362 L700 282"/>
+    <path d="M229 362 L324 282 L324 430 L229 362"/>
+    <path d="M795 362 L700 282 L700 430 L795 362"/>
+    <path d="M229 495 L324 430 L512 516 L700 430 L795 495"/>
+    <path d="M229 495 L324 582 L512 671 L700 582 L795 495"/>
+    <path d="M324 430 L512 362 L700 430"/>
+    <path d="M324 582 L512 516 L700 582"/>
+    <path d="M512 188 L512 671"/>
+    <path d="M324 282 L324 582"/>
+    <path d="M700 282 L700 582"/>
+    <path d="M229 362 L229 495"/>
+    <path d="M795 362 L795 495"/>
+  </g>
+  <g id="graph-nodes" fill="#111820" stroke="#dfe7eb" stroke-width="3" stroke-opacity="0.5">
+    <circle cx="512" cy="188" r="35"/>
+    <circle cx="324" cy="282" r="35"/>
+    <circle cx="700" cy="282" r="35"/>
+    <circle cx="229" cy="362" r="35"/>
+    <circle cx="795" cy="362" r="35"/>
+    <circle cx="512" cy="362" r="35"/>
+    <circle cx="324" cy="430" r="35"/>
+    <circle cx="700" cy="430" r="35"/>
+    <circle cx="229" cy="495" r="35"/>
+    <circle cx="795" cy="495" r="35"/>
+    <circle cx="512" cy="516" r="35"/>
+    <circle cx="324" cy="582" r="35"/>
+    <circle cx="700" cy="582" r="35"/>
+    <circle cx="512" cy="671" r="35"/>
+  </g>
+</svg>

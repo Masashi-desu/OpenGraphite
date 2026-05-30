@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 論理名（日本語）: Welcomeビュー
@@ -8,9 +9,7 @@ struct WelcomeView: View {
     var body: some View {
         VStack(spacing: 28) {
             VStack(spacing: 12) {
-                Image(systemName: "doc.richtext")
-                    .font(.system(size: 52, weight: .regular))
-                    .foregroundStyle(.secondary)
+                WelcomeAppIconView()
 
                 Text("OpenGraphite")
                     .font(.system(size: 44, weight: .semibold, design: .rounded))
@@ -38,5 +37,35 @@ struct WelcomeView: View {
             }
         }
         .padding(48)
+    }
+}
+
+/// 論理名（日本語）: Welcomeアプリアイコンビュー
+/// 概要: Welcome画面の上部にアプリバンドル内のOpenGraphiteアイコン画像を表示します。
+private struct WelcomeAppIconView: View {
+    private static let imageSize: CGFloat = 96
+
+    var body: some View {
+        Group {
+            if let image = Self.openGraphiteImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+            } else {
+                Image(systemName: "doc.richtext")
+                    .font(.system(size: 52, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: Self.imageSize, height: Self.imageSize)
+        .accessibilityLabel("OpenGraphite")
+    }
+
+    /// 処理概要: アプリバンドルにコピーされた `OpenGraphite.png` を読み込みます。
+    private static var openGraphiteImage: NSImage? {
+        guard let url = Bundle.main.url(forResource: "OpenGraphite", withExtension: "png") else {
+            return nil
+        }
+        return NSImage(contentsOf: url)
     }
 }
