@@ -60,6 +60,72 @@ OpenGraphite が編集可能な HTML ノードは、少なくとも安定した 
 
 この契約では、タグ名は人間が読める意味を持ち、`data-og-*` はエディタが安全に解釈できるメタデータを持ち、CSS 変数はデザイン編集の入出力になります。
 
+### `data-og-*` Attribute Contract
+
+`data-og-*` は、HTML 上に保持される OpenGraphite の編集契約です。意味やコンポーネント名はタグ名へ置き、デザイン値は CSS 変数へ置き、`data-og-*` にはエディタが構造として解釈する情報だけを置きます。
+
+| 属性 | 扱い | 意味 | 現在の主な値 |
+| --- | --- | --- | --- |
+| `data-og-id` | 必須 | ページ内で一意な編集ノード ID。Layers、Inspector、Canvas 選択、HTML 書き戻しの対象解決に使う。 | `hero`, `title`, `primary-action` |
+| `data-og-type` | 必須 | OpenGraphite が扱うプリミティブ種別。タグ名の意味ではなく、編集・描画の基本カテゴリを表す。 | `page`, `frame`, `text`, `button`, `image` |
+| `data-og-layout` | 任意 | 子要素の配置方法。主に `page` と `frame` に付与し、`OpenGraphite.css` がレイアウト規則へ変換する。 | `vertical`, `horizontal`, `absolute` |
+| `data-og-role` | 任意 | コンポーネントの役割や見た目のバリアント。ID ではなく、CSS ライブラリが解釈する意味上の役割として扱う。 | `page-preview`, `landing-hero`, `primary-button`, `secondary-button`, `card`, `eyebrow`, `muted` |
+| `data-og-hidden` | 任意 | ノードを非表示にする永続的な編集状態。`true` のとき `OpenGraphite.css` は対象を表示しない。 | `true` |
+| `data-og-locked` | 任意 | ノードの編集をロックする永続的な編集状態。`true` のとき選択表示と編集操作がロック状態として扱われる。 | `true` |
+| `data-og-selected` | 一時 | Canvas 上の現在選択を示す実行時属性。保存前の HTML シリアライズで除去する。 | `true` |
+| `data-og-editing` | 一時 | テキスト編集中のノードを示す実行時属性。`contenteditable` と同様に保存前の HTML シリアライズで除去する。 | `true` |
+
+永続化される `data-og-*` は、ブラウザ単独表示時にも意味が説明できる必要があります。一時属性は OpenGraphite のセッション状態であり、正本 HTML へ残してはいけません。
+
+#### `data-og-id`
+
+`data-og-id` は、OpenGraphite が HTML ノードを安定して参照するための識別子です。同じ HTML ページ内では一意である必要があります。
+
+Layers の行、Inspector の対象、Canvas の選択、CSS 変数更新、属性更新、コンテキストメニュー操作は `data-og-id` をキーにして対象ノードを解決します。タグ名や DOM の位置はユーザーの編集で変わり得るため、編集対象の同一性として扱いません。
+
+#### `data-og-type`
+
+`data-og-type` は、ノードを OpenGraphite の編集プリミティブへ分類します。意味やコンポーネント名はタグ名が担い、`data-og-type` は editor/runtime が扱うカテゴリだけを表します。
+
+- `page`: HTML ページのルートに近いプレビュー単位。
+- `frame`: 子要素を持つコンテナ。
+- `text`: テキスト編集の対象。
+- `button`: ボタンまたはリンク型の操作要素。
+- `image`: 画像、動画、プレビューなどのメディア枠。
+
+`OpenGraphite.css` は `data-og-type` ごとに基本 display、サイズ、余白、文字、画像の扱いを定義します。
+
+#### `data-og-layout`
+
+`data-og-layout` は、子要素の並べ方を示します。現在の契約では次の値を扱います。
+
+- `vertical`: 子要素を縦方向に並べる。
+- `horizontal`: 子要素を横方向に並べる。
+- `absolute`: 子要素を `--og-x` と `--og-y` で配置する。
+
+`data-og-layout` は主に `page` と `frame` に付与します。layout を持つノードでは、`--og-gap`、`--og-align`、`--og-justify`、`--og-padding` などの CSS 変数が配置のデザイン値になります。
+
+#### `data-og-role`
+
+`data-og-role` は、同じ `data-og-type` の中で役割や見た目のバリアントを示します。たとえば `data-og-type="button"` に `data-og-role="primary-button"` を付けることで、意味はボタンのまま主要ボタンとして描画できます。
+
+`data-og-role` は一意 ID ではありません。複数ノードが同じ role を共有できます。現在の `OpenGraphite.css` は単一の role 文字列を前提にしています。
+
+#### `data-og-hidden` and `data-og-locked`
+
+`data-og-hidden="true"` は、ノードを非表示にする永続状態です。`OpenGraphite.css` は対象を `display: none` として扱います。
+
+`data-og-locked="true"` は、ノードを編集ロック状態として扱う永続状態です。ロックされたノードは通常の編集操作を拒否し、選択表示はロック状態として区別します。
+
+#### Runtime-only Attributes
+
+`data-og-selected` と `data-og-editing` は、OpenGraphite が app 内で状態表示するためだけに付与する一時属性です。
+
+- `data-og-selected="true"`: 現在選択中のノードを Canvas 上でハイライトする。
+- `data-og-editing="true"`: テキスト編集セッション中のノードを示す。
+
+これらはユーザーが配布する HTML の意味ではありません。HTML を保存する前に必ず取り除き、正本 HTML には残さないことを契約とします。
+
 ## Rendering Contract
 
 `OpenGraphite.css` は app 内の `WKWebView` と通常ブラウザの両方で同じ見た目を作るための共有ライブラリです。
