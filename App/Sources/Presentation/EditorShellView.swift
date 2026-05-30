@@ -104,7 +104,7 @@ private struct EditorOverlayColumn<Content: View>: View {
 }
 
 /// 論理名（日本語）: エディター上部クロームビュー
-/// 概要: Pencil 風の薄い一段ヘッダーとして、左右カラム表示、プロジェクト操作、プロジェクト情報を横一列に配置します。
+/// 概要: Pencil 風の薄い一段ヘッダーとして、左右カラム表示とプロジェクト情報を横一列に配置します。
 ///
 /// プロパティ:
 /// - `isSidebarVisible`: 左カラムが表示中か。
@@ -112,7 +112,6 @@ private struct EditorOverlayColumn<Content: View>: View {
 /// - `onToggleSidebar`: 左カラム表示を切り替える処理。
 /// - `onToggleInspector`: 右カラム表示を切り替える処理。
 private struct EditorTopChromeView: View {
-    @EnvironmentObject private var store: EditorStore
     var isSidebarVisible: Bool
     var isInspectorVisible: Bool
     var onToggleSidebar: () -> Void
@@ -135,22 +134,6 @@ private struct EditorTopChromeView: View {
             .frame(width: leadingChromeWidth, alignment: .leading)
 
             HStack(spacing: 8) {
-                EditorChromeIconButton(
-                    systemImage: "folder",
-                    help: "Open .ogp",
-                    action: {
-                        store.openProjectWithPanel()
-                    }
-                )
-
-                EditorChromeIconButton(
-                    systemImage: "play.rectangle",
-                    help: "Open Sample Project",
-                    action: {
-                        store.openSampleProject()
-                    }
-                )
-
                 EditorProjectSummaryView()
                     .layoutPriority(1)
 
@@ -488,42 +471,42 @@ private struct CanvasZoomHUD: View {
     var onZoomIn: () -> Void
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 9) {
             Button(action: onZoomOut) {
                 Image(systemName: "minus")
-                    .font(.system(size: 16, weight: .medium))
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 24, height: 24)
             }
             .disabled(!canZoomOut)
             .buttonStyle(.plain)
             .help("Zoom Out")
 
             Text(CanvasZoom.percent(zoom))
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .frame(minWidth: 58)
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .frame(minWidth: 46)
                 .contentTransition(.numericText(value: zoom))
 
             Button(action: onZoomIn) {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 32, height: 32)
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 24, height: 24)
             }
             .disabled(!canZoomIn)
             .buttonStyle(.plain)
             .help("Zoom In")
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color.black.opacity(0.88))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.black.opacity(0.76))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 15)
+            RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.24), radius: 16, y: 8)
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Zoom \(CanvasZoom.percent(zoom))")
     }
