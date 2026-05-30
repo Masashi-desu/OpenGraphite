@@ -219,6 +219,12 @@ struct WebCanvasView: NSViewRepresentable {
            context.coordinator.lastAppliedAttributeMutationSequence != mutation.sequence {
             context.coordinator.applyAttributeMutation(mutation)
         }
+
+        if let request = store.documentReplacementRequest,
+           request.pageURL == context.coordinator.loadedURL,
+           context.coordinator.lastAppliedDocumentReplacementSequence != request.sequence {
+            context.coordinator.applyDocumentReplacement(request)
+        }
     }
 
     /// 論理名（日本語）: WKWebView解体関数
@@ -249,6 +255,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastSelectedNodeID: String?
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
+        var lastAppliedDocumentReplacementSequence = 0
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
 
@@ -275,7 +282,7 @@ struct WebCanvasView: NSViewRepresentable {
 
             if message.name == "openGraphiteSelection", let id = message.body as? String {
                 Task { @MainActor in
-                    store.selectNode(id: id)
+                    store.selectNode(id: id.isEmpty ? nil : id)
                 }
             }
 
@@ -347,7 +354,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: CSS変数mutation反映関数
-        /// 処理概要: CSS 変数 mutation を DOM へ適用し、成功時に HTML を保存します。
+        /// 処理概要: CSS 変数 mutation を DOM へ適用し、成功時に HTML をディスクへ同期します。
         ///
         /// - Parameter mutation: 反映対象の CSS 変数 mutation。
         func applyMutation(_ mutation: CSSVariableMutation) {
@@ -371,7 +378,7 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if (result as? Bool) == true {
-                        self.serializeAndPersistHTML {
+                        self.serializeAndSyncHTML {
                             self.store.markMutationApplied(sequence: mutation.sequence)
                         }
                     }
@@ -381,7 +388,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: 属性mutation反映関数
-        /// 処理概要: `data-og-*` 属性 mutation を DOM へ適用し、成功時に HTML を保存します。
+        /// 処理概要: `data-og-*` 属性 mutation を DOM へ適用し、成功時に HTML をディスクへ同期します。
         ///
         /// - Parameter mutation: 反映対象の属性 mutation。
         func applyAttributeMutation(_ mutation: NodeAttributeMutation) {
@@ -405,7 +412,7 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if (result as? Bool) == true {
-                        self.serializeAndPersistHTML {
+                        self.serializeAndSyncHTML {
                             self.store.markAttributeMutationApplied(sequence: mutation.sequence)
                         }
                     }
@@ -414,11 +421,43 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         @MainActor
-        /// 論理名（日本語）: HTMLシリアライズ保存関数
-        /// 処理概要: DOM から編集用選択属性を除いた HTML を生成し、現在ページへ永続化します。
+        /// 論理名（日本語）: ドキュメント置換適用関数
+        /// 処理概要: undo/redo で選ばれた HTML スナップショットを DOM へ反映し、失敗時はディスクから再読み込みします。
         ///
-        /// - Parameter onSuccess: 保存成功後に実行する処理。
-        private func serializeAndPersistHTML(onSuccess: @escaping @MainActor () -> Void) {
+        /// - Parameter request: WebView へ適用する HTML 置換要求。
+        func applyDocumentReplacement(_ request: DocumentReplacementRequest) {
+            guard let webView else { return }
+            lastAppliedDocumentReplacementSequence = request.sequence
+
+            let script = """
+            window.OpenGraphite && window.OpenGraphite.replaceDocumentHTML(
+              \(Self.javaScriptLiteral(request.html)),
+              \(Self.javaScriptLiteral(request.selectedNodeID ?? ""))
+            );
+            """
+
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error {
+                        self.store.reportWebError("履歴の WebView 反映に失敗しました: \(error.localizedDescription)")
+                        self.reloadCurrentPageFromDisk()
+                    } else if (result as? Bool) != true {
+                        self.store.reportWebError("履歴の WebView 反映に失敗しました。")
+                        self.reloadCurrentPageFromDisk()
+                    }
+
+                    self.store.markDocumentReplacementApplied(sequence: request.sequence)
+                }
+            }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: HTMLシリアライズ同期関数
+        /// 処理概要: DOM から編集用選択属性を除いた HTML を生成し、現在ページへ同期します。
+        ///
+        /// - Parameter onSuccess: 同期成功後に実行する処理。
+        private func serializeAndSyncHTML(onSuccess: @escaping @MainActor () -> Void) {
             guard let webView else { return }
 
             let script = """
@@ -440,11 +479,20 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if let html = result as? String {
-                        self.store.persistCurrentHTML(html)
+                        self.store.syncCurrentHTML(html)
                         onSuccess()
                     }
                 }
             }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: 現在ページディスク再読み込み関数
+        /// 処理概要: WebView 側 DOM 更新に失敗した場合、同期済みディスク内容を再読み込みして表示を戻します。
+        private func reloadCurrentPageFromDisk() {
+            guard let webView, let loadedURL else { return }
+            let readAccessURL = store.projectRootURL ?? loadedURL.deletingLastPathComponent()
+            webView.loadFileURL(loadedURL, allowingReadAccessTo: readAccessURL)
         }
 
         /// 論理名（日本語）: JavaScript文字列リテラル生成関数
@@ -679,7 +727,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: DOMコマンド実行関数
-        /// 処理概要: JavaScript bridge の `runCommand` を呼び出し、成功時に HTML を保存します。
+        /// 処理概要: JavaScript bridge の `runCommand` を呼び出し、成功時に HTML をディスクへ同期します。
         ///
         /// - Parameters:
         ///   - command: DOM に対して実行するコマンド名。
@@ -712,7 +760,7 @@ struct WebCanvasView: NSViewRepresentable {
                         self.store.selectNode(id: selectedID)
                     }
 
-                    self.serializeAndPersistHTML {}
+                    self.serializeAndSyncHTML {}
                 }
             }
         }
@@ -870,6 +918,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         function selectNode(id) {
           clearSelection();
+          currentSelectedID = '';
           if (!id) { return false; }
           const element = nodeWithID(id);
           if (!element) { return false; }
@@ -1138,6 +1187,28 @@ struct WebCanvasView: NSViewRepresentable {
         };
       }
 
+        function replaceDocumentHTML(html, selectedID) {
+          const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
+          if (!parsedDocument || !parsedDocument.documentElement) {
+            return false;
+          }
+
+          const nextRoot = document.importNode(parsedDocument.documentElement, true);
+          document.documentElement.replaceWith(nextRoot);
+          currentSelectedID = '';
+          collectNodes();
+
+          if (selectedID && nodeWithID(selectedID)) {
+            selectNode(selectedID);
+            notifySelection(selectedID);
+          } else {
+            notifySelection('');
+          }
+
+          postScrollState(emptyScrollState(false));
+          return true;
+        }
+
         function runCommand(command, payload) {
           const element = selectedElement();
           if (!element && command !== 'pasteHere') {
@@ -1233,6 +1304,7 @@ struct WebCanvasView: NSViewRepresentable {
           setCSSVariable: setCSSVariable,
           setAttributeValue: setAttributeValue,
           copyPayload: copyPayload,
+          replaceDocumentHTML: replaceDocumentHTML,
           runCommand: runCommand
         };
 

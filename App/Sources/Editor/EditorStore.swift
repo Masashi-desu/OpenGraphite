@@ -12,6 +12,7 @@ import Foundation
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `cssMutation`: WebView へ反映待ちの CSS 変数変更。
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
+/// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
 @MainActor
 final class EditorStore: ObservableObject {
     @Published private(set) var loadedProject: LoadedOpenGraphiteProject?
@@ -24,10 +25,15 @@ final class EditorStore: ObservableObject {
     @Published var activeTool: CanvasTool = .select
     @Published private(set) var cssMutation: CSSVariableMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
+    @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
 
     private let loader = ProjectLoader()
     private var mutationSequence = 0
     private var attributeMutationSequence = 0
+    private var documentReplacementSequence = 0
+    private var syncHistories: [URL: DocumentSyncHistory] = [:]
 
     var selectedPage: OpenGraphitePage? {
         guard let loadedProject else { return nil }
@@ -84,6 +90,9 @@ final class EditorStore: ObservableObject {
             nodes = []
             cssMutation = nil
             attributeMutation = nil
+            documentReplacementRequest = nil
+            syncHistories = [:]
+            prepareHistoryForSelectedPage()
             statusMessage = "\(project.project.name) を開きました。"
         } catch {
             lastError = error.localizedDescription
@@ -101,6 +110,7 @@ final class EditorStore: ObservableObject {
         if let page = selectedPage {
             statusMessage = "\(page.path) を表示しています。"
         }
+        prepareHistoryForSelectedPage()
     }
 
     /// 論理名（日本語）: ノード選択関数
@@ -200,19 +210,44 @@ final class EditorStore: ObservableObject {
         attributeMutation = nil
     }
 
-    /// 論理名（日本語）: 現在HTML保存関数
-    /// 処理概要: WebView からシリアライズされた HTML を現在選択中ページのファイルへ保存します。
+    /// 論理名（日本語）: 現在HTML同期関数
+    /// 処理概要: WebView からシリアライズされた HTML を現在選択中ページのファイルへ同期し、同期単位で履歴へ記録します。
     ///
-    /// - Parameter html: 保存する HTML 文字列。
-    func persistCurrentHTML(_ html: String) {
+    /// - Parameter html: 同期する HTML 文字列。
+    func syncCurrentHTML(_ html: String) {
         guard let selectedPageURL else { return }
+        var history = historyForPage(at: selectedPageURL, fallbackHTML: html)
 
         do {
             try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
-            statusMessage = "\(selectedPageURL.lastPathComponent) に保存しました。"
+            history.recordSync(html: html)
+            syncHistories[selectedPageURL] = history
+            updateHistoryAvailability()
+            statusMessage = "\(selectedPageURL.lastPathComponent) と同期しました。"
         } catch {
-            lastError = "HTMLの保存に失敗しました: \(error.localizedDescription)"
+            lastError = "HTMLの同期に失敗しました: \(error.localizedDescription)"
         }
+    }
+
+    /// 論理名（日本語）: ドキュメント変更取り消し関数
+    /// 処理概要: 現在ページの同期履歴を一段戻し、HTML ファイルと WebView へ同じスナップショットを適用します。
+    func undoDocumentChange() {
+        applyHistoryNavigation(direction: .undo)
+    }
+
+    /// 論理名（日本語）: ドキュメント変更やり直し関数
+    /// 処理概要: 現在ページの redo 履歴を一段進め、HTML ファイルと WebView へ同じスナップショットを適用します。
+    func redoDocumentChange() {
+        applyHistoryNavigation(direction: .redo)
+    }
+
+    /// 論理名（日本語）: ドキュメント置換要求適用完了関数
+    /// 処理概要: WebView で適用済みになった HTML 置換要求を順序番号で確認してクリアします。
+    ///
+    /// - Parameter sequence: 適用完了した置換要求の順序番号。
+    func markDocumentReplacementApplied(sequence: Int) {
+        guard documentReplacementRequest?.sequence == sequence else { return }
+        documentReplacementRequest = nil
     }
 
     /// 論理名（日本語）: WebViewエラー報告関数
@@ -221,6 +256,131 @@ final class EditorStore: ObservableObject {
     /// - Parameter message: 表示するエラーメッセージ。
     func reportWebError(_ message: String) {
         lastError = message
+    }
+
+    /// 論理名（日本語）: 履歴ナビゲーション方向
+    /// 概要: undo/redo のどちらの履歴移動を行うかを表します。
+    ///
+    /// 定義内容:
+    /// - `undo`: 取り消し方向。
+    /// - `redo`: やり直し方向。
+    private enum HistoryNavigationDirection {
+        case undo
+        case redo
+    }
+
+    /// 論理名（日本語）: 選択ページ履歴準備関数
+    /// 処理概要: 選択ページの HTML をディスクから読み込み、未登録であれば履歴の初期値にします。
+    private func prepareHistoryForSelectedPage() {
+        guard let selectedPageURL else {
+            updateHistoryAvailability()
+            return
+        }
+
+        if syncHistories[selectedPageURL] == nil,
+           let html = readHTMLFromDisk(at: selectedPageURL) {
+            syncHistories[selectedPageURL] = DocumentSyncHistory(initialHTML: html)
+        }
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: ページ履歴取得関数
+    /// 処理概要: 指定ページの同期履歴を返し、未登録の場合はディスク上の HTML または fallback で初期化します。
+    ///
+    /// - Parameters:
+    ///   - pageURL: 履歴を取得するページ URL。
+    ///   - fallbackHTML: ディスク読み込みに失敗した場合の初期 HTML。
+    /// - Returns: 指定ページの同期履歴。
+    private func historyForPage(at pageURL: URL, fallbackHTML: String) -> DocumentSyncHistory {
+        if let history = syncHistories[pageURL] {
+            return history
+        }
+
+        let initialHTML = readHTMLFromDisk(at: pageURL) ?? fallbackHTML
+        let history = DocumentSyncHistory(initialHTML: initialHTML)
+        syncHistories[pageURL] = history
+        return history
+    }
+
+    /// 論理名（日本語）: HTMLディスク読み込み関数
+    /// 処理概要: 指定 URL の HTML を UTF-8 文字列として読み込みます。
+    ///
+    /// - Parameter pageURL: 読み込み対象の HTML ファイル URL。
+    /// - Returns: 読み込めた HTML。失敗時は `nil`。
+    private func readHTMLFromDisk(at pageURL: URL) -> String? {
+        try? String(contentsOf: pageURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: 履歴可用性更新関数
+    /// 処理概要: 現在ページの undo/redo 可否をメニュー表示用 Published 値へ反映します。
+    private func updateHistoryAvailability() {
+        guard let selectedPageURL, let history = syncHistories[selectedPageURL] else {
+            canUndo = false
+            canRedo = false
+            return
+        }
+
+        canUndo = history.canUndo
+        canRedo = history.canRedo
+    }
+
+    /// 論理名（日本語）: 履歴移動適用関数
+    /// 処理概要: undo/redo スタックから HTML を取り出し、ディスク同期と WebView 置換要求を発行します。
+    ///
+    /// - Parameter direction: 適用する履歴移動方向。
+    private func applyHistoryNavigation(direction: HistoryNavigationDirection) {
+        guard let selectedPageURL,
+              var history = syncHistories[selectedPageURL]
+        else {
+            updateHistoryAvailability()
+            return
+        }
+
+        let html: String?
+        switch direction {
+        case .undo:
+            html = history.undo()
+        case .redo:
+            html = history.redo()
+        }
+
+        guard let html else {
+            updateHistoryAvailability()
+            return
+        }
+
+        do {
+            try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
+            syncHistories[selectedPageURL] = history
+            documentReplacementSequence += 1
+            documentReplacementRequest = DocumentReplacementRequest(
+                sequence: documentReplacementSequence,
+                pageURL: selectedPageURL,
+                html: html,
+                selectedNodeID: selectedNodeID
+            )
+            updateHistoryAvailability()
+            statusMessage = historyStatusMessage(for: direction, pageURL: selectedPageURL)
+        } catch {
+            lastError = "履歴の同期に失敗しました: \(error.localizedDescription)"
+            updateHistoryAvailability()
+        }
+    }
+
+    /// 論理名（日本語）: 履歴ステータスメッセージ生成関数
+    /// 処理概要: undo/redo 適用後に表示する短い同期結果メッセージを生成します。
+    ///
+    /// - Parameters:
+    ///   - direction: 適用した履歴移動方向。
+    ///   - pageURL: 対象ページ URL。
+    /// - Returns: 画面表示用のステータスメッセージ。
+    private func historyStatusMessage(for direction: HistoryNavigationDirection, pageURL: URL) -> String {
+        switch direction {
+        case .undo:
+            return "\(pageURL.lastPathComponent) の変更を取り消して同期しました。"
+        case .redo:
+            return "\(pageURL.lastPathComponent) の変更をやり直して同期しました。"
+        }
     }
 
     /// 論理名（日本語）: ノード辞書変換関数

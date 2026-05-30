@@ -41,6 +41,22 @@ struct OpenGraphiteApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+
+            CommandGroup(replacing: .saveItem) {}
+
+            CommandGroup(replacing: .undoRedo) {
+                Button("取り消す") {
+                    store.undoDocumentChange()
+                }
+                .keyboardShortcut("z", modifiers: [.command])
+                .disabled(!store.canUndo)
+
+                Button("やり直す") {
+                    store.redoDocumentChange()
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!store.canRedo)
+            }
         }
     }
 }
