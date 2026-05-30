@@ -159,18 +159,18 @@ private struct EditorTopChromeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 0) {
+                Spacer(minLength: 0)
+
                 EditorChromeIconButton(
                     systemImage: "sidebar.right",
                     isActive: isInspectorVisible,
                     help: isInspectorVisible ? "Hide Inspector" : "Show Inspector",
                     action: onToggleInspector
                 )
-
-                Spacer(minLength: 0)
             }
             .padding(.leading, EditorOverlayMetrics.chromeControlInset)
             .padding(.trailing, EditorOverlayMetrics.chromeControlInset)
-            .frame(width: trailingChromeWidth, alignment: .leading)
+            .frame(width: trailingChromeWidth, alignment: .trailing)
         }
         .frame(height: EditorOverlayMetrics.topChromeHeight)
         .background(EditorColumnBackground())
