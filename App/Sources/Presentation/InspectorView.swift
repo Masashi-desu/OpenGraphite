@@ -11,12 +11,10 @@ struct InspectorView: View {
                 Text("Inspector")
                     .font(.headline)
                 Spacer()
-                Image(systemName: "sidebar.right")
-                    .foregroundStyle(.secondary)
             }
-            .padding(14)
-
-            Divider()
+            .padding(.top, EditorOverlayMetrics.titlebarInset)
+            .padding(.horizontal, EditorColumnStyle.outerPadding + 4)
+            .padding(.bottom, 14)
 
             if let node = store.selectedNode {
                 ScrollView {
@@ -175,14 +173,11 @@ struct InspectorView: View {
                             .id("\(node.id)-shadow")
                         }
                     }
-                    .padding(12)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
                 }
             } else {
-                ContentUnavailableView(
-                    "No Selection",
-                    systemImage: "scope",
-                    description: Text("Layers または Canvas でノードを選択してください。")
-                )
+                InspectorEmptyStateView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -202,7 +197,8 @@ private struct NodeSummaryPanel: View {
             Image(systemName: iconName)
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: 28, height: 28)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.accentFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.tagName)
@@ -217,7 +213,11 @@ private struct NodeSummaryPanel: View {
             Spacer()
         }
         .padding(10)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
     }
 
     private var iconName: String {
@@ -258,7 +258,30 @@ private struct InspectorSection<Content: View>: View {
                 content
             }
             .padding(10)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+            .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                    .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+            )
+        }
+    }
+}
+
+/// 論理名（日本語）: インスペクター空状態ビュー
+/// 概要: ノード未選択時に右カラムの新しい軽量スタイルで選択案内を表示します。
+private struct InspectorEmptyStateView: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("No Selection")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text("Layers または Canvas でノードを選択してください。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .padding(.horizontal, 28)
         }
     }
 }
@@ -326,7 +349,7 @@ private struct EditableAttributeField: View {
                 .font(.caption.monospaced())
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .background(.background.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
                 .onSubmit {
                     onCommit(draft)
                 }
@@ -371,12 +394,12 @@ private struct LayoutModePicker: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 6)
                     .background(
-                        RoundedRectangle(cornerRadius: 7)
-                            .fill(value == option.0 ? Color.accentColor.opacity(0.2) : Color.clear)
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .fill(value == option.0 ? EditorColumnStyle.selectedRowFill : Color.clear)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7)
-                            .stroke(value == option.0 ? Color.accentColor : Color.primary.opacity(0.08), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .stroke(value == option.0 ? Color.accentColor.opacity(0.45) : EditorColumnStyle.separatorColor, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -447,7 +470,7 @@ private struct CSSVariableField: View {
                     .font(.caption.monospaced())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(.background.opacity(0.45), in: RoundedRectangle(cornerRadius: 7))
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
                     .onSubmit {
                         onCommit(draft)
                     }
@@ -479,6 +502,7 @@ private struct ApplyButton: View {
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
         .frame(width: 20, height: 20)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: 5))
         .help("Apply")
     }
 }
@@ -529,7 +553,7 @@ private struct InspectorButtonStrip: View {
                             .frame(width: 28, height: 24)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(value == option.value ? Color.accentColor.opacity(0.2) : Color.clear)
+                                    .fill(value == option.value ? EditorColumnStyle.selectedRowFill : Color.clear)
                             )
                     }
                     .buttonStyle(.plain)

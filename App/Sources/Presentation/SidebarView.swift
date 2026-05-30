@@ -8,37 +8,14 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Picker("", selection: $selectedPanel) {
-                ForEach(SidebarPanel.allCases) { panel in
-                    Label(panel.title, systemImage: panel.systemImage)
-                        .tag(panel.rawValue)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(10)
-
-            Divider()
+            SidebarPanelSwitcher(selectedPanel: $selectedPanel)
+                .padding(.top, EditorOverlayMetrics.titlebarInset)
+                .padding(.horizontal, EditorColumnStyle.outerPadding)
+                .padding(.bottom, 10)
 
             Group {
                 if selectedPanel == SidebarPanel.pages.rawValue {
-                    List(selection: $store.selectedPageID) {
-                        ForEach(store.loadedProject?.project.pages ?? []) { page in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(page.id)
-                                    .font(.body)
-                                Text(page.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .tag(Optional(page.id))
-                        }
-                    }
-                    .listStyle(.sidebar)
-                    .frame(minHeight: 140)
-                    .onChange(of: store.selectedPageID) { _, newValue in
-                        store.selectPage(id: newValue)
-                    }
+                    PageListView()
                 } else {
                     LayerOutlineView(
                         nodes: store.nodes,
@@ -56,6 +33,118 @@ struct SidebarView: View {
     }
 }
 
+/// 論理名（日本語）: サイドバーパネル切替ビュー
+/// 概要: タイトルバー領域の下に Pages と Layers の切替ボタンを表示します。
+///
+/// プロパティ:
+/// - `selectedPanel`: 現在選択中のパネル種別。
+private struct SidebarPanelSwitcher: View {
+    @Binding var selectedPanel: SidebarPanel.RawValue
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(SidebarPanel.allCases) { panel in
+                Button {
+                    selectedPanel = panel.rawValue
+                } label: {
+                    Label(panel.title, systemImage: panel.systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                                .fill(selectedPanel == panel.rawValue ? EditorColumnStyle.selectedRowFill : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selectedPanel == panel.rawValue ? .primary : .secondary)
+                .help(panel.title)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .fill(EditorColumnStyle.rowFill)
+        )
+    }
+}
+
+/// 論理名（日本語）: ページ一覧ビュー
+/// 概要: 左カラムの Pages パネルでプロジェクト内ページを軽量なカスタム行として表示します。
+private struct PageListView: View {
+    @EnvironmentObject private var store: EditorStore
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 3) {
+                ForEach(store.loadedProject?.project.pages ?? []) { page in
+                    PageRow(
+                        page: page,
+                        isSelected: page.id == store.selectedPageID,
+                        onSelect: {
+                            store.selectPage(id: page.id)
+                        }
+                    )
+                }
+            }
+            .padding(.horizontal, EditorColumnStyle.outerPadding)
+            .padding(.vertical, 10)
+        }
+        .frame(minHeight: 140)
+    }
+}
+
+/// 論理名（日本語）: ページ行ビュー
+/// 概要: ページ ID と HTML パスを Sidebar 向けの軽量行として表示します。
+///
+/// プロパティ:
+/// - `page`: 表示するページ定義。
+/// - `isSelected`: 現在選択中のページか。
+/// - `onSelect`: 行選択時に呼び出す処理。
+private struct PageRow: View {
+    var page: OpenGraphitePage
+    var isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 9) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(page.id)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(page.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(page.path)
+    }
+}
+
 /// 論理名（日本語）: レイヤーアウトラインビュー
 /// 概要: DOM ノード一覧を階層ツリーへ変換し、選択ノードに合わせて祖先を展開する Layers 表示です。
 ///
@@ -69,25 +158,26 @@ private struct LayerOutlineView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List {
-                ForEach(visibleRows) { row in
-                    LayerRow(
-                        row: row,
-                        isCollapsed: !expandedNodeIDs.contains(row.id),
-                        isSelected: row.id == selectedNodeID,
-                        onToggle: {
-                            toggle(row.id)
-                        },
-                        onSelect: {
-                            selectedNodeID = row.id
-                        }
-                    )
-                    .id(row.id)
-                    .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
-                    .listRowBackground(Color.clear)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    ForEach(visibleRows) { row in
+                        LayerRow(
+                            row: row,
+                            isCollapsed: !expandedNodeIDs.contains(row.id),
+                            isSelected: row.id == selectedNodeID,
+                            onToggle: {
+                                toggle(row.id)
+                            },
+                            onSelect: {
+                                selectedNodeID = row.id
+                            }
+                        )
+                        .id(row.id)
+                    }
                 }
+                .padding(.horizontal, EditorColumnStyle.outerPadding)
+                .padding(.vertical, 10)
             }
-            .listStyle(.plain)
             .onAppear {
                 revealSelection(selectedNodeID, proxy: proxy)
             }
@@ -320,15 +410,16 @@ private struct LayerRow: View {
             }
 
             Image(systemName: iconName)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.node.tagName)
-                    .font(.body)
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Text("\(row.node.id) · \(row.node.detailLine)")
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -336,12 +427,15 @@ private struct LayerRow: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.leading, CGFloat(row.level) * 14)
-        .padding(.vertical, 5)
+        .padding(.leading, CGFloat(row.level) * 15 + 2)
+        .padding(.vertical, 6)
         .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .background(isSelected ? Color.accentColor.opacity(0.16) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+        )
         .onTapGesture(perform: onSelect)
         .accessibilityElement(children: .combine)
     }

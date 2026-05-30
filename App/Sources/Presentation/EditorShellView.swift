@@ -3,78 +3,253 @@ import SwiftUI
 import WebKit
 
 /// 論理名（日本語）: エディターシェルビュー
-/// 概要: Toolbar、Sidebar、Canvas、Inspector を三分割で配置する編集画面のルートビューです。
+/// 概要: 全面 Canvas の上に Sidebar と Inspector を重ねる編集画面のルートビューです。
 struct EditorShellView: View {
-    @EnvironmentObject private var store: EditorStore
+    @SceneStorage("editorShell.isSidebarVisible") private var isSidebarVisible = true
+    @SceneStorage("editorShell.isInspectorVisible") private var isInspectorVisible = true
 
     var body: some View {
-        VStack(spacing: 0) {
-            EditorToolbarView()
-            Divider()
-            HSplitView {
-                SidebarView()
-                    .frame(minWidth: 220, idealWidth: 280, maxWidth: 340)
+        ZStack(alignment: .top) {
+            CanvasPaneView(
+                isSidebarVisible: isSidebarVisible,
+                isInspectorVisible: isInspectorVisible
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                CanvasPaneView()
-                    .frame(minWidth: 360)
+            EditorCanvasSeparator(
+                isSidebarVisible: isSidebarVisible,
+                isInspectorVisible: isInspectorVisible
+            )
+            .padding(.top, EditorOverlayMetrics.topChromeHeight)
+            .zIndex(5)
 
-                InspectorView()
-                    .frame(minWidth: 240, idealWidth: 320, maxWidth: 380)
+            if isSidebarVisible {
+                EditorOverlayColumn(
+                    width: EditorOverlayMetrics.sidebarWidth,
+                    edge: .leading
+                ) {
+                    SidebarView()
+                }
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .zIndex(10)
             }
+
+            if isInspectorVisible {
+                EditorOverlayColumn(
+                    width: EditorOverlayMetrics.inspectorWidth,
+                    edge: .trailing
+                ) {
+                    InspectorView()
+                }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .zIndex(10)
+            }
+
+            EditorTopChromeView(
+                isSidebarVisible: isSidebarVisible,
+                isInspectorVisible: isInspectorVisible,
+                onToggleSidebar: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isSidebarVisible.toggle()
+                    }
+                },
+                onToggleInspector: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isInspectorVisible.toggle()
+                    }
+                }
+            )
+            .zIndex(30)
         }
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 
-/// 論理名（日本語）: エディターツールバービュー
-/// 概要: プロジェクトオープン操作、プロジェクト名、参照ルート、選択ページ情報を表示します。
+/// 論理名（日本語）: エディターオーバーレイカラム
+/// 概要: Sidebar/Inspector をウインドウ全高の固定幅サーフェスとして Canvas 上に重ねます。
 ///
 /// プロパティ:
-/// - `store`: エディター状態ストア。
-private struct EditorToolbarView: View {
+/// - `width`: カラム幅。
+/// - `edge`: カラムを寄せる画面端。
+/// - `content`: カラム内部に表示するビュー。
+private struct EditorOverlayColumn<Content: View>: View {
+    var width: CGFloat
+    var edge: HorizontalEdge
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if edge == .trailing {
+                Spacer(minLength: 0)
+            }
+
+            content
+                .frame(width: width)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(EditorColumnBackground())
+                .overlay(alignment: dividerAlignment) {
+                    Divider()
+                }
+
+            if edge == .leading {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var dividerAlignment: Alignment {
+        edge == .leading ? .trailing : .leading
+    }
+}
+
+/// 論理名（日本語）: エディター上部クロームビュー
+/// 概要: Pencil 風の薄い一段ヘッダーとして、左右カラム表示、プロジェクト操作、プロジェクト情報を横一列に配置します。
+///
+/// プロパティ:
+/// - `isSidebarVisible`: 左カラムが表示中か。
+/// - `isInspectorVisible`: 右カラムが表示中か。
+/// - `onToggleSidebar`: 左カラム表示を切り替える処理。
+/// - `onToggleInspector`: 右カラム表示を切り替える処理。
+private struct EditorTopChromeView: View {
+    @EnvironmentObject private var store: EditorStore
+    var isSidebarVisible: Bool
+    var isInspectorVisible: Bool
+    var onToggleSidebar: () -> Void
+    var onToggleInspector: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 0) {
+                EditorChromeIconButton(
+                    systemImage: "sidebar.left",
+                    isActive: isSidebarVisible,
+                    help: isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+                    action: onToggleSidebar
+                )
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, EditorOverlayMetrics.trafficLightReservedWidth)
+            .padding(.trailing, EditorOverlayMetrics.chromeControlInset)
+            .frame(width: leadingChromeWidth, alignment: .leading)
+
+            HStack(spacing: 8) {
+                EditorChromeIconButton(
+                    systemImage: "folder",
+                    help: "Open .ogp",
+                    action: {
+                        store.openProjectWithPanel()
+                    }
+                )
+
+                EditorChromeIconButton(
+                    systemImage: "play.rectangle",
+                    help: "Open Sample Project",
+                    action: {
+                        store.openSampleProject()
+                    }
+                )
+
+                EditorProjectSummaryView()
+                    .layoutPriority(1)
+
+                Spacer(minLength: 12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 0) {
+                EditorChromeIconButton(
+                    systemImage: "sidebar.right",
+                    isActive: isInspectorVisible,
+                    help: isInspectorVisible ? "Hide Inspector" : "Show Inspector",
+                    action: onToggleInspector
+                )
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, EditorOverlayMetrics.chromeControlInset)
+            .padding(.trailing, EditorOverlayMetrics.chromeControlInset)
+            .frame(width: trailingChromeWidth, alignment: .leading)
+        }
+        .frame(height: EditorOverlayMetrics.topChromeHeight)
+        .background(EditorColumnBackground())
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(EditorColumnStyle.separatorColor)
+                .frame(height: 1)
+        }
+    }
+
+    private var leadingChromeWidth: CGFloat {
+        isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : EditorOverlayMetrics.collapsedLeadingChromeWidth
+    }
+
+    private var trailingChromeWidth: CGFloat {
+        isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : EditorOverlayMetrics.collapsedTrailingChromeWidth
+    }
+}
+
+/// 論理名（日本語）: エディタークロームアイコンボタン
+/// 概要: 上部クロームで使う薄型のアイコンボタンです。
+///
+/// プロパティ:
+/// - `systemImage`: SF Symbols 名。
+/// - `isActive`: 有効状態として背景を出すか。
+/// - `help`: ヘルプとアクセシビリティラベル。
+/// - `action`: 押下時に実行する処理。
+private struct EditorChromeIconButton: View {
+    var systemImage: String
+    var isActive = false
+    var help: String
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 28, height: 28)
+                .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isActive ? .primary : .secondary)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .fill(isActive ? EditorColumnStyle.selectedRowFill : Color.clear)
+        )
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// 論理名（日本語）: エディタープロジェクト概要ビュー
+/// 概要: 上部クローム内にプロジェクト名、参照ルート、選択ページを一行で表示します。
+private struct EditorProjectSummaryView: View {
     @EnvironmentObject private var store: EditorStore
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button {
-                store.openProjectWithPanel()
-            } label: {
-                Image(systemName: "folder")
-            }
-            .help("Open .ogp")
+        HStack(spacing: 8) {
+            Text(store.loadedProject?.project.name ?? "OpenGraphite")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Button {
-                store.openSampleProject()
-            } label: {
-                Image(systemName: "play.rectangle")
-            }
-            .help("Open Sample Project")
-
-            Divider()
-                .frame(height: 20)
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(store.loadedProject?.project.name ?? "OpenGraphite")
-                        .font(.headline)
-
-                    if let projectRootPath {
-                        PathBadge(title: "Project", path: projectRootPath)
-                    }
-
-                    if let publicRootPath {
-                        PathBadge(title: "Public", path: publicRootPath)
-                    }
-                }
-                Text(store.selectedPage?.path ?? store.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            if let projectRootPath {
+                PathBadge(title: "Project", path: projectRootPath)
             }
 
-            Spacer()
+            if let publicRootPath {
+                PathBadge(title: "Public", path: publicRootPath)
+            }
+
+            Text(store.selectedPage?.path ?? store.statusMessage)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 
     private var projectRootPath: String? {
@@ -86,6 +261,25 @@ private struct EditorToolbarView: View {
         return loadedProject.rootURL
             .appendingPathComponent(loadedProject.project.htmlRoot)
             .path
+    }
+}
+
+/// 論理名（日本語）: エディターキャンバス区切り線ビュー
+/// 概要: 上部クロームと Canvas の境界線を左右カラムへ重ねず、中央のプレビュー領域だけへ表示します。
+///
+/// プロパティ:
+/// - `isSidebarVisible`: 左カラムが表示中か。
+/// - `isInspectorVisible`: 右カラムが表示中か。
+private struct EditorCanvasSeparator: View {
+    var isSidebarVisible: Bool
+    var isInspectorVisible: Bool
+
+    var body: some View {
+        Rectangle()
+            .fill(EditorColumnStyle.separatorColor)
+            .frame(height: 1)
+            .padding(.leading, isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : 0)
+            .padding(.trailing, isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : 0)
     }
 }
 
@@ -119,21 +313,33 @@ private struct PathBadge: View {
 
 /// 論理名（日本語）: キャンバスペインビュー
 /// 概要: HTML プレビュー、ツールパレット、ズーム HUD を重ねて表示する中央ペインです。
+///
+/// プロパティ:
+/// - `isSidebarVisible`: 左カラムが表示中か。
+/// - `isInspectorVisible`: 右カラムが表示中か。
 private struct CanvasPaneView: View {
     @EnvironmentObject private var store: EditorStore
+    var isSidebarVisible: Bool
+    var isInspectorVisible: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
             if let page = store.selectedPage {
-                ZoomableCanvasScrollView(zoom: $store.zoom, documentID: page.id) {
+                ZoomableCanvasScrollView(
+                    zoom: $store.zoom,
+                    documentID: page.id,
+                    overlayAvoidance: overlayAvoidance
+                ) {
                     CanvasDocumentView(store: store, page: page, zoom: store.zoom)
                 }
 
                 CanvasToolPalette(activeTool: $store.activeTool)
-                    .padding(.leading, 14)
-                    .padding(.top, 14)
+                    .padding(.leading, overlayAvoidance.leading + 14)
+                    .padding(.top, overlayAvoidance.top + 14)
+                    .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.leading)
+                    .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
 
                 CanvasZoomHUD(
                     zoom: store.zoom,
@@ -147,8 +353,9 @@ private struct CanvasPaneView: View {
                     }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, 16)
+                .padding(.trailing, overlayAvoidance.trailing + 16)
                 .padding(.bottom, 14)
+                .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
             } else {
                 ContentUnavailableView(
                     "No Page",
@@ -158,6 +365,14 @@ private struct CanvasPaneView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+    }
+
+    private var overlayAvoidance: CanvasOverlayAvoidance {
+        CanvasOverlayAvoidance(
+            leading: isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : 0,
+            trailing: isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : 0,
+            top: EditorOverlayMetrics.topChromeHeight
+        )
     }
 
     /// 論理名（日本語）: ズーム調整関数
@@ -212,6 +427,19 @@ private struct CanvasDocumentView: View {
 /// - `documentPadding`: ドキュメント周囲の余白。
 private enum CanvasMetrics {
     static let documentPadding: CGFloat = 48
+}
+
+/// 論理名（日本語）: キャンバスオーバーレイ回避値
+/// 概要: Canvas の描画座標を保ったまま操作 UI だけ左右カラムを避けるための余白です。
+///
+/// プロパティ:
+/// - `leading`: 左カラムに隠れないための左側回避幅。
+/// - `trailing`: 右カラムに隠れないための右側回避幅。
+/// - `top`: 上部クロームに隠れないための上側回避幅。
+private struct CanvasOverlayAvoidance: Equatable {
+    var leading: CGFloat = 0
+    var trailing: CGFloat = 0
+    var top: CGFloat = 0
 }
 
 /// 論理名（日本語）: キャンバスズーム設定
@@ -311,6 +539,7 @@ private struct CanvasZoomHUD: View {
 private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     @Binding var zoom: Double
     var documentID: String
+    var overlayAvoidance: CanvasOverlayAvoidance
     var content: () -> Content
 
     /// 論理名（日本語）: ズーム可能スクロールビュー初期化関数
@@ -319,14 +548,17 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - Parameters:
     ///   - zoom: キャンバス倍率のバインディング。
     ///   - documentID: 表示中ドキュメントの識別子。
+    ///   - overlayAvoidance: 左右カラムを避ける操作 UI 用余白。
     ///   - content: スクロールビュー内に表示する SwiftUI content。
     init(
         zoom: Binding<Double>,
         documentID: String,
+        overlayAvoidance: CanvasOverlayAvoidance = CanvasOverlayAvoidance(),
         @ViewBuilder content: @escaping () -> Content
     ) {
         self._zoom = zoom
         self.documentID = documentID
+        self.overlayAvoidance = overlayAvoidance
         self.content = content
     }
 
@@ -351,6 +583,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = false
         scrollView.allowsMagnification = false
+        scrollView.overlayAvoidance = overlayAvoidance
 
         scrollView.documentView = context.coordinator.documentView
         context.coordinator.attach(to: scrollView)
@@ -370,7 +603,10 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         context.coordinator.zoom = $zoom
         context.coordinator.updateContent(documentID: documentID, content: content)
         context.coordinator.refreshDocumentSizeIfNeeded()
-        (scrollView as? CanvasOverlayScrollView)?.refreshScrollIndicators()
+        if let scrollView = scrollView as? CanvasOverlayScrollView {
+            scrollView.overlayAvoidance = overlayAvoidance
+            scrollView.refreshScrollIndicators()
+        }
     }
 
     /// 論理名（日本語）: NSScrollView解体関数
@@ -1104,6 +1340,13 @@ private final class CanvasOverlayScrollView: NSScrollView {
     private static let indicatorInset: CGFloat = 5
     private static let minimumIndicatorLength: CGFloat = 42
 
+    var overlayAvoidance = CanvasOverlayAvoidance() {
+        didSet {
+            guard overlayAvoidance != oldValue else { return }
+            refreshScrollIndicators()
+        }
+    }
+
     private let verticalIndicator = CanvasScrollIndicatorView(axis: .vertical)
     private let horizontalIndicator = CanvasScrollIndicatorView(axis: .horizontal)
 
@@ -1344,8 +1587,8 @@ private final class CanvasOverlayScrollView: NSScrollView {
         case .vertical:
             guard showsVerticalIndicator else { return nil }
             let horizontalReservedLength = showsHorizontalIndicator ? Self.indicatorThickness + Self.indicatorInset : 0
-            let trackStartY = isFlipped ? Self.indicatorInset : Self.indicatorInset + horizontalReservedLength
-            let trackEndY = isFlipped ? bounds.height - Self.indicatorInset - horizontalReservedLength : bounds.height - Self.indicatorInset
+            let trackStartY = isFlipped ? overlayAvoidance.top + Self.indicatorInset : Self.indicatorInset + horizontalReservedLength
+            let trackEndY = isFlipped ? bounds.height - Self.indicatorInset - horizontalReservedLength : bounds.height - overlayAvoidance.top - Self.indicatorInset
             let trackLength = max(trackEndY - trackStartY, 1)
             let indicatorLength = min(
                 trackLength,
@@ -1363,7 +1606,7 @@ private final class CanvasOverlayScrollView: NSScrollView {
 
             return CanvasScrollIndicatorPlacement(
                 frame: CGRect(
-                    x: bounds.width - Self.indicatorInset - Self.indicatorThickness,
+                    x: bounds.width - overlayAvoidance.trailing - Self.indicatorInset - Self.indicatorThickness,
                     y: originY,
                     width: Self.indicatorThickness,
                     height: indicatorLength
@@ -1374,8 +1617,8 @@ private final class CanvasOverlayScrollView: NSScrollView {
 
         case .horizontal:
             guard showsHorizontalIndicator else { return nil }
-            let trackMinX = Self.indicatorInset
-            let trackMaxX = bounds.width - Self.indicatorInset - (showsVerticalIndicator ? Self.indicatorThickness + Self.indicatorInset : 0)
+            let trackMinX = overlayAvoidance.leading + Self.indicatorInset
+            let trackMaxX = bounds.width - overlayAvoidance.trailing - Self.indicatorInset - (showsVerticalIndicator ? Self.indicatorThickness + Self.indicatorInset : 0)
             let trackLength = max(trackMaxX - trackMinX, 1)
             let indicatorLength = min(
                 trackLength,

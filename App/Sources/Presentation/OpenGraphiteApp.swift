@@ -21,11 +21,14 @@ struct OpenGraphiteApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .background(WindowChromeConfigurator())
                 .frame(
                     minWidth: OpenGraphiteWindowMetrics.minimumWidth,
                     minHeight: OpenGraphiteWindowMetrics.minimumHeight
                 )
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(UnifiedWindowToolbarStyle(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Project...") {
