@@ -11,5 +11,6 @@
 - `project.yml` を XcodeGen の正本として扱い、`OpenGraphite.xcodeproj` は生成物として直接編集しない。
 - Swift コードを追加・変更する場合は `Docs/rules/DocumentCommentStandards.md` に従い、主要な型と関数へ `///` ドキュメントコメントを付与する。
 - テストを追加・変更する場合は `Docs/rules/TestingStandards.md` に従い、Swift Testing の `@Suite` / `@Test` と Given/When/Then コメントを用いる。
+- TODO 文書を追加・更新する場合は `Docs/operations/TODO/GOVERNANCE.md` と `Docs/operations/TODO/TEMPLATE.md` に従い、残タスクだけを直列化して管理する。
 - コード、設定、ドキュメント生成に関わる変更を完了する前に、品質ゲート `./Scripts/quality_gate.sh` を必ず完走させる。
 - 品質ゲートが失敗した状態で作業を完了してはならない。外部要因で実行できない場合のみ、理由と未確認範囲を明記してユーザーへ報告する。

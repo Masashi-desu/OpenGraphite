@@ -133,3 +133,4 @@ Open `SampleProject/OpenGraphiteSample.ogp` from the Welcome screen or press **O
 
 - Swift document comment guidance: `Docs/rules/DocumentCommentStandards.md`
 - Swift Testing guidance: `Docs/rules/TestingStandards.md`
+- Operations TODO governance: `Docs/operations/TODO/GOVERNANCE.md`
