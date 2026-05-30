@@ -170,6 +170,7 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteSelection")
         userContentController.add(context.coordinator, name: "openGraphiteContextMenu")
         userContentController.add(context.coordinator, name: "openGraphiteScrollState")
+        userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
         userContentController.addUserScript(
             WKUserScript(
                 source: Self.bridgeScript,
@@ -210,6 +211,11 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.selectNode(store.selectedNodeID)
         }
 
+        if context.coordinator.lastActiveTool != store.activeTool {
+            context.coordinator.lastActiveTool = store.activeTool
+            context.coordinator.setActiveTool(store.activeTool)
+        }
+
         if let mutation = store.cssMutation,
            context.coordinator.lastAppliedMutationSequence != mutation.sequence {
             context.coordinator.applyMutation(mutation)
@@ -238,6 +244,7 @@ struct WebCanvasView: NSViewRepresentable {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteSelection")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteContextMenu")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteScrollState")
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteDocumentChange")
         WebScrollStateRegistry.shared.remove(for: nsView)
     }
 
@@ -253,6 +260,7 @@ struct WebCanvasView: NSViewRepresentable {
         weak var webView: WKWebView?
         var loadedURL: URL?
         var lastSelectedNodeID: String?
+        var lastActiveTool: CanvasTool?
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
@@ -268,7 +276,7 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         /// 論理名（日本語）: Script Message受信関数
-        /// 処理概要: JavaScript から届くノード一覧、選択、context menu、スクロール状態をストアへ反映します。
+        /// 処理概要: JavaScript から届くノード一覧、選択、context menu、スクロール状態、ドキュメント変更通知をストアへ反映します。
         ///
         /// - Parameters:
         ///   - userContentController: メッセージ送信元の user content controller。
@@ -300,6 +308,12 @@ struct WebCanvasView: NSViewRepresentable {
                     updateScrollState(payload: payload)
                 }
             }
+
+            if message.name == "openGraphiteDocumentChange" {
+                Task { @MainActor in
+                    serializeAndSyncHTML {}
+                }
+            }
         }
 
         /// 論理名（日本語）: WebView読み込み完了関数
@@ -311,6 +325,7 @@ struct WebCanvasView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
             Task { @MainActor in
+                setActiveTool(store.activeTool)
                 selectNode(store.selectedNodeID)
             }
         }
@@ -350,6 +365,18 @@ struct WebCanvasView: NSViewRepresentable {
             guard let webView else { return }
             let idLiteral = Self.javaScriptLiteral(id ?? "")
             webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.selectNode(\(idLiteral));")
+        }
+
+        @MainActor
+        /// 論理名（日本語）: アクティブツール反映関数
+        /// 処理概要: SwiftUI 側のキャンバスツール状態を JavaScript bridge へ反映します。
+        ///
+        /// - Parameter tool: 現在選択されているキャンバスツール。
+        func setActiveTool(_ tool: CanvasTool) {
+            guard let webView else { return }
+            webView.evaluateJavaScript(
+                "window.OpenGraphite && window.OpenGraphite.setActiveTool(\(Self.javaScriptLiteral(tool.rawValue)));"
+            )
         }
 
         @MainActor
@@ -465,6 +492,13 @@ struct WebCanvasView: NSViewRepresentable {
               const clone = document.documentElement.cloneNode(true);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
                 element.removeAttribute('data-og-selected');
+              });
+              clone.querySelectorAll('[data-og-editing]').forEach((element) => {
+                element.removeAttribute('data-og-editing');
+                element.removeAttribute('contenteditable');
+                element.removeAttribute('spellcheck');
+                element.style.removeProperty('--og-edit-width');
+                element.style.removeProperty('--og-edit-min-height');
               });
               return '<!doctype html>\\n' + clone.outerHTML;
             })();
@@ -852,6 +886,17 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         let currentSelectedID = '';
+        let dragStartThreshold = 3;
+        let pointerDragButtons = 1;
+        let primaryPointerButton = 0;
+        let passivePointerOptions = { capture: true, passive: true };
+        let activePointerOptions = { capture: true, passive: false };
+        var activeTool = 'select';
+        var pendingDrag = null;
+        var activeDrag = null;
+        var editingTextElement = null;
+        var editingOriginalText = '';
+        var suppressNextClick = false;
 
       function cssVariables(element) {
         const style = element.getAttribute('style') || '';
@@ -894,6 +939,101 @@ struct WebCanvasView: NSViewRepresentable {
           return document.querySelector('[data-og-selected="true"]');
         }
 
+        function setActiveTool(tool) {
+          if (editingTextElement) {
+            finishTextEditing(false);
+          }
+          activeTool = tool || 'select';
+          pendingDrag = null;
+        }
+
+        function elementID(element) {
+          return element ? element.getAttribute('data-og-id') || '' : '';
+        }
+
+        function editableElementFromTarget(target) {
+          let element = target;
+          while (element && element.nodeType !== Node.ELEMENT_NODE) {
+            element = element.parentElement;
+          }
+          return element ? element.closest('[data-og-id]') : null;
+        }
+
+        function selectableChainFor(element) {
+          const chain = [];
+          let current = element;
+          while (current && current !== document.documentElement) {
+            if (current.hasAttribute && current.hasAttribute('data-og-id')) {
+              chain.push(current);
+            }
+            current = current.parentElement;
+          }
+
+          const rootToLeaf = chain.reverse();
+          const withoutPage = rootToLeaf.filter((candidate) => {
+            return (candidate.getAttribute('data-og-type') || '') !== 'page';
+          });
+          return withoutPage.length > 0 ? withoutPage : rootToLeaf;
+        }
+
+        function nextSelectionIDForClick(element) {
+          const chain = selectableChainFor(element);
+          if (chain.length === 0) { return ''; }
+
+          const currentIndex = chain.findIndex((candidate) => elementID(candidate) === currentSelectedID);
+          if (currentIndex < 0) {
+            return elementID(chain[0]);
+          }
+
+          const nextIndex = Math.min(currentIndex + 1, chain.length - 1);
+          return elementID(chain[nextIndex]);
+        }
+
+        function elementInChain(chain, id) {
+          if (!id) { return null; }
+          return chain.find((candidate) => elementID(candidate) === id) || null;
+        }
+
+        function hasLockedAncestor(element) {
+          let current = element;
+          while (current && current !== document.documentElement) {
+            if (current.getAttribute && current.getAttribute('data-og-locked') === 'true') {
+              return true;
+            }
+            current = current.parentElement;
+          }
+          return false;
+        }
+
+        function canDragElement(element) {
+          if (!element) { return false; }
+          const type = element.getAttribute('data-og-type') || '';
+          return type !== 'page' && !hasLockedAncestor(element);
+        }
+
+        function isTextElement(element) {
+          return element && (element.getAttribute('data-og-type') || '') === 'text';
+        }
+
+        function draggableElementForChain(chain) {
+          const selected = elementInChain(chain, currentSelectedID);
+          if (canDragElement(selected)) {
+            return selected;
+          }
+          return chain.find(canDragElement) || null;
+        }
+
+        function textElementForEditing(element) {
+          const chain = selectableChainFor(element);
+          const selected = elementInChain(chain, currentSelectedID);
+          if (isTextElement(selected) && !hasLockedAncestor(selected)) {
+            return selected;
+          }
+
+          const deepestText = chain.slice().reverse().find((candidate) => isTextElement(candidate));
+          return deepestText && !hasLockedAncestor(deepestText) ? deepestText : null;
+        }
+
       function collectNodes() {
         const nodes = allEditableNodes().map((element) => ({
           id: element.getAttribute('data-og-id') || '',
@@ -910,13 +1050,16 @@ struct WebCanvasView: NSViewRepresentable {
         return nodes;
       }
 
-      function clearSelection() {
+        function clearSelection() {
         document.querySelectorAll('[data-og-selected]').forEach((element) => {
           element.removeAttribute('data-og-selected');
         });
       }
 
         function selectNode(id) {
+          if (editingTextElement && elementID(editingTextElement) !== id) {
+            finishTextEditing(false, false);
+          }
           clearSelection();
           currentSelectedID = '';
           if (!id) { return false; }
@@ -930,6 +1073,107 @@ struct WebCanvasView: NSViewRepresentable {
 
         function notifySelection(id) {
           window.webkit.messageHandlers.openGraphiteSelection.postMessage(id || '');
+        }
+
+        function notifyDocumentChange(selectedID) {
+          window.webkit.messageHandlers.openGraphiteDocumentChange.postMessage({
+            selectedID: selectedID || currentSelectedID || ''
+          });
+        }
+
+        function editablePlainText(element) {
+          if (!element) { return ''; }
+          const value = typeof element.innerText === 'string' ? element.innerText : element.textContent || '';
+          return value.replace(/\\n+$/, '');
+        }
+
+        function selectTextContents(element) {
+          const selection = window.getSelection();
+          if (!selection) { return; }
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+
+        function applyTextEditingMetrics(element) {
+          const rect = element.getBoundingClientRect();
+          element.style.setProperty('--og-edit-width', pixelString(rect.width));
+          element.style.setProperty('--og-edit-min-height', pixelString(rect.height));
+        }
+
+        function removeTextEditingMetrics(element) {
+          element.style.removeProperty('--og-edit-width');
+          element.style.removeProperty('--og-edit-min-height');
+        }
+
+        function removeTextEditingAttributes(element) {
+          element.removeAttribute('data-og-editing');
+          element.removeAttribute('contenteditable');
+          element.removeAttribute('spellcheck');
+          removeTextEditingMetrics(element);
+        }
+
+        function replaceTextContents(element, text) {
+          element.replaceChildren();
+          const lines = (text || '').split('\\n');
+          lines.forEach((line, index) => {
+            if (index > 0) {
+              element.append(document.createElement('br'));
+            }
+            if (line.length > 0) {
+              element.append(document.createTextNode(line));
+            }
+          });
+        }
+
+        function beginTextEditing(element, shouldSelectText) {
+          if (activeTool !== 'select' || !isTextElement(element) || hasLockedAncestor(element)) {
+            return false;
+          }
+
+          if (editingTextElement && editingTextElement !== element) {
+            finishTextEditing(false, false);
+          }
+
+          const id = elementID(element);
+          selectNode(id);
+          notifySelection(id);
+          editingTextElement = element;
+          editingOriginalText = editablePlainText(element);
+          applyTextEditingMetrics(element);
+          element.setAttribute('contenteditable', 'plaintext-only');
+          element.setAttribute('spellcheck', 'true');
+          element.setAttribute('data-og-editing', 'true');
+          element.focus({ preventScroll: true });
+
+          if (shouldSelectText) {
+            selectTextContents(element);
+          }
+          return true;
+        }
+
+        function finishTextEditing(cancelled, shouldRestoreSelection) {
+          const element = editingTextElement;
+          if (!element) { return; }
+          const selectedID = elementID(element);
+          const originalText = editingOriginalText;
+          const nextText = cancelled ? originalText : editablePlainText(element);
+
+          editingTextElement = null;
+          editingOriginalText = '';
+          replaceTextContents(element, nextText);
+          removeTextEditingAttributes(element);
+
+          if (shouldRestoreSelection !== false) {
+            selectNode(selectedID);
+            notifySelection(selectedID);
+          }
+
+          if (!cancelled && nextText !== originalText) {
+            collectNodes();
+            notifyDocumentChange(selectedID);
+          }
         }
 
       function setCSSVariable(id, key, value) {
@@ -1175,6 +1419,111 @@ struct WebCanvasView: NSViewRepresentable {
           postScrollState(emptyScrollState(false));
         }
 
+        function numericPixelValue(value, fallback) {
+          const trimmed = (value || '').trim();
+          if (trimmed.length === 0) { return fallback; }
+          if (/^-?\\d+(\\.\\d+)?(px)?$/.test(trimmed)) {
+            return Number.parseFloat(trimmed);
+          }
+          return fallback;
+        }
+
+        function stylePixelValue(element, key, fallback) {
+          return numericPixelValue(element.style.getPropertyValue(key), fallback);
+        }
+
+        function isAbsoluteChild(element) {
+          return element.parentElement &&
+            element.parentElement.getAttribute('data-og-layout') === 'absolute';
+        }
+
+        function dragStartValue(element, key, absoluteFallback) {
+          return stylePixelValue(element, key, isAbsoluteChild(element) ? absoluteFallback : 0);
+        }
+
+        function pixelString(value) {
+          const rounded = Math.round(value * 10) / 10;
+          const normalized = Math.abs(rounded) < 0.05 ? 0 : rounded;
+          return normalized + 'px';
+        }
+
+        function updateDraggedElementPosition(drag, event) {
+          const deltaX = event.clientX - drag.startClientX;
+          const deltaY = event.clientY - drag.startClientY;
+          const nextX = drag.startX + deltaX;
+          const nextY = drag.startY + deltaY;
+          drag.element.style.setProperty('--og-x', pixelString(nextX));
+          drag.element.style.setProperty('--og-y', pixelString(nextY));
+          drag.didMove = true;
+        }
+
+        function beginPendingDrag(event) {
+          if (activeTool !== 'select' || event.button !== primaryPointerButton) { return; }
+          const element = editableElementFromTarget(event.target);
+          if (!element) { return; }
+
+          const chain = selectableChainFor(element);
+          const dragElement = draggableElementForChain(chain);
+          if (!dragElement) { return; }
+
+          pendingDrag = {
+            pointerID: event.pointerId,
+            element: dragElement,
+            selectedID: elementID(dragElement),
+            startClientX: event.clientX,
+            startClientY: event.clientY
+          };
+          event.preventDefault();
+          event.stopPropagation();
+        }
+
+        function startActiveDragIfNeeded(event) {
+          if (!pendingDrag || pendingDrag.pointerID !== event.pointerId) { return false; }
+          const deltaX = event.clientX - pendingDrag.startClientX;
+          const deltaY = event.clientY - pendingDrag.startClientY;
+          if (Math.hypot(deltaX, deltaY) < dragStartThreshold) { return false; }
+
+          const element = pendingDrag.element;
+          const selectedID = pendingDrag.selectedID;
+          activeDrag = {
+            pointerID: pendingDrag.pointerID,
+            element: element,
+            selectedID: selectedID,
+            startClientX: pendingDrag.startClientX,
+            startClientY: pendingDrag.startClientY,
+            startX: dragStartValue(element, '--og-x', element.offsetLeft || 0),
+            startY: dragStartValue(element, '--og-y', element.offsetTop || 0),
+            didMove: false
+          };
+          pendingDrag = null;
+          suppressNextClick = true;
+          selectNode(selectedID);
+          notifySelection(selectedID);
+          return true;
+        }
+
+        function updateActiveDrag(event) {
+          if (!activeDrag || activeDrag.pointerID !== event.pointerId) { return false; }
+          if ((event.buttons & pointerDragButtons) === 0) {
+            finishActiveDrag(false);
+            return false;
+          }
+
+          updateDraggedElementPosition(activeDrag, event);
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        function finishActiveDrag(cancelled) {
+          pendingDrag = null;
+          const drag = activeDrag;
+          activeDrag = null;
+          if (!drag || !drag.didMove || cancelled) { return; }
+          collectNodes();
+          notifyDocumentChange(drag.selectedID);
+        }
+
         function copyPayload() {
           const element = selectedElement();
           if (!element) {
@@ -1193,6 +1542,10 @@ struct WebCanvasView: NSViewRepresentable {
             return false;
           }
 
+          pendingDrag = null;
+          activeDrag = null;
+          editingTextElement = null;
+          editingOriginalText = '';
           const nextRoot = document.importNode(parsedDocument.documentElement, true);
           document.documentElement.replaceWith(nextRoot);
           currentSelectedID = '';
@@ -1301,6 +1654,7 @@ struct WebCanvasView: NSViewRepresentable {
         window.OpenGraphite = {
           collectNodes: collectNodes,
           selectNode: selectNode,
+          setActiveTool: setActiveTool,
           setCSSVariable: setCSSVariable,
           setAttributeValue: setAttributeValue,
           copyPayload: copyPayload,
@@ -1308,13 +1662,97 @@ struct WebCanvasView: NSViewRepresentable {
           runCommand: runCommand
         };
 
+        document.addEventListener('pointerdown', function(event) {
+          if (editingTextElement) {
+            if (editingTextElement.contains(event.target)) { return; }
+            finishTextEditing(false);
+          }
+          beginPendingDrag(event);
+        }, activePointerOptions);
+
         document.addEventListener('pointermove', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
-        }, { capture: true, passive: true });
+          if (!editingTextElement && (activeDrag || startActiveDragIfNeeded(event))) {
+            updateActiveDrag(event);
+          }
+        }, activePointerOptions);
+
+        document.addEventListener('pointerup', function(event) {
+          if (activeDrag && activeDrag.pointerID === event.pointerId) {
+            event.preventDefault();
+            event.stopPropagation();
+            finishActiveDrag(false);
+            return;
+          }
+          if (pendingDrag && pendingDrag.pointerID === event.pointerId) {
+            pendingDrag = null;
+          }
+        }, activePointerOptions);
+
+        document.addEventListener('pointercancel', function(event) {
+          if (activeDrag && activeDrag.pointerID === event.pointerId) {
+            event.preventDefault();
+            event.stopPropagation();
+            finishActiveDrag(true);
+          }
+          if (pendingDrag && pendingDrag.pointerID === event.pointerId) {
+            pendingDrag = null;
+          }
+        }, activePointerOptions);
+
+        document.addEventListener('dragstart', function(event) {
+          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          if (activeTool !== 'select' || !editableElementFromTarget(event.target)) { return; }
+          event.preventDefault();
+          event.stopPropagation();
+        }, activePointerOptions);
+
+        document.addEventListener('keydown', function(event) {
+          const isReturnKey = event.key === 'Enter' || event.key === 'Return';
+          const isComposing = event.isComposing || event.keyCode === 229;
+
+          if (editingTextElement) {
+            if (isComposing) { return; }
+
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              finishTextEditing(true);
+              return;
+            }
+
+            if (isReturnKey && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey) {
+              event.preventDefault();
+              event.stopPropagation();
+              finishTextEditing(false);
+            }
+            return;
+          }
+
+          if (activeTool !== 'select' || !isReturnKey) { return; }
+          const element = selectedElement();
+          if (!isTextElement(element) || hasLockedAncestor(element)) { return; }
+          event.preventDefault();
+          event.stopPropagation();
+          beginTextEditing(element, true);
+        }, { capture: true });
+
+        document.addEventListener('focusout', function(event) {
+          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          finishTextEditing(false);
+        }, true);
+
+        document.addEventListener('paste', function(event) {
+          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
+          if (text.length === 0) { return; }
+          event.preventDefault();
+          document.execCommand('insertText', false, text);
+        }, true);
 
         document.addEventListener('mousemove', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
-        }, { capture: true, passive: true });
+        }, passivePointerOptions);
 
         document.addEventListener('mouseleave', markPointerOutside, { capture: true });
 
@@ -1322,25 +1760,48 @@ struct WebCanvasView: NSViewRepresentable {
 
         document.addEventListener('wheel', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
-        }, { capture: true, passive: true });
+        }, passivePointerOptions);
 
         document.addEventListener('click', function(event) {
-          const element = event.target.closest('[data-og-id]');
-        if (!element) { return; }
-        event.preventDefault();
-        event.stopPropagation();
-        const id = element.getAttribute('data-og-id') || '';
-        selectNode(id);
-        window.webkit.messageHandlers.openGraphiteSelection.postMessage(id);
-          collectNodes();
-        }, true);
+          if (suppressNextClick) {
+            suppressNextClick = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
 
-        document.addEventListener('contextmenu', function(event) {
-          const element = event.target.closest('[data-og-id]');
+          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          if (activeTool !== 'select') { return; }
+          const element = editableElementFromTarget(event.target);
           if (!element) { return; }
           event.preventDefault();
           event.stopPropagation();
-          const id = element.getAttribute('data-og-id') || '';
+          const id = nextSelectionIDForClick(element);
+          selectNode(id);
+          notifySelection(id);
+          collectNodes();
+        }, true);
+
+        document.addEventListener('dblclick', function(event) {
+          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          if (activeTool !== 'select') { return; }
+          const element = editableElementFromTarget(event.target);
+          if (!element) { return; }
+          const textElement = textElementForEditing(element);
+          if (!textElement) { return; }
+          event.preventDefault();
+          event.stopPropagation();
+          suppressNextClick = false;
+          beginTextEditing(textElement, true);
+        }, true);
+
+        document.addEventListener('contextmenu', function(event) {
+          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          const element = editableElementFromTarget(event.target);
+          if (!element) { return; }
+          event.preventDefault();
+          event.stopPropagation();
+          const id = activeTool === 'select' ? nextSelectionIDForClick(element) : elementID(element);
           selectNode(id);
           notifySelection(id);
           collectNodes();

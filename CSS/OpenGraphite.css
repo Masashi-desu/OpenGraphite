@@ -45,6 +45,13 @@ body {
   transform-origin: var(--og-transform-origin, center);
 }
 
+[data-og-type][style*="--og-x"],
+[data-og-type][style*="--og-y"] {
+  position: relative;
+  left: var(--og-x, 0);
+  top: var(--og-y, 0);
+}
+
 [data-og-type="frame"],
 [data-og-type="page"] {
   display: block;
@@ -167,6 +174,20 @@ body {
 [data-og-selected="true"] {
   outline: 2px solid #1d9bf0;
   outline-offset: 3px;
+}
+
+[data-og-editing="true"] {
+  caret-color: #1d9bf0;
+  cursor: text;
+  max-width: var(--og-edit-width, var(--og-width, none));
+  min-height: var(--og-edit-min-height, 1em);
+  outline: 2px solid #0f9f8f;
+  outline-offset: 3px;
+  overflow-wrap: normal;
+  user-select: text;
+  -webkit-user-select: text;
+  width: var(--og-edit-width, var(--og-width, auto));
+  word-break: normal;
 }
 
 [data-og-selected="true"][data-og-locked="true"] {
