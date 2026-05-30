@@ -344,18 +344,18 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - Parameter context: SwiftUI が提供する representable context。
     /// - Returns: キャンバス用 NSScrollView。
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+        let scrollView = CanvasOverlayScrollView()
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
-        scrollView.hasHorizontalScroller = true
-        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
         scrollView.autohidesScrollers = false
         scrollView.allowsMagnification = false
-        scrollView.scrollerStyle = .overlay
 
-        scrollView.documentView = context.coordinator.hostingView
+        scrollView.documentView = context.coordinator.documentView
         context.coordinator.attach(to: scrollView)
         context.coordinator.refreshDocumentSize()
+        scrollView.refreshScrollIndicators()
 
         return scrollView
     }
@@ -370,6 +370,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         context.coordinator.zoom = $zoom
         context.coordinator.updateContent(documentID: documentID, content: content)
         context.coordinator.refreshDocumentSizeIfNeeded()
+        (scrollView as? CanvasOverlayScrollView)?.refreshScrollIndicators()
     }
 
     /// 論理名（日本語）: NSScrollView解体関数
@@ -389,10 +390,12 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - `zoom`: キャンバス倍率のバインディング。
     /// - `content`: 表示する SwiftUI content。
     /// - `hostingView`: NSScrollView に載せる hosting view。
+    /// - `documentView`: 無限キャンバス用の documentView。
     final class Coordinator: NSObject {
         var zoom: Binding<Double>
         var content: () -> Content
         let hostingView: NSHostingView<Content>
+        let documentView: CanvasInfiniteDocumentView<Content>
 
         private weak var scrollView: NSScrollView?
         private var monitor: Any?
@@ -418,6 +421,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
             self.hostingView = NSHostingView(rootView: content())
             self.hostingView.isFlipped = true
+            self.documentView = CanvasInfiniteDocumentView(hostingView: hostingView)
             super.init()
         }
 
@@ -447,11 +451,15 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         func updateContent(documentID: String, content: @escaping () -> Content) {
             self.content = content
             let currentZoom = CanvasZoom.clamped(zoom.wrappedValue)
-            guard renderedDocumentID != documentID || abs(lastZoom - currentZoom) > 0.0005 else { return }
+            let didChangeDocument = renderedDocumentID != documentID
+            guard didChangeDocument || abs(lastZoom - currentZoom) > 0.0005 else { return }
 
             renderedDocumentID = documentID
             lastZoom = currentZoom
             hostingView.rootView = content()
+            if didChangeDocument {
+                resetDocumentViewPosition()
+            }
             refreshDocumentSize(force: true)
         }
 
@@ -470,6 +478,16 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             refreshDocumentSize(force: true)
         }
 
+        /// 論理名（日本語）: ドキュメント表示位置リセット関数
+        /// 処理概要: 表示ページが切り替わったときに無限キャンバスの余白とスクロール位置を初期化します。
+        private func resetDocumentViewPosition() {
+            documentView.resetCanvasState()
+            guard let scrollView else { return }
+
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+
         /// 論理名（日本語）: ドキュメントサイズ内部更新関数
         /// 処理概要: hosting view の実サイズが viewport より小さくならないように frame を調整します。
         ///
@@ -481,15 +499,9 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
 
             hostingView.layoutSubtreeIfNeeded()
             let fittingSize = hostingView.fittingSize
-            let documentSize = NSSize(
-                width: max(fittingSize.width, viewportSize.width),
-                height: max(fittingSize.height, viewportSize.height)
-            )
-
-            if hostingView.frame.size != documentSize {
-                hostingView.setFrameSize(documentSize)
-            }
+            documentView.updateContentSize(fittingSize, viewportSize: viewportSize)
             lastViewportSize = viewportSize
+            (scrollView as? CanvasOverlayScrollView)?.refreshScrollIndicators()
         }
 
         /// 論理名（日本語）: イベント監視破棄関数
@@ -729,6 +741,692 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         deinit {
             dismantle()
         }
+    }
+}
+
+/// 論理名（日本語）: キャンバス無限ドキュメントコンテナ
+/// 概要: `NSScrollView` が無限キャンバス用 documentView として扱うための最小インターフェースです。
+///
+/// 要件:
+    /// - `updateContentSize(_:viewportSize:)`: SwiftUI content の実寸と viewport を反映する。
+    /// - `resetCanvasState()`: ページ切り替え時に一時的な余白を初期化する。
+    /// - `adjustCanvasIfNeeded(visibleRect:scrollIntent:allowsExpansion:allowsContraction:)`: スクロール位置に応じてキャンバス余白を調整する。
+private protocol CanvasInfiniteDocumentContainer: AnyObject {
+    /// 論理名（日本語）: コンテンツサイズ更新関数
+    /// 処理概要: SwiftUI content の fitting size と viewport をもとに documentView を再配置します。
+    ///
+    /// - Parameters:
+    ///   - contentSize: SwiftUI content の fitting size。
+    ///   - viewportSize: `NSScrollView` の表示領域サイズ。
+    func updateContentSize(_ contentSize: NSSize, viewportSize: NSSize)
+
+    /// 論理名（日本語）: キャンバス状態リセット関数
+    /// 処理概要: スクロールで追加された余白と content origin を初期状態へ戻します。
+    func resetCanvasState()
+
+    /// 論理名（日本語）: キャンバス必要時調整関数
+    /// 処理概要: スクロール方向と現在の表示領域に応じて documentView の余白を追加または削除します。
+    ///
+    /// - Parameters:
+    ///   - visibleRect: 現在表示されている clip bounds。
+    ///   - scrollIntent: スクロールしたい方向。正の X/Y は右/下、負の X/Y は左/上。
+    ///   - allowsExpansion: 端方向への余白追加を許可するか。
+    ///   - allowsContraction: 戻り方向で未使用余白の削除を許可するか。
+    /// - Returns: documentView 調整後に必要な clip origin 補正と変更有無。
+    func adjustCanvasIfNeeded(
+        visibleRect: CGRect,
+        scrollIntent: CGPoint,
+        allowsExpansion: Bool,
+        allowsContraction: Bool
+    ) -> CanvasInfiniteAdjustment
+}
+
+/// 論理名（日本語）: キャンバス無限調整結果
+/// 概要: 無限キャンバスのサイズ調整後、スクロールビュー側で反映すべき補正値を表します。
+///
+/// プロパティ:
+/// - `originAdjustment`: documentView の挿入または削除に合わせる clip origin 補正。
+/// - `didResize`: documentView の frame size が変化したか。
+private struct CanvasInfiniteAdjustment {
+    var originAdjustment: CGPoint = .zero
+    var didResize = false
+}
+
+/// 論理名（日本語）: キャンバス無限ドキュメントビュー
+/// 概要: SwiftUI のキャンバス内容を保持し、スクロール方向に応じて documentView の余白を調整します。
+///
+/// プロパティ:
+/// - `hostingView`: 実際の SwiftUI キャンバス内容。
+private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInfiniteDocumentContainer {
+    private static var edgeExpansionTolerance: CGFloat { 4 }
+    private static var minimumExpansionStep: CGFloat { 24 }
+    private static var maximumExpansionStep: CGFloat { 320 }
+    private static var contractionPadding: CGFloat { 160 }
+
+    let hostingView: NSHostingView<Content>
+
+    private var contentSize: NSSize = .zero
+    private var contentOrigin: CGPoint = .zero
+    private var viewportSize: NSSize = .zero
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    /// 論理名（日本語）: キャンバス無限ドキュメントビュー初期化関数
+    /// 処理概要: SwiftUI content を描画する hosting view を subview として保持します。
+    ///
+    /// - Parameter hostingView: キャンバス内容を表示する hosting view。
+    init(hostingView: NSHostingView<Content>) {
+        self.hostingView = hostingView
+        super.init(frame: .zero)
+        addSubview(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    /// 論理名（日本語）: レイアウト更新関数
+    /// 処理概要: documentView 内の現在の content origin と content size を hosting view へ反映します。
+    override func layout() {
+        super.layout()
+        layoutHostingView()
+    }
+
+    /// 論理名（日本語）: コンテンツサイズ更新関数
+    /// 処理概要: SwiftUI content の fitting size と viewport をもとに documentView の最小サイズを更新します。
+    ///
+    /// - Parameters:
+    ///   - contentSize: SwiftUI content の fitting size。
+    ///   - viewportSize: `NSScrollView` の表示領域サイズ。
+    func updateContentSize(_ contentSize: NSSize, viewportSize: NSSize) {
+        self.contentSize = contentSize
+        self.viewportSize = viewportSize
+        let minimumSize = minimumDocumentSize()
+        setFrameSize(
+            NSSize(
+                width: max(frame.width, minimumSize.width),
+                height: max(frame.height, minimumSize.height)
+            )
+        )
+        layoutHostingView()
+    }
+
+    /// 論理名（日本語）: キャンバス状態リセット関数
+    /// 処理概要: ページ切り替え時にスクロールで追加された余白と content origin を破棄します。
+    func resetCanvasState() {
+        contentOrigin = .zero
+        let minimumSize = minimumDocumentSize()
+        setFrameSize(minimumSize)
+        layoutHostingView()
+    }
+
+    /// 論理名（日本語）: キャンバス必要時調整関数
+    /// 処理概要: 表示領域が端へ到達したときは余白を追加し、戻ったときは未使用余白を削除します。
+    ///
+    /// - Parameters:
+    ///   - visibleRect: 現在表示されている clip bounds。
+    ///   - scrollIntent: スクロールしたい方向。正の X/Y は右/下、負の X/Y は左/上。
+    ///   - allowsExpansion: 端方向への余白追加を許可するか。
+    ///   - allowsContraction: 戻り方向で未使用余白の削除を許可するか。
+    /// - Returns: documentView 調整後に必要な clip origin 補正と変更有無。
+    func adjustCanvasIfNeeded(
+        visibleRect: CGRect,
+        scrollIntent: CGPoint,
+        allowsExpansion: Bool,
+        allowsContraction: Bool
+    ) -> CanvasInfiniteAdjustment {
+        var adjustment = CanvasInfiniteAdjustment()
+        var newSize = frame.size
+        var shouldLayoutContent = false
+
+        if allowsExpansion {
+            let horizontalExpansion = expansionAmount(for: scrollIntent.x)
+            if scrollIntent.x < 0, visibleRect.minX <= Self.edgeExpansionTolerance {
+                contentOrigin.x += horizontalExpansion
+                newSize.width += horizontalExpansion
+                adjustment.originAdjustment.x += horizontalExpansion
+                shouldLayoutContent = true
+            }
+
+            if scrollIntent.x > 0, visibleRect.maxX >= frame.width - Self.edgeExpansionTolerance {
+                newSize.width += horizontalExpansion
+                adjustment.originAdjustment.x += horizontalExpansion
+            }
+
+            let verticalExpansion = expansionAmount(for: scrollIntent.y)
+            if scrollIntent.y < 0, visibleRect.minY <= Self.edgeExpansionTolerance {
+                contentOrigin.y += verticalExpansion
+                newSize.height += verticalExpansion
+                adjustment.originAdjustment.y += verticalExpansion
+                shouldLayoutContent = true
+            }
+
+            if scrollIntent.y > 0, visibleRect.maxY >= frame.height - Self.edgeExpansionTolerance {
+                newSize.height += verticalExpansion
+                adjustment.originAdjustment.y += verticalExpansion
+            }
+        }
+
+        if allowsContraction {
+            if scrollIntent.x > 0 {
+                let contraction = leadingContractionAmount(
+                    currentLeadingInset: contentOrigin.x,
+                    visibleStart: visibleRect.minX
+                )
+                if contraction > 0 {
+                    contentOrigin.x -= contraction
+                    newSize.width -= contraction
+                    adjustment.originAdjustment.x -= contraction
+                    shouldLayoutContent = true
+                }
+            } else if scrollIntent.x < 0 {
+                newSize.width = trailingContractionSize(
+                    currentSize: newSize.width,
+                    minimumSize: minimumDocumentSize().width,
+                    visibleEnd: visibleRect.maxX
+                )
+            }
+
+            if scrollIntent.y > 0 {
+                let contraction = leadingContractionAmount(
+                    currentLeadingInset: contentOrigin.y,
+                    visibleStart: visibleRect.minY
+                )
+                if contraction > 0 {
+                    contentOrigin.y -= contraction
+                    newSize.height -= contraction
+                    adjustment.originAdjustment.y -= contraction
+                    shouldLayoutContent = true
+                }
+            } else if scrollIntent.y < 0 {
+                newSize.height = trailingContractionSize(
+                    currentSize: newSize.height,
+                    minimumSize: minimumDocumentSize().height,
+                    visibleEnd: visibleRect.maxY
+                )
+            }
+        }
+
+        if newSize != frame.size {
+            setFrameSize(newSize)
+            adjustment.didResize = true
+        }
+
+        if shouldLayoutContent {
+            layoutHostingView()
+        }
+
+        return adjustment
+    }
+
+    /// 論理名（日本語）: ホスティングビューレイアウト関数
+    /// 処理概要: SwiftUI content を無限 documentView 内の現在位置へ配置します。
+    private func layoutHostingView() {
+        hostingView.frame = CGRect(origin: contentOrigin, size: contentSize)
+    }
+
+    /// 論理名（日本語）: 最小ドキュメントサイズ取得関数
+    /// 処理概要: 実コンテンツと viewport を必ず含む documentView の最小サイズを返します。
+    ///
+    /// - Returns: 余白を除いた基準 documentView サイズ。
+    private func minimumDocumentSize() -> NSSize {
+        NSSize(
+            width: max(contentOrigin.x + contentSize.width, viewportSize.width),
+            height: max(contentOrigin.y + contentSize.height, viewportSize.height)
+        )
+    }
+
+    /// 論理名（日本語）: 拡張量取得関数
+    /// 処理概要: スクロール入力に近い量で余白を追加し、thumb が端に残ったまま短くなるようにします。
+    ///
+    /// - Parameter scrollDelta: 対象軸のスクロール意図値。
+    /// - Returns: 追加する余白量。
+    private func expansionAmount(for scrollDelta: CGFloat) -> CGFloat {
+        min(max(abs(scrollDelta), Self.minimumExpansionStep), Self.maximumExpansionStep)
+    }
+
+    /// 論理名（日本語）: 先頭余白縮小量取得関数
+    /// 処理概要: 表示範囲から外れた左または上の未使用余白量を計算します。
+    ///
+    /// - Parameters:
+    ///   - currentLeadingInset: 現在の左または上の余白量。
+    ///   - visibleStart: 対象軸の表示開始位置。
+    /// - Returns: 削除できる余白量。
+    private func leadingContractionAmount(currentLeadingInset: CGFloat, visibleStart: CGFloat) -> CGFloat {
+        min(currentLeadingInset, max(visibleStart - Self.contractionPadding, 0))
+    }
+
+    /// 論理名（日本語）: 末尾余白縮小サイズ取得関数
+    /// 処理概要: 表示範囲から外れた右または下の未使用余白を削った documentView サイズを返します。
+    ///
+    /// - Parameters:
+    ///   - currentSize: 対象軸の現在の documentView サイズ。
+    ///   - minimumSize: 実コンテンツと viewport を含む対象軸の最小サイズ。
+    ///   - visibleEnd: 対象軸の表示終了位置。
+    /// - Returns: 縮小後の対象軸サイズ。
+    private func trailingContractionSize(
+        currentSize: CGFloat,
+        minimumSize: CGFloat,
+        visibleEnd: CGFloat
+    ) -> CGFloat {
+        min(currentSize, max(minimumSize, visibleEnd + Self.contractionPadding))
+    }
+}
+
+/// 論理名（日本語）: キャンバススクロールインジケータ軸
+/// 概要: 独自 overlay scroll indicator が表すスクロール方向を定義します。
+///
+/// 定義内容:
+/// - `vertical`: 縦方向のスクロール位置。
+/// - `horizontal`: 横方向のスクロール位置。
+private enum CanvasScrollIndicatorAxis {
+    case vertical
+    case horizontal
+}
+
+/// 論理名（日本語）: キャンバススクロールインジケータ配置
+/// 概要: thumb の表示位置、表示長、drag 換算に必要な距離をまとめます。
+///
+/// プロパティ:
+/// - `frame`: indicator view を置く frame。
+/// - `indicatorTravel`: indicator が track 上を移動できる距離。
+/// - `contentTravel`: documentView がスクロールできる距離。
+private struct CanvasScrollIndicatorPlacement {
+    var frame: CGRect
+    var indicatorTravel: CGFloat
+    var contentTravel: CGFloat
+}
+
+/// 論理名（日本語）: キャンバススクロールインジケータビュー
+/// 概要: `NSScrollView` 上に重ねる薄い独自スクロール thumb です。
+///
+/// プロパティ:
+/// - `axis`: indicator が担当するスクロール方向。
+/// - `owningScrollView`: drag 操作を処理する親スクロールビュー。
+private final class CanvasScrollIndicatorView: NSView {
+    let axis: CanvasScrollIndicatorAxis
+    weak var owningScrollView: CanvasOverlayScrollView?
+
+    override var isOpaque: Bool {
+        false
+    }
+
+    /// 論理名（日本語）: キャンバススクロールインジケータ初期化関数
+    /// 処理概要: 表示軸を保持し、薄い rounded thumb として layer を設定します。
+    ///
+    /// - Parameter axis: indicator が担当するスクロール方向。
+    init(axis: CanvasScrollIndicatorAxis) {
+        self.axis = axis
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(calibratedWhite: 0.72, alpha: 0.78).cgColor
+        layer?.borderColor = NSColor.black.withAlphaComponent(0.16).cgColor
+        layer?.borderWidth = 0.5
+        layer?.cornerRadius = CanvasOverlayScrollView.indicatorThickness / 2
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    /// 論理名（日本語）: 初回クリック許可関数
+    /// 処理概要: 非アクティブウインドウ上でも indicator の drag 開始を受け取れるようにします。
+    ///
+    /// - Parameter event: クリックイベント。
+    /// - Returns: 常に `true`。
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    /// 論理名（日本語）: マウスドラッグ開始関数
+    /// 処理概要: indicator の drag を親スクロールビューへ委譲します。
+    ///
+    /// - Parameter event: drag 開始イベント。
+    override func mouseDown(with event: NSEvent) {
+        owningScrollView?.dragIndicator(axis, starting: event)
+    }
+}
+
+/// 論理名（日本語）: キャンバスオーバーレイスクロールビュー
+/// 概要: 標準 scroller を隠し、スクロール挙動を保ったまま薄い独自 indicator だけを表示します。
+///
+/// プロパティ:
+/// - `verticalIndicator`: 縦スクロール位置を示す overlay thumb。
+/// - `horizontalIndicator`: 横スクロール位置を示す overlay thumb。
+private final class CanvasOverlayScrollView: NSScrollView {
+    static let indicatorThickness: CGFloat = 5
+
+    private static let indicatorInset: CGFloat = 5
+    private static let minimumIndicatorLength: CGFloat = 42
+
+    private let verticalIndicator = CanvasScrollIndicatorView(axis: .vertical)
+    private let horizontalIndicator = CanvasScrollIndicatorView(axis: .horizontal)
+
+    /// 論理名（日本語）: キャンバスオーバーレイスクロールビュー初期化関数
+    /// 処理概要: overlay indicator を subview として追加し、初期表示を非表示にします。
+    ///
+    /// - Parameter frameRect: 初期 frame。
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        configureIndicators()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    /// 論理名（日本語）: レイアウト更新関数
+    /// 処理概要: scrollView のサイズ変更に合わせて独自 indicator の位置を更新します。
+    override func layout() {
+        super.layout()
+        refreshScrollIndicators()
+    }
+
+    /// 論理名（日本語）: クリップビュー反映関数
+    /// 処理概要: documentView のスクロール位置変更後に独自 indicator を追従させます。
+    ///
+    /// - Parameter clipView: スクロール位置が変化した clip view。
+    override func reflectScrolledClipView(_ clipView: NSClipView) {
+        super.reflectScrolledClipView(clipView)
+        refreshScrollIndicators()
+    }
+
+    /// 論理名（日本語）: スクロールホイール処理関数
+    /// 処理概要: スクロール前に必要な余白を追加し、標準処理後に未使用余白と indicator を更新します。
+    ///
+    /// - Parameter event: scroll wheel イベント。
+    override func scrollWheel(with event: NSEvent) {
+        let scrollIntent = scrollIntent(for: event)
+        applyInfiniteCanvasAdjustment(
+            scrollIntent: scrollIntent,
+            allowsExpansion: true,
+            allowsContraction: true
+        )
+        super.scrollWheel(with: event)
+        applyInfiniteCanvasAdjustment(
+            scrollIntent: scrollIntent,
+            allowsExpansion: false,
+            allowsContraction: true
+        )
+        refreshScrollIndicators()
+    }
+
+    /// 論理名（日本語）: スクロールインジケータ更新関数
+    /// 処理概要: 現在の viewport と documentView サイズから thin overlay thumb の frame を再計算します。
+    func refreshScrollIndicators() {
+        updateIndicator(verticalIndicator, placement: indicatorPlacement(for: .vertical))
+        updateIndicator(horizontalIndicator, placement: indicatorPlacement(for: .horizontal))
+    }
+
+    /// 論理名（日本語）: インジケータドラッグ関数
+    /// 処理概要: 独自 indicator の drag 量を documentView のスクロール位置へ変換します。
+    ///
+    /// - Parameters:
+    ///   - axis: drag された indicator の軸。
+    ///   - event: drag 開始イベント。
+    fileprivate func dragIndicator(_ axis: CanvasScrollIndicatorAxis, starting event: NSEvent) {
+        guard let window,
+              let placement = indicatorPlacement(for: axis),
+              placement.indicatorTravel > 0,
+              placement.contentTravel > 0
+        else {
+            return
+        }
+
+        let startLocation = convert(event.locationInWindow, from: nil)
+        let startOrigin = contentView.bounds.origin
+
+        while let nextEvent = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            if nextEvent.type == .leftMouseUp {
+                break
+            }
+
+            let currentLocation = convert(nextEvent.locationInWindow, from: nil)
+            let dragDelta = CGPoint(
+                x: currentLocation.x - startLocation.x,
+                y: currentLocation.y - startLocation.y
+            )
+            scrollDocument(axis, from: startOrigin, dragDelta: dragDelta, placement: placement)
+        }
+    }
+
+    /// 論理名（日本語）: インジケータ初期設定関数
+    /// 処理概要: overlay indicator の親参照と subview 順序を設定します。
+    private func configureIndicators() {
+        verticalIndicator.owningScrollView = self
+        horizontalIndicator.owningScrollView = self
+        verticalIndicator.isHidden = true
+        horizontalIndicator.isHidden = true
+        addSubview(verticalIndicator, positioned: .above, relativeTo: nil)
+        addSubview(horizontalIndicator, positioned: .above, relativeTo: nil)
+    }
+
+    /// 論理名（日本語）: 無限キャンバス調整適用関数
+    /// 処理概要: documentView へスクロール方向を渡し、余白の追加・削除に合わせて clip origin を補正します。
+    ///
+    /// - Parameters:
+    ///   - scrollIntent: スクロールしたい方向。正の X/Y は右/下、負の X/Y は左/上。
+    ///   - allowsExpansion: 端方向への余白追加を許可するか。
+    ///   - allowsContraction: 戻り方向で未使用余白の削除を許可するか。
+    private func applyInfiniteCanvasAdjustment(
+        scrollIntent: CGPoint,
+        allowsExpansion: Bool,
+        allowsContraction: Bool
+    ) {
+        guard scrollIntent != .zero,
+              let documentView = documentView as? CanvasInfiniteDocumentContainer
+        else {
+            return
+        }
+
+        let adjustment = documentView.adjustCanvasIfNeeded(
+            visibleRect: contentView.bounds,
+            scrollIntent: scrollIntent,
+            allowsExpansion: allowsExpansion,
+            allowsContraction: allowsContraction
+        )
+
+        if adjustment.originAdjustment != .zero {
+            contentView.scroll(
+                to: clampedDocumentOrigin(
+                    CGPoint(
+                        x: contentView.bounds.origin.x + adjustment.originAdjustment.x,
+                        y: contentView.bounds.origin.y + adjustment.originAdjustment.y
+                    )
+                )
+            )
+            reflectScrolledClipView(contentView)
+        } else if adjustment.didResize {
+            reflectScrolledClipView(contentView)
+        }
+    }
+
+    /// 論理名（日本語）: スクロール意図取得関数
+    /// 処理概要: AppKit の wheel delta をキャンバス content origin の移動方向へ変換します。
+    ///
+    /// - Parameter event: scroll wheel イベント。
+    /// - Returns: 正の X/Y を右/下、負の X/Y を左/上とする方向ベクトル。
+    private func scrollIntent(for event: NSEvent) -> CGPoint {
+        CGPoint(
+            x: -axisScrollDelta(
+                precise: event.scrollingDeltaX,
+                legacy: event.deltaX,
+                hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+            ),
+            y: -axisScrollDelta(
+                precise: event.scrollingDeltaY,
+                legacy: event.deltaY,
+                hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+            )
+        )
+    }
+
+    /// 論理名（日本語）: 軸別スクロール差分取得関数
+    /// 処理概要: precise delta が有効なら優先し、なければ legacy delta を利用します。
+    ///
+    /// - Parameters:
+    ///   - precise: precise scrolling delta。
+    ///   - legacy: legacy delta。
+    ///   - hasPreciseScrollingDeltas: precise delta が有効なイベントか。
+    /// - Returns: 採用した差分値。
+    private func axisScrollDelta(
+        precise: CGFloat,
+        legacy: CGFloat,
+        hasPreciseScrollingDeltas: Bool
+    ) -> CGFloat {
+        if hasPreciseScrollingDeltas, precise != 0 {
+            return precise
+        }
+
+        if legacy != 0 {
+            return legacy
+        }
+
+        return precise
+    }
+
+    /// 論理名（日本語）: ドキュメント原点制限関数
+    /// 処理概要: documentView サイズを超えない範囲へ clip origin を丸めます。
+    ///
+    /// - Parameter origin: 補正前の clip origin。
+    /// - Returns: documentView 内に収まる clip origin。
+    private func clampedDocumentOrigin(_ origin: CGPoint) -> CGPoint {
+        guard let documentView else { return origin }
+
+        return CGPoint(
+            x: min(max(origin.x, 0), max(documentView.frame.width - contentView.bounds.width, 0)),
+            y: min(max(origin.y, 0), max(documentView.frame.height - contentView.bounds.height, 0))
+        )
+    }
+
+    /// 論理名（日本語）: インジケータ表示更新関数
+    /// 処理概要: placement が存在する場合だけ indicator を表示し、frame と corner radius を反映します。
+    ///
+    /// - Parameters:
+    ///   - indicator: 更新対象の indicator view。
+    ///   - placement: 表示位置。スクロール不要な軸では `nil`。
+    private func updateIndicator(
+        _ indicator: CanvasScrollIndicatorView,
+        placement: CanvasScrollIndicatorPlacement?
+    ) {
+        guard let placement else {
+            indicator.isHidden = true
+            return
+        }
+
+        indicator.isHidden = false
+        indicator.frame = placement.frame.integral
+        indicator.layer?.cornerRadius = min(indicator.bounds.width, indicator.bounds.height) / 2
+    }
+
+    /// 論理名（日本語）: インジケータ配置計算関数
+    /// 処理概要: 指定軸のスクロール可能量と viewport 比率から thin thumb の位置を計算します。
+    ///
+    /// - Parameter axis: 計算対象の indicator 軸。
+    /// - Returns: 表示する配置情報。スクロール不要な場合は `nil`。
+    private func indicatorPlacement(for axis: CanvasScrollIndicatorAxis) -> CanvasScrollIndicatorPlacement? {
+        guard let documentView else { return nil }
+
+        let viewportSize = contentView.bounds.size
+        let documentSize = documentView.frame.size
+        let horizontalContentTravel = max(documentSize.width - viewportSize.width, 0)
+        let verticalContentTravel = max(documentSize.height - viewportSize.height, 0)
+        let showsHorizontalIndicator = horizontalContentTravel > 1
+        let showsVerticalIndicator = verticalContentTravel > 1
+
+        switch axis {
+        case .vertical:
+            guard showsVerticalIndicator else { return nil }
+            let horizontalReservedLength = showsHorizontalIndicator ? Self.indicatorThickness + Self.indicatorInset : 0
+            let trackStartY = isFlipped ? Self.indicatorInset : Self.indicatorInset + horizontalReservedLength
+            let trackEndY = isFlipped ? bounds.height - Self.indicatorInset - horizontalReservedLength : bounds.height - Self.indicatorInset
+            let trackLength = max(trackEndY - trackStartY, 1)
+            let indicatorLength = min(
+                trackLength,
+                max(Self.minimumIndicatorLength, trackLength * viewportSize.height / max(documentSize.height, 1))
+            )
+            let indicatorTravel = max(trackLength - indicatorLength, 0)
+            let scrollOffset = min(max(contentView.bounds.origin.y, 0), verticalContentTravel)
+            let progress = verticalContentTravel > 0 ? scrollOffset / verticalContentTravel : 0
+            let originY: CGFloat
+            if isFlipped {
+                originY = trackStartY + progress * indicatorTravel
+            } else {
+                originY = trackEndY - indicatorLength - progress * indicatorTravel
+            }
+
+            return CanvasScrollIndicatorPlacement(
+                frame: CGRect(
+                    x: bounds.width - Self.indicatorInset - Self.indicatorThickness,
+                    y: originY,
+                    width: Self.indicatorThickness,
+                    height: indicatorLength
+                ),
+                indicatorTravel: indicatorTravel,
+                contentTravel: verticalContentTravel
+            )
+
+        case .horizontal:
+            guard showsHorizontalIndicator else { return nil }
+            let trackMinX = Self.indicatorInset
+            let trackMaxX = bounds.width - Self.indicatorInset - (showsVerticalIndicator ? Self.indicatorThickness + Self.indicatorInset : 0)
+            let trackLength = max(trackMaxX - trackMinX, 1)
+            let indicatorLength = min(
+                trackLength,
+                max(Self.minimumIndicatorLength, trackLength * viewportSize.width / max(documentSize.width, 1))
+            )
+            let indicatorTravel = max(trackLength - indicatorLength, 0)
+            let scrollOffset = min(max(contentView.bounds.origin.x, 0), horizontalContentTravel)
+            let progress = horizontalContentTravel > 0 ? scrollOffset / horizontalContentTravel : 0
+            let originX = trackMinX + progress * indicatorTravel
+
+            return CanvasScrollIndicatorPlacement(
+                frame: CGRect(
+                    x: originX,
+                    y: isFlipped ? bounds.height - Self.indicatorInset - Self.indicatorThickness : Self.indicatorInset,
+                    width: indicatorLength,
+                    height: Self.indicatorThickness
+                ),
+                indicatorTravel: indicatorTravel,
+                contentTravel: horizontalContentTravel
+            )
+        }
+    }
+
+    /// 論理名（日本語）: ドキュメントスクロール反映関数
+    /// 処理概要: indicator の drag 差分を documentView の clip 原点へ反映します。
+    ///
+    /// - Parameters:
+    ///   - axis: 反映対象のスクロール軸。
+    ///   - startOrigin: drag 開始時点の clip 原点。
+    ///   - dragDelta: indicator の drag 差分。
+    ///   - placement: drag 換算用の配置情報。
+    private func scrollDocument(
+        _ axis: CanvasScrollIndicatorAxis,
+        from startOrigin: CGPoint,
+        dragDelta: CGPoint,
+        placement: CanvasScrollIndicatorPlacement
+    ) {
+        var newOrigin = contentView.bounds.origin
+
+        switch axis {
+        case .vertical:
+            let contentDelta = -(dragDelta.y / placement.indicatorTravel) * placement.contentTravel
+            newOrigin.y = min(max(startOrigin.y + contentDelta, 0), placement.contentTravel)
+        case .horizontal:
+            let contentDelta = (dragDelta.x / placement.indicatorTravel) * placement.contentTravel
+            newOrigin.x = min(max(startOrigin.x + contentDelta, 0), placement.contentTravel)
+        }
+
+        contentView.scroll(to: newOrigin)
+        reflectScrolledClipView(contentView)
+        refreshScrollIndicators()
     }
 }
 
