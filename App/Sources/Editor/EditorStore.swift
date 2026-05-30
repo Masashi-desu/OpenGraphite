@@ -144,6 +144,9 @@ final class EditorStore: ObservableObject {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            let currentValue = nodes[index].cssVariables[key] ?? ""
+            guard currentValue != normalizedValue else { return }
+
             if normalizedValue.isEmpty {
                 nodes[index].cssVariables.removeValue(forKey: key)
             } else {
@@ -172,6 +175,17 @@ final class EditorStore: ObservableObject {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            let currentValue: String
+            switch name {
+            case "data-og-layout":
+                currentValue = nodes[index].layout ?? ""
+            case "data-og-role":
+                currentValue = nodes[index].role ?? ""
+            default:
+                currentValue = ""
+            }
+            guard currentValue != normalizedValue else { return }
+
             switch name {
             case "data-og-layout":
                 nodes[index].layout = normalizedValue.isEmpty ? nil : normalizedValue

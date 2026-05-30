@@ -15,7 +15,7 @@ import SwiftUI
 /// - `trafficLightReservedWidth`: macOS の traffic light と重ならないための左側予約幅。
 enum EditorOverlayMetrics {
     static let sidebarWidth: CGFloat = 296
-    static let inspectorWidth: CGFloat = 320
+    static let inspectorWidth: CGFloat = 368
     static let topChromeHeight: CGFloat = 50
     static let chromeControlInset: CGFloat = 11
     static let columnTopGap: CGFloat = 10

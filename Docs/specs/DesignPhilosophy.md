@@ -60,6 +60,16 @@ OpenGraphite が編集可能な HTML ノードは、少なくとも安定した 
 
 この契約では、タグ名は人間が読める意味を持ち、`data-og-*` はエディタが安全に解釈できるメタデータを持ち、CSS 変数はデザイン編集の入出力になります。
 
+### CSS Value Editing Contract
+
+OpenGraphite は、編集可能なデザイン値を `--og-*` CSS 変数として HTML の inline style に保持します。Inspector は複合値を UI 上で分解して表示しますが、HTML の正本としては標準的な CSS 値を保持します。
+
+たとえば `--og-padding:14px 20px` は Inspector では top / right / bottom / left として編集できますが、保存時は `--og-padding` の CSS shorthand へ戻します。`--og-width:min(100%,560px)`、`--og-background:linear-gradient(...)`、`--og-border:1px solid rgba(...)`、`--og-shadow:0 18px 44px rgba(...)` も同様に、Inspector 側で parse / edit / serialize し、HTML には CSS として読める値を残します。
+
+`--og-padding-top`、`--og-border-color`、`--og-shadow-blur` のような個別編集用の分解変数は、現行契約では正本にしません。CSS として特殊すぎる独自表現は避け、一般的な shorthand、長さ、色、`min()` / `max()` / `clamp()`、`linear-gradient()` などを優先して扱います。
+
+Inspector が通常 UI として編集できない CSS 値は、無理に代替入力欄へ落とし込まず編集対象にしません。OpenGraphite はリポジトリの正本 HTML / CSS と同期してプレビューすることを目的にし、OpenGraphite 経由ではない編集や他ライブラリの CSS も許容します。OpenGraphite.css の編集契約に入らない値は、ブラウザ表示ではそのまま反映されますが、編集は別経路で行う前提です。
+
 ### `data-og-*` Attribute Contract
 
 `data-og-*` は、HTML 上に保持される OpenGraphite の編集契約です。意味やコンポーネント名はタグ名へ置き、デザイン値は CSS 変数へ置き、`data-og-*` にはエディタが構造として解釈する情報だけを置きます。

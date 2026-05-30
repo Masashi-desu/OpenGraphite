@@ -65,27 +65,48 @@ struct InspectorView: View {
                                 store.updateNodeAttribute(name: "data-og-layout", value: value)
                             }
 
-                            InspectorFieldGrid {
-                                CSSVariableField(key: "--og-gap", value: node.cssVariables["--og-gap"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-gap", value: value)
-                                }
-                                .id("\(node.id)-gap")
-
-                                CSSVariableField(key: "--og-padding", value: node.cssVariables["--og-padding"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-padding", value: value)
-                                }
-                                .id("\(node.id)-padding")
+                            CSSPairVariableField(
+                                key: "--og-gap",
+                                value: node.cssVariables["--og-gap"] ?? "",
+                                firstLabel: "Row",
+                                secondLabel: "Column"
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-gap", value: value)
                             }
+                            .id("\(node.id)-gap")
+
+                            CSSBoxVariableField(
+                                key: "--og-padding",
+                                value: node.cssVariables["--og-padding"] ?? "",
+                                labels: ["T", "R", "B", "L"]
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-padding", value: value)
+                            }
+                            .id("\(node.id)-padding")
+
+                            CSSBoxVariableField(
+                                key: "--og-margin",
+                                value: node.cssVariables["--og-margin"] ?? "",
+                                labels: ["T", "R", "B", "L"]
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-margin", value: value)
+                            }
+                            .id("\(node.id)-margin")
+
+                            CSSFlexVariableField(key: "--og-flex", value: node.cssVariables["--og-flex"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-flex", value: value)
+                            }
+                            .id("\(node.id)-flex")
                         }
 
                         InspectorSection(title: "Position") {
                             InspectorFieldGrid {
-                                CSSVariableField(key: "--og-x", value: node.cssVariables["--og-x"] ?? "") { value in
+                                CSSNumericUnitVariableField(key: "--og-x", value: node.cssVariables["--og-x"] ?? "", units: ["px", "%", "rem", "em"]) { value in
                                     store.updateCSSVariable(key: "--og-x", value: value)
                                 }
                                 .id("\(node.id)-x")
 
-                                CSSVariableField(key: "--og-y", value: node.cssVariables["--og-y"] ?? "") { value in
+                                CSSNumericUnitVariableField(key: "--og-y", value: node.cssVariables["--og-y"] ?? "", units: ["px", "%", "rem", "em"]) { value in
                                     store.updateCSSVariable(key: "--og-y", value: value)
                                 }
                                 .id("\(node.id)-y")
@@ -93,94 +114,153 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Dimensions") {
-                            InspectorFieldGrid {
-                                CSSVariableField(key: "--og-width", value: node.cssVariables["--og-width"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-width", value: value)
-                                }
-                                .id("\(node.id)-width")
-
-                                CSSVariableField(key: "--og-height", value: node.cssVariables["--og-height"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-height", value: value)
-                                }
-                                .id("\(node.id)-height")
-
-                                CSSVariableField(key: "--og-min-width", value: node.cssVariables["--og-min-width"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-min-width", value: value)
-                                }
-                                .id("\(node.id)-min-width")
-
-                                CSSVariableField(key: "--og-min-height", value: node.cssVariables["--og-min-height"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-min-height", value: value)
-                                }
-                                .id("\(node.id)-min-height")
+                            CSSDimensionVariableField(key: "--og-width", value: node.cssVariables["--og-width"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-width", value: value)
                             }
+                            .id("\(node.id)-width")
+
+                            CSSDimensionVariableField(key: "--og-height", value: node.cssVariables["--og-height"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-height", value: value)
+                            }
+                            .id("\(node.id)-height")
+
+                            CSSDimensionVariableField(key: "--og-min-width", value: node.cssVariables["--og-min-width"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-min-width", value: value)
+                            }
+                            .id("\(node.id)-min-width")
+
+                            CSSDimensionVariableField(key: "--og-min-height", value: node.cssVariables["--og-min-height"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-min-height", value: value)
+                            }
+                            .id("\(node.id)-min-height")
+
+                            CSSDimensionVariableField(key: "--og-max-width", value: node.cssVariables["--og-max-width"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-max-width", value: value)
+                            }
+                            .id("\(node.id)-max-width")
                         }
 
                         InspectorSection(title: "Appearance") {
-                            InspectorFieldGrid {
-                                CSSVariableField(key: "--og-radius", value: node.cssVariables["--og-radius"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-radius", value: value)
-                                }
-                                .id("\(node.id)-radius")
-
-                                CSSVariableField(key: "--og-background", value: node.cssVariables["--og-background"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-background", value: value)
-                                }
-                                .id("\(node.id)-background")
-
-                                CSSVariableField(key: "--og-foreground", value: node.cssVariables["--og-foreground"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-foreground", value: value)
-                                }
-                                .id("\(node.id)-foreground")
-
-                                CSSVariableField(key: "--og-border", value: node.cssVariables["--og-border"] ?? "") { value in
-                                    store.updateCSSVariable(key: "--og-border", value: value)
-                                }
-                                .id("\(node.id)-border")
+                            CSSBoxVariableField(
+                                key: "--og-radius",
+                                value: node.cssVariables["--og-radius"] ?? "",
+                                labels: ["TL", "TR", "BR", "BL"]
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-radius", value: value)
                             }
+                            .id("\(node.id)-radius")
+
+                            CSSBorderVariableField(key: "--og-border", value: node.cssVariables["--og-border"] ?? "") { value in
+                                store.updateCSSVariable(key: "--og-border", value: value)
+                            }
+                            .id("\(node.id)-border")
+
+                            CSSBackgroundVariableField(
+                                key: "--og-background",
+                                value: node.cssVariables["--og-background"] ?? ""
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-background", value: value)
+                            }
+                            .id("\(node.id)-background")
+
+                            CSSColorVariableField(
+                                key: "--og-foreground",
+                                value: node.cssVariables["--og-foreground"] ?? "",
+                                initialColor: .black
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-foreground", value: value)
+                            }
+                            .id("\(node.id)-foreground")
                         }
 
                         if node.type == "text" {
                             InspectorSection(title: "Typography") {
                                 InspectorFieldGrid {
-                                    CSSVariableField(key: "--og-font-size", value: node.cssVariables["--og-font-size"] ?? "") { value in
+                                    CSSNumericUnitVariableField(key: "--og-font-size", value: node.cssVariables["--og-font-size"] ?? "", units: ["px", "rem", "em", "%"]) { value in
                                         store.updateCSSVariable(key: "--og-font-size", value: value)
                                     }
                                     .id("\(node.id)-font-size")
 
-                                    CSSVariableField(key: "--og-font-weight", value: node.cssVariables["--og-font-weight"] ?? "") { value in
+                                    CSSNumericUnitVariableField(key: "--og-font-weight", value: node.cssVariables["--og-font-weight"] ?? "", units: [""]) { value in
                                         store.updateCSSVariable(key: "--og-font-weight", value: value)
                                     }
                                     .id("\(node.id)-font-weight")
 
-                                    CSSVariableField(key: "--og-line-height", value: node.cssVariables["--og-line-height"] ?? "") { value in
+                                    CSSNumericUnitVariableField(key: "--og-line-height", value: node.cssVariables["--og-line-height"] ?? "", units: ["", "px", "%", "em"]) { value in
                                         store.updateCSSVariable(key: "--og-line-height", value: value)
                                     }
                                     .id("\(node.id)-line-height")
 
-                                    CSSVariableField(key: "--og-letter-spacing", value: node.cssVariables["--og-letter-spacing"] ?? "") { value in
+                                    CSSNumericUnitVariableField(key: "--og-letter-spacing", value: node.cssVariables["--og-letter-spacing"] ?? "", units: ["px", "em", "rem", ""]) { value in
                                         store.updateCSSVariable(key: "--og-letter-spacing", value: value)
                                     }
                                     .id("\(node.id)-letter-spacing")
                                 }
+
+                                CSSEnumVariableField(
+                                    key: "--og-text-align",
+                                    value: node.cssVariables["--og-text-align"] ?? "",
+                                    options: ["left", "center", "right", "justify", "start", "end"]
+                                ) { value in
+                                    store.updateCSSVariable(key: "--og-text-align", value: value)
+                                }
+                                .id("\(node.id)-text-align")
+                            }
+                        }
+
+                        if node.type == "image" {
+                            InspectorSection(title: "Media") {
+                                CSSEnumVariableField(
+                                    key: "--og-object-fit",
+                                    value: node.cssVariables["--og-object-fit"] ?? "",
+                                    options: ["cover", "contain", "fill", "none", "scale-down"]
+                                ) { value in
+                                    store.updateCSSVariable(key: "--og-object-fit", value: value)
+                                }
+                                .id("\(node.id)-object-fit")
                             }
                         }
 
                         InspectorSection(title: "Effects") {
-                            CSSVariableField(key: "--og-shadow", value: node.cssVariables["--og-shadow"] ?? "") { value in
+                            CSSShadowVariableField(key: "--og-shadow", value: node.cssVariables["--og-shadow"] ?? "") { value in
                                 store.updateCSSVariable(key: "--og-shadow", value: value)
                             }
                             .id("\(node.id)-shadow")
+
+                            CSSPairVariableField(
+                                key: "--og-transform-origin",
+                                value: node.cssVariables["--og-transform-origin"] ?? "",
+                                firstLabel: "X",
+                                secondLabel: "Y"
+                            ) { value in
+                                store.updateCSSVariable(key: "--og-transform-origin", value: value)
+                            }
+                            .id("\(node.id)-transform-origin")
+
+                            InspectorFieldGrid {
+                                CSSNumericUnitVariableField(key: "--og-scale-x", value: node.cssVariables["--og-scale-x"] ?? "", units: [""]) { value in
+                                    store.updateCSSVariable(key: "--og-scale-x", value: value)
+                                }
+                                .id("\(node.id)-scale-x")
+
+                                CSSNumericUnitVariableField(key: "--og-scale-y", value: node.cssVariables["--og-scale-y"] ?? "", units: [""]) { value in
+                                    store.updateCSSVariable(key: "--og-scale-y", value: value)
+                                }
+                                .id("\(node.id)-scale-y")
+                            }
                         }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+                .frame(maxWidth: .infinity)
             } else {
                 InspectorEmptyStateView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -213,6 +293,7 @@ private struct NodeSummaryPanel: View {
             Spacer()
         }
         .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
         .overlay(
             RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
@@ -254,16 +335,18 @@ private struct InspectorSection<Content: View>: View {
                 Spacer()
             }
 
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 content
             }
             .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
                     .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
             )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -310,7 +393,7 @@ private struct InspectorInfoRow: View {
 }
 
 /// 論理名（日本語）: 編集可能属性フィールド
-/// 概要: `data-og-role` などの属性値をテキスト入力し、明示的に適用する入力行です。
+/// 概要: `data-og-role` などの属性値をテキスト入力し、Enter またはフォーカスアウトで確定する入力行です。
 ///
 /// プロパティ:
 /// - `label`: 属性名。
@@ -322,6 +405,7 @@ private struct EditableAttributeField: View {
     var onCommit: (String) -> Void
 
     @State private var draft: String
+    @FocusState private var isFocused: Bool
 
     /// 論理名（日本語）: 編集可能属性フィールド初期化関数
     /// 処理概要: 現在値を draft state へコピーし、適用処理を保持します。
@@ -350,17 +434,27 @@ private struct EditableAttributeField: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .onSubmit {
-                    onCommit(draft)
-                }
-
-            ApplyButton {
-                onCommit(draft)
-            }
+                .focused($isFocused)
+                .onSubmit(commitIfChanged)
+                .frame(minWidth: 0, maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
         .onChange(of: value) { _, newValue in
             draft = newValue
         }
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitIfChanged()
+        }
+    }
+
+    /// 論理名（日本語）: 編集可能属性変更時適用関数
+    /// 処理概要: 入力値を trim し、変更がある場合だけ属性更新を反映します。
+    private func commitIfChanged() {
+        let nextValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = nextValue
+        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(nextValue)
     }
 }
 
@@ -405,6 +499,7 @@ private struct LayoutModePicker: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -425,11 +520,12 @@ private struct InspectorFieldGrid<Content: View>: View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
             content
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
 /// 論理名（日本語）: CSS変数フィールド
-/// 概要: `--og-*` のキーと値入力欄、適用ボタンを表示します。
+/// 概要: `--og-*` のキーと値入力欄を表示し、Enter またはフォーカスアウトで確定します。
 ///
 /// プロパティ:
 /// - `key`: CSS 変数名。
@@ -441,6 +537,7 @@ private struct CSSVariableField: View {
     var onCommit: (String) -> Void
 
     @State private var draft: String
+    @FocusState private var isFocused: Bool
 
     /// 論理名（日本語）: CSS変数フィールド初期化関数
     /// 処理概要: 現在値を draft state へコピーし、適用処理を保持します。
@@ -471,39 +568,172 @@ private struct CSSVariableField: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .onSubmit {
-                        onCommit(draft)
-                    }
-
-                ApplyButton {
-                    onCommit(draft)
-                }
+                    .focused($isFocused)
+                    .onSubmit(commitIfChanged)
+                    .frame(minWidth: 0, maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: .infinity)
         .onChange(of: value) { _, newValue in
             draft = newValue
         }
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitIfChanged()
+        }
+    }
+
+    /// 論理名（日本語）: CSS変数変更時適用関数
+    /// 処理概要: 入力値を trim し、変更がある場合だけ CSS 変数更新を反映します。
+    private func commitIfChanged() {
+        let nextValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = nextValue
+        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(nextValue)
     }
 }
 
-/// 論理名（日本語）: 適用ボタン
-/// 概要: Inspector の入力欄で現在 draft を確定する小型チェックボタンです。
+/// 論理名（日本語）: CSS色変数フィールド
+/// 概要: `--og-background` などの色系 CSS 変数をスウォッチ、ColorPicker、CSS 文字列で編集します。
 ///
 /// プロパティ:
-/// - `action`: ボタン押下時の処理。
-private struct ApplyButton: View {
-    var action: () -> Void
+/// - `key`: CSS 変数名。
+/// - `value`: 現在値。
+/// - `initialColor`: 現在値が CSS 色として解釈できないときの ColorPicker 初期色。
+/// - `onCommit`: 色または CSS 文字列の適用時に呼び出す処理。
+private struct CSSColorVariableField: View {
+    var key: String
+    var value: String
+    var initialColor: Color
+    var onCommit: (String) -> Void
+
+    @State private var draft: String
+    @State private var pickerColor: Color
+    @FocusState private var isFocused: Bool
+
+    /// 論理名（日本語）: CSS色変数フィールド初期化関数
+    /// 処理概要: 現在値を draft state へコピーし、ColorPicker の初期色を決定します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS 変数名。
+    ///   - value: 現在値。
+    ///   - initialColor: CSS 色として解釈できない場合に使う初期色。
+    ///   - onCommit: 適用時に呼び出す処理。
+    init(key: String, value: String, initialColor: Color, onCommit: @escaping (String) -> Void) {
+        self.key = key
+        self.value = value
+        self.initialColor = initialColor
+        self.onCommit = onCommit
+        _draft = State(initialValue: value)
+        _pickerColor = State(initialValue: CSSColorValue(cssString: value)?.color ?? initialColor)
+    }
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "checkmark")
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(key)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Spacer()
+
+                CSSColorSwatch(colorValue: parsedDraft)
+            }
+
+            if isEditable {
+                HStack(spacing: 6) {
+                    CSSColorPickerPreview(
+                        text: $draft,
+                        pickerColor: $pickerColor,
+                        initialColor: initialColor,
+                        onPick: commitPickedColor
+                    )
+
+                    TextField("", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                        .focused($isFocused)
+                        .onSubmit(commitDraftIfChanged)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+            } else {
+                CSSUnsupportedValueNotice()
+            }
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .frame(width: 20, height: 20)
-        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: 5))
-        .help("Apply")
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: value) { _, newValue in
+            draft = newValue
+            pickerColor = CSSColorValue(cssString: newValue)?.color ?? initialColor
+        }
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitDraftIfChanged()
+        }
+    }
+
+    private var parsedDraft: CSSColorValue? {
+        CSSColorValue(cssString: draft)
+    }
+
+    private var isEditable: Bool {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedValue.isEmpty || CSSColorValue(cssString: normalizedValue) != nil
+    }
+
+    /// 論理名（日本語）: 色選択変更時適用関数
+    /// 処理概要: ColorPicker が生成した CSS 色文字列を変更がある場合だけ反映します。
+    private func commitPickedColor(_ nextValue: String) {
+        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(nextValue)
+    }
+
+    /// 論理名（日本語）: draft変更時適用関数
+    /// 処理概要: テキスト入力中の CSS 色文字列を確定し、有効な値か未設定なら変更時だけ反映します。
+    private func commitDraftIfChanged() {
+        let normalizedValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedValue.isEmpty || CSSColorValue(cssString: normalizedValue) != nil else { return }
+        draft = normalizedValue
+        guard normalizedValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        if let cssColor = CSSColorValue(cssString: normalizedValue) {
+            pickerColor = cssColor.color
+        }
+        onCommit(normalizedValue)
+    }
+}
+
+/// 論理名（日本語）: CSS色スウォッチ
+/// 概要: CSS 色として解釈できる値を小さなプレビューとして表示します。
+///
+/// プロパティ:
+/// - `colorValue`: 表示対象の CSS 色値。nil の場合は未解析状態を示します。
+private struct CSSColorSwatch: View {
+    var colorValue: CSSColorValue?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(EditorColumnStyle.elevatedRowFill)
+
+            if let colorValue {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(colorValue.color)
+            } else {
+                Image(systemName: "slash")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 24, height: 20)
+        .overlay(
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+        .help(colorValue?.cssHexString ?? "CSS色として解析できない値")
     }
 }
 
