@@ -10,6 +10,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `public/index.html`: standalone OpenGraphite introduction page
 - `project.yml`: XcodeGen source of truth
 - `Docs/Architecture.md`: design notes
+- `Docs/specs/DesignPhilosophy.md`: design philosophy and source-of-truth contract
 
 ## Model
 
@@ -133,4 +134,5 @@ Open `SampleProject/OpenGraphiteSample.ogp` from the Welcome screen or press **O
 
 - Swift document comment guidance: `Docs/rules/DocumentCommentStandards.md`
 - Swift Testing guidance: `Docs/rules/TestingStandards.md`
+- Design philosophy: `Docs/specs/DesignPhilosophy.md`
 - Operations TODO governance: `Docs/operations/TODO/GOVERNANCE.md`
