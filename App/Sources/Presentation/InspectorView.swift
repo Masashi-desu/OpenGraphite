@@ -723,7 +723,7 @@ private struct CSSColorSwatch: View {
                 RoundedRectangle(cornerRadius: 5)
                     .fill(colorValue.color)
             } else {
-                Image(systemName: "slash")
+                Image(systemName: "slash.circle")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }

@@ -191,7 +191,7 @@ struct CSSNumericUnitVariableField: View {
             CSSControlHeader(key: key, valuePreview: numericValue.cssString)
             if isEditable {
                 HStack(spacing: 6) {
-                    TextField("", text: $numericValue.number)
+                    TextField("", text: numberBinding)
                         .textFieldStyle(.plain)
                         .font(.caption.monospaced())
                         .padding(.horizontal, 8)
@@ -202,8 +202,8 @@ struct CSSNumericUnitVariableField: View {
                         .frame(minWidth: 0, maxWidth: .infinity)
 
                     Picker("", selection: unitBinding) {
-                        ForEach(units, id: \.self) { unit in
-                            Text(unit.isEmpty ? "unitless" : unit)
+                        ForEach(unitOptions, id: \.self) { unit in
+                            Text(unitLabel(for: unit))
                                 .tag(unit)
                         }
                     }
@@ -225,23 +225,114 @@ struct CSSNumericUnitVariableField: View {
         }
     }
 
+    private var numberBinding: Binding<String> {
+        Binding(
+            get: { numericValue.number },
+            set: { newValue in
+                applyNumberInput(newValue)
+            }
+        )
+    }
+
     private var unitBinding: Binding<String> {
         Binding(
-            get: { numericValue.unit },
+            get: { unitOptions.contains(numericValue.unit) ? numericValue.unit : "" },
             set: { newValue in
-                numericValue.unit = newValue
+                if numericValue.number.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    numericValue.unit = ""
+                } else {
+                    numericValue.unit = unitOptions.contains(newValue) ? newValue : ""
+                }
                 commitIfChanged()
             }
         )
     }
 
     private var isEditable: Bool {
-        numericValue.isSupported && (numericValue.unit.isEmpty || units.contains(numericValue.unit))
+        numericValue.isSupported && unitOptions.contains(numericValue.unit)
+    }
+
+    private var unitOptions: [String] {
+        var normalizedUnits = [""]
+        for unit in units.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            where !normalizedUnits.contains(unit) {
+            normalizedUnits.append(unit)
+        }
+        return normalizedUnits
+    }
+
+    private var allowsUnitlessValue: Bool {
+        units.contains("")
+    }
+
+    private var defaultUnit: String {
+        unitOptions.first { !$0.isEmpty } ?? ""
+    }
+
+    /// 論理名（日本語）: CSS数値単位表示名生成関数
+    /// 処理概要: 単位 Picker に表示する空値、単位なし、単位名のラベルを返します。
+    ///
+    /// - Parameter unit: Picker option の単位文字列。
+    /// - Returns: UI に表示する単位名。
+    private func unitLabel(for unit: String) -> String {
+        guard unit.isEmpty else { return unit }
+        return numericValue.number.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "unset"
+            : "unitless"
+    }
+
+    /// 論理名（日本語）: CSS数値入力反映関数
+    /// 処理概要: テキスト入力から数値部分だけを保持し、単位が含まれる場合は Picker 側の状態へ分離します。
+    ///
+    /// - Parameter rawValue: TextField から受け取った入力文字列。
+    private func applyNumberInput(_ rawValue: String) {
+        let trimmedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+            numericValue.number = ""
+            numericValue.unit = ""
+            return
+        }
+
+        let parsedValue = CSSNumericUnitValue(cssString: trimmedValue)
+        if parsedValue.isSupported, !parsedValue.number.isEmpty {
+            numericValue.number = parsedValue.number
+            if !parsedValue.unit.isEmpty, unitOptions.contains(parsedValue.unit) {
+                numericValue.unit = parsedValue.unit
+            } else if numericValue.unit.isEmpty, !allowsUnitlessValue {
+                numericValue.unit = defaultUnit
+            }
+            return
+        }
+
+        numericValue.number = Self.numericCharacters(from: trimmedValue)
+        if numericValue.number.isEmpty {
+            numericValue.unit = ""
+        } else if numericValue.unit.isEmpty, !allowsUnitlessValue {
+            numericValue.unit = defaultUnit
+        }
+    }
+
+    /// 論理名（日本語）: CSS数値文字抽出関数
+    /// 処理概要: 入力文字列から数値入力に必要な文字だけを取り出します。
+    ///
+    /// - Parameter value: 抽出対象の入力文字列。
+    /// - Returns: 数値欄に保持する文字列。
+    private static func numericCharacters(from value: String) -> String {
+        value.filter { character in
+            character.isNumber || character == "." || character == "-" || character == "+"
+        }
     }
 
     /// 論理名（日本語）: CSS数値単位値変更時適用関数
     /// 処理概要: 数値と単位を CSS 値へ serialize し、変更がある場合だけ反映します。
     private func commitIfChanged() {
+        if numericValue.number.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            numericValue = CSSNumericUnitValue()
+        } else if numericValue.unit.isEmpty, !allowsUnitlessValue {
+            numericValue.unit = defaultUnit
+        }
+
+        guard numericValue.number.isEmpty || Double(numericValue.number) != nil else { return }
         let nextValue = numericValue.cssString.trimmingCharacters(in: .whitespacesAndNewlines)
         numericValue = CSSNumericUnitValue(cssString: nextValue)
         guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
@@ -1235,7 +1326,7 @@ private struct CSSUnsetColorPreview: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(EditorColumnStyle.elevatedRowFill)
 
-            Image(systemName: "slash")
+            Image(systemName: "slash.circle")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
         }
