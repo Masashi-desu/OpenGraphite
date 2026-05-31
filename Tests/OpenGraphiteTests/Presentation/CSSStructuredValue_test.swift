@@ -88,6 +88,50 @@ struct CSSStructuredValueTests {
         #expect(cssString == "var(--external-size)")
     }
 
+    /// 論理名（日本語）: CSS単位分離値解析テスト
+    /// 概要: Inspector の入力欄へ出す値と外側へ出す単位を分離し、CSS token として復元できることを検証します。
+    @Test("単位付きtokenを入力値と単位へ分離して復元できる")
+    func testUnitSeparatedValueSplitsUnitToken() {
+        // コンディション：px と % を含む単純 CSS token を用意する
+        let pixelValue = CSSUnitSeparatedValue(cssString: "64px")
+        let percentageValue = CSSUnitSeparatedValue(cssString: "50%")
+
+        // 検証内容：入力欄用の値、外側表示用の単位、復元結果を確認する
+        let pixelCSSString = pixelValue.cssString
+        let percentageCSSString = percentageValue.cssString
+
+        // 期待値：TextField に入る値から単位が除かれ、CSS 値としては元の単位が維持される
+        #expect(pixelValue.fieldValue == "64")
+        #expect(pixelValue.unit == "px")
+        #expect(pixelCSSString == "64px")
+        #expect(percentageValue.fieldValue == "50")
+        #expect(percentageValue.unit == "%")
+        #expect(percentageCSSString == "50%")
+    }
+
+    /// 論理名（日本語）: CSS単位分離値リテラル保持テスト
+    /// 概要: keyword や関数値を誤って単位分離せず、元の CSS token として保持することを検証します。
+    @Test("単位分離対象外のtokenはリテラルとして保持する")
+    func testUnitSeparatedValueKeepsLiteralTokens() {
+        // コンディション：単位付き数値ではない keyword と関数値を用意する
+        let keywordValue = CSSUnitSeparatedValue(cssString: "auto")
+        let functionValue = CSSUnitSeparatedValue(cssString: "min(100%,560px)")
+
+        // 検証内容：分離判定と復元結果を確認する
+        let keywordCSSString = keywordValue.cssString
+        let functionCSSString = functionValue.cssString
+
+        // 期待値：TextField に表示する値はリテラルのままで、単位は外側表示へ切り出されない
+        #expect(keywordValue.isNumericLike == false)
+        #expect(keywordValue.fieldValue == "auto")
+        #expect(keywordValue.unit == "")
+        #expect(keywordCSSString == "auto")
+        #expect(functionValue.isNumericLike == false)
+        #expect(functionValue.fieldValue == "min(100%,560px)")
+        #expect(functionValue.unit == "")
+        #expect(functionCSSString == "min(100%,560px)")
+    }
+
     /// 論理名（日本語）: CSS clamp 関数寸法値解析テスト
     /// 概要: `clamp()` の 3 引数を個別に保持し、同じ CSS 値へ戻せることを検証します。
     @Test("clamp関数寸法値を3引数として保持できる")
@@ -104,6 +148,23 @@ struct CSSStructuredValueTests {
         #expect(value.arguments == ["320px", "50vw", "620px"])
         #expect(value.functionArgumentLabels == ["Min", "Preferred", "Max"])
         #expect(cssString == "clamp(320px,50vw,620px)")
+    }
+
+    /// 論理名（日本語）: 空寸法値直列化テスト
+    /// 概要: length モードで数値が空の場合、単位だけの CSS 値を保存しないことを検証します。
+    @Test("寸法値の数値が空なら単位だけを直列化しない")
+    func testDimensionLengthWithoutPrimaryDoesNotSerializeUnitOnly() {
+        // コンディション：単位はあるが数値が空の length 寸法値を用意する
+        var value = CSSDimensionValue(cssString: "")
+        value.kind = .length
+        value.primary = ""
+        value.unit = "px"
+
+        // 検証内容：CSS 文字列へ直列化する
+        let cssString = value.cssString
+
+        // 期待値：`px` だけでは保存されず、未設定として扱われる
+        #expect(cssString == "")
     }
 
     /// 論理名（日本語）: CSS線形グラデーション解析テスト

@@ -319,6 +319,90 @@ struct CSSNumericUnitValue: Equatable {
     }
 }
 
+/// 論理名（日本語）: CSS単位分離値
+/// 概要: `64px` や `50%` のような単純 token を、入力欄用の値と外側表示用の単位へ分けます。
+///
+/// プロパティ:
+/// - `fieldValue`: TextField に表示する数値またはリテラル値。
+/// - `unit`: TextField の外に表示する単位。
+/// - `isNumericLike`: 数値系 token として単位分離できるかどうか。
+struct CSSUnitSeparatedValue: Equatable {
+    var fieldValue: String
+    var unit: String
+    var isNumericLike: Bool
+
+    /// 論理名（日本語）: CSS単位分離値初期化関数
+    /// 処理概要: 値と単位を trim して保持します。
+    ///
+    /// - Parameters:
+    ///   - fieldValue: TextField に表示する値。
+    ///   - unit: TextField の外に表示する単位。
+    ///   - isNumericLike: 数値系 token として扱うかどうか。
+    init(fieldValue: String = "", unit: String = "", isNumericLike: Bool = false) {
+        self.fieldValue = fieldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.unit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isNumericLike = isNumericLike
+    }
+
+    /// 論理名（日本語）: CSS token 分離初期化関数
+    /// 処理概要: 関数や空白を含まない単純 CSS token の先頭数値部と単位部を分離します。
+    ///
+    /// - Parameter cssString: 分離対象の CSS token。
+    init(cssString: String) {
+        let trimmed = cssString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            self.init()
+            return
+        }
+
+        guard CSSEditingSupport.isSimpleToken(trimmed) else {
+            self.init(fieldValue: trimmed)
+            return
+        }
+
+        var numberPart = ""
+        var unitPart = ""
+        var didFinishNumber = false
+
+        for character in trimmed {
+            if !didFinishNumber, Self.isNumericEditingCharacter(character) {
+                numberPart.append(character)
+            } else {
+                didFinishNumber = true
+                unitPart.append(character)
+            }
+        }
+
+        let isNumericLike = !numberPart.isEmpty &&
+            (numberPart.contains(where: \.isNumber) || !unitPart.isEmpty || trimmed.allSatisfy(Self.isNumericEditingCharacter))
+        guard isNumericLike else {
+            self.init(fieldValue: trimmed)
+            return
+        }
+
+        self.init(fieldValue: numberPart, unit: unitPart, isNumericLike: true)
+    }
+
+    var cssString: String {
+        guard isNumericLike else {
+            return fieldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        let normalizedFieldValue = fieldValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedFieldValue.isEmpty else { return "" }
+        return "\(normalizedFieldValue)\(unit.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+
+    /// 論理名（日本語）: 数値編集中文字判定関数
+    /// 処理概要: TextField の編集中に数値部として保持できる文字かどうかを判定します。
+    ///
+    /// - Parameter character: 判定対象の文字。
+    /// - Returns: 数値、符号、小数点の場合は true。
+    private static func isNumericEditingCharacter(_ character: Character) -> Bool {
+        character.isNumber || character == "." || character == "-" || character == "+"
+    }
+}
+
 /// 論理名（日本語）: CSS寸法値種別
 /// 概要: dimension 系 CSS 値を Inspector で編集するための表示モードです。
 ///
@@ -414,7 +498,9 @@ struct CSSDimensionValue: Equatable {
         case .empty:
             return ""
         case .length:
-            return "\(primary)\(unit)".trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedPrimary = primary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedPrimary.isEmpty else { return "" }
+            return "\(normalizedPrimary)\(unit.trimmingCharacters(in: .whitespacesAndNewlines))"
         case .keyword:
             return primary
         case .function:

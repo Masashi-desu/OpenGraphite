@@ -390,17 +390,12 @@ struct CSSDimensionVariableField: View {
                 case .empty:
                     EmptyView()
                 case .length:
-                    HStack(spacing: 6) {
-                        CSSSmallTextField(label: "Value", text: $dimensionValue.primary, onCommit: commitIfChanged)
-                        Picker("", selection: dimensionUnitBinding) {
-                            ForEach(["px", "%", "rem", "em", "vw", "vh"], id: \.self) { unit in
-                                Text(unit).tag(unit)
-                            }
-                        }
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .frame(width: 72)
-                    }
+                    CSSSmallTextField(
+                        label: "Value",
+                        text: $dimensionValue.primary,
+                        unit: $dimensionValue.unit,
+                        onCommit: commitIfChanged
+                    )
                 case .keyword:
                     Picker("", selection: keywordBinding) {
                         ForEach(CSSDimensionValue.keywords, id: \.self) { keyword in
@@ -527,16 +522,6 @@ struct CSSDimensionVariableField: View {
             set: { newValue in
                 guard newValue != .unsupported else { return }
                 dimensionValue.kind = newValue
-                commitIfChanged()
-            }
-        )
-    }
-
-    private var dimensionUnitBinding: Binding<String> {
-        Binding(
-            get: { dimensionValue.unit },
-            set: { newValue in
-                dimensionValue.unit = newValue
                 commitIfChanged()
             }
         )
@@ -719,7 +704,12 @@ struct CSSBackgroundVariableField: View {
                         onCommit: commitIfChanged
                     )
                 case .linearGradient:
-                    CSSSmallTextField(label: "Angle", text: $backgroundValue.gradient.angle, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: "Angle",
+                        text: $backgroundValue.gradient.angle,
+                        unitOptions: ["deg", "rad", "turn", "grad"],
+                        onCommit: commitIfChanged
+                    )
                     ForEach(Array(backgroundValue.gradient.stops.indices), id: \.self) { index in
                         CSSGradientStopField(
                             index: index,
@@ -1045,18 +1035,45 @@ private struct CSSControlHeader: View {
 }
 
 /// 論理名（日本語）: CSS小型テキストフィールド
-/// 概要: 構造化 CSS コントロール内の短いラベル付き入力欄です。
+/// 概要: 構造化 CSS コントロール内の短いラベル付き入力欄です。単位付き token は値と単位を分けて表示します。
 ///
 /// プロパティ:
 /// - `label`: 入力欄ラベル。
 /// - `text`: 入力値 binding。
+/// - `unit`: 値と単位を別 state で持つ場合の単位 binding。
+/// - `unitOptions`: TextField の外側 Picker に出す単位候補。
 /// - `onCommit`: Enter またはフォーカスアウト時の確定処理。
 private struct CSSSmallTextField: View {
     var label: String
     @Binding var text: String
+    var unit: Binding<String>?
+    var unitOptions: [String]
     var onCommit: () -> Void = {}
 
     @FocusState private var isFocused: Bool
+
+    /// 論理名（日本語）: CSS小型テキストフィールド初期化関数
+    /// 処理概要: 入力値 binding、任意の単位 binding、確定処理を保持します。
+    ///
+    /// - Parameters:
+    ///   - label: 入力欄ラベル。
+    ///   - text: 入力値 binding。
+    ///   - unit: 値と単位を別 state で持つ場合の単位 binding。
+    ///   - unitOptions: TextField 外側の単位候補。
+    ///   - onCommit: 確定時の処理。
+    init(
+        label: String,
+        text: Binding<String>,
+        unit: Binding<String>? = nil,
+        unitOptions: [String] = ["px", "%", "rem", "em", "vw", "vh"],
+        onCommit: @escaping () -> Void = {}
+    ) {
+        self.label = label
+        _text = text
+        self.unit = unit
+        self.unitOptions = unitOptions
+        self.onCommit = onCommit
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -1064,21 +1081,156 @@ private struct CSSSmallTextField: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(.caption.monospaced())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .focused($isFocused)
-                .onSubmit(onCommit)
-                .frame(minWidth: 0, maxWidth: .infinity)
+
+            HStack(spacing: 6) {
+                TextField("", text: fieldTextBinding)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                    .focused($isFocused)
+                    .onSubmit(commitText)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+
+                if showsUnitPicker {
+                    Picker("", selection: unitSelectionBinding) {
+                        ForEach(unitPickerOptions, id: \.self) { option in
+                            Text(unitLabel(for: option))
+                                .tag(option)
+                        }
+                    }
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .frame(width: 72)
+                }
+            }
         }
         .frame(minWidth: 0, maxWidth: .infinity)
+        .onAppear(perform: ensureSeparatedUnitState)
+        .onChange(of: text) { _, _ in
+            ensureSeparatedUnitState()
+        }
         .onChange(of: isFocused) { _, isFocused in
             guard !isFocused else { return }
-            onCommit()
+            commitText()
         }
+    }
+
+    private var currentParts: CSSUnitSeparatedValue {
+        let parsedText = CSSUnitSeparatedValue(cssString: text)
+        guard let unit else { return parsedText }
+        guard parsedText.isNumericLike else { return parsedText }
+        let resolvedUnit = parsedText.unit.isEmpty ? unit.wrappedValue : parsedText.unit
+        return CSSUnitSeparatedValue(fieldValue: parsedText.fieldValue, unit: resolvedUnit, isNumericLike: true)
+    }
+
+    private var fieldTextBinding: Binding<String> {
+        Binding(
+            get: { currentParts.fieldValue },
+            set: applyFieldInput
+        )
+    }
+
+    private var unitSelectionBinding: Binding<String> {
+        Binding(
+            get: { currentParts.unit },
+            set: { newUnit in
+                let parts = currentParts
+                guard parts.isNumericLike else { return }
+                if let unit {
+                    text = parts.fieldValue
+                    unit.wrappedValue = newUnit
+                } else {
+                    text = CSSUnitSeparatedValue(
+                        fieldValue: parts.fieldValue,
+                        unit: newUnit,
+                        isNumericLike: true
+                    ).cssString
+                }
+                onCommit()
+            }
+        )
+    }
+
+    private var showsUnitPicker: Bool {
+        let parts = currentParts
+        guard parts.isNumericLike else { return false }
+        return unit != nil || !parts.unit.isEmpty
+    }
+
+    private var unitPickerOptions: [String] {
+        var options = [""]
+        for option in unitOptions.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            where !option.isEmpty && !options.contains(option) {
+            options.append(option)
+        }
+
+        let currentUnit = currentParts.unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !currentUnit.isEmpty, !options.contains(currentUnit) {
+            options.append(currentUnit)
+        }
+        return options
+    }
+
+    /// 論理名（日本語）: 単位ラベル生成関数
+    /// 処理概要: 単位なし option を UI 表示用の短いラベルへ変換します。
+    ///
+    /// - Parameter unit: Picker option の単位文字列。
+    /// - Returns: UI に表示する単位ラベル。
+    private func unitLabel(for unit: String) -> String {
+        unit.isEmpty ? "unitless" : unit
+    }
+
+    /// 論理名（日本語）: CSS入力欄反映関数
+    /// 処理概要: TextField に貼り付けられた単位付き token を分離し、保存用 binding には CSS 値として保持します。
+    ///
+    /// - Parameter rawValue: TextField から渡された入力値。
+    private func applyFieldInput(_ rawValue: String) {
+        let normalizedValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedValue.isEmpty else {
+            text = ""
+            return
+        }
+
+        let typedParts = CSSUnitSeparatedValue(cssString: normalizedValue)
+        guard typedParts.isNumericLike else {
+            text = typedParts.cssString
+            unit?.wrappedValue = ""
+            return
+        }
+
+        if let unit {
+            text = typedParts.fieldValue
+            if !typedParts.unit.isEmpty {
+                unit.wrappedValue = typedParts.unit
+            }
+        } else {
+            let currentUnit = currentParts.unit
+            let nextUnit = typedParts.unit.isEmpty ? currentUnit : typedParts.unit
+            text = CSSUnitSeparatedValue(
+                fieldValue: typedParts.fieldValue,
+                unit: nextUnit,
+                isNumericLike: true
+            ).cssString
+        }
+    }
+
+    /// 論理名（日本語）: 分離単位状態補正関数
+    /// 処理概要: 値 state 側に単位が混ざった場合、単位 binding 側へ移して入力欄から単位を除きます。
+    private func ensureSeparatedUnitState() {
+        guard let unit else { return }
+        let parsedText = CSSUnitSeparatedValue(cssString: text)
+        guard parsedText.isNumericLike, !parsedText.unit.isEmpty else { return }
+        text = parsedText.fieldValue
+        unit.wrappedValue = parsedText.unit
+    }
+
+    /// 論理名（日本語）: CSS小型入力確定関数
+    /// 処理概要: 単位分離状態を補正してから呼び出し元の確定処理を実行します。
+    private func commitText() {
+        ensureSeparatedUnitState()
+        onCommit()
     }
 }
 
