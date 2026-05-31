@@ -375,7 +375,10 @@ private struct CanvasPaneView: View {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
                     documentID: canvasDocumentID(for: loadedProject, chapter: store.selectedChapter),
-                    overlayAvoidance: overlayAvoidance
+                    overlayAvoidance: overlayAvoidance,
+                    onEmptyCanvasClick: {
+                        store.selectPage(id: nil)
+                    }
                 ) {
                     CanvasProjectView(
                         store: store,
@@ -473,6 +476,13 @@ private struct CanvasProjectView: View {
         let scale = CGFloat(zoom)
 
         ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    store.selectPage(id: nil)
+                }
+
             ForEach(pages) { page in
                 CanvasDocumentView(
                     store: store,
@@ -526,21 +536,12 @@ private struct CanvasDocumentView: View {
         }
         .frame(width: width, height: height, alignment: .topLeading)
         .overlay(alignment: .topLeading) {
-            Text(page.id)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(isSelected ? Color.white : Color.primary)
-                .lineLimit(1)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
-                )
-                .padding(10)
+            CanvasPageNameCard(
+                title: page.id,
+                isSelected: isSelected,
+                maxTextWidth: max(width - CanvasMetrics.pageNameCardHorizontalInset * 2, 32)
+            )
+            .offset(y: -CanvasMetrics.pageNameCardOutsideOffset)
         }
         .overlay(
             Rectangle()
@@ -550,6 +551,41 @@ private struct CanvasDocumentView: View {
         .onTapGesture {
             store.selectPage(id: page.id)
         }
+    }
+}
+
+/// 論理名（日本語）: キャンバスページ名カード
+/// 概要: キャンバス上のページ枠左上外側に表示するページ識別子カードです。
+///
+/// プロパティ:
+/// - `title`: 表示するページ識別子。
+/// - `isSelected`: 対象ページが選択中か。
+/// - `maxTextWidth`: ページ幅に応じたテキスト最大幅。
+private struct CanvasPageNameCard: View {
+    var title: String
+    var isSelected: Bool
+    var maxTextWidth: CGFloat
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: maxTextWidth, alignment: .leading)
+            .padding(.horizontal, CanvasMetrics.pageNameCardHorizontalInset)
+            .frame(height: CanvasMetrics.pageNameCardHeight)
+            .background(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
+            .help(title)
+            .accessibilityLabel(title)
     }
 }
 
@@ -597,8 +633,16 @@ private struct CanvasProjectBounds {
 ///
 /// 定義内容:
 /// - `documentPadding`: ドキュメント周囲の余白。
+/// - `pageNameCardHeight`: ページ名カードの固定高さ。
+/// - `pageNameCardGap`: ページ枠とページ名カードの間隔。
+/// - `pageNameCardHorizontalInset`: ページ名カード内の水平余白。
+/// - `pageNameCardOutsideOffset`: ページ名カードをページ枠外へ出す垂直オフセット。
 private enum CanvasMetrics {
     static let documentPadding: CGFloat = 48
+    static let pageNameCardHeight: CGFloat = 24
+    static let pageNameCardGap: CGFloat = 8
+    static let pageNameCardHorizontalInset: CGFloat = 9
+    static let pageNameCardOutsideOffset = pageNameCardHeight + pageNameCardGap
 }
 
 /// 論理名（日本語）: キャンバスオーバーレイ回避値
@@ -707,11 +751,13 @@ private struct CanvasZoomHUD: View {
 /// プロパティ:
 /// - `zoom`: 双方向バインディングされたキャンバス倍率。
 /// - `documentID`: 表示中ドキュメントの識別子。
+/// - `onEmptyCanvasClick`: ページ群の外側がクリックされたときの処理。
 /// - `content`: スクロールビュー内に表示する SwiftUI content。
 private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     @Binding var zoom: Double
     var documentID: String
     var overlayAvoidance: CanvasOverlayAvoidance
+    var onEmptyCanvasClick: () -> Void
     var content: () -> Content
 
     /// 論理名（日本語）: ズーム可能スクロールビュー初期化関数
@@ -721,16 +767,19 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///   - zoom: キャンバス倍率のバインディング。
     ///   - documentID: 表示中ドキュメントの識別子。
     ///   - overlayAvoidance: 左右カラムを避ける操作 UI 用余白。
+    ///   - onEmptyCanvasClick: ページ群の外側がクリックされたときの処理。
     ///   - content: スクロールビュー内に表示する SwiftUI content。
     init(
         zoom: Binding<Double>,
         documentID: String,
         overlayAvoidance: CanvasOverlayAvoidance = CanvasOverlayAvoidance(),
+        onEmptyCanvasClick: @escaping () -> Void = {},
         @ViewBuilder content: @escaping () -> Content
     ) {
         self._zoom = zoom
         self.documentID = documentID
         self.overlayAvoidance = overlayAvoidance
+        self.onEmptyCanvasClick = onEmptyCanvasClick
         self.content = content
     }
 
@@ -739,7 +788,12 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///
     /// - Returns: ズーム可能スクロールビュー用コーディネーター。
     func makeCoordinator() -> Coordinator {
-        Coordinator(zoom: $zoom, documentID: documentID, content: content)
+        Coordinator(
+            zoom: $zoom,
+            documentID: documentID,
+            onEmptyCanvasClick: onEmptyCanvasClick,
+            content: content
+        )
     }
 
     /// 論理名（日本語）: NSScrollView生成関数
@@ -773,6 +827,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///   - context: SwiftUI が提供する representable context。
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.zoom = $zoom
+        context.coordinator.onEmptyCanvasClick = onEmptyCanvasClick
         context.coordinator.updateContent(documentID: documentID, content: content)
         context.coordinator.refreshDocumentSizeIfNeeded()
         if let scrollView = scrollView as? CanvasOverlayScrollView {
@@ -797,11 +852,13 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// プロパティ:
     /// - `zoom`: キャンバス倍率のバインディング。
     /// - `content`: 表示する SwiftUI content。
+    /// - `onEmptyCanvasClick`: ページ群の外側がクリックされたときの処理。
     /// - `hostingView`: NSScrollView に載せる hosting view。
     /// - `documentView`: 無限キャンバス用の documentView。
     final class Coordinator: NSObject {
         var zoom: Binding<Double>
         var content: () -> Content
+        var onEmptyCanvasClick: () -> Void
         let hostingView: NSHostingView<Content>
         let documentView: CanvasInfiniteDocumentView<Content>
 
@@ -817,20 +874,26 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         /// - Parameters:
         ///   - zoom: キャンバス倍率のバインディング。
         ///   - documentID: 表示中ドキュメントの識別子。
+        ///   - onEmptyCanvasClick: ページ群の外側がクリックされたときの処理。
         ///   - content: 初期表示する SwiftUI content。
         init(
             zoom: Binding<Double>,
             documentID: String,
+            onEmptyCanvasClick: @escaping () -> Void,
             content: @escaping () -> Content
         ) {
             self.zoom = zoom
             self.content = content
+            self.onEmptyCanvasClick = onEmptyCanvasClick
             self.renderedDocumentID = documentID
             self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
             self.hostingView = NSHostingView(rootView: content())
             self.hostingView.isFlipped = true
             self.documentView = CanvasInfiniteDocumentView(hostingView: hostingView)
             super.init()
+            self.documentView.emptyClickHandler = { [weak self] in
+                self?.onEmptyCanvasClick()
+            }
         }
 
         /// 論理名（日本語）: スクロールビュー接続関数
@@ -1205,6 +1268,7 @@ private struct CanvasInfiniteAdjustment {
 ///
 /// プロパティ:
 /// - `hostingView`: 実際の SwiftUI キャンバス内容。
+/// - `emptyClickHandler`: SwiftUI content 外側の余白がクリックされたときの処理。
 private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInfiniteDocumentContainer {
     private static var edgeExpansionTolerance: CGFloat { 4 }
     private static var minimumExpansionStep: CGFloat { 24 }
@@ -1212,6 +1276,7 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
     private static var contractionPadding: CGFloat { 160 }
 
     let hostingView: NSHostingView<Content>
+    var emptyClickHandler: (() -> Void)?
 
     private var contentSize: NSSize = .zero
     private var contentOrigin: CGPoint = .zero
@@ -1241,6 +1306,20 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
     override func layout() {
         super.layout()
         layoutHostingView()
+    }
+
+    /// 論理名（日本語）: マウスダウン処理関数
+    /// 処理概要: SwiftUI content の外側にある無限キャンバス余白をクリックしたとき、ページ選択解除を通知します。
+    ///
+    /// - Parameter event: AppKit から届いたマウスダウンイベント。
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        guard !hostingView.frame.contains(point) else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        emptyClickHandler?()
     }
 
     /// 論理名（日本語）: コンテンツサイズ更新関数

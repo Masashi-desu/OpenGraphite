@@ -62,6 +62,39 @@ struct EditorStoreTests {
         #expect(store.selectedNodeID == nil)
     }
 
+    /// 論理名（日本語）: ページ選択解除テスト
+    /// 概要: ページ選択を nil にすると先頭ページへ戻らず未選択状態になることを検証します。
+    @Test("ページ選択を解除できる")
+    func testSelectPageNilClearsPageSelection() throws {
+        // コンディション：プロジェクトを開き、ページとノードが選択されている状態を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "tagName": "title",
+                "type": "text",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "title")
+
+        // 検証内容：ページ選択を解除する
+        store.selectPage(id: nil)
+
+        // 期待値：選択ページ、選択ノード、ページ由来のノード一覧が空になる
+        #expect(store.selectedPageID == nil)
+        #expect(store.selectedPage == nil)
+        #expect(store.selectedPageURL == nil)
+        #expect(store.selectedNodeID == nil)
+        #expect(store.nodes.isEmpty)
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+        #expect(store.statusMessage == "ページ選択を解除しました。")
+    }
+
     /// 論理名（日本語）: CSS変数更新テスト
     /// 概要: 選択中ノードの CSS 変数更新と mutation 発行を検証します。
     @Test("CSS変数更新でノードとmutationを更新する")

@@ -81,9 +81,8 @@ final class EditorStore: ObservableObject {
     }
 
     var selectedPage: OpenGraphitePage? {
-        let pages = selectedChapterPages
-        return pages.first { $0.id == selectedPageID }
-            ?? pages.first
+        guard let selectedPageID else { return nil }
+        return selectedChapterPages.first { $0.id == selectedPageID }
     }
 
     var selectedPageURL: URL? {
@@ -163,13 +162,15 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: ページ選択関数
     /// 処理概要: 選択ページを切り替え、ページ変更時にノード選択と DOM ノード一覧をリセットします。
     ///
-    /// - Parameter id: 選択するページ ID。`nil` の場合は先頭ページが表示対象になります。
+    /// - Parameter id: 選択するページ ID。`nil` の場合はページ選択を解除します。
     func selectPage(id: String?) {
         selectedPageID = id
         selectedNodeID = nil
         nodes = []
         if let page = selectedPage {
             statusMessage = "\(page.path) を表示しています。"
+        } else {
+            statusMessage = "ページ選択を解除しました。"
         }
         prepareHistoryForSelectedPage()
     }
@@ -430,8 +431,10 @@ final class EditorStore: ObservableObject {
             if let previousSelectedPageID,
                currentChapterPages.contains(where: { $0.id == previousSelectedPageID }) {
                 selectedPageID = previousSelectedPageID
-            } else {
+            } else if previousSelectedPageID != nil {
                 selectedPageID = currentChapterPages.first?.id
+            } else {
+                selectedPageID = nil
             }
 
             if selectedPageURL != previousSelectedPageURL {
