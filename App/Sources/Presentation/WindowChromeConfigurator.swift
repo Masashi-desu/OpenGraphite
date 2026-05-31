@@ -63,6 +63,8 @@ struct WindowChromeConfigurator: NSViewRepresentable {
                 continue
             }
 
+            superview.layoutSubtreeIfNeeded()
+
             var frame = button.frame
             let headerHeight = EditorOverlayMetrics.topChromeHeight
             let centeredY: CGFloat
