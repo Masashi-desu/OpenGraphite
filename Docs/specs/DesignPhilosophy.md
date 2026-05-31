@@ -10,6 +10,12 @@ HTML が唯一の正本です。
 
 この方針により、OpenGraphite の成果物はアプリに閉じません。HTML、CSS、画像などの Web 標準ファイルがそのまま成果物になり、リポジトリ上でレビュー、配布、ホスティングできます。
 
+## Repository-Synchronized Interface
+
+OpenGraphite は、リポジトリに置かれた HTML、CSS、画像、プロジェクトメタデータを正本として読み取り、その内容をアプリ内の表示と編集状態へ完全に同期します。Canvas、Layers、Inspector は独自のコピーではなく、リポジトリ上のファイル構造と DOM / CSS の現在値を反映するインターフェースです。
+
+この同期モデルにより、ユーザーと AI は同じリポジトリ内容を見ながら協業できます。AI がコードやドキュメントとして変更した内容は OpenGraphite 上の表示に反映され、OpenGraphite で行った編集はリポジトリの正本ファイルへ戻ります。OpenGraphite は、デザインツール、コードエディタ、AI エージェントが同じ成果物を扱うための新しいインターフェース体験を提供します。
+
 ## Responsibility Model
 
 OpenGraphite は、意味、編集情報、デザイン値、描画規則を分離します。

@@ -28,12 +28,45 @@ final class EditorStore: ObservableObject {
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
+    @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
 
-    private let loader = ProjectLoader()
+    private let loader: ProjectLoader
+    private let sampleProjectLocator: SampleProjectLocator
+    private let currentProjectStore: OpenGraphiteCurrentProjectStore?
     private var mutationSequence = 0
     private var attributeMutationSequence = 0
     private var documentReplacementSequence = 0
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
+    private var lastKnownPageHTMLByURL: [URL: String] = [:]
+    private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
+    private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
+    private var monitoredProjectURL: URL?
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    /// 論理名（日本語）: エディターストア初期化関数
+    /// 処理概要: project loader と sample project locator を保持し、通常利用時は既定実装を使います。
+    ///
+    /// - Parameters:
+    ///   - loader: `.ogp` 読み込みに使う loader。
+    ///   - sampleProjectLocator: Open Sample Project の解決に使う locator。
+    init(
+        loader: ProjectLoader = ProjectLoader(),
+        sampleProjectLocator: SampleProjectLocator = SampleProjectLocator(),
+        currentProjectStore: OpenGraphiteCurrentProjectStore? = nil
+    ) {
+        self.loader = loader
+        self.sampleProjectLocator = sampleProjectLocator
+        self.currentProjectStore = currentProjectStore ?? (Self.isRunningTests ? nil : OpenGraphiteCurrentProjectStore())
+    }
+
+    deinit {
+        for monitor in pageChangeMonitorsByURL.values {
+            monitor.cancel()
+        }
+        projectChangeMonitor.cancel()
+    }
 
     var selectedPage: OpenGraphitePage? {
         guard let loadedProject else { return nil }
@@ -55,19 +88,24 @@ final class EditorStore: ObservableObject {
         return nodes.first { $0.id == selectedNodeID }
     }
 
-    /// 論理名（日本語）: サンプルプロジェクトオープン関数
-    /// 処理概要: アプリバンドル内の `OpenGraphiteSample.ogp` を探し、見つかった場合は読み込みます。
-    func openSampleProject() {
-        guard let url = Bundle.main.url(
-            forResource: "OpenGraphiteSample",
-            withExtension: "ogp",
-            subdirectory: "SampleProject"
-        ) else {
-            lastError = "バンドル内のサンプルプロジェクトが見つかりません。"
-            return
-        }
+    /// 論理名（日本語）: ページ再読み込みトークン取得関数
+    /// 処理概要: 指定 HTML URL の外部変更を WebView へ通知するための単調増加トークンを返します。
+    ///
+    /// - Parameter pageURL: reload token を取得する HTML URL。
+    /// - Returns: WebView が比較する reload token。
+    func reloadToken(for pageURL: URL) -> Int {
+        pageReloadTokensByURL[pageURL] ?? 0
+    }
 
-        openProject(at: url)
+    /// 論理名（日本語）: サンプルプロジェクトオープン関数
+    /// 処理概要: Debug 実行時は指定 sample `.ogp`、Release/no-env 時は Application Support の編集用 sample を読み込みます。
+    func openSampleProject() {
+        do {
+            let url = try sampleProjectLocator.sampleProjectURL()
+            openProject(at: url)
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     /// 論理名（日本語）: パネル経由プロジェクトオープン関数
@@ -92,7 +130,17 @@ final class EditorStore: ObservableObject {
             attributeMutation = nil
             documentReplacementRequest = nil
             syncHistories = [:]
+            lastKnownPageHTMLByURL = [:]
+            pageReloadTokensByURL = [:]
+            do {
+                try currentProjectStore?.write(projectURL: project.fileURL)
+            } catch {
+                lastError = error.localizedDescription
+            }
+            seedKnownHTMLForProject(project)
             prepareHistoryForSelectedPage()
+            restartExternalProjectMonitoring(force: true)
+            restartExternalPageMonitoring(force: true)
             statusMessage = "\(project.project.name) を開きました。"
         } catch {
             lastError = error.localizedDescription
@@ -234,6 +282,7 @@ final class EditorStore: ObservableObject {
 
         do {
             try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
+            lastKnownPageHTMLByURL[selectedPageURL] = html
             history.recordSync(html: html)
             syncHistories[selectedPageURL] = history
             updateHistoryAvailability()
@@ -262,6 +311,99 @@ final class EditorStore: ObservableObject {
     func markDocumentReplacementApplied(sequence: Int) {
         guard documentReplacementRequest?.sequence == sequence else { return }
         documentReplacementRequest = nil
+    }
+
+    /// 論理名（日本語）: 外部HTML変更同期関数
+    /// 処理概要: ディスク上の現在ページ HTML が最後に把握した内容から変わっていれば WebView 置換要求へ変換します。
+    func refreshSelectedPageFromDiskIfChanged() {
+        guard let selectedPageURL else { return }
+        refreshPageFromDiskIfChanged(at: selectedPageURL)
+    }
+
+    /// 論理名（日本語）: ページHTML外部変更同期関数
+    /// 処理概要: 指定 HTML の外部変更を検出し、選択中ページは置換要求へ、非選択ページは WebView reload token へ反映します。
+    ///
+    /// - Parameter pageURL: 外部変更を確認する HTML URL。
+    func refreshPageFromDiskIfChanged(at pageURL: URL) {
+        guard let diskHTML = readHTMLFromDisk(at: pageURL) else { return }
+
+        defer {
+            restartExternalPageMonitoring(force: true)
+        }
+
+        let lastKnownHTML = lastKnownPageHTMLByURL[pageURL]
+        guard lastKnownHTML != diskHTML else { return }
+
+        if pageURL != selectedPageURL {
+            lastKnownPageHTMLByURL[pageURL] = diskHTML
+            incrementReloadToken(for: pageURL)
+            statusMessage = "\(pageURL.lastPathComponent) の外部変更を表示へ同期しました。"
+            return
+        }
+
+        guard cssMutation == nil,
+              attributeMutation == nil,
+              documentReplacementRequest == nil
+        else {
+            statusMessage = "\(pageURL.lastPathComponent) の外部変更を検出しました。未適用の編集があるため自動同期を保留しています。"
+            return
+        }
+
+        var history = historyForPage(at: pageURL, fallbackHTML: diskHTML)
+        history.recordSync(html: diskHTML)
+        syncHistories[pageURL] = history
+        lastKnownPageHTMLByURL[pageURL] = diskHTML
+        documentReplacementSequence += 1
+        documentReplacementRequest = DocumentReplacementRequest(
+            sequence: documentReplacementSequence,
+            pageURL: pageURL,
+            html: diskHTML,
+            selectedNodeID: selectedNodeID
+        )
+        updateHistoryAvailability()
+        statusMessage = "\(pageURL.lastPathComponent) の外部変更を同期しました。"
+    }
+
+    /// 論理名（日本語）: 外部プロジェクト変更同期関数
+    /// 処理概要: ディスク上の `.ogp` が変わっていれば再読込し、ページ一覧とキャンバス配置を表示へ反映します。
+    func refreshProjectManifestFromDiskIfChanged() {
+        guard let currentProject = loadedProject else { return }
+
+        defer {
+            restartExternalProjectMonitoring(force: true)
+        }
+
+        do {
+            let reloadedProject = try loader.loadProject(at: currentProject.fileURL)
+            guard reloadedProject.project != currentProject.project
+                    || reloadedProject.rootURL != currentProject.rootURL
+            else {
+                return
+            }
+
+            let previousSelectedPageID = selectedPageID
+            let previousSelectedPageURL = selectedPageURL
+            loadedProject = reloadedProject
+            seedKnownHTMLForProject(reloadedProject)
+
+            if let previousSelectedPageID,
+               reloadedProject.project.pages.contains(where: { $0.id == previousSelectedPageID }) {
+                selectedPageID = previousSelectedPageID
+            } else {
+                selectedPageID = reloadedProject.project.pages.first?.id
+            }
+
+            if selectedPageURL != previousSelectedPageURL {
+                selectedNodeID = nil
+                nodes = []
+                prepareHistoryForSelectedPage()
+            }
+
+            restartExternalPageMonitoring(force: true)
+            statusMessage = "\(reloadedProject.project.name) の .ogp 外部変更を同期しました。"
+        } catch {
+            lastError = ".ogp の再読み込みに失敗しました: \(error.localizedDescription)"
+        }
     }
 
     /// 論理名（日本語）: WebViewエラー報告関数
@@ -294,6 +436,7 @@ final class EditorStore: ObservableObject {
         if syncHistories[selectedPageURL] == nil,
            let html = readHTMLFromDisk(at: selectedPageURL) {
             syncHistories[selectedPageURL] = DocumentSyncHistory(initialHTML: html)
+            lastKnownPageHTMLByURL[selectedPageURL] = html
         }
         updateHistoryAvailability()
     }
@@ -323,6 +466,29 @@ final class EditorStore: ObservableObject {
     /// - Returns: 読み込めた HTML。失敗時は `nil`。
     private func readHTMLFromDisk(at pageURL: URL) -> String? {
         try? String(contentsOf: pageURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: プロジェクトHTML既知状態初期化関数
+    /// 処理概要: project 内の全ページ HTML を読み、外部変更検出の比較基準として保存します。
+    ///
+    /// - Parameter project: 比較基準を初期化する読み込み済み project。
+    private func seedKnownHTMLForProject(_ project: LoadedOpenGraphiteProject) {
+        for page in project.project.pages {
+            let pageURL = project.htmlURL(for: page)
+            if let html = readHTMLFromDisk(at: pageURL) {
+                lastKnownPageHTMLByURL[pageURL] = html
+            }
+        }
+    }
+
+    /// 論理名（日本語）: ページ再読み込みトークン更新関数
+    /// 処理概要: 指定 HTML URL の reload token を進め、対応する非選択 WebView に再読み込みを促します。
+    ///
+    /// - Parameter pageURL: reload token を進める HTML URL。
+    private func incrementReloadToken(for pageURL: URL) {
+        var tokens = pageReloadTokensByURL
+        tokens[pageURL, default: 0] += 1
+        pageReloadTokensByURL = tokens
     }
 
     /// 論理名（日本語）: 履歴可用性更新関数
@@ -365,6 +531,7 @@ final class EditorStore: ObservableObject {
 
         do {
             try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
+            lastKnownPageHTMLByURL[selectedPageURL] = html
             syncHistories[selectedPageURL] = history
             documentReplacementSequence += 1
             documentReplacementRequest = DocumentReplacementRequest(
@@ -378,6 +545,78 @@ final class EditorStore: ObservableObject {
         } catch {
             lastError = "履歴の同期に失敗しました: \(error.localizedDescription)"
             updateHistoryAvailability()
+        }
+    }
+
+    /// 論理名（日本語）: 外部ページ監視再起動関数
+    /// 処理概要: project 内の全 HTML ファイルを監視し、外部変更時にページ単位の同期を試みます。
+    ///
+    /// - Parameter force: 同じ URL でも監視を作り直す場合は `true`。
+    private func restartExternalPageMonitoring(force: Bool = false) {
+        guard !Self.isRunningTests else {
+            cancelPageChangeMonitors()
+            return
+        }
+
+        guard let loadedProject else {
+            cancelPageChangeMonitors()
+            return
+        }
+
+        let pageURLs = Set(loadedProject.project.pages.map { loadedProject.htmlURL(for: $0) })
+        for monitoredURL in Array(pageChangeMonitorsByURL.keys) where !pageURLs.contains(monitoredURL) {
+            pageChangeMonitorsByURL[monitoredURL]?.cancel()
+            pageChangeMonitorsByURL.removeValue(forKey: monitoredURL)
+        }
+
+        for pageURL in pageURLs where force || pageChangeMonitorsByURL[pageURL] == nil {
+            pageChangeMonitorsByURL[pageURL]?.cancel()
+            let monitor = OpenGraphiteFileChangeMonitor()
+            monitor.start(url: pageURL) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    Task { @MainActor [weak self] in
+                        self?.refreshPageFromDiskIfChanged(at: pageURL)
+                    }
+                }
+            }
+            pageChangeMonitorsByURL[pageURL] = monitor
+        }
+    }
+
+    /// 論理名（日本語）: ページ変更監視停止関数
+    /// 処理概要: 登録済みの全 HTML ファイル監視を停止します。
+    private func cancelPageChangeMonitors() {
+        for monitor in pageChangeMonitorsByURL.values {
+            monitor.cancel()
+        }
+        pageChangeMonitorsByURL = [:]
+    }
+
+    /// 論理名（日本語）: 外部プロジェクト監視再起動関数
+    /// 処理概要: 現在開いている `.ogp` ファイルを監視し、外部変更時に project manifest を再読み込みします。
+    ///
+    /// - Parameter force: 同じ URL でも監視を作り直す場合は `true`。
+    private func restartExternalProjectMonitoring(force: Bool = false) {
+        guard !Self.isRunningTests else {
+            projectChangeMonitor.cancel()
+            monitoredProjectURL = nil
+            return
+        }
+
+        guard let projectURL = loadedProject?.fileURL else {
+            projectChangeMonitor.cancel()
+            monitoredProjectURL = nil
+            return
+        }
+
+        guard force || monitoredProjectURL != projectURL else { return }
+        monitoredProjectURL = projectURL
+        projectChangeMonitor.start(url: projectURL) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                Task { @MainActor [weak self] in
+                    self?.refreshProjectManifestFromDiskIfChanged()
+                }
+            }
         }
     }
 

@@ -148,15 +148,21 @@ final class WebScrollStateRegistry {
 ///
 /// プロパティ:
 /// - `store`: エディター状態を保持するストア。
+/// - `pageURL`: 表示する HTML ファイル URL。未指定時は選択中ページを使います。
+/// - `isInteractive`: DOM 収集、選択、編集同期を有効にするか。
+/// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
+    var pageURL: URL?
+    var isInteractive = true
+    var reloadToken = 0
 
     /// 論理名（日本語）: コーディネーター生成関数
     /// 処理概要: WKWebView の navigation、script message、context menu を処理するコーディネーターを生成します。
     ///
     /// - Returns: WebCanvasView 用コーディネーター。
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store)
+        Coordinator(store: store, isInteractive: isInteractive)
     }
 
     /// 論理名（日本語）: WKWebView生成関数
@@ -197,13 +203,33 @@ struct WebCanvasView: NSViewRepresentable {
     ///   - webView: 更新対象の WKWebView。
     ///   - context: SwiftUI が提供する representable context。
     func updateNSView(_ webView: WKWebView, context: Context) {
+        let becameInteractive = !context.coordinator.isInteractive && isInteractive
         context.coordinator.store = store
+        context.coordinator.isInteractive = isInteractive
 
-        if let pageURL = store.selectedPageURL, context.coordinator.loadedURL != pageURL {
-            context.coordinator.loadedURL = pageURL
+        let targetPageURL = pageURL ?? store.selectedPageURL
+        if let targetPageURL,
+           context.coordinator.loadedURL != targetPageURL
+            || context.coordinator.lastReloadToken != reloadToken {
+            context.coordinator.loadedURL = targetPageURL
+            context.coordinator.lastReloadToken = reloadToken
             context.coordinator.lastSelectedNodeID = nil
-            let readAccessURL = store.projectRootURL ?? pageURL.deletingLastPathComponent()
-            webView.loadFileURL(pageURL, allowingReadAccessTo: readAccessURL)
+            let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
+            webView.loadFileURL(targetPageURL, allowingReadAccessTo: readAccessURL)
+        }
+
+        guard isInteractive else {
+            if context.coordinator.lastSelectedNodeID != nil {
+                context.coordinator.lastSelectedNodeID = nil
+                context.coordinator.selectNode(nil)
+            }
+            return
+        }
+
+        if becameInteractive {
+            context.coordinator.collectNodes()
+            context.coordinator.lastSelectedNodeID = nil
+            context.coordinator.lastActiveTool = nil
         }
 
         if context.coordinator.lastSelectedNodeID != store.selectedNodeID {
@@ -258,7 +284,9 @@ struct WebCanvasView: NSViewRepresentable {
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         @MainActor var store: EditorStore
         weak var webView: WKWebView?
+        var isInteractive: Bool
         var loadedURL: URL?
+        var lastReloadToken = 0
         var lastSelectedNodeID: String?
         var lastActiveTool: CanvasTool?
         var lastAppliedMutationSequence = 0
@@ -270,9 +298,12 @@ struct WebCanvasView: NSViewRepresentable {
         /// 論理名（日本語）: コーディネーター初期化関数
         /// 処理概要: WebView ブリッジで更新するエディター状態ストアを保持します。
         ///
-        /// - Parameter store: 連携対象のエディター状態ストア。
-        init(store: EditorStore) {
+        /// - Parameters:
+        ///   - store: 連携対象のエディター状態ストア。
+        ///   - isInteractive: DOM 収集、選択、編集同期を有効にするか。
+        init(store: EditorStore, isInteractive: Bool) {
             self.store = store
+            self.isInteractive = isInteractive
         }
 
         /// 論理名（日本語）: Script Message受信関数
@@ -282,6 +313,8 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - userContentController: メッセージ送信元の user content controller。
         ///   - message: JavaScript bridge から届いたメッセージ。
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard isInteractive || message.name == "openGraphiteScrollState" else { return }
+
             if message.name == "openGraphiteNodes", let payload = message.body as? [[String: Any]] {
                 Task { @MainActor in
                     store.ingestNodePayload(payload)
@@ -323,11 +356,18 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - webView: 読み込みが完了した WebView。
         ///   - navigation: 完了した navigation。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
+            guard isInteractive else { return }
+            collectNodes()
             Task { @MainActor in
                 setActiveTool(store.activeTool)
                 selectNode(store.selectedNodeID)
             }
+        }
+
+        /// 論理名（日本語）: WebViewノード収集関数
+        /// 処理概要: 表示中 DOM から OpenGraphite node graph を JavaScript bridge 経由で再収集します。
+        func collectNodes() {
+            webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
         }
 
         /// 論理名（日本語）: WebView読み込み失敗関数

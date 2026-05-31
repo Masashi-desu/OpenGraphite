@@ -22,6 +22,7 @@ targets:
         NSHumanReadableCopyright: "Copyright © 2026 OpenGraphite"
     sources:
       - path: App/Sources
+      - path: Shared/Sources
       - path: App/Resources
         optional: true
         buildPhase: resources
@@ -50,6 +51,22 @@ targets:
       configs:
         Debug:
           ENABLE_TESTABILITY: YES
+  ogkiln:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: App/Sources/Domain
+      - path: App/Sources/Infrastructure/ProjectLoader.swift
+      - path: Shared/Sources
+      - path: Tools/ogkiln
+    dependencies:
+      - sdk: AppKit.framework
+      - sdk: WebKit.framework
+    settings:
+      base:
+        PRODUCT_NAME: ogkiln
+        PRODUCT_BUNDLE_IDENTIFIER: dev.opengraphite.ogkiln
   OpenGraphiteTests:
     type: bundle.unit-test
     platform: macOS
@@ -72,7 +89,15 @@ schemes:
         OpenGraphiteTests: [test]
     run:
       config: Debug
+      environmentVariables:
+        OPENGRAPHITE_SAMPLE_PROJECT_PATH: "$(PROJECT_DIR)/SampleProject/OpenGraphiteSample.ogp"
     test:
       config: Debug
       targets:
         - OpenGraphiteTests
+  ogkiln:
+    build:
+      targets:
+        ogkiln: all
+    run:
+      config: Debug

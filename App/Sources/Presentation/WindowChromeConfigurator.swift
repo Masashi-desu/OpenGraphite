@@ -23,7 +23,7 @@ struct WindowChromeConfigurator: NSViewRepresentable {
     ///   - context: SwiftUI が提供する representable context。
     func updateNSView(_ nsView: WindowChromeConfigurationView, context: Context) {
         nsView.onWindowChange = configure(window:)
-        configure(window: nsView.window)
+        nsView.refreshConfiguration()
     }
 
     /// 論理名（日本語）: ウィンドウ設定関数
@@ -40,9 +40,8 @@ struct WindowChromeConfigurator: NSViewRepresentable {
         window.toolbar?.showsBaselineSeparator = false
         window.isMovableByWindowBackground = true
 
-        DispatchQueue.main.async {
-            centerTrafficLightButtons(in: window)
-        }
+        window.contentView?.layoutSubtreeIfNeeded()
+        centerTrafficLightButtons(in: window)
     }
 
     /// 論理名（日本語）: トラフィックライト中央揃え関数
@@ -88,11 +87,86 @@ struct WindowChromeConfigurator: NSViewRepresentable {
 /// - `onWindowChange`: 所属ウィンドウ変更時に呼ばれる設定コールバック。
 final class WindowChromeConfigurationView: NSView {
     var onWindowChange: ((NSWindow?) -> Void)?
+    private weak var observedWindow: NSWindow?
+    private var notificationObservers: [NSObjectProtocol] = []
+    private var isConfigurationScheduled = false
 
     /// 論理名（日本語）: ウィンドウ移動通知関数
     /// 処理概要: view がウィンドウへ接続されたタイミングで設定コールバックを実行します。
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        onWindowChange?(window)
+        refreshConfiguration()
+    }
+
+    /// 論理名（日本語）: レイアウト更新関数
+    /// 処理概要: SwiftUI 側のレイアウト更新後にウィンドウボタン位置を再補正できるよう、設定処理を予約します。
+    override func layout() {
+        super.layout()
+        scheduleConfiguration()
+    }
+
+    /// 論理名（日本語）: 解放処理関数
+    /// 処理概要: ウィンドウ通知の監視を解除し、AppKit 通知センターに observer を残さないようにします。
+    deinit {
+        removeWindowObservers()
+    }
+
+    /// 論理名（日本語）: 設定再読み込み関数
+    /// 処理概要: 所属ウィンドウの監視を張り直し、次の run loop でクローム設定を適用します。
+    func refreshConfiguration() {
+        installWindowObservers(for: window)
+        scheduleConfiguration()
+    }
+
+    /// 論理名（日本語）: ウィンドウ通知監視設定関数
+    /// 処理概要: 初期表示後のリサイズ、画面移動、キー化に合わせてクローム設定を再適用する通知監視を設定します。
+    ///
+    /// - Parameter newWindow: 監視対象の `NSWindow`。
+    private func installWindowObservers(for newWindow: NSWindow?) {
+        guard observedWindow !== newWindow else { return }
+
+        removeWindowObservers()
+        observedWindow = newWindow
+
+        guard let newWindow else { return }
+
+        let notifications: [Notification.Name] = [
+            NSWindow.didResizeNotification,
+            NSWindow.didEndLiveResizeNotification,
+            NSWindow.didChangeScreenNotification,
+            NSWindow.didChangeBackingPropertiesNotification,
+            NSWindow.didBecomeKeyNotification
+        ]
+
+        notificationObservers = notifications.map { notificationName in
+            NotificationCenter.default.addObserver(
+                forName: notificationName,
+                object: newWindow,
+                queue: .main
+            ) { [weak self] _ in
+                self?.scheduleConfiguration()
+            }
+        }
+    }
+
+    /// 論理名（日本語）: ウィンドウ通知監視解除関数
+    /// 処理概要: 現在登録済みのウィンドウ通知 observer をすべて解除します。
+    private func removeWindowObservers() {
+        notificationObservers.forEach(NotificationCenter.default.removeObserver)
+        notificationObservers = []
+    }
+
+    /// 論理名（日本語）: 設定予約関数
+    /// 処理概要: AppKit と SwiftUI のレイアウト完了後に一度だけクローム設定を適用するよう予約します。
+    private func scheduleConfiguration() {
+        guard window != nil, !isConfigurationScheduled else { return }
+
+        isConfigurationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+
+            self.isConfigurationScheduled = false
+            self.onWindowChange?(self.window)
+        }
     }
 }

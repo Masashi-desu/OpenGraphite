@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="$ROOT_DIR/.build/ogkiln"
+BINARY="$BUILD_DIR/ogkiln"
+
+sources=(
+  "$ROOT_DIR/App/Sources/Domain/OpenGraphiteProject.swift"
+  "$ROOT_DIR/App/Sources/Domain/OpenGraphiteNode.swift"
+  "$ROOT_DIR/App/Sources/Infrastructure/ProjectLoader.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteContract.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCurrentProjectStore.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteHTMLDocument.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteAgentCore.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteScreenshotRenderer.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OgkilnCLI.swift"
+  "$ROOT_DIR/Tools/ogkiln/main.swift"
+)
+
+needs_build=0
+if [[ ! -x "$BINARY" ]]; then
+  needs_build=1
+else
+  for source in "${sources[@]}"; do
+    if [[ "$source" -nt "$BINARY" ]]; then
+      needs_build=1
+      break
+    fi
+  done
+fi
+
+if [[ "$needs_build" -eq 1 ]]; then
+  mkdir -p "$BUILD_DIR"
+  xcrun swiftc -O -framework AppKit -framework WebKit -o "$BINARY" "${sources[@]}"
+fi
+
+exec "$BINARY" "$@"

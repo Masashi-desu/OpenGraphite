@@ -211,12 +211,162 @@ struct EditorStoreTests {
         #expect(store.documentReplacementRequest?.html == "<!doctype html>\n<html><body>second</body></html>")
         #expect(store.canRedo == false)
     }
+
+    /// 論理名（日本語）: 外部HTML変更同期テスト
+    /// 概要: ディスク上の HTML が外部変更された場合に WebView 置換要求へ変換されることを検証します。
+    @Test("外部HTML変更を置換要求へ同期する")
+    func testRefreshSelectedPageFromDiskCreatesReplacementRequest() throws {
+        // コンディション：一時プロジェクトを開き、外部プロセス相当で HTML を書き換える
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let externalHTML = "<!doctype html>\n<html><body><Title data-og-id=\"title\" data-og-type=\"text\">external</Title></body></html>"
+        try externalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：外部変更同期を実行する
+        store.refreshSelectedPageFromDiskIfChanged()
+
+        // 期待値：ディスク上の HTML が WebView 置換要求として保持される
+        #expect(store.documentReplacementRequest?.html == externalHTML)
+        #expect(store.documentReplacementRequest?.pageURL == fixture.htmlURL)
+        #expect(store.statusMessage.contains("外部変更を同期"))
+    }
+
+    /// 論理名（日本語）: 非選択ページ外部HTML変更同期テスト
+    /// 概要: キャンバス上の非選択ページが外部変更された場合に WebView reload token が更新されることを検証します。
+    @Test("非選択ページの外部HTML変更でreload tokenを更新する")
+    func testRefreshNonSelectedPageFromDiskUpdatesReloadToken() throws {
+        // コンディション：home と downloads を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let downloadsURL = fixture.publicURL.appendingPathComponent("downloads.html")
+        try "<!doctype html>\n<html><body>downloads initial</body></html>".write(
+            to: downloadsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try fixture.writeProject(
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                ),
+                OpenGraphitePage(
+                    id: "downloads",
+                    path: "downloads.html",
+                    canvas: OpenGraphiteCanvas(x: 120, y: 0, width: 100, height: 100)
+                )
+            ]
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let initialToken = store.reloadToken(for: downloadsURL)
+
+        // 検証内容：非選択ページの HTML を外部プロセス相当で書き換える
+        try "<!doctype html>\n<html><body>downloads external</body></html>".write(
+            to: downloadsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        store.refreshPageFromDiskIfChanged(at: downloadsURL)
+
+        // 期待値：選択中ページの置換要求ではなく、非選択 WebView 用 reload token が更新される
+        #expect(store.selectedPageID == "home")
+        #expect(store.documentReplacementRequest == nil)
+        #expect(store.reloadToken(for: downloadsURL) == initialToken + 1)
+        #expect(store.statusMessage.contains("表示へ同期"))
+    }
+
+    /// 論理名（日本語）: 未適用編集との競合テスト
+    /// 概要: 未適用 mutation がある場合に外部 HTML 変更で WebView を破壊的に置換しないことを検証します。
+    @Test("未適用編集がある場合は外部HTML変更同期を保留する")
+    func testRefreshSelectedPageFromDiskDefersWhenMutationIsPending() throws {
+        // コンディション：未適用 CSS mutation を持つストアで外部変更を発生させる
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "tagName": "title",
+                "type": "text",
+                "cssVariables": ["--og-gap": "8px"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "title")
+        store.updateCSSVariable(key: "--og-gap", value: "16px")
+        try "<!doctype html>\n<html><body>external</body></html>".write(
+            to: fixture.htmlURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // 検証内容：外部変更同期を実行する
+        store.refreshSelectedPageFromDiskIfChanged()
+
+        // 期待値：未適用 mutation が優先され、置換要求は作られない
+        #expect(store.documentReplacementRequest == nil)
+        #expect(store.cssMutation?.value == "16px")
+        #expect(store.statusMessage.contains("自動同期を保留"))
+    }
+
+    /// 論理名（日本語）: 外部プロジェクト変更同期テスト
+    /// 概要: ディスク上の `.ogp` が外部変更された場合にページ一覧とキャンバス配置が再読み込みされることを検証します。
+    @Test("外部ogp変更をページ一覧と配置へ同期する")
+    func testRefreshProjectManifestReloadsPagesAndCanvas() throws {
+        // コンディション：一時プロジェクトを開き、外部プロセス相当で `.ogp` にページを追加する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let downloadsURL = fixture.publicURL.appendingPathComponent("downloads.html")
+        try "<!doctype html>\n<html><body>downloads</body></html>".write(
+            to: downloadsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let updatedProject = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                ),
+                OpenGraphitePage(
+                    id: "downloads",
+                    path: "downloads.html",
+                    canvas: OpenGraphiteCanvas(x: 1520, y: 0, width: 1440, height: 1200)
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(updatedProject)
+        try data.write(to: fixture.projectURL)
+
+        // 検証内容：外部 `.ogp` 変更同期を実行する
+        store.refreshProjectManifestFromDiskIfChanged()
+
+        // 期待値：追加ページと canvas 配置がストアへ反映される
+        #expect(store.loadedProject?.project.pages.map(\.id) == ["home", "downloads"])
+        #expect(store.loadedProject?.project.pages[1].canvas.x == 1520)
+        #expect(store.selectedPageID == "home")
+        #expect(store.statusMessage.contains(".ogp 外部変更を同期"))
+    }
 }
 
 /// 論理名（日本語）: エディターストア履歴テストfixture
 /// 概要: 一時ディレクトリに `.ogp` と HTML を作成し、同期履歴テスト用のプロジェクトを提供します。
 private struct EditorStoreHistoryFixture {
     let rootURL: URL
+    let publicURL: URL
     let projectURL: URL
     let htmlURL: URL
 
@@ -225,7 +375,7 @@ private struct EditorStoreHistoryFixture {
     init() throws {
         rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("OpenGraphiteEditorStoreHistory-\(UUID().uuidString)")
-        let publicURL = rootURL.appendingPathComponent("public")
+        publicURL = rootURL.appendingPathComponent("public")
         projectURL = rootURL.appendingPathComponent("Project.ogp")
         htmlURL = publicURL.appendingPathComponent("index.html")
 
@@ -249,6 +399,23 @@ private struct EditorStoreHistoryFixture {
                     canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
                 )
             ]
+        )
+        let data = try JSONEncoder().encode(project)
+        try data.write(to: projectURL)
+    }
+
+    /// 論理名（日本語）: project fixture書き換え関数
+    /// 処理概要: 指定ページ一覧を持つ `.ogp` を fixture の project URL へ保存します。
+    ///
+    /// - Parameter pages: 保存する page entry 一覧。
+    func writeProject(pages: [OpenGraphitePage]) throws {
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: pages
         )
         let data = try JSONEncoder().encode(project)
         try data.write(to: projectURL)

@@ -7,6 +7,7 @@ BUNDLE_ID="dev.opengraphite.OpenGraphite"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA="$ROOT_DIR/build/DerivedData"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
+SAMPLE_PROJECT_PATH="$ROOT_DIR/SampleProject/OpenGraphiteSample.ogp"
 
 cd "$ROOT_DIR"
 
@@ -23,7 +24,9 @@ xcodebuild \
   build
 
 open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+  /usr/bin/open -n \
+    --env "OPENGRAPHITE_SAMPLE_PROJECT_PATH=$SAMPLE_PROJECT_PATH" \
+    "$APP_BUNDLE"
 }
 
 case "$MODE" in
@@ -31,7 +34,8 @@ case "$MODE" in
     open_app
     ;;
   --debug|debug)
-    lldb -- "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+    OPENGRAPHITE_SAMPLE_PROJECT_PATH="$SAMPLE_PROJECT_PATH" \
+      lldb -- "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
     ;;
   --logs|logs)
     open_app

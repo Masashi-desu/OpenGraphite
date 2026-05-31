@@ -1,0 +1,672 @@
+import AppKit
+import Foundation
+import WebKit
+
+/// 論理名（日本語）: スクリーンショット種別
+/// 概要: `ogkiln screenshot` が出力する画像の対象範囲を表します。
+///
+/// 定義内容:
+/// - `canvas`: `.ogp` の全ページ配置を含むキャンバス全体。
+/// - `page`: 単一ページ。
+/// - `node`: `data-og-id` で指定した単一ノード。
+enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
+    case canvas
+    case page
+    case node
+}
+
+/// 論理名（日本語）: スクリーンショット対象ページ
+/// 概要: キャンバススクリーンショットに含まれたページと配置を JSON 出力向けに表します。
+///
+/// プロパティ:
+/// - `id`: ページ ID。
+/// - `path`: `htmlRoot` から見た HTML path。
+/// - `htmlURL`: 解決済み HTML URL。
+/// - `canvas`: `.ogp` 上のキャンバス配置。
+struct OpenGraphiteScreenshotPage: Codable, Equatable {
+    var id: String
+    var path: String
+    var htmlURL: String
+    var canvas: OpenGraphiteCanvas
+}
+
+/// 論理名（日本語）: スクリーンショット結果
+/// 概要: `ogkiln screenshot` の出力ファイルとレンダリング対象を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `kind`: スクリーンショット種別。
+/// - `outputPath`: PNG 出力先。
+/// - `width`: 出力 PNG の実ピクセル幅。
+/// - `height`: 出力 PNG の実ピクセル高さ。
+/// - `pageID`: 対象ページ ID。
+/// - `pageURL`: 対象 HTML URL。
+/// - `nodeID`: 対象 `data-og-id`。
+/// - `pages`: キャンバススクリーンショットに含めたページ一覧。
+/// - `diagnostics`: 補助診断。
+struct OpenGraphiteScreenshotResult: Codable, Equatable {
+    var schemaVersion: String
+    var kind: OpenGraphiteScreenshotKind
+    var outputPath: String
+    var width: Double
+    var height: Double
+    var pageID: String?
+    var pageURL: String?
+    var nodeID: String?
+    var pages: [OpenGraphiteScreenshotPage]?
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: スクリーンショットレンダラー
+/// 概要: WebKit で HTML をレンダリングし、ページ、ノード、`.ogp` キャンバスを PNG として保存します。
+///
+/// メソッド:
+/// - `captureCanvas(projectURL:outputURL:)`: `.ogp` の全ページを合成して保存します。
+/// - `capturePage(targetURL:pageID:outputURL:readAccessURL:width:height:fullPage:)`: 単一ページを保存します。
+/// - `captureNode(htmlURL:nodeID:outputURL:readAccessURL:width:height:padding:)`: 指定ノードを切り抜いて保存します。
+struct OpenGraphiteScreenshotRenderer {
+    private static let defaultViewportWidth: CGFloat = 1440
+    private static let defaultViewportHeight: CGFloat = 1200
+    private static let defaultCanvasBackground = NSColor(
+        calibratedRed: 0.105,
+        green: 0.105,
+        blue: 0.098,
+        alpha: 1
+    )
+
+    /// 論理名（日本語）: キャンバススクリーンショット関数
+    /// 処理概要: `.ogp` に含まれる全ページを各 canvas 座標へ配置し、単一 PNG として保存します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 対象 `.ogp` URL。
+    ///   - outputURL: PNG 出力先 URL。
+    /// - Returns: スクリーンショット結果。
+    func captureCanvas(projectURL: URL, outputURL: URL) throws -> OpenGraphiteScreenshotResult {
+        try runWebKitSynchronously {
+            try await captureCanvasOnMain(projectURL: projectURL, outputURL: outputURL)
+        }
+    }
+
+    /// 論理名（日本語）: ページスクリーンショット関数
+    /// 処理概要: `.ogp` の page ID または HTML ファイルを WebKit でレンダリングし、PNG として保存します。
+    ///
+    /// - Parameters:
+    ///   - targetURL: `.ogp` または HTML URL。
+    ///   - pageID: `.ogp` 内ページを指定する ID。HTML 直接指定時は `nil`。
+    ///   - outputURL: PNG 出力先 URL。
+    ///   - readAccessURL: HTML 直接指定時の読み取り許可ルート。
+    ///   - width: viewport 幅。`.ogp` 指定時は省略すると page canvas 幅を使います。
+    ///   - height: viewport 高さ。`.ogp` 指定時は省略すると page canvas 高さを使います。
+    ///   - fullPage: document 全体を保存するか。
+    /// - Returns: スクリーンショット結果。
+    func capturePage(
+        targetURL: URL,
+        pageID: String?,
+        outputURL: URL,
+        readAccessURL: URL,
+        width: Double?,
+        height: Double?,
+        fullPage: Bool
+    ) throws -> OpenGraphiteScreenshotResult {
+        try runWebKitSynchronously {
+            try await capturePageOnMain(
+                targetURL: targetURL,
+                pageID: pageID,
+                outputURL: outputURL,
+                readAccessURL: readAccessURL,
+                width: width,
+                height: height,
+                fullPage: fullPage
+            )
+        }
+    }
+
+    /// 論理名（日本語）: ノードスクリーンショット関数
+    /// 処理概要: HTML 内の `data-og-id` ノードの bounding rect を取得し、その範囲だけを PNG として保存します。
+    ///
+    /// - Parameters:
+    ///   - htmlURL: 対象 HTML URL。
+    ///   - nodeID: 対象 `data-og-id`。
+    ///   - outputURL: PNG 出力先 URL。
+    ///   - readAccessURL: HTML と関連アセットの読み取り許可ルート。
+    ///   - width: 初期 viewport 幅。
+    ///   - height: 初期 viewport 高さ。
+    ///   - padding: 切り抜き範囲へ加える余白。
+    /// - Returns: スクリーンショット結果。
+    func captureNode(
+        htmlURL: URL,
+        nodeID: String,
+        outputURL: URL,
+        readAccessURL: URL,
+        width: Double?,
+        height: Double?,
+        padding: Double?
+    ) throws -> OpenGraphiteScreenshotResult {
+        try runWebKitSynchronously {
+            try await captureNodeOnMain(
+                htmlURL: htmlURL,
+                nodeID: nodeID,
+                outputURL: outputURL,
+                readAccessURL: readAccessURL,
+                width: width,
+                height: height,
+                padding: padding
+            )
+        }
+    }
+
+    @MainActor
+    private func captureCanvasOnMain(projectURL: URL, outputURL: URL) async throws -> OpenGraphiteScreenshotResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        let pages = loadedProject.project.pages
+        guard !pages.isEmpty else {
+            throw OpenGraphiteScreenshotError(message: ".ogp に pages がありません。")
+        }
+
+        let minX = pages.map(\.canvas.x).min() ?? 0
+        let minY = pages.map(\.canvas.y).min() ?? 0
+        let maxX = pages.map { $0.canvas.x + $0.canvas.width }.max() ?? 1
+        let maxY = pages.map { $0.canvas.y + $0.canvas.height }.max() ?? 1
+        let width = CGFloat(max(maxX - minX, 1))
+        let height = CGFloat(max(maxY - minY, 1))
+        let snapshots = try await pages.mapAsync { page in
+            let image = try await capturePageImage(
+                htmlURL: loadedProject.htmlURL(for: page),
+                readAccessURL: loadedProject.rootURL,
+                viewport: CGSize(width: page.canvas.width, height: page.canvas.height),
+                fullPage: false
+            )
+            return (page: page, image: image)
+        }
+        let canvasImage = try compositeCanvas(
+            snapshots: snapshots,
+            minX: minX,
+            minY: minY,
+            width: width,
+            height: height
+        )
+
+        let pngSize = try writePNG(canvasImage, to: outputURL)
+        return OpenGraphiteScreenshotResult(
+            schemaVersion: OpenGraphiteAgentCore.schemaVersion,
+            kind: .canvas,
+            outputPath: outputURL.path,
+            width: pngSize.width,
+            height: pngSize.height,
+            pageID: nil,
+            pageURL: nil,
+            nodeID: nil,
+            pages: pages.map { page in
+                OpenGraphiteScreenshotPage(
+                    id: page.id,
+                    path: page.path,
+                    htmlURL: loadedProject.htmlURL(for: page).path,
+                    canvas: page.canvas
+                )
+            },
+            diagnostics: []
+        )
+    }
+
+    @MainActor
+    private func capturePageOnMain(
+        targetURL: URL,
+        pageID: String?,
+        outputURL: URL,
+        readAccessURL: URL,
+        width: Double?,
+        height: Double?,
+        fullPage: Bool
+    ) async throws -> OpenGraphiteScreenshotResult {
+        let pageURL: URL
+        let accessURL: URL
+        let viewport: CGSize
+        let resolvedPageID: String?
+
+        if targetURL.pathExtension == "ogp" {
+            let loadedProject = try ProjectLoader().loadProject(at: targetURL)
+            guard let pageID else {
+                throw OpenGraphiteScreenshotError(message: ".ogp の page screenshot には --id が必要です。")
+            }
+            guard let page = loadedProject.project.pages.first(where: { $0.id == pageID }) else {
+                throw OpenGraphiteScreenshotError(message: "page id \"\(pageID)\" が見つかりません。")
+            }
+            pageURL = loadedProject.htmlURL(for: page)
+            accessURL = loadedProject.rootURL
+            viewport = CGSize(
+                width: try positiveSize(width, fallback: page.canvas.width, label: "--width"),
+                height: try positiveSize(height, fallback: page.canvas.height, label: "--height")
+            )
+            resolvedPageID = page.id
+        } else {
+            pageURL = targetURL
+            accessURL = readAccessURL
+            viewport = CGSize(
+                width: try positiveSize(width, fallback: Self.defaultViewportWidth, label: "--width"),
+                height: try positiveSize(height, fallback: Self.defaultViewportHeight, label: "--height")
+            )
+            resolvedPageID = nil
+        }
+
+        let image = try await capturePageImage(
+            htmlURL: pageURL,
+            readAccessURL: accessURL,
+            viewport: viewport,
+            fullPage: fullPage
+        )
+        let pngSize = try writePNG(image, to: outputURL)
+        return OpenGraphiteScreenshotResult(
+            schemaVersion: OpenGraphiteAgentCore.schemaVersion,
+            kind: .page,
+            outputPath: outputURL.path,
+            width: pngSize.width,
+            height: pngSize.height,
+            pageID: resolvedPageID,
+            pageURL: pageURL.path,
+            nodeID: nil,
+            pages: nil,
+            diagnostics: []
+        )
+    }
+
+    @MainActor
+    private func captureNodeOnMain(
+        htmlURL: URL,
+        nodeID: String,
+        outputURL: URL,
+        readAccessURL: URL,
+        width: Double?,
+        height: Double?,
+        padding: Double?
+    ) async throws -> OpenGraphiteScreenshotResult {
+        let viewport = CGSize(
+            width: try positiveSize(width, fallback: Self.defaultViewportWidth, label: "--width"),
+            height: try positiveSize(height, fallback: Self.defaultViewportHeight, label: "--height")
+        )
+        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
+        try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
+        let documentSize = try await snapshotter.documentSize()
+        snapshotter.resize(to: documentSize)
+        try await snapshotter.waitForLayout()
+        let nodeRect = try await snapshotter.nodeRect(id: nodeID)
+        let paddedRect = padded(nodeRect, by: CGFloat(padding ?? 0), within: CGRect(origin: .zero, size: documentSize))
+        guard paddedRect.width > 0, paddedRect.height > 0 else {
+            throw OpenGraphiteScreenshotError(message: "node \"\(nodeID)\" の表示範囲が空です。")
+        }
+
+        let image = try await snapshotter.snapshot(rect: paddedRect)
+        let pngSize = try writePNG(image, to: outputURL)
+        return OpenGraphiteScreenshotResult(
+            schemaVersion: OpenGraphiteAgentCore.schemaVersion,
+            kind: .node,
+            outputPath: outputURL.path,
+            width: pngSize.width,
+            height: pngSize.height,
+            pageID: nil,
+            pageURL: htmlURL.path,
+            nodeID: nodeID,
+            pages: nil,
+            diagnostics: []
+        )
+    }
+
+    @MainActor
+    private func capturePageImage(
+        htmlURL: URL,
+        readAccessURL: URL,
+        viewport: CGSize,
+        fullPage: Bool
+    ) async throws -> NSImage {
+        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
+        try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
+        if fullPage {
+            let documentSize = try await snapshotter.documentSize()
+            snapshotter.resize(to: documentSize)
+        }
+        try await snapshotter.waitForLayout()
+        return try await snapshotter.snapshot()
+    }
+
+    private func compositeCanvas(
+        snapshots: [(page: OpenGraphitePage, image: NSImage)],
+        minX: Double,
+        minY: Double,
+        width: CGFloat,
+        height: CGFloat
+    ) throws -> NSImage {
+        let pixelWidth = Int(ceil(width))
+        let pixelHeight = Int(ceil(height))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelWidth,
+            pixelsHigh: pixelHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            throw OpenGraphiteScreenshotError(message: "canvas bitmap を作成できません。")
+        }
+
+        guard let context = NSGraphicsContext(bitmapImageRep: bitmap) else {
+            throw OpenGraphiteScreenshotError(message: "canvas drawing context を作成できません。")
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        Self.defaultCanvasBackground.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+
+        for item in snapshots {
+            let targetRect = NSRect(
+                x: item.page.canvas.x - minX,
+                y: Double(height) - (item.page.canvas.y - minY) - item.page.canvas.height,
+                width: item.page.canvas.width,
+                height: item.page.canvas.height
+            )
+            item.image.draw(in: targetRect)
+        }
+
+        NSGraphicsContext.restoreGraphicsState()
+        let image = NSImage(size: NSSize(width: width, height: height))
+        image.addRepresentation(bitmap)
+        return image
+    }
+
+    private func writePNG(_ image: NSImage, to outputURL: URL) throws -> OpenGraphitePNGSize {
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        guard let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw OpenGraphiteScreenshotError(message: "PNG データを作成できません。")
+        }
+        try pngData.write(to: outputURL, options: .atomic)
+        return OpenGraphitePNGSize(width: Double(bitmap.pixelsWide), height: Double(bitmap.pixelsHigh))
+    }
+
+    private func positiveSize(_ value: Double?, fallback: CGFloat, label: String) throws -> CGFloat {
+        let size = CGFloat(value ?? Double(fallback))
+        guard size > 0 else {
+            throw OpenGraphiteScreenshotError(message: "\(label) は正の数値で指定してください。")
+        }
+        return size
+    }
+
+    private func padded(_ rect: CGRect, by padding: CGFloat, within bounds: CGRect) -> CGRect {
+        rect
+            .insetBy(dx: -max(padding, 0), dy: -max(padding, 0))
+            .intersection(bounds)
+            .integral
+    }
+
+    private func runWebKitSynchronously<T>(
+        _ operation: @escaping @MainActor () async throws -> T
+    ) throws -> T {
+        let box = OpenGraphiteSynchronousResultBox<T>()
+        Task { @MainActor in
+            do {
+                box.result = .success(try await operation())
+            } catch {
+                box.result = .failure(error)
+            }
+        }
+
+        if Thread.isMainThread {
+            while box.result == nil {
+                RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            }
+        } else {
+            while box.result == nil {
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+
+        return try box.result!.get()
+    }
+}
+
+/// 論理名（日本語）: ページスナップショット補助
+/// 概要: 単一 `WKWebView` の読み込み、JavaScript 評価、画像化を扱います。
+@MainActor
+private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate {
+    private let webView: WKWebView
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    /// 論理名（日本語）: ページスナップショット補助初期化関数
+    /// 処理概要: 指定 viewport の offscreen WKWebView を作成します。
+    ///
+    /// - Parameter viewport: 初期 viewport サイズ。
+    init(viewport: CGSize) {
+        let configuration = WKWebViewConfiguration()
+        configuration.suppressesIncrementalRendering = true
+        webView = WKWebView(frame: CGRect(origin: .zero, size: viewport), configuration: configuration)
+        super.init()
+        webView.navigationDelegate = self
+    }
+
+    /// 論理名（日本語）: HTML読み込み関数
+    /// 処理概要: ローカル HTML を指定 read access root で読み込み、navigation 完了まで待機します。
+    ///
+    /// - Parameters:
+    ///   - htmlURL: 読み込む HTML URL。
+    ///   - readAccessURL: 関連アセット読み取り許可ルート。
+    func load(htmlURL: URL, readAccessURL: URL) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            webView.loadFileURL(htmlURL, allowingReadAccessTo: readAccessURL)
+        }
+    }
+
+    /// 論理名（日本語）: WebViewリサイズ関数
+    /// 処理概要: document 全体や canvas サイズに合わせて offscreen WKWebView をリサイズします。
+    ///
+    /// - Parameter size: 新しい viewport サイズ。
+    func resize(to size: CGSize) {
+        webView.frame = CGRect(origin: .zero, size: size)
+        webView.layoutSubtreeIfNeeded()
+    }
+
+    /// 論理名（日本語）: レイアウト待機関数
+    /// 処理概要: WebKit の非同期レイアウトが落ち着くまで短時間待機します。
+    func waitForLayout() async throws {
+        try await Task.sleep(nanoseconds: 120_000_000)
+    }
+
+    /// 論理名（日本語）: ドキュメントサイズ取得関数
+    /// 処理概要: JavaScript で document の scroll / offset サイズを取得します。
+    ///
+    /// - Returns: document 全体を含むサイズ。
+    func documentSize() async throws -> CGSize {
+        let value = try await evaluateJavaScript(
+            """
+            (() => {
+              const body = document.body;
+              const element = document.documentElement;
+              return {
+                width: Math.ceil(Math.max(
+                  element ? element.scrollWidth : 0,
+                  element ? element.offsetWidth : 0,
+                  body ? body.scrollWidth : 0,
+                  body ? body.offsetWidth : 0,
+                  window.innerWidth
+                )),
+                height: Math.ceil(Math.max(
+                  element ? element.scrollHeight : 0,
+                  element ? element.offsetHeight : 0,
+                  body ? body.scrollHeight : 0,
+                  body ? body.offsetHeight : 0,
+                  window.innerHeight
+                ))
+              };
+            })()
+            """
+        )
+        let dictionary = try dictionaryValue(value, description: "document size")
+        return CGSize(
+            width: try cgFloatValue(dictionary["width"], description: "document width"),
+            height: try cgFloatValue(dictionary["height"], description: "document height")
+        )
+    }
+
+    /// 論理名（日本語）: ノード矩形取得関数
+    /// 処理概要: `data-og-id` に一致する要素の bounding rect を JavaScript で取得します。
+    ///
+    /// - Parameter id: 対象 `data-og-id`。
+    /// - Returns: 対象 node の矩形。
+    func nodeRect(id: String) async throws -> CGRect {
+        let idLiteral = try javaScriptStringLiteral(id)
+        let value = try await evaluateJavaScript(
+            """
+            (() => {
+              const id = \(idLiteral);
+              const selector = `[data-og-id="${CSS.escape(id)}"]`;
+              const node = document.querySelector(selector);
+              if (!node) { return null; }
+              const rect = node.getBoundingClientRect();
+              return {
+                x: rect.left + window.scrollX,
+                y: rect.top + window.scrollY,
+                width: rect.width,
+                height: rect.height
+              };
+            })()
+            """
+        )
+        guard let value else {
+            throw OpenGraphiteScreenshotError(message: "node id \"\(id)\" が見つかりません。")
+        }
+        let dictionary = try dictionaryValue(value, description: "node rect")
+        return CGRect(
+            x: try cgFloatValue(dictionary["x"], description: "node x"),
+            y: try cgFloatValue(dictionary["y"], description: "node y"),
+            width: try cgFloatValue(dictionary["width"], description: "node width"),
+            height: try cgFloatValue(dictionary["height"], description: "node height")
+        )
+    }
+
+    /// 論理名（日本語）: スナップショット取得関数
+    /// 処理概要: 現在の WebView 全体または指定矩形を NSImage として取得します。
+    ///
+    /// - Parameter rect: 切り抜く矩形。未指定時は WebView 全体。
+    /// - Returns: レンダリング済み画像。
+    func snapshot(rect: CGRect? = nil) async throws -> NSImage {
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = rect ?? CGRect(origin: .zero, size: webView.frame.size)
+        return try await withCheckedThrowingContinuation { continuation in
+            webView.takeSnapshot(with: configuration) { image, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let image else {
+                    continuation.resume(throwing: OpenGraphiteScreenshotError(message: "WebKit snapshot を取得できません。"))
+                    return
+                }
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    private func evaluateJavaScript(_ javaScript: String) async throws -> Any? {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(javaScript) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: value)
+            }
+        }
+    }
+
+    private func javaScriptStringLiteral(_ value: String) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: [value])
+        let json = String(data: data, encoding: .utf8) ?? "[\"\"]"
+        return String(json.dropFirst().dropLast())
+    }
+
+    private func dictionaryValue(_ value: Any?, description: String) throws -> [String: Any] {
+        guard let dictionary = value as? [String: Any] else {
+            throw OpenGraphiteScreenshotError(message: "\(description) を取得できません。")
+        }
+        return dictionary
+    }
+
+    private func cgFloatValue(_ value: Any?, description: String) throws -> CGFloat {
+        if let number = value as? NSNumber {
+            return CGFloat(number.doubleValue)
+        }
+        if let value = value as? Double {
+            return CGFloat(value)
+        }
+        if let value = value as? Int {
+            return CGFloat(value)
+        }
+        throw OpenGraphiteScreenshotError(message: "\(description) を数値として取得できません。")
+    }
+}
+
+/// 論理名（日本語）: スクリーンショットエラー
+/// 概要: screenshot command の入力やレンダリング失敗を表します。
+///
+/// プロパティ:
+/// - `message`: 表示するエラーメッセージ。
+struct OpenGraphiteScreenshotError: LocalizedError {
+    var message: String
+
+    var errorDescription: String? {
+        message
+    }
+}
+
+/// 論理名（日本語）: 同期結果ボックス
+/// 概要: async WebKit 処理を CLI の同期実行へ橋渡しするための結果置き場です。
+private final class OpenGraphiteSynchronousResultBox<T> {
+    var result: Result<T, Error>?
+}
+
+/// 論理名（日本語）: PNGサイズ
+/// 概要: 書き出した PNG の実ピクセル寸法を保持します。
+private struct OpenGraphitePNGSize {
+    var width: Double
+    var height: Double
+}
+
+private extension Array {
+    /// 論理名（日本語）: 非同期map関数
+    /// 処理概要: 要素順を維持して async transform を適用します。
+    ///
+    /// - Parameter transform: 各要素へ適用する非同期変換。
+    /// - Returns: 変換結果配列。
+    func mapAsync<T>(_ transform: (Element) async throws -> T) async throws -> [T] {
+        var values: [T] = []
+        values.reserveCapacity(count)
+        for item in self {
+            let value = try await transform(item)
+            values.append(value)
+        }
+        return values
+    }
+}

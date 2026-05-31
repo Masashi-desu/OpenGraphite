@@ -13,6 +13,8 @@ This is user-facing context for people who consume `OpenGraphite.css` in HTML do
 
 If the user provides their own copy or version of `OpenGraphite.css`, inspect that file and prefer the actual rules in front of you. If no stylesheet is provided, use the public contract below.
 
+When the repository contains `OpenGraphite.contract.json`, treat it as the machine-readable source for known `data-og-*` values, roles, layouts, and `--og-*` variables. Use the prose below to explain the contract, but prefer the JSON file for validation-oriented work.
+
 Explain the CSS contract directly from attributes, variables, and examples. Do not require implementation files or build tools to answer normal usage questions.
 
 ## Core Model

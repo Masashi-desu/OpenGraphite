@@ -15,3 +15,15 @@ xcodebuild \
   -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO \
   test
+
+echo "==> xcodebuild build ogkiln"
+xcodebuild \
+  -project OpenGraphite.xcodeproj \
+  -scheme ogkiln \
+  -configuration Debug \
+  -destination 'platform=macOS' \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+
+echo "==> ogkiln validate sample"
+./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json >/dev/null

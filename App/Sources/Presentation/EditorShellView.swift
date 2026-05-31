@@ -309,13 +309,13 @@ private struct CanvasPaneView: View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
-            if let page = store.selectedPage {
+            if let loadedProject = store.loadedProject, !loadedProject.project.pages.isEmpty {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
-                    documentID: page.id,
+                    documentID: canvasDocumentID(for: loadedProject),
                     overlayAvoidance: overlayAvoidance
                 ) {
-                    CanvasDocumentView(store: store, page: page, zoom: store.zoom)
+                    CanvasProjectView(store: store, loadedProject: loadedProject, zoom: store.zoom)
                 }
 
                 CanvasToolPalette(activeTool: $store.activeTool)
@@ -358,6 +358,20 @@ private struct CanvasPaneView: View {
         )
     }
 
+    /// 論理名（日本語）: キャンバスドキュメントID生成関数
+    /// 処理概要: `.ogp` のページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
+    ///
+    /// - Parameter project: 表示中の読み込み済みプロジェクト。
+    /// - Returns: キャンバス構成を表す安定 ID。
+    private func canvasDocumentID(for project: LoadedOpenGraphiteProject) -> String {
+        let pages = project.project.pages
+            .map { page in
+                "\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
+            }
+            .joined(separator: "|")
+        return "\(project.fileURL.path)#\(pages)"
+    }
+
     /// 論理名（日本語）: ズーム調整関数
     /// 処理概要: HUD ボタン操作に応じてズーム倍率を許容範囲内で増減します。
     ///
@@ -370,36 +384,139 @@ private struct CanvasPaneView: View {
 
 }
 
+/// 論理名（日本語）: キャンバスプロジェクトビュー
+/// 概要: `.ogp` の全ページを canvas 座標に従って一つのスクロール可能な面へ配置します。
+///
+/// プロパティ:
+/// - `store`: エディター状態ストア。
+/// - `loadedProject`: 表示対象プロジェクト。
+/// - `zoom`: 現在の表示倍率。
+private struct CanvasProjectView: View {
+    @ObservedObject var store: EditorStore
+    var loadedProject: LoadedOpenGraphiteProject
+    var zoom: Double
+
+    var body: some View {
+        let bounds = CanvasProjectBounds(pages: loadedProject.project.pages)
+        let scale = CGFloat(zoom)
+
+        ZStack(alignment: .topLeading) {
+            ForEach(loadedProject.project.pages) { page in
+                CanvasDocumentView(
+                    store: store,
+                    page: page,
+                    pageURL: loadedProject.htmlURL(for: page),
+                    isSelected: page.id == store.selectedPage?.id,
+                    reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page))
+                )
+                .offset(
+                    x: CGFloat(page.canvas.x) - bounds.minX,
+                    y: CGFloat(page.canvas.y) - bounds.minY
+                )
+            }
+        }
+        .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+        .scaleEffect(scale, anchor: .topLeading)
+        .frame(width: bounds.width * scale, height: bounds.height * scale, alignment: .topLeading)
+        .padding(CanvasMetrics.documentPadding)
+    }
+}
+
 /// 論理名（日本語）: キャンバスドキュメントビュー
-/// 概要: `.ogp` のキャンバスサイズを反映し、その上に WKWebView ベースの HTML プレビューを配置します。
+/// 概要: 単一ページのキャンバスサイズを反映し、その上に WKWebView ベースの HTML プレビューを配置します。
 ///
 /// プロパティ:
 /// - `store`: エディター状態ストア。
 /// - `page`: 表示対象ページ。
-/// - `zoom`: 現在の表示倍率。
+/// - `pageURL`: 表示対象 HTML URL。
+/// - `isSelected`: 現在の編集対象ページか。
+/// - `reloadToken`: 外部変更時に WebView を再読み込みするためのトークン。
 private struct CanvasDocumentView: View {
     @ObservedObject var store: EditorStore
     var page: OpenGraphitePage
-    var zoom: Double
+    var pageURL: URL
+    var isSelected: Bool
+    var reloadToken: Int
 
     var body: some View {
-        let scale = CGFloat(zoom)
+        let width = max(CGFloat(page.canvas.width), 1)
+        let height = max(CGFloat(page.canvas.height), 1)
 
         ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(Color(nsColor: .windowBackgroundColor))
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-                .frame(width: page.canvas.width, height: page.canvas.height)
+                .frame(width: width, height: height)
 
-            WebCanvasView(store: store)
-                .frame(width: page.canvas.width, height: page.canvas.height)
+            WebCanvasView(store: store, pageURL: pageURL, isInteractive: isSelected, reloadToken: reloadToken)
+                .frame(width: width, height: height)
+                .allowsHitTesting(isSelected)
         }
-        .frame(width: page.canvas.width, height: page.canvas.height, alignment: .topLeading)
-        .scaleEffect(scale, anchor: .topLeading)
-        .frame(width: page.canvas.width * scale, height: page.canvas.height * scale, alignment: .topLeading)
-        .padding(CanvasMetrics.documentPadding)
-        .padding(.leading, max(0, page.canvas.x) * scale)
-        .padding(.top, max(0, page.canvas.y) * scale)
+        .frame(width: width, height: height, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            Text(page.id)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
+                )
+                .padding(10)
+        }
+        .overlay(
+            Rectangle()
+                .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isSelected ? 3 : 1)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            store.selectPage(id: page.id)
+        }
+    }
+}
+
+/// 論理名（日本語）: キャンバスプロジェクト境界
+/// 概要: `.ogp` 内のページ配置から全ページを含む矩形を計算します。
+///
+/// プロパティ:
+/// - `minX`: 最小 X 座標。
+/// - `minY`: 最小 Y 座標。
+/// - `width`: 全ページを含む幅。
+/// - `height`: 全ページを含む高さ。
+private struct CanvasProjectBounds {
+    var minX: CGFloat
+    var minY: CGFloat
+    var width: CGFloat
+    var height: CGFloat
+
+    /// 論理名（日本語）: キャンバスプロジェクト境界初期化関数
+    /// 処理概要: ページ一覧の canvas 矩形から包含境界を計算します。
+    ///
+    /// - Parameter pages: 境界計算対象のページ一覧。
+    init(pages: [OpenGraphitePage]) {
+        guard !pages.isEmpty else {
+            minX = 0
+            minY = 0
+            width = 1
+            height = 1
+            return
+        }
+
+        let minX = pages.map { CGFloat($0.canvas.x) }.min() ?? 0
+        let minY = pages.map { CGFloat($0.canvas.y) }.min() ?? 0
+        let maxX = pages.map { CGFloat($0.canvas.x + $0.canvas.width) }.max() ?? 1
+        let maxY = pages.map { CGFloat($0.canvas.y + $0.canvas.height) }.max() ?? 1
+
+        self.minX = minX
+        self.minY = minY
+        self.width = max(maxX - minX, 1)
+        self.height = max(maxY - minY, 1)
     }
 }
 
