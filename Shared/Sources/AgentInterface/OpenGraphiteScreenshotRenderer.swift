@@ -6,7 +6,7 @@ import WebKit
 /// 概要: `ogkiln screenshot` が出力する画像の対象範囲を表します。
 ///
 /// 定義内容:
-/// - `canvas`: `.ogp` の全ページ配置を含むキャンバス全体。
+/// - `canvas`: `.ogp` の先頭 Chapter に含まれるページ配置を含むキャンバス全体。
 /// - `page`: 単一ページ。
 /// - `node`: `data-og-id` で指定した単一ノード。
 enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
@@ -19,11 +19,13 @@ enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
 /// 概要: キャンバススクリーンショットに含まれたページと配置を JSON 出力向けに表します。
 ///
 /// プロパティ:
+/// - `chapterID`: 所属 Chapter ID。
 /// - `id`: ページ ID。
 /// - `path`: `htmlRoot` から見た HTML path。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: `.ogp` 上のキャンバス配置。
 struct OpenGraphiteScreenshotPage: Codable, Equatable {
+    var chapterID: String
     var id: String
     var path: String
     var htmlURL: String
@@ -61,7 +63,7 @@ struct OpenGraphiteScreenshotResult: Codable, Equatable {
 /// 概要: WebKit で HTML をレンダリングし、ページ、ノード、`.ogp` キャンバスを PNG として保存します。
 ///
 /// メソッド:
-/// - `captureCanvas(projectURL:outputURL:)`: `.ogp` の全ページを合成して保存します。
+/// - `captureCanvas(projectURL:outputURL:)`: `.ogp` の先頭 Chapter に含まれるページを合成して保存します。
 /// - `capturePage(targetURL:pageID:outputURL:readAccessURL:width:height:fullPage:)`: 単一ページを保存します。
 /// - `captureNode(htmlURL:nodeID:outputURL:readAccessURL:width:height:padding:)`: 指定ノードを切り抜いて保存します。
 struct OpenGraphiteScreenshotRenderer {
@@ -75,7 +77,7 @@ struct OpenGraphiteScreenshotRenderer {
     )
 
     /// 論理名（日本語）: キャンバススクリーンショット関数
-    /// 処理概要: `.ogp` に含まれる全ページを各 canvas 座標へ配置し、単一 PNG として保存します。
+    /// 処理概要: `.ogp` の先頭 Chapter に含まれるページを各 canvas 座標へ配置し、単一 PNG として保存します。
     ///
     /// - Parameters:
     ///   - projectURL: 対象 `.ogp` URL。
@@ -158,9 +160,12 @@ struct OpenGraphiteScreenshotRenderer {
     @MainActor
     private func captureCanvasOnMain(projectURL: URL, outputURL: URL) async throws -> OpenGraphiteScreenshotResult {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
-        let pages = loadedProject.project.pages
+        guard let chapter = loadedProject.project.chapters.first else {
+            throw OpenGraphiteScreenshotError(message: ".ogp に chapters がありません。")
+        }
+        let pages = chapter.pages
         guard !pages.isEmpty else {
-            throw OpenGraphiteScreenshotError(message: ".ogp に pages がありません。")
+            throw OpenGraphiteScreenshotError(message: ".ogp の Chapter に pages がありません。")
         }
 
         let minX = pages.map(\.canvas.x).min() ?? 0
@@ -198,6 +203,7 @@ struct OpenGraphiteScreenshotRenderer {
             nodeID: nil,
             pages: pages.map { page in
                 OpenGraphiteScreenshotPage(
+                    chapterID: chapter.id,
                     id: page.id,
                     path: page.path,
                     htmlURL: loadedProject.htmlURL(for: page).path,
@@ -228,7 +234,7 @@ struct OpenGraphiteScreenshotRenderer {
             guard let pageID else {
                 throw OpenGraphiteScreenshotError(message: ".ogp の page screenshot には --id が必要です。")
             }
-            guard let page = loadedProject.project.pages.first(where: { $0.id == pageID }) else {
+            guard let page = loadedProject.project.allPages.first(where: { $0.id == pageID }) else {
                 throw OpenGraphiteScreenshotError(message: "page id \"\(pageID)\" が見つかりません。")
             }
             pageURL = loadedProject.htmlURL(for: page)

@@ -357,7 +357,7 @@ struct OpenGraphiteAgentCoreTests {
     }
 
     /// 論理名（日本語）: プロジェクトページ追加テスト
-    /// 概要: `.ogp` の pages に新しい page entry を追加できることを確認します。
+    /// 概要: `.ogp` の既定 Chapter pages に新しい page entry を追加できることを確認します。
     @Test("project page addでページ定義を追加できる")
     func testAddProjectPageUpdatesManifest() throws {
         // コンディション：単一 page を持つ project manifest を用意する
@@ -378,6 +378,8 @@ struct OpenGraphiteAgentCoreTests {
         )
 
         // 期待値：manifest と summary に追加 page が反映される
+        #expect(summary.chapters.map(\.id) == ["main"])
+        #expect(summary.chapters[0].pages.map(\.id) == ["home", "downloads"])
         #expect(summary.pages.map(\.id) == ["home", "downloads"])
         #expect(summary.pages[1].path == "downloads.html")
         #expect(summary.pages[1].canvas.x == 1480)
@@ -438,7 +440,7 @@ struct OpenGraphiteAgentCoreTests {
     }
 
     /// 論理名（日本語）: プロジェクトページ作成テスト
-    /// 概要: `.ogp` 経由で新規 HTML を作成し、同時に pages へ登録できることを確認します。
+    /// 概要: `.ogp` 経由で新規 HTML を作成し、同時に既定 Chapter pages へ登録できることを確認します。
     @Test("project page createでHTML作成とpage登録を一体で実行できる")
     func testCreateProjectPageWritesHTMLAndManifest() throws {
         // コンディション：home page を持つ project manifest と新規 page body を用意する
@@ -635,16 +637,22 @@ private struct AgentInterfaceFixture {
           "repositoryRoot": ".",
           "htmlRoot": ".",
           "cssLibrary": "OpenGraphite.css",
-          "pages": [
+          "chapters": [
             {
-              "id": "home",
-              "path": "index.html",
-              "canvas": {
-                "x": 0,
-                "y": 0,
-                "width": 1440,
-                "height": 1200
-              }
+              "id": "main",
+              "title": "Main",
+              "pages": [
+                {
+                  "id": "home",
+                  "path": "index.html",
+                  "canvas": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1440,
+                    "height": 1200
+                  }
+                }
+              ]
             }
           ]
         }

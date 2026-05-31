@@ -150,7 +150,8 @@ struct OpenGraphitePageWriteResult: Codable, Equatable {
 /// - `rootURL`: 解決済みリポジトリルート。
 /// - `htmlRoot`: HTML root。
 /// - `cssURL`: CSS library URL。
-/// - `pages`: ページ要約一覧。
+/// - `chapters`: Chapter 要約一覧。
+/// - `pages`: 全 Chapter のページ要約一覧。
 /// - `diagnostics`: 検証結果。
 struct OpenGraphiteProjectSummary: Codable, Equatable {
     var schemaVersion: String
@@ -159,19 +160,35 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
     var rootURL: String
     var htmlRoot: String
     var cssURL: String
+    var chapters: [OpenGraphiteChapterSummary]
     var pages: [OpenGraphitePageSummary]
     var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: Chapter要約
+/// 概要: `.ogp` 内の Chapter と、その Chapter に属する page summary を JSON 出力向けに表します。
+///
+/// プロパティ:
+/// - `id`: Chapter ID。
+/// - `title`: Chapter 表示名。
+/// - `pages`: Chapter 内のページ要約一覧。
+struct OpenGraphiteChapterSummary: Codable, Equatable {
+    var id: String
+    var title: String?
+    var pages: [OpenGraphitePageSummary]
 }
 
 /// 論理名（日本語）: ページ要約
 /// 概要: `.ogp` 内のページと解決済み HTML URL を JSON 出力向けに表します。
 ///
 /// プロパティ:
+/// - `chapterID`: 所属 Chapter ID。
 /// - `id`: ページ ID。
 /// - `path`: `htmlRoot` からの相対パス。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: キャンバス定義。
 struct OpenGraphitePageSummary: Codable, Equatable {
+    var chapterID: String
     var id: String
     var path: String
     var htmlURL: String
@@ -179,10 +196,11 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 }
 
 /// 論理名（日本語）: プロジェクトページ参照
-/// 概要: `.ogp` の `pages[]` から解決された編集対象 HTML と読み取り許可範囲を表します。
+/// 概要: `.ogp` の `chapters[].pages[]` から解決された編集対象 HTML と読み取り許可範囲を表します。
 ///
 /// プロパティ:
 /// - `projectURL`: 参照元 `.ogp` の URL。
+/// - `chapterID`: `.ogp` 内の Chapter ID。
 /// - `pageID`: `.ogp` 内の page ID。
 /// - `path`: `htmlRoot` から見た HTML path。
 /// - `htmlURL`: 解決済み HTML URL。
@@ -190,6 +208,7 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 /// - `canvas`: `.ogp` 上の canvas 配置。
 struct OpenGraphiteProjectPageReference: Codable, Equatable {
     var projectURL: String
+    var chapterID: String
     var pageID: String
     var path: String
     var htmlURL: String
@@ -221,12 +240,25 @@ struct OpenGraphiteProjectPageCreateResult: Codable, Equatable {
 ///
 /// プロパティ:
 /// - `loadedProject`: 読み込み済み `.ogp`。
+/// - `chapter`: 対象 page entry を含む Chapter。
 /// - `page`: 対象 page entry。
 /// - `htmlURL`: 解決済み HTML URL。
 private struct OpenGraphiteProjectPageTarget {
     var loadedProject: LoadedOpenGraphiteProject
+    var chapter: OpenGraphiteChapter
     var page: OpenGraphitePage
     var htmlURL: URL
+}
+
+/// 論理名（日本語）: プロジェクトページ位置
+/// 概要: `.ogp` 内で対象 page が属する Chapter index と page index を表します。
+///
+/// プロパティ:
+/// - `chapterIndex`: Chapter 配列内の位置。
+/// - `pageIndex`: Chapter 内 pages 配列の位置。
+private struct OpenGraphiteProjectPageLocation {
+    var chapterIndex: Int
+    var pageIndex: Int
 }
 
 /// 論理名（日本語）: HTML変更応答
@@ -338,14 +370,17 @@ struct OpenGraphiteAgentCore {
             )
         }
 
-        let pages = loadedProject.project.pages.map { page in
-            OpenGraphitePageSummary(
-                id: page.id,
-                path: page.path,
-                htmlURL: loadedProject.htmlURL(for: page).path,
-                canvas: page.canvas
+        let chapters = loadedProject.project.chapters.map { chapter in
+            let pages = chapter.pages.map { page in
+                pageSummary(for: page, chapterID: chapter.id, loadedProject: loadedProject)
+            }
+            return OpenGraphiteChapterSummary(
+                id: chapter.id,
+                title: chapter.title,
+                pages: pages
             )
         }
+        let pages = chapters.flatMap(\.pages)
 
         return OpenGraphiteProjectSummary(
             schemaVersion: Self.schemaVersion,
@@ -354,6 +389,7 @@ struct OpenGraphiteAgentCore {
             rootURL: loadedProject.rootURL.path,
             htmlRoot: loadedProject.project.htmlRoot,
             cssURL: loadedProject.cssURL.path,
+            chapters: chapters,
             pages: pages,
             diagnostics: diagnostics
         )
@@ -371,6 +407,7 @@ struct OpenGraphiteAgentCore {
         let target = try projectPageTarget(loadedProject: loadedProject, pageID: pageID)
         return OpenGraphiteProjectPageReference(
             projectURL: loadedProject.fileURL.path,
+            chapterID: target.chapter.id,
             pageID: target.page.id,
             path: target.page.path,
             htmlURL: target.htmlURL.path,
@@ -392,7 +429,7 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページ追加関数
-    /// 処理概要: `.ogp` の pages に新しい HTML ページ定義を追加し、更新後 summary を返します。
+    /// 処理概要: `.ogp` の既定 Chapter pages に新しい HTML ページ定義を追加し、更新後 summary を返します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
@@ -409,10 +446,11 @@ struct OpenGraphiteAgentCore {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         try validateProjectPagePath(path)
         var project = loadedProject.project
-        if project.pages.contains(where: { $0.id == id }) {
+        let targetChapterIndex = try defaultChapterIndex(in: project)
+        if project.allPages.contains(where: { $0.id == id }) {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(id)\" は既に存在します。")
         }
-        if project.pages.contains(where: { $0.path == path }) {
+        if project.allPages.contains(where: { $0.path == path }) {
             throw OpenGraphiteAgentCoreError(message: "page path \"\(path)\" は既に存在します。")
         }
         let htmlURL = loadedProject.rootURL.appendingPathComponent(project.htmlRoot).appendingPathComponent(path)
@@ -420,13 +458,13 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "追加する page HTML が見つかりません: \(htmlURL.path)")
         }
 
-        project.pages.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
+        project.chapters[targetChapterIndex].pages.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
         try writeProject(project, to: projectURL)
         return try inspectProject(at: projectURL)
     }
 
     /// 論理名（日本語）: プロジェクトページ作成関数
-    /// 処理概要: `.ogp` の `htmlRoot` 配下へ HTML を作成し、同じ処理で `.ogp` の pages に登録します。
+    /// 処理概要: `.ogp` の `htmlRoot` 配下へ HTML を作成し、同じ処理で既定 Chapter pages に登録します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
@@ -452,10 +490,10 @@ struct OpenGraphiteAgentCore {
     ) throws -> OpenGraphiteProjectPageCreateResult {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         try validateProjectPagePath(path)
-        if loadedProject.project.pages.contains(where: { $0.id == id }) {
+        if loadedProject.project.allPages.contains(where: { $0.id == id }) {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(id)\" は既に存在します。")
         }
-        if loadedProject.project.pages.contains(where: { $0.path == path }) {
+        if loadedProject.project.allPages.contains(where: { $0.path == path }) {
             throw OpenGraphiteAgentCoreError(message: "page path \"\(path)\" は既に存在します。")
         }
 
@@ -531,7 +569,7 @@ struct OpenGraphiteAgentCore {
     ) throws -> OpenGraphiteProjectSummary {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
-        guard let index = project.pages.firstIndex(where: { $0.id == id }) else {
+        guard let pageLocation = pageLocation(in: project, pageID: id) else {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(id)\" が見つかりません。")
         }
         if let width, width <= 0 {
@@ -541,8 +579,8 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "--height は 0 より大きい数値で指定してください。")
         }
 
-        let currentCanvas = project.pages[index].canvas
-        project.pages[index].canvas = OpenGraphiteCanvas(
+        let currentCanvas = project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas
+        project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
             x: x ?? currentCanvas.x,
             y: y ?? currentCanvas.y,
             width: width ?? currentCanvas.width,
@@ -1172,20 +1210,77 @@ struct OpenGraphiteAgentCore {
         loadedProject: LoadedOpenGraphiteProject,
         pageID: String
     ) throws -> OpenGraphiteProjectPageTarget {
-        guard let page = loadedProject.project.pages.first(where: { $0.id == pageID }) else {
+        guard let location = pageLocation(in: loadedProject.project, pageID: pageID) else {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(pageID)\" が .ogp に存在しません。")
         }
+        let chapter = loadedProject.project.chapters[location.chapterIndex]
+        let page = chapter.pages[location.pageIndex]
         try validateProjectPagePath(page.path)
         let htmlURL = loadedProject.htmlURL(for: page).standardizedFileURL
         try ensureHTMLURL(htmlURL, staysInside: loadedProject.rootURL.appendingPathComponent(loadedProject.project.htmlRoot))
         guard FileManager.default.fileExists(atPath: htmlURL.path) else {
             throw OpenGraphiteAgentCoreError(message: ".ogp page \"\(pageID)\" の HTML が見つかりません: \(htmlURL.path)")
         }
-        return OpenGraphiteProjectPageTarget(loadedProject: loadedProject, page: page, htmlURL: htmlURL)
+        return OpenGraphiteProjectPageTarget(
+            loadedProject: loadedProject,
+            chapter: chapter,
+            page: page,
+            htmlURL: htmlURL
+        )
+    }
+
+    /// 論理名（日本語）: 既定Chapter位置取得関数
+    /// 処理概要: page 追加先として使う先頭 Chapter の index を返します。
+    ///
+    /// - Parameter project: 対象 `.ogp` プロジェクト。
+    /// - Returns: 先頭 Chapter の index。
+    private func defaultChapterIndex(in project: OpenGraphiteProject) throws -> Int {
+        guard !project.chapters.isEmpty else {
+            throw OpenGraphiteAgentCoreError(message: ".ogp に chapters がありません。")
+        }
+        return 0
+    }
+
+    /// 論理名（日本語）: ページ位置検索関数
+    /// 処理概要: Chapter 配列を横断し、指定 page ID の Chapter index と page index を返します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` プロジェクト。
+    ///   - pageID: 検索する page ID。
+    /// - Returns: 見つかった page の位置。存在しない場合は `nil`。
+    private func pageLocation(in project: OpenGraphiteProject, pageID: String) -> OpenGraphiteProjectPageLocation? {
+        for chapterIndex in project.chapters.indices {
+            if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.id == pageID }) {
+                return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+            }
+        }
+        return nil
+    }
+
+    /// 論理名（日本語）: ページ要約生成関数
+    /// 処理概要: Chapter ID と page 定義から、解決済み HTML URL を含む summary を生成します。
+    ///
+    /// - Parameters:
+    ///   - page: 要約する page 定義。
+    ///   - chapterID: 所属 Chapter ID。
+    ///   - loadedProject: 読み込み済み `.ogp`。
+    /// - Returns: JSON 出力用 page summary。
+    private func pageSummary(
+        for page: OpenGraphitePage,
+        chapterID: String,
+        loadedProject: LoadedOpenGraphiteProject
+    ) -> OpenGraphitePageSummary {
+        OpenGraphitePageSummary(
+            chapterID: chapterID,
+            id: page.id,
+            path: page.path,
+            htmlURL: loadedProject.htmlURL(for: page).path,
+            canvas: page.canvas
+        )
     }
 
     /// 論理名（日本語）: プロジェクトページパス検証関数
-    /// 処理概要: `pages[].path` が `htmlRoot` 相対の明示的な HTML path として安全かを検証します。
+    /// 処理概要: `chapters[].pages[].path` が `htmlRoot` 相対の明示的な HTML path として安全かを検証します。
     ///
     /// - Parameter path: `htmlRoot` から見た HTML path。
     private func validateProjectPagePath(_ path: String) throws {

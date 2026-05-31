@@ -2,36 +2,42 @@
   "cssLibrary" : "CSS/OpenGraphite.css",
   "htmlRoot" : "public",
   "name" : "OpenGraphite Sample",
-  "pages" : [
+  "chapters" : [
     {
-      "canvas" : {
-        "height" : 1200,
-        "width" : 1440,
-        "x" : 0,
-        "y" : 0
-      },
-      "id" : "home",
-      "path" : "index.html"
-    },
-    {
-      "canvas" : {
-        "height" : 1200,
-        "width" : 1440,
-        "x" : 1520,
-        "y" : 0
-      },
-      "id" : "downloads",
-      "path" : "downloads.html"
-    },
-    {
-      "canvas" : {
-        "height" : 1200,
-        "width" : 1440,
-        "x" : 3040,
-        "y" : 0
-      },
-      "id" : "docs",
-      "path" : "docs.html"
+      "id" : "main",
+      "pages" : [
+        {
+          "canvas" : {
+            "height" : 1200,
+            "width" : 1440,
+            "x" : 0,
+            "y" : 0
+          },
+          "id" : "home",
+          "path" : "index.html"
+        },
+        {
+          "canvas" : {
+            "height" : 1200,
+            "width" : 1440,
+            "x" : 1520,
+            "y" : 0
+          },
+          "id" : "downloads",
+          "path" : "downloads.html"
+        },
+        {
+          "canvas" : {
+            "height" : 1200,
+            "width" : 1440,
+            "x" : 3040,
+            "y" : 0
+          },
+          "id" : "docs",
+          "path" : "docs.html"
+        }
+      ],
+      "title" : "Main"
     }
   ],
   "repositoryRoot" : "..",

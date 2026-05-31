@@ -156,7 +156,13 @@ private struct EditorTopChromeView: View {
             .frame(width: trailingChromeWidth, alignment: .trailing)
         }
         .frame(height: EditorOverlayMetrics.topChromeHeight)
-        .background(EditorColumnBackground())
+        .background {
+            ZStack {
+                EditorColumnBackground()
+                WindowHeaderDragRegion()
+                    .accessibilityHidden(true)
+            }
+        }
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(EditorColumnStyle.separatorColor)
@@ -226,6 +232,14 @@ private struct EditorProjectSummaryView: View {
                 PathBadge(title: "Public", path: publicRootPath)
             }
 
+            if let chapterName = store.selectedChapter?.displayName {
+                Text(chapterName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
             Text(store.selectedPage?.path ?? store.statusMessage)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -275,6 +289,7 @@ private struct EditorCanvasSeparator: View {
 private struct PathBadge: View {
     var title: String
     var path: String
+    @State private var isFullPathVisible = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -288,9 +303,56 @@ private struct PathBadge: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(.quaternary, in: Capsule())
-        .help(path)
         .frame(maxWidth: 180)
+        .background(.quaternary, in: Capsule())
+        .contentShape(Capsule())
+        .overlay(alignment: .topLeading) {
+            if isFullPathVisible {
+                PathBadgeFullPathTip(title: title, path: path)
+                    .offset(y: 28)
+                    .zIndex(1)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .onHover { isHovering in
+            isFullPathVisible = isHovering
+        }
+        .zIndex(isFullPathVisible ? 2 : 0)
+        .animation(.easeOut(duration: 0.08), value: isFullPathVisible)
+        .help(path)
+    }
+}
+
+/// 論理名（日本語）: パスバッジフルパス表示
+/// 概要: ヘッダー内の省略パスへ hover したとき、待ち時間なしで完全なファイルシステムパスを表示します。
+///
+/// プロパティ:
+/// - `title`: パスの種別名。
+/// - `path`: 表示する完全なファイルシステムパス。
+private struct PathBadgeFullPathTip: View {
+    var title: String
+    var path: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+            Text(path)
+                .foregroundStyle(.primary)
+        }
+        .font(.caption2.monospaced())
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 5)
     }
 }
 
@@ -309,13 +371,18 @@ private struct CanvasPaneView: View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
-            if let loadedProject = store.loadedProject, !loadedProject.project.pages.isEmpty {
+            if let loadedProject = store.loadedProject, !store.selectedChapterPages.isEmpty {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
-                    documentID: canvasDocumentID(for: loadedProject),
+                    documentID: canvasDocumentID(for: loadedProject, chapter: store.selectedChapter),
                     overlayAvoidance: overlayAvoidance
                 ) {
-                    CanvasProjectView(store: store, loadedProject: loadedProject, zoom: store.zoom)
+                    CanvasProjectView(
+                        store: store,
+                        loadedProject: loadedProject,
+                        pages: store.selectedChapterPages,
+                        zoom: store.zoom
+                    )
                 }
 
                 CanvasToolPalette(activeTool: $store.activeTool)
@@ -343,7 +410,7 @@ private struct CanvasPaneView: View {
                 ContentUnavailableView(
                     "No Page",
                     systemImage: "doc",
-                    description: Text("pages を持つ .ogp を開いてください。")
+                    description: Text("pages を持つ Chapter を選択してください。")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -359,17 +426,20 @@ private struct CanvasPaneView: View {
     }
 
     /// 論理名（日本語）: キャンバスドキュメントID生成関数
-    /// 処理概要: `.ogp` のページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
+    /// 処理概要: 選択 Chapter のページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
     ///
-    /// - Parameter project: 表示中の読み込み済みプロジェクト。
+    /// - Parameters:
+    ///   - project: 表示中の読み込み済みプロジェクト。
+    ///   - chapter: 表示中の Chapter。
     /// - Returns: キャンバス構成を表す安定 ID。
-    private func canvasDocumentID(for project: LoadedOpenGraphiteProject) -> String {
-        let pages = project.project.pages
+    private func canvasDocumentID(for project: LoadedOpenGraphiteProject, chapter: OpenGraphiteChapter?) -> String {
+        let pages = chapter?.pages ?? []
+        let pageID = pages
             .map { page in
                 "\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
             }
             .joined(separator: "|")
-        return "\(project.fileURL.path)#\(pages)"
+        return "\(project.fileURL.path)#\(chapter?.id ?? "none")#\(pageID)"
     }
 
     /// 論理名（日本語）: ズーム調整関数
@@ -385,23 +455,25 @@ private struct CanvasPaneView: View {
 }
 
 /// 論理名（日本語）: キャンバスプロジェクトビュー
-/// 概要: `.ogp` の全ページを canvas 座標に従って一つのスクロール可能な面へ配置します。
+/// 概要: 選択 Chapter のページを canvas 座標に従って一つのスクロール可能な面へ配置します。
 ///
 /// プロパティ:
 /// - `store`: エディター状態ストア。
 /// - `loadedProject`: 表示対象プロジェクト。
+/// - `pages`: 表示対象 Chapter のページ一覧。
 /// - `zoom`: 現在の表示倍率。
 private struct CanvasProjectView: View {
     @ObservedObject var store: EditorStore
     var loadedProject: LoadedOpenGraphiteProject
+    var pages: [OpenGraphitePage]
     var zoom: Double
 
     var body: some View {
-        let bounds = CanvasProjectBounds(pages: loadedProject.project.pages)
+        let bounds = CanvasProjectBounds(pages: pages)
         let scale = CGFloat(zoom)
 
         ZStack(alignment: .topLeading) {
-            ForEach(loadedProject.project.pages) { page in
+            ForEach(pages) { page in
                 CanvasDocumentView(
                     store: store,
                     page: page,
@@ -482,13 +554,13 @@ private struct CanvasDocumentView: View {
 }
 
 /// 論理名（日本語）: キャンバスプロジェクト境界
-/// 概要: `.ogp` 内のページ配置から全ページを含む矩形を計算します。
+/// 概要: 選択 Chapter 内のページ配置から表示対象ページを含む矩形を計算します。
 ///
 /// プロパティ:
 /// - `minX`: 最小 X 座標。
 /// - `minY`: 最小 Y 座標。
-/// - `width`: 全ページを含む幅。
-/// - `height`: 全ページを含む高さ。
+/// - `width`: 表示対象ページを含む幅。
+/// - `height`: 表示対象ページを含む高さ。
 private struct CanvasProjectBounds {
     var minX: CGFloat
     var minY: CGFloat

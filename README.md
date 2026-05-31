@@ -77,7 +77,7 @@ The gate regenerates `OpenGraphite.xcodeproj` from `project.yml` and runs the Sw
 
 ## Agent Interface
 
-Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages listed in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
+Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
 
 ```bash
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
@@ -157,7 +157,7 @@ When launched without that environment variable, Open Sample Project treats the 
 ## Current Editor Features
 
 - Welcome screen with sample and arbitrary `.ogp` open actions
-- Pages/Layers sidebar
+- Chapters/Pages/Layers sidebar
 - WKWebView canvas using `.ogp` canvas dimensions
 - DOM layer extraction from `[data-og-id]`
 - Canvas and Layer node selection

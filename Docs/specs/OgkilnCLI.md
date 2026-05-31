@@ -1,13 +1,13 @@
 # ogkiln CLI Specification
 
-`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は正本だが、CLI の編集対象は常に `.ogp` の `pages[]` に明示された HTML だけに限定する。
+`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は正本だが、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` に明示された HTML だけに限定する。
 
 ## Principles
 
 - `.ogp` は編集対象資源の可視リストであり、`ogkiln` は `.ogp` を経由しない HTML 書き込みを行わない。
 - `projectPath` には `.ogp` path または `current` を指定できる。`current` は OpenGraphite.app が現在開いている `.ogp` を Application Support のレコードから解決する。
-- `.ogp` にない既存 HTML を編集したい場合は、先に `project page add` で `pages[]` に追加する。
-- 新規 HTML を配置したい場合は、`project page create` で HTML 作成と `pages[]` 追加を一体で行う。
+- `.ogp` にない既存 HTML を編集したい場合は、先に `project page add` で既定 Chapter の `pages[]` に追加する。
+- 新規 HTML を配置したい場合は、`project page create` で HTML 作成と既定 Chapter の `pages[]` 追加を一体で行う。
 - page は `--page-id`、node は `--id` で指定する。
 - write operation は書き込み前に candidate HTML を validation し、`error` diagnostic がある場合はファイルを書き換えない。
 - runtime state は正本 HTML から取り除く。対象は `OpenGraphite.contract.json` の `runtimeAttributes` と `editable:false` の `--og-*` CSS variables。
@@ -35,7 +35,7 @@ ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [-
 
 `--path` は `.ogp` の `htmlRoot` から見た相対 HTML path であり、絶対 path、`..`、HTML 以外の拡張子は受け付けない。これにより、ユーザーが `.ogp` で認知できない資源が編集対象になることを避ける。
 
-`project page add` は既存 HTML を `.ogp` の `pages[]` に追加する。`project page create` は HTML ファイルを作成してから同じ操作内で `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。
+`project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。
 
 ## Read Commands
 
@@ -61,7 +61,7 @@ ogkiln screenshot page <project.ogp|current> --page-id <page-id> --output <png> 
 ogkiln screenshot node <project.ogp|current> --page-id <page-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
 ```
 
-`screenshot canvas` は `.ogp` の `pages[].canvas` 配置に従って各ページを WebKit でレンダリングし、キャンバス全体を 1 枚の PNG に合成する。
+`screenshot canvas` は `.ogp` の先頭 Chapter の `pages[].canvas` 配置に従って各ページを WebKit でレンダリングし、キャンバス全体を 1 枚の PNG に合成する。
 
 `screenshot page` は指定 page entry の `canvas.width` / `canvas.height` を既定 viewport として PNG を生成する。`--width` / `--height` を指定すると viewport を上書きできる。`--full-page` を付けると document 全体の scroll size に合わせて保存する。
 

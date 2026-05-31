@@ -355,10 +355,69 @@ struct EditorStoreTests {
         store.refreshProjectManifestFromDiskIfChanged()
 
         // 期待値：追加ページと canvas 配置がストアへ反映される
-        #expect(store.loadedProject?.project.pages.map(\.id) == ["home", "downloads"])
-        #expect(store.loadedProject?.project.pages[1].canvas.x == 1520)
+        #expect(store.loadedProject?.project.allPages.map(\.id) == ["home", "downloads"])
+        #expect(store.loadedProject?.project.allPages[1].canvas.x == 1520)
         #expect(store.selectedPageID == "home")
         #expect(store.statusMessage.contains(".ogp 外部変更を同期"))
+    }
+
+    /// 論理名（日本語）: Chapter選択テスト
+    /// 概要: Chapter を切り替えると Pages と選択ページが選択 Chapter 内へ切り替わることを検証します。
+    @Test("Chapter選択で表示対象ページ群を切り替える")
+    func testSelectChapterSwitchesVisiblePages() throws {
+        // コンディション：2つの Chapter を持つ一時プロジェクトを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let docsURL = fixture.publicURL.appendingPathComponent("docs.html")
+        try "<!doctype html>\n<html><body>docs</body></html>".write(
+            to: docsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "docs-home",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(project)
+        try data.write(to: fixture.projectURL)
+        let store = EditorStore()
+
+        // 検証内容：プロジェクトを開き、docs Chapter を選択する
+        store.openProject(at: fixture.projectURL)
+        store.selectChapter(id: "docs")
+
+        // 期待値：表示対象 Pages と選択ページが docs Chapter 内へ切り替わる
+        #expect(store.selectedChapterID == "docs")
+        #expect(store.selectedChapterPages.map(\.id) == ["docs-home"])
+        #expect(store.selectedPageID == "docs-home")
+        #expect(store.selectedPageURL == docsURL)
     }
 }
 

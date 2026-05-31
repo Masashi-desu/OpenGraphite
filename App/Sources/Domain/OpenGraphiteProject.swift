@@ -1,7 +1,7 @@
 import Foundation
 
 /// 論理名（日本語）: OpenGraphiteプロジェクト定義
-/// 概要: `.ogp` ファイルに保存されるプロジェクト管理情報とページ一覧を表します。
+/// 概要: `.ogp` ファイルに保存されるプロジェクト管理情報、Chapter、ページ一覧を表します。
 ///
 /// プロパティ:
 /// - `version`: `.ogp` 形式のバージョン。
@@ -9,14 +9,97 @@ import Foundation
 /// - `repositoryRoot`: `.ogp` から見たリポジトリルート。
 /// - `htmlRoot`: HTML 成果物を置く public ルート。
 /// - `cssLibrary`: OpenGraphite.css の参照パス。
-/// - `pages`: 編集対象 HTML ページ一覧。
+/// - `chapters`: Chapter ごとのキャンバス定義。
 struct OpenGraphiteProject: Codable, Equatable {
     var version: String
     var name: String
     var repositoryRoot: String?
     var htmlRoot: String
     var cssLibrary: String
+    var chapters: [OpenGraphiteChapter]
+
+    var allPages: [OpenGraphitePage] {
+        chapters.flatMap(\.pages)
+    }
+
+    /// 論理名（日本語）: 既定Chapterプロジェクト初期化関数
+    /// 処理概要: 指定 pages を既定 Chapter に格納してプロジェクトを作成します。
+    ///
+    /// - Parameters:
+    ///   - version: `.ogp` 形式のバージョン。
+    ///   - name: プロジェクト表示名。
+    ///   - repositoryRoot: `.ogp` から見たリポジトリルート。
+    ///   - htmlRoot: HTML 成果物を置く public ルート。
+    ///   - cssLibrary: OpenGraphite.css の参照パス。
+    ///   - pages: 既定 Chapter に入れるページ一覧。
+    init(
+        version: String,
+        name: String,
+        repositoryRoot: String?,
+        htmlRoot: String,
+        cssLibrary: String,
+        pages: [OpenGraphitePage]
+    ) {
+        self.version = version
+        self.name = name
+        self.repositoryRoot = repositoryRoot
+        self.htmlRoot = htmlRoot
+        self.cssLibrary = cssLibrary
+        self.chapters = [
+            OpenGraphiteChapter(
+                id: OpenGraphiteChapter.defaultID,
+                title: OpenGraphiteChapter.defaultTitle,
+                pages: pages
+            )
+        ]
+    }
+
+    /// 論理名（日本語）: Chapterプロジェクト初期化関数
+    /// 処理概要: Chapter 配列を正本としてプロジェクトを作成します。
+    ///
+    /// - Parameters:
+    ///   - version: `.ogp` 形式のバージョン。
+    ///   - name: プロジェクト表示名。
+    ///   - repositoryRoot: `.ogp` から見たリポジトリルート。
+    ///   - htmlRoot: HTML 成果物を置く public ルート。
+    ///   - cssLibrary: OpenGraphite.css の参照パス。
+    ///   - chapters: プロジェクトが保持する Chapter 一覧。
+    init(
+        version: String,
+        name: String,
+        repositoryRoot: String?,
+        htmlRoot: String,
+        cssLibrary: String,
+        chapters: [OpenGraphiteChapter]
+    ) {
+        self.version = version
+        self.name = name
+        self.repositoryRoot = repositoryRoot
+        self.htmlRoot = htmlRoot
+        self.cssLibrary = cssLibrary
+        self.chapters = chapters
+    }
+}
+
+/// 論理名（日本語）: OpenGraphite Chapter定義
+/// 概要: Pages の上位概念として、独立したキャンバスに配置されるページ群を表します。
+///
+/// プロパティ:
+/// - `id`: Chapter 識別子。
+/// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
+/// - `pages`: Chapter 内の HTML ページ一覧。
+struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
+    static let defaultID = "main"
+    static let defaultTitle = "Main"
+
+    var id: String
+    var title: String?
     var pages: [OpenGraphitePage]
+
+    var displayName: String {
+        guard let title, !title.isEmpty else { return id }
+        return title
+    }
 }
 
 /// 論理名（日本語）: OpenGraphiteページ定義

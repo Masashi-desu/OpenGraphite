@@ -4,16 +4,20 @@ import Foundation
 /// 概要: `.ogp` 読み込み時にアプリ側で扱う検証エラーを表します。
 ///
 /// 定義内容:
-/// - `missingPages`: `.ogp` に pages が定義されていない状態。
+/// - `missingChapters`: `.ogp` に chapters が定義されていない状態。
+/// - `missingPages`: `.ogp` の chapters に pages が定義されていない状態。
 /// - `missingHTML`: 先頭ページの HTML ファイルが存在しない状態。
 enum ProjectLoadError: LocalizedError {
+    case missingChapters
     case missingPages
     case missingHTML(URL)
 
     var errorDescription: String? {
         switch self {
+        case .missingChapters:
+            return ".ogp に chapters がありません。"
         case .missingPages:
-            return ".ogp に pages がありません。"
+            return ".ogp の chapters に pages がありません。"
         case .missingHTML(let url):
             return "HTMLが見つかりません: \(url.path)"
         }
@@ -27,7 +31,7 @@ enum ProjectLoadError: LocalizedError {
 /// - `loadProject(at:)`: `.ogp` を読み込んで検証済みプロジェクトを返します。
 struct ProjectLoader {
     /// 論理名（日本語）: プロジェクト読み込み関数
-    /// 処理概要: `.ogp` をデコードし、pages と先頭 HTML の存在を検証して読み込み済みモデルを返します。
+    /// 処理概要: `.ogp` をデコードし、chapters、pages、先頭 HTML の存在を検証して読み込み済みモデルを返します。
     ///
     /// - Parameter fileURL: 読み込む `.ogp` ファイルの URL。
     /// - Returns: HTML 参照ルートを解決した読み込み済みプロジェクト。
@@ -35,7 +39,10 @@ struct ProjectLoader {
         let data = try Data(contentsOf: fileURL)
         let project = try JSONDecoder().decode(OpenGraphiteProject.self, from: data)
 
-        guard !project.pages.isEmpty else {
+        guard !project.chapters.isEmpty else {
+            throw ProjectLoadError.missingChapters
+        }
+        guard !project.allPages.isEmpty else {
             throw ProjectLoadError.missingPages
         }
 
@@ -47,7 +54,7 @@ struct ProjectLoader {
             rootURL: rootURL
         )
 
-        let firstHTML = loadedProject.htmlURL(for: project.pages[0])
+        let firstHTML = loadedProject.htmlURL(for: project.allPages[0])
         guard FileManager.default.fileExists(atPath: firstHTML.path) else {
             throw ProjectLoadError.missingHTML(firstHTML)
         }

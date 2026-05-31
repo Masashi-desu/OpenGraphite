@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// 論理名（日本語）: サイドバービュー
-/// 概要: Pages と Layers をセグメントで切り替え、ページ選択またはレイヤー階層選択を行う左ペインです。
+/// 概要: Chapters、Pages、Layers をセグメントで切り替え、Chapter、ページ、レイヤー階層の選択を行う左ペインです。
 struct SidebarView: View {
     @EnvironmentObject private var store: EditorStore
-    @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.layers.rawValue
+    @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.chapters.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -14,7 +14,9 @@ struct SidebarView: View {
                 .padding(.bottom, 10)
 
             Group {
-                if selectedPanel == SidebarPanel.pages.rawValue {
+                if selectedPanel == SidebarPanel.chapters.rawValue {
+                    ChapterListView()
+                } else if selectedPanel == SidebarPanel.pages.rawValue {
                     PageListView()
                 } else {
                     LayerOutlineView(
@@ -34,7 +36,7 @@ struct SidebarView: View {
 }
 
 /// 論理名（日本語）: サイドバーパネル切替ビュー
-/// 概要: タイトルバー領域の下に Pages と Layers の切替ボタンを表示します。
+/// 概要: タイトルバー領域の下に Chapters、Pages、Layers の切替ボタンを表示します。
 ///
 /// プロパティ:
 /// - `selectedPanel`: 現在選択中のパネル種別。
@@ -58,6 +60,7 @@ private struct SidebarPanelSwitcher: View {
                             RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                                 .fill(selectedPanel == panel.rawValue ? EditorColumnStyle.selectedRowFill : Color.clear)
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(selectedPanel == panel.rawValue ? .primary : .secondary)
@@ -69,18 +72,101 @@ private struct SidebarPanelSwitcher: View {
             RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
                 .fill(EditorColumnStyle.rowFill)
         )
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: Chapter一覧ビュー
+/// 概要: 左カラムの Chapters パネルでプロジェクト内 Chapter を軽量なカスタム行として表示します。
+private struct ChapterListView: View {
+    @EnvironmentObject private var store: EditorStore
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 3) {
+                ForEach(store.loadedProject?.project.chapters ?? []) { chapter in
+                    ChapterRow(
+                        chapter: chapter,
+                        isSelected: chapter.id == store.selectedChapter?.id,
+                        onSelect: {
+                            store.selectChapter(id: chapter.id)
+                        }
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, EditorColumnStyle.outerPadding)
+            .padding(.vertical, 10)
+        }
+        .frame(minHeight: 140)
+    }
+}
+
+/// 論理名（日本語）: Chapter行ビュー
+/// 概要: Chapter 名と保持ページ数を Sidebar 向けの軽量行として表示します。
+///
+/// プロパティ:
+/// - `chapter`: 表示する Chapter 定義。
+/// - `isSelected`: 現在選択中の Chapter か。
+/// - `onSelect`: 行選択時に呼び出す処理。
+private struct ChapterRow: View {
+    var chapter: OpenGraphiteChapter
+    var isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 9) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(chapter.displayName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(chapter.id)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 0)
+
+                Text("\(chapter.pages.count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.quaternary, in: Capsule())
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        }
+        .buttonStyle(.plain)
+        .help(chapter.displayName)
     }
 }
 
 /// 論理名（日本語）: ページ一覧ビュー
-/// 概要: 左カラムの Pages パネルでプロジェクト内ページを軽量なカスタム行として表示します。
+/// 概要: 左カラムの Pages パネルで選択 Chapter 内ページを軽量なカスタム行として表示します。
 private struct PageListView: View {
     @EnvironmentObject private var store: EditorStore
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(store.loadedProject?.project.pages ?? []) { page in
+                ForEach(store.selectedChapterPages) { page in
                     PageRow(
                         page: page,
                         isSelected: page.id == store.selectedPageID,
@@ -90,6 +176,7 @@ private struct PageListView: View {
                     )
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, EditorColumnStyle.outerPadding)
             .padding(.vertical, 10)
         }
@@ -139,6 +226,7 @@ private struct PageRow: View {
                 RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                     .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
             )
+            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
         }
         .buttonStyle(.plain)
         .help(page.path)
@@ -345,12 +433,14 @@ private struct VisibleLayerRow: Identifiable {
 }
 
 /// 論理名（日本語）: サイドバーパネル
-/// 概要: 左ペインで表示する Pages と Layers のセグメント種別を表します。
+/// 概要: 左ペインで表示する Chapters、Pages、Layers のセグメント種別を表します。
 ///
 /// 定義内容:
+/// - `chapters`: Chapter 一覧。
 /// - `pages`: ページ一覧。
 /// - `layers`: DOM レイヤー一覧。
 private enum SidebarPanel: String, CaseIterable, Identifiable {
+    case chapters
     case pages
     case layers
 
@@ -358,6 +448,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .chapters:
+            return "Chapters"
         case .pages:
             return "Pages"
         case .layers:
@@ -367,6 +459,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .chapters:
+            return "book.closed"
         case .pages:
             return "rectangle.stack"
         case .layers:

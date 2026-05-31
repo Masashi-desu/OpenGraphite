@@ -1,10 +1,11 @@
 import Foundation
 
 /// 論理名（日本語）: エディター状態ストア
-/// 概要: 読み込み済みプロジェクト、ページ選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
+/// 概要: 読み込み済みプロジェクト、Chapter とページ選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
 /// プロパティ:
 /// - `loadedProject`: 現在開いている `.ogp`。
+/// - `selectedChapterID`: 選択中 Chapter の ID。
 /// - `selectedPageID`: 選択中ページの ID。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
 /// - `selectedNodeID`: 選択中ノードの `data-og-id`。
@@ -16,6 +17,7 @@ import Foundation
 @MainActor
 final class EditorStore: ObservableObject {
     @Published private(set) var loadedProject: LoadedOpenGraphiteProject?
+    @Published var selectedChapterID: String?
     @Published var selectedPageID: String?
     @Published private(set) var nodes: [OpenGraphiteNode] = []
     @Published var selectedNodeID: String?
@@ -68,10 +70,20 @@ final class EditorStore: ObservableObject {
         projectChangeMonitor.cancel()
     }
 
-    var selectedPage: OpenGraphitePage? {
+    var selectedChapter: OpenGraphiteChapter? {
         guard let loadedProject else { return nil }
-        return loadedProject.project.pages.first { $0.id == selectedPageID }
-            ?? loadedProject.project.pages.first
+        return loadedProject.project.chapters.first { $0.id == selectedChapterID }
+            ?? loadedProject.project.chapters.first
+    }
+
+    var selectedChapterPages: [OpenGraphitePage] {
+        selectedChapter?.pages ?? []
+    }
+
+    var selectedPage: OpenGraphitePage? {
+        let pages = selectedChapterPages
+        return pages.first { $0.id == selectedPageID }
+            ?? pages.first
     }
 
     var selectedPageURL: URL? {
@@ -123,7 +135,8 @@ final class EditorStore: ObservableObject {
         do {
             let project = try loader.loadProject(at: url)
             loadedProject = project
-            selectedPageID = project.project.pages.first?.id
+            selectedChapterID = project.project.chapters.first?.id
+            selectedPageID = project.project.chapters.first?.pages.first?.id
             selectedNodeID = nil
             nodes = []
             cssMutation = nil
@@ -157,6 +170,25 @@ final class EditorStore: ObservableObject {
         nodes = []
         if let page = selectedPage {
             statusMessage = "\(page.path) を表示しています。"
+        }
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: Chapter選択関数
+    /// 処理概要: 選択 Chapter を切り替え、ページ選択と DOM ノード一覧を Chapter 内の先頭ページへリセットします。
+    ///
+    /// - Parameter id: 選択する Chapter ID。`nil` の場合は先頭 Chapter が表示対象になります。
+    func selectChapter(id: String?) {
+        guard let loadedProject else { return }
+        let chapter = loadedProject.project.chapters.first { $0.id == id }
+            ?? loadedProject.project.chapters.first
+        selectedChapterID = chapter?.id
+        selectedPageID = chapter?.pages.first?.id
+        selectedNodeID = nil
+        nodes = []
+
+        if let chapter {
+            statusMessage = "\(chapter.displayName) を表示しています。"
         }
         prepareHistoryForSelectedPage()
     }
@@ -382,15 +414,24 @@ final class EditorStore: ObservableObject {
             }
 
             let previousSelectedPageID = selectedPageID
+            let previousSelectedChapterID = selectedChapterID
             let previousSelectedPageURL = selectedPageURL
             loadedProject = reloadedProject
             seedKnownHTMLForProject(reloadedProject)
 
+            if let previousSelectedChapterID,
+               reloadedProject.project.chapters.contains(where: { $0.id == previousSelectedChapterID }) {
+                selectedChapterID = previousSelectedChapterID
+            } else {
+                selectedChapterID = reloadedProject.project.chapters.first?.id
+            }
+
+            let currentChapterPages = selectedChapter?.pages ?? []
             if let previousSelectedPageID,
-               reloadedProject.project.pages.contains(where: { $0.id == previousSelectedPageID }) {
+               currentChapterPages.contains(where: { $0.id == previousSelectedPageID }) {
                 selectedPageID = previousSelectedPageID
             } else {
-                selectedPageID = reloadedProject.project.pages.first?.id
+                selectedPageID = currentChapterPages.first?.id
             }
 
             if selectedPageURL != previousSelectedPageURL {
@@ -469,11 +510,11 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: プロジェクトHTML既知状態初期化関数
-    /// 処理概要: project 内の全ページ HTML を読み、外部変更検出の比較基準として保存します。
+    /// 処理概要: project 内の全 Chapter の HTML を読み、外部変更検出の比較基準として保存します。
     ///
     /// - Parameter project: 比較基準を初期化する読み込み済み project。
     private func seedKnownHTMLForProject(_ project: LoadedOpenGraphiteProject) {
-        for page in project.project.pages {
+        for page in project.project.allPages {
             let pageURL = project.htmlURL(for: page)
             if let html = readHTMLFromDisk(at: pageURL) {
                 lastKnownPageHTMLByURL[pageURL] = html
@@ -563,7 +604,7 @@ final class EditorStore: ObservableObject {
             return
         }
 
-        let pageURLs = Set(loadedProject.project.pages.map { loadedProject.htmlURL(for: $0) })
+        let pageURLs = Set(loadedProject.project.allPages.map { loadedProject.htmlURL(for: $0) })
         for monitoredURL in Array(pageChangeMonitorsByURL.keys) where !pageURLs.contains(monitoredURL) {
             pageChangeMonitorsByURL[monitoredURL]?.cancel()
             pageChangeMonitorsByURL.removeValue(forKey: monitoredURL)

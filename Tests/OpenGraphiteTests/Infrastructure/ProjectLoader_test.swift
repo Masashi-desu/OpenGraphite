@@ -40,7 +40,7 @@ struct ProjectLoaderTests {
 
         // 期待値：rootURL と HTML URL がリポジトリルート基準で解決される
         #expect(loadedProject.rootURL == repositoryURL.standardizedFileURL)
-        #expect(loadedProject.htmlURL(for: loadedProject.project.pages[0]) == publicDirectory.appendingPathComponent("index.html"))
+        #expect(loadedProject.htmlURL(for: loadedProject.project.allPages[0]) == publicDirectory.appendingPathComponent("index.html"))
     }
 
     /// 論理名（日本語）: ページ未定義エラーテスト

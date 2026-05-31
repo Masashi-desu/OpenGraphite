@@ -187,7 +187,7 @@ function toolsList() {
     },
     {
       name: "add_project_page",
-      description: "Add a page entry to an OpenGraphite .ogp project.",
+      description: "Add a page entry to the default Chapter in an OpenGraphite .ogp project.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         pageID: { type: "string" },
@@ -200,7 +200,7 @@ function toolsList() {
     },
     {
       name: "create_project_page",
-      description: "Create a new HTML page through an OpenGraphite .ogp project and register it in pages.",
+      description: "Create a new HTML page through an OpenGraphite .ogp project and register it in the default Chapter pages.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         pageID: { type: "string" },
@@ -238,7 +238,7 @@ function toolsList() {
     },
     {
       name: "screenshot_canvas",
-      description: "Render all pages in an OpenGraphite .ogp canvas to a PNG file.",
+      description: "Render the default Chapter canvas in an OpenGraphite .ogp project to a PNG file.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         outputPath: { type: "string" }

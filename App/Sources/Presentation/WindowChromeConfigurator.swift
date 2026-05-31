@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// 論理名（日本語）: ウィンドウクローム設定ビュー
-/// 概要: SwiftUI のルートビューから `NSWindow` を取得し、タイトルバー一体型の編集画面に必要な外観を適用します。
+/// 概要: SwiftUI のルートビューから `NSWindow` を取得し、タイトルバー一体型の編集画面に必要な外観とドラッグ範囲の前提を適用します。
 struct WindowChromeConfigurator: NSViewRepresentable {
     /// 論理名（日本語）: NSView生成関数
     /// 処理概要: ウィンドウ接続時に設定処理を呼び出す透明な AppKit view を生成します。
@@ -27,10 +27,10 @@ struct WindowChromeConfigurator: NSViewRepresentable {
     }
 
     /// 論理名（日本語）: ウィンドウ設定関数
-    /// 処理概要: full size content と透明タイトルバーを有効化し、左カラムがタイトルバー領域まで伸びる外観へ整えます。
+    /// 処理概要: full size content と透明タイトルバーを有効化し、移動操作は専用ヘッダー領域に限定します。
     ///
     /// - Parameter window: 設定対象の `NSWindow`。
-    private func configure(window: NSWindow?) {
+    func configure(window: NSWindow?) {
         guard let window else { return }
 
         window.titleVisibility = .hidden
@@ -38,7 +38,7 @@ struct WindowChromeConfigurator: NSViewRepresentable {
         window.styleMask.insert(.fullSizeContentView)
         window.toolbarStyle = .unified
         window.toolbar?.showsBaselineSeparator = false
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
 
         window.contentView?.layoutSubtreeIfNeeded()
         centerTrafficLightButtons(in: window)
@@ -79,6 +79,54 @@ struct WindowChromeConfigurator: NSViewRepresentable {
             frame.origin.y = centeredY.rounded(.toNearestOrAwayFromZero)
             button.setFrameOrigin(frame.origin)
         }
+    }
+}
+
+/// 論理名（日本語）: ウィンドウヘッダードラッグ領域
+/// 概要: SwiftUI の上部クローム背景に差し込む透明な AppKit view として、ヘッダーだけをウィンドウ移動対象にします。
+struct WindowHeaderDragRegion: NSViewRepresentable {
+    /// 論理名（日本語）: ヘッダードラッグNSView生成関数
+    /// 処理概要: マウス操作をウィンドウドラッグへ委譲する透明な `NSView` を生成します。
+    ///
+    /// - Parameter context: SwiftUI が提供する representable context。
+    /// - Returns: ウィンドウ移動用の透明な `NSView`。
+    func makeNSView(context: Context) -> WindowHeaderDragView {
+        WindowHeaderDragView()
+    }
+
+    /// 論理名（日本語）: ヘッダードラッグNSView更新関数
+    /// 処理概要: 状態を持たないため、SwiftUI 更新時には追加処理を行いません。
+    ///
+    /// - Parameters:
+    ///   - nsView: ウィンドウ移動用の透明な `NSView`。
+    ///   - context: SwiftUI が提供する representable context。
+    func updateNSView(_ nsView: WindowHeaderDragView, context: Context) {}
+}
+
+/// 論理名（日本語）: ウィンドウヘッダードラッグビュー
+/// 概要: 非アクティブウィンドウでも上部クロームからドラッグ移動を開始できる透明な `NSView` です。
+final class WindowHeaderDragView: NSView {
+    /// 論理名（日本語）: マウスダウン移動許可プロパティ
+    /// 概要: AppKit にこの view 上のマウスダウンがウィンドウ移動対象であることを伝えます。
+    override var mouseDownCanMoveWindow: Bool {
+        true
+    }
+
+    /// 論理名（日本語）: 初回クリック受理判定関数
+    /// 処理概要: 背面にあるウィンドウでもクリック直後のドラッグ移動を開始できるようにします。
+    ///
+    /// - Parameter event: 初回クリックイベント。
+    /// - Returns: 常に true を返し、非アクティブ時のクリックを受理します。
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    /// 論理名（日本語）: マウスダウン処理関数
+    /// 処理概要: ヘッダー上のマウスダウンを所属ウィンドウの標準ドラッグ処理へ委譲します。
+    ///
+    /// - Parameter event: ドラッグ開始元のマウスイベント。
+    override func mouseDown(with event: NSEvent) {
+        window?.performDrag(with: event)
     }
 }
 

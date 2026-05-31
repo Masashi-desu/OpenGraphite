@@ -67,7 +67,7 @@ struct SampleProjectLocatorTests {
         // 検証内容：sample URL を解決して ProjectLoader で読み込む
         let resolvedURL = try locator.sampleProjectURL()
         let loadedProject = try ProjectLoader().loadProject(at: resolvedURL)
-        let html = try String(contentsOf: loadedProject.htmlURL(for: loadedProject.project.pages[0]), encoding: .utf8)
+        let html = try String(contentsOf: loadedProject.htmlURL(for: loadedProject.project.allPages[0]), encoding: .utf8)
 
         // 期待値：Application Support の編集用コピーが返り、`.ogp` の相対パスで HTML/CSS が解決される
         #expect(resolvedURL == fixture.installedSampleProjectURL.standardizedFileURL)
@@ -89,7 +89,7 @@ struct SampleProjectLocatorTests {
         // 検証内容：sample URL を解決し、既存 HTML を読む
         let resolvedURL = try locator.sampleProjectURL()
         let loadedProject = try ProjectLoader().loadProject(at: resolvedURL)
-        let html = try String(contentsOf: loadedProject.htmlURL(for: loadedProject.project.pages[0]), encoding: .utf8)
+        let html = try String(contentsOf: loadedProject.htmlURL(for: loadedProject.project.allPages[0]), encoding: .utf8)
 
         // 期待値：既存 Application Support sample が返り、ユーザー編集相当の内容が保持される
         #expect(resolvedURL == fixture.installedSampleProjectURL.standardizedFileURL)
@@ -233,16 +233,22 @@ private final class SampleProjectLocatorFixture {
       "cssLibrary": "CSS/OpenGraphite.css",
       "htmlRoot": "public",
       "name": "OpenGraphite Sample",
-      "pages": [
+      "chapters": [
         {
-          "canvas": {
-            "height": 1200,
-            "width": 1440,
-            "x": 0,
-            "y": 0
-          },
-          "id": "home",
-          "path": "index.html"
+          "id": "main",
+          "title": "Main",
+          "pages": [
+            {
+              "canvas": {
+                "height": 1200,
+                "width": 1440,
+                "x": 0,
+                "y": 0
+              },
+              "id": "home",
+              "path": "index.html"
+            }
+          ]
         }
       ],
       "repositoryRoot": "..",
