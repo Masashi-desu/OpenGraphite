@@ -255,6 +255,11 @@ struct InspectorView: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity)
+            } else if let page = store.selectedPage {
+                PageInspectorView(page: page) { x, y, width, height in
+                    store.updateSelectedPageCanvas(x: x, y: y, width: width, height: height)
+                }
+                .id(page.id)
             } else {
                 InspectorEmptyStateView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -315,6 +320,337 @@ private struct NodeSummaryPanel: View {
     }
 }
 
+/// 論理名（日本語）: ページキャンバス入力値
+/// 概要: Inspector で編集するページのキャンバス座標と解像度をまとめます。
+///
+/// プロパティ:
+/// - `x`: キャンバス上の X 座標。
+/// - `y`: キャンバス上の Y 座標。
+/// - `width`: ページプレビュー幅。
+/// - `height`: ページプレビュー高さ。
+private struct PageCanvasInput: Equatable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    /// 論理名（日本語）: ページキャンバス入力値初期化関数
+    /// 処理概要: `OpenGraphiteCanvas` から Inspector 入力比較用の値を生成します。
+    ///
+    /// - Parameter canvas: 入力値へ変換するキャンバス定義。
+    init(canvas: OpenGraphiteCanvas) {
+        x = canvas.x
+        y = canvas.y
+        width = canvas.width
+        height = canvas.height
+    }
+
+    /// 論理名（日本語）: ページキャンバス入力値初期化関数
+    /// 処理概要: パース済みの各数値から Inspector 入力値を生成します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: ページプレビュー幅。
+    ///   - height: ページプレビュー高さ。
+    init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+/// 論理名（日本語）: ページインスペクタービュー
+/// 概要: 選択ページの HTML 相対パス、解像度、キャンバス配置を表示・編集します。
+///
+/// プロパティ:
+/// - `page`: 表示・編集対象のページ。
+/// - `onCommit`: 有効なキャンバス入力を適用する処理。
+private struct PageInspectorView: View {
+    var page: OpenGraphitePage
+    var onCommit: (Double, Double, Double, Double) -> Void
+
+    @State private var xDraft: String
+    @State private var yDraft: String
+    @State private var widthDraft: String
+    @State private var heightDraft: String
+
+    /// 論理名（日本語）: ページインスペクター初期化関数
+    /// 処理概要: 選択ページの現在キャンバス値を入力欄の初期値として保持します。
+    ///
+    /// - Parameters:
+    ///   - page: 表示・編集対象のページ。
+    ///   - onCommit: 有効なキャンバス入力を適用する処理。
+    init(page: OpenGraphitePage, onCommit: @escaping (Double, Double, Double, Double) -> Void) {
+        self.page = page
+        self.onCommit = onCommit
+        _xDraft = State(initialValue: Self.draftText(for: page.canvas.x))
+        _yDraft = State(initialValue: Self.draftText(for: page.canvas.y))
+        _widthDraft = State(initialValue: Self.draftText(for: page.canvas.width))
+        _heightDraft = State(initialValue: Self.draftText(for: page.canvas.height))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                PageSummaryPanel(page: page)
+
+                InspectorSection(title: "Context") {
+                    InspectorInfoRow(label: "path", value: page.path)
+                    InspectorInfoRow(label: "resolution", value: page.canvas.resolutionLabel)
+                    InspectorInfoRow(label: "position", value: page.canvas.positionLabel)
+                }
+
+                InspectorSection(title: "Canvas") {
+                    InspectorFieldGrid {
+                        RequiredCanvasNumberField(
+                            label: "X",
+                            text: $xDraft,
+                            isInvalid: isInvalidDraft(xDraft),
+                            onSubmit: commitIfValid
+                        )
+
+                        RequiredCanvasNumberField(
+                            label: "Y",
+                            text: $yDraft,
+                            isInvalid: isInvalidDraft(yDraft),
+                            onSubmit: commitIfValid
+                        )
+
+                        RequiredCanvasNumberField(
+                            label: "Width",
+                            text: $widthDraft,
+                            isInvalid: isInvalidDraft(widthDraft, requiresPositive: true),
+                            onSubmit: commitIfValid
+                        )
+
+                        RequiredCanvasNumberField(
+                            label: "Height",
+                            text: $heightDraft,
+                            isInvalid: isInvalidDraft(heightDraft, requiresPositive: true),
+                            onSubmit: commitIfValid
+                        )
+                    }
+
+                    if let validationMessage {
+                        Text(validationMessage)
+                            .font(.caption2)
+                            .foregroundStyle(Color.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button(action: commitIfValid) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark")
+                            Text("Apply")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(canCommit ? Color.white : Color.secondary)
+                        .background(
+                            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                                .fill(canCommit ? Color.accentColor : EditorColumnStyle.elevatedRowFill)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canCommit)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity)
+        .onChange(of: page.canvas) { _, nextCanvas in
+            resetDrafts(with: nextCanvas)
+        }
+    }
+
+    private var normalizedDrafts: [String] {
+        [
+            xDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+            yDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+            widthDraft.trimmingCharacters(in: .whitespacesAndNewlines),
+            heightDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        ]
+    }
+
+    private var parsedInput: PageCanvasInput? {
+        guard validationMessage == nil else { return nil }
+        let values = normalizedDrafts
+        guard let x = Double(values[0]),
+              let y = Double(values[1]),
+              let width = Double(values[2]),
+              let height = Double(values[3])
+        else {
+            return nil
+        }
+        return PageCanvasInput(x: x, y: y, width: width, height: height)
+    }
+
+    private var validationMessage: String? {
+        let values = normalizedDrafts
+        guard !values.contains(where: \.isEmpty) else {
+            return "X / Y / Width / Height はすべて入力必須です。"
+        }
+        guard let x = Double(values[0]),
+              let y = Double(values[1]),
+              let width = Double(values[2]),
+              let height = Double(values[3])
+        else {
+            return "キャンバス配置には数値を入力してください。"
+        }
+        guard [x, y, width, height].allSatisfy(\.isFinite) else {
+            return "キャンバス配置には有限の数値を入力してください。"
+        }
+        guard width > 0, height > 0 else {
+            return "Width / Height は 0 より大きい数値が必要です。"
+        }
+        return nil
+    }
+
+    private var canCommit: Bool {
+        guard let parsedInput else { return false }
+        return parsedInput != PageCanvasInput(canvas: page.canvas)
+    }
+
+    /// 論理名（日本語）: ページキャンバス入力確定関数
+    /// 処理概要: 必須入力と数値条件を満たす場合だけキャンバス配置を適用します。
+    private func commitIfValid() {
+        guard let parsedInput else { return }
+        onCommit(parsedInput.x, parsedInput.y, parsedInput.width, parsedInput.height)
+    }
+
+    /// 論理名（日本語）: ページキャンバスdraftリセット関数
+    /// 処理概要: Store 側で更新されたキャンバス値を入力欄へ反映します。
+    ///
+    /// - Parameter canvas: 入力欄へ反映するキャンバス定義。
+    private func resetDrafts(with canvas: OpenGraphiteCanvas) {
+        xDraft = Self.draftText(for: canvas.x)
+        yDraft = Self.draftText(for: canvas.y)
+        widthDraft = Self.draftText(for: canvas.width)
+        heightDraft = Self.draftText(for: canvas.height)
+    }
+
+    /// 論理名（日本語）: ページキャンバスdraft検証関数
+    /// 処理概要: 単一入力欄が必須・数値・正値条件を満たさない場合に invalid と判定します。
+    ///
+    /// - Parameters:
+    ///   - draft: 検証する入力文字列。
+    ///   - requiresPositive: 0 より大きい値が必要か。
+    /// - Returns: 入力が不正な場合は `true`。
+    private func isInvalidDraft(_ draft: String, requiresPositive: Bool = false) -> Bool {
+        let value = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty,
+              let number = Double(value),
+              number.isFinite
+        else {
+            return true
+        }
+        return requiresPositive && number <= 0
+    }
+
+    /// 論理名（日本語）: ページキャンバスdraft文字列生成関数
+    /// 処理概要: 数値の編集しやすさを優先し、整数値は小数点なしで表示します。
+    ///
+    /// - Parameter value: 入力欄に表示する数値。
+    /// - Returns: 入力欄向けの文字列。
+    private static func draftText(for value: Double) -> String {
+        let roundedValue = value.rounded()
+        if abs(value - roundedValue) < 0.0001 {
+            return String(Int(roundedValue))
+        }
+        return String(value)
+    }
+}
+
+/// 論理名（日本語）: ページ概要パネル
+/// 概要: Inspector 上部に選択ページの識別子、HTML 相対パス、解像度を表示します。
+///
+/// プロパティ:
+/// - `page`: 表示対象のページ。
+private struct PageSummaryPanel: View {
+    var page: OpenGraphitePage
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 28, height: 28)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.accentFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.id)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("\(page.path) · \(page.canvas.resolutionLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+    }
+}
+
+/// 論理名（日本語）: 必須キャンバス数値フィールド
+/// 概要: ページキャンバス配置用の必須数値入力欄を表示します。
+///
+/// プロパティ:
+/// - `label`: 入力欄ラベル。
+/// - `text`: 入力文字列 binding。
+/// - `isInvalid`: 入力欄を invalid 表示にするか。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct RequiredCanvasNumberField: View {
+    var label: String
+    @Binding var text: String
+    var isInvalid: Bool
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text("required")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary.opacity(0.72))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            TextField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(.caption.monospaced())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
+                )
+                .onSubmit(onSubmit)
+                .frame(minWidth: 0, maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 /// 論理名（日本語）: インスペクターセクション
 /// 概要: Inspector 内の見出し付きパネルを共通化する汎用コンテナです。
 ///
@@ -359,7 +695,7 @@ private struct InspectorEmptyStateView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Text("Layers または Canvas でノードを選択してください。")
+            Text("Layers または Canvas でページかノードを選択してください。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

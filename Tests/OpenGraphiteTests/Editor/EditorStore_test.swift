@@ -95,6 +95,55 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "ページ選択を解除しました。")
     }
 
+    /// 論理名（日本語）: 選択ページキャンバス配置保存テスト
+    /// 概要: 選択中ページの座標と解像度が Store と `.ogp` に保存されることを検証します。
+    @Test("選択ページのキャンバス配置をogpへ保存する")
+    func testUpdateSelectedPageCanvasPersistsManifest() throws {
+        // Given: 一時プロジェクトを開き、選択ページの新しい配置値を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let expectedCanvas = OpenGraphiteCanvas(x: 24, y: -12, width: 390, height: 844)
+
+        // When: 選択ページのキャンバス配置を更新する
+        store.updateSelectedPageCanvas(
+            x: expectedCanvas.x,
+            y: expectedCanvas.y,
+            width: expectedCanvas.width,
+            height: expectedCanvas.height
+        )
+
+        // Then: Store とディスク上の `.ogp` が同じ配置値になる
+        #expect(store.selectedPage?.canvas == expectedCanvas)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas == expectedCanvas)
+        #expect(store.statusMessage.contains("キャンバス配置を更新"))
+    }
+
+    /// 論理名（日本語）: 不正キャンバス配置拒否テスト
+    /// 概要: 解像度が 0 以下の場合に Store と `.ogp` を更新しないことを検証します。
+    @Test("不正な解像度ではキャンバス配置を更新しない")
+    func testUpdateSelectedPageCanvasRejectsInvalidResolution() throws {
+        // Given: 一時プロジェクトを開き、現在のキャンバス配置を保持する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let originalCanvas = try #require(store.selectedPage?.canvas)
+
+        // When: width 0 の不正な配置を適用しようとする
+        store.updateSelectedPageCanvas(x: 0, y: 0, width: 0, height: 844)
+
+        // Then: Store とディスク上の `.ogp` は変更されず、エラーが残る
+        #expect(store.selectedPage?.canvas == originalCanvas)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas == originalCanvas)
+        #expect(store.lastError == "キャンバス配置の入力が不正です。")
+    }
+
     /// 論理名（日本語）: CSS変数更新テスト
     /// 概要: 選択中ノードの CSS 変数更新と mutation 発行を検証します。
     @Test("CSS変数更新でノードとmutationを更新する")

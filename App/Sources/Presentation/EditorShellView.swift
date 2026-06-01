@@ -538,8 +538,13 @@ private struct CanvasDocumentView: View {
         .overlay(alignment: .topLeading) {
             CanvasPageNameCard(
                 title: page.id,
+                path: page.path,
+                resolution: page.canvas.resolutionLabel,
                 isSelected: isSelected,
-                maxTextWidth: max(width - CanvasMetrics.pageNameCardHorizontalInset * 2, 32)
+                maxTextWidth: max(
+                    min(width, CanvasMetrics.pageNameCardMaxTextWidth),
+                    CanvasMetrics.pageNameCardMinTextWidth
+                )
             )
             .offset(y: -CanvasMetrics.pageNameCardOutsideOffset)
         }
@@ -559,19 +564,31 @@ private struct CanvasDocumentView: View {
 ///
 /// プロパティ:
 /// - `title`: 表示するページ識別子。
+/// - `path`: HTML root から見た相対パス。
+/// - `resolution`: ページプレビューの解像度表示。
 /// - `isSelected`: 対象ページが選択中か。
 /// - `maxTextWidth`: ページ幅に応じたテキスト最大幅。
 private struct CanvasPageNameCard: View {
     var title: String
+    var path: String
+    var resolution: String
     var isSelected: Bool
     var maxTextWidth: CGFloat
 
     var body: some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isSelected ? Color.white : Color.primary)
-            .lineLimit(1)
-            .truncationMode(.middle)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Text("\(path) · \(resolution)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
             .frame(maxWidth: maxTextWidth, alignment: .leading)
             .padding(.horizontal, CanvasMetrics.pageNameCardHorizontalInset)
             .frame(height: CanvasMetrics.pageNameCardHeight)
@@ -584,8 +601,8 @@ private struct CanvasPageNameCard: View {
                     .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
-            .help(title)
-            .accessibilityLabel(title)
+            .help("\(title) · \(path) · \(resolution)")
+            .accessibilityLabel("\(title), \(path), \(resolution)")
     }
 }
 
@@ -636,12 +653,16 @@ private struct CanvasProjectBounds {
 /// - `pageNameCardHeight`: ページ名カードの固定高さ。
 /// - `pageNameCardGap`: ページ枠とページ名カードの間隔。
 /// - `pageNameCardHorizontalInset`: ページ名カード内の水平余白。
+/// - `pageNameCardMinTextWidth`: ページ名カードの最小テキスト幅。
+/// - `pageNameCardMaxTextWidth`: ページ名カードの最大テキスト幅。
 /// - `pageNameCardOutsideOffset`: ページ名カードをページ枠外へ出す垂直オフセット。
 private enum CanvasMetrics {
-    static let documentPadding: CGFloat = 48
-    static let pageNameCardHeight: CGFloat = 24
+    static let documentPadding: CGFloat = 72
+    static let pageNameCardHeight: CGFloat = 44
     static let pageNameCardGap: CGFloat = 8
-    static let pageNameCardHorizontalInset: CGFloat = 9
+    static let pageNameCardHorizontalInset: CGFloat = 10
+    static let pageNameCardMinTextWidth: CGFloat = 176
+    static let pageNameCardMaxTextWidth: CGFloat = 280
     static let pageNameCardOutsideOffset = pageNameCardHeight + pageNameCardGap
 }
 

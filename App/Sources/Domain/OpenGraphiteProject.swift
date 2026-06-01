@@ -128,6 +128,29 @@ struct OpenGraphiteCanvas: Codable, Equatable {
     var y: Double
     var width: Double
     var height: Double
+
+    /// 解像度を UI 表示向けに短く整形した文字列。
+    var resolutionLabel: String {
+        "\(Self.displayValue(width)) x \(Self.displayValue(height))"
+    }
+
+    /// キャンバス座標を UI 表示向けに短く整形した文字列。
+    var positionLabel: String {
+        "\(Self.displayValue(x)), \(Self.displayValue(y))"
+    }
+
+    /// 論理名（日本語）: キャンバス値表示関数
+    /// 処理概要: キャンバス座標や解像度を UI 表示向けに整数優先の短い文字列へ変換します。
+    ///
+    /// - Parameter value: 表示するキャンバス数値。
+    /// - Returns: 整数に近い値は整数、それ以外は小数1桁の文字列。
+    private static func displayValue(_ value: Double) -> String {
+        let roundedValue = value.rounded()
+        if abs(value - roundedValue) < 0.0001 {
+            return String(Int(roundedValue))
+        }
+        return String(format: "%.1f", value)
+    }
 }
 
 /// 論理名（日本語）: 読み込み済みOpenGraphiteプロジェクト

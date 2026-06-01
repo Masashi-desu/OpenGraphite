@@ -202,6 +202,55 @@ final class EditorStore: ObservableObject {
         selectedNodeID = id
     }
 
+    /// 論理名（日本語）: 選択ページキャンバス配置更新関数
+    /// 処理概要: 選択中ページのキャンバス座標と解像度を `.ogp` へ保存し、表示中 project state へ反映します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: ページプレビュー幅。0 より大きい値が必要です。
+    ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
+    func updateSelectedPageCanvas(x: Double, y: Double, width: Double, height: Double) {
+        guard x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0 else {
+            lastError = "キャンバス配置の入力が不正です。"
+            return
+        }
+        guard var loadedProject, let selectedPageID else { return }
+
+        var chapterIndex: Array<OpenGraphiteChapter>.Index?
+        if let selectedChapterID,
+           let selectedChapterIndex = loadedProject.project.chapters.firstIndex(where: { $0.id == selectedChapterID }),
+           loadedProject.project.chapters[selectedChapterIndex].pages.contains(where: { $0.id == selectedPageID }) {
+            chapterIndex = selectedChapterIndex
+        }
+        if chapterIndex == nil {
+            chapterIndex = loadedProject.project.chapters.firstIndex { chapter in
+                chapter.pages.contains { $0.id == selectedPageID }
+            }
+        }
+        guard let chapterIndex,
+              let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: { $0.id == selectedPageID })
+        else {
+            return
+        }
+
+        let nextCanvas = OpenGraphiteCanvas(x: x, y: y, width: width, height: height)
+        guard loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas != nextCanvas else { return }
+
+        loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas = nextCanvas
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            self.loadedProject = loadedProject
+            lastError = nil
+            let page = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
+            statusMessage = "\(page.path) のキャンバス配置を更新しました。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
     /// 論理名（日本語）: ノードpayload取り込み関数
     /// 処理概要: WebView の JavaScript から受け取った辞書配列を `OpenGraphiteNode` 配列へ変換します。
     ///
@@ -510,6 +559,19 @@ final class EditorStore: ObservableObject {
     /// - Returns: 読み込めた HTML。失敗時は `nil`。
     private func readHTMLFromDisk(at pageURL: URL) -> String? {
         try? String(contentsOf: pageURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: プロジェクトmanifest保存関数
+    /// 処理概要: 更新済み project manifest を `.ogp` ファイルへ atomic write で保存します。
+    ///
+    /// - Parameters:
+    ///   - project: 保存する project 定義。
+    ///   - projectURL: 保存先 `.ogp` URL。
+    private func writeProjectManifest(_ project: OpenGraphiteProject, to projectURL: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted]
+        let data = try encoder.encode(project)
+        try data.write(to: projectURL, options: .atomic)
     }
 
     /// 論理名（日本語）: プロジェクトHTML既知状態初期化関数
