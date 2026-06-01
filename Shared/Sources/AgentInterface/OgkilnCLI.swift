@@ -122,6 +122,77 @@ struct OgkilnCLI {
                 break
             }
 
+        case ["project", "component"]:
+            guard arguments.indices.contains(2) else { break }
+            switch arguments[2] {
+            case "add":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredComponentID(in: arguments)
+                let pagePath = try requiredOption("--path", in: arguments)
+                let canvas = OpenGraphiteCanvas(
+                    x: try doubleOption("--x", in: arguments) ?? 0,
+                    y: try doubleOption("--y", in: arguments) ?? 0,
+                    width: try doubleOption("--width", in: arguments) ?? 960,
+                    height: try doubleOption("--height", in: arguments) ?? 900
+                )
+                let summary = try core.addProjectComponent(
+                    projectURL: projectURL,
+                    id: id,
+                    path: pagePath,
+                    canvas: canvas
+                )
+                return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+            case "create":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredComponentID(in: arguments)
+                let pagePath = try requiredOption("--path", in: arguments)
+                let title = try optionalOption("--title", in: arguments) ?? id
+                let lang = try optionalOption("--lang", in: arguments) ?? "ja"
+                let canvas = OpenGraphiteCanvas(
+                    x: try doubleOption("--x", in: arguments) ?? 0,
+                    y: try doubleOption("--y", in: arguments) ?? 0,
+                    width: try doubleOption("--width", in: arguments) ?? 960,
+                    height: try doubleOption("--height", in: arguments) ?? 900
+                )
+                let body = try optionalOption("--body-html", in: arguments)
+                    ?? htmlFromFile(requiredOption("--body-file", in: arguments), currentDirectory: currentDirectory)
+                let result = try core.createProjectComponent(
+                    projectURL: projectURL,
+                    id: id,
+                    path: pagePath,
+                    canvas: canvas,
+                    title: title,
+                    lang: lang,
+                    stylesheetPath: try optionalOption("--stylesheet", in: arguments),
+                    bodyHTML: body,
+                    overwrite: hasFlag("--overwrite", in: arguments)
+                )
+                return try OgkilnOutput(object: result, exitCode: result.created ? 0 : 1)
+            case "place":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredComponentID(in: arguments)
+                let summary = try core.placeProjectComponent(
+                    projectURL: projectURL,
+                    id: id,
+                    x: try doubleOption("--x", in: arguments),
+                    y: try doubleOption("--y", in: arguments),
+                    width: try doubleOption("--width", in: arguments),
+                    height: try doubleOption("--height", in: arguments)
+                )
+                return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+            case "remove":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredComponentID(in: arguments)
+                let summary = try core.removeProjectComponent(
+                    projectURL: projectURL,
+                    id: id,
+                    deleteFile: hasFlag("--delete-file", in: arguments)
+                )
+                return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+            default:
+                break
+            }
+
         case ["page", "graph"]:
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let graph = try core.pageGraph(projectURL: projectURL, pageID: requiredPageID(in: arguments))
@@ -135,6 +206,16 @@ struct OgkilnCLI {
             let targetURL = try projectURL(from: positional(arguments, at: 1, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let result = try core.validateProject(at: targetURL)
             return try OgkilnOutput(object: result, exitCode: result.valid ? 0 : 1)
+        }
+
+        if arguments.first == "build" {
+            let projectURL = try projectURL(from: positional(arguments, at: 1, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let output = try requiredOption("--output", in: arguments)
+            let result = try OpenGraphiteComponentBuilder().buildProject(
+                projectURL: projectURL,
+                outputURL: url(for: output, currentDirectory: currentDirectory)
+            )
+            return try OgkilnOutput(object: result, exitCode: result.built ? 0 : 1)
         }
 
         if arguments.count >= 2, arguments[0] == "screenshot", arguments[1] == "canvas" {
@@ -410,12 +491,32 @@ struct OgkilnCLI {
     }
 
     /// 論理名（日本語）: 必須ページID取得関数
-    /// 処理概要: `.ogp` 内 page を指定する `--page-id` を取得します。
+    /// 処理概要: `.ogp` 内 page または component を指定する `--page-id` / `--component-id` を取得します。
     ///
     /// - Parameter arguments: CLI 引数。
-    /// - Returns: page ID。
+    /// - Returns: page または component ID。
     private func requiredPageID(in arguments: [String]) throws -> String {
-        try requiredOption("--page-id", in: arguments)
+        let pageID = try optionalOption("--page-id", in: arguments)
+        let componentID = try optionalOption("--component-id", in: arguments)
+        if pageID != nil && componentID != nil {
+            throw OgkilnCLIError(message: "--page-id と --component-id は同時に指定できません。", exitCode: 2)
+        }
+        if let pageID {
+            return pageID
+        }
+        if let componentID {
+            return componentID
+        }
+        throw OgkilnCLIError(message: "--page-id または --component-id が指定されていません。", exitCode: 2)
+    }
+
+    /// 論理名（日本語）: 必須コンポーネントID取得関数
+    /// 処理概要: `.ogp` の Components セグメントを指定する `--component-id` を取得します。
+    ///
+    /// - Parameter arguments: CLI 引数。
+    /// - Returns: component ID。
+    private func requiredComponentID(in arguments: [String]) throws -> String {
+        try requiredOption("--component-id", in: arguments)
     }
 
     private func htmlFromFile(_ path: String, currentDirectory: URL) throws -> String {
@@ -446,26 +547,32 @@ struct OgkilnCLI {
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
-      ogkiln page graph <project.ogp|current> --page-id <page-id> --json
+      ogkiln project component add <project.ogp|current> --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+      ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+      ogkiln project component place <project.ogp|current> --component-id <component-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
+      ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
       ogkiln validate <project.ogp|current> [--json]
+      ogkiln build <project.ogp|current> --output <dir>
       ogkiln screenshot canvas <project.ogp|current> --output <png>
-      ogkiln screenshot page <project.ogp|current> --page-id <page-id> --output <png> [--width <n>] [--height <n>] [--full-page]
-      ogkiln screenshot node <project.ogp|current> --page-id <page-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
-      ogkiln node query <project.ogp|current> --page-id <page-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json
-      ogkiln node get <project.ogp|current> --page-id <page-id> --id <data-og-id> --json
-      ogkiln node style set <project.ogp|current> --page-id <page-id> --id <data-og-id> --var <--og-var> --value <css-value>
-      ogkiln node style remove <project.ogp|current> --page-id <page-id> --id <data-og-id> --var <--og-var>
-      ogkiln node attr set <project.ogp|current> --page-id <page-id> --id <data-og-id> --name <data-og-attr> --value <value>
-      ogkiln node attr remove <project.ogp|current> --page-id <page-id> --id <data-og-id> --name <data-og-attr>
-      ogkiln node text set <project.ogp|current> --page-id <page-id> --id <data-og-id> --value <text>
-      ogkiln node text set <project.ogp|current> --page-id <page-id> --id <data-og-id> --text-file <text-file>
-      ogkiln node html insert <project.ogp|current> --page-id <page-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html <fragment-html>
-      ogkiln node html insert <project.ogp|current> --page-id <page-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html-file <fragment.html>
-      ogkiln node html replace <project.ogp|current> --page-id <page-id> --id <data-og-id> --html <replacement-html>
-      ogkiln node html replace <project.ogp|current> --page-id <page-id> --id <data-og-id> --html-file <replacement.html>
-      ogkiln node delete <project.ogp|current> --page-id <page-id> --id <data-og-id>
-      ogkiln node move <project.ogp|current> --page-id <page-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append>
-      ogkiln node copy <project.ogp|current> --page-id <page-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append> --id-prefix <prefix>
+      ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
+      ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
+      ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json
+      ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --json
+      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --var <--og-var> --value <css-value>
+      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --var <--og-var>
+      ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --name <data-og-attr> --value <value>
+      ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --name <data-og-attr>
+      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --value <text>
+      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --text-file <text-file>
+      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html <fragment-html>
+      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html-file <fragment.html>
+      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --html <replacement-html>
+      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --html-file <replacement.html>
+      ogkiln node delete <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id>
+      ogkiln node move <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append>
+      ogkiln node copy <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append> --id-prefix <prefix>
     """
 }
 

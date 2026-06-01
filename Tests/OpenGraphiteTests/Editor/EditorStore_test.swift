@@ -361,6 +361,70 @@ struct EditorStoreTests {
         #expect(store.statusMessage.contains("表示へ同期"))
     }
 
+    /// 論理名（日本語）: 依存ファイル外部変更同期テスト
+    /// 概要: CSS や component master の変更時に全 WebView の reload token が更新されることを検証します。
+    @Test("依存ファイル変更で全pageのreload tokenを更新する")
+    func testRefreshProjectDependenciesUpdatesAllReloadTokens() throws {
+        // Given: 複数 page と component canvas を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let downloadsURL = fixture.publicURL.appendingPathComponent("downloads.html")
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components")
+        let componentURL = componentDirectory.appendingPathComponent("design-system.html")
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try "<!doctype html>\n<html><body>downloads</body></html>".write(
+            to: downloadsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "<!doctype html>\n<html><body>component</body></html>".write(
+            to: componentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                ),
+                OpenGraphitePage(
+                    id: "downloads",
+                    path: "downloads.html",
+                    canvas: OpenGraphiteCanvas(x: 120, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 140, width: 100, height: 100)
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let initialHomeToken = store.reloadToken(for: fixture.htmlURL)
+        let initialDownloadsToken = store.reloadToken(for: downloadsURL)
+        let initialComponentToken = store.reloadToken(for: componentURL)
+
+        // When: CSS / component などの依存ファイル変更を同期する
+        store.refreshProjectDependenciesFromDisk()
+
+        // Then: 選択中 page、非選択 page、component canvas の表示が再読込対象になる
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialHomeToken + 1)
+        #expect(store.reloadToken(for: downloadsURL) == initialDownloadsToken + 1)
+        #expect(store.reloadToken(for: componentURL) == initialComponentToken + 1)
+        #expect(store.statusMessage == "CSS / Components の外部変更を表示へ同期しました。")
+    }
+
     /// 論理名（日本語）: 未適用編集との競合テスト
     /// 概要: 未適用 mutation がある場合に外部 HTML 変更で WebView を破壊的に置換しないことを検証します。
     @Test("未適用編集がある場合は外部HTML変更同期を保留する")

@@ -208,14 +208,26 @@ struct WebCanvasView: NSViewRepresentable {
         context.coordinator.isInteractive = isInteractive
 
         let targetPageURL = pageURL ?? store.selectedPageURL
-        if let targetPageURL,
-           context.coordinator.loadedURL != targetPageURL
-            || context.coordinator.lastReloadToken != reloadToken {
-            context.coordinator.loadedURL = targetPageURL
+        if let targetPageURL {
+            let loadedURLChanged = context.coordinator.loadedURL != targetPageURL
+            let reloadTokenChanged = context.coordinator.lastReloadToken != reloadToken
+            if loadedURLChanged || reloadTokenChanged {
+                context.coordinator.loadedURL = targetPageURL
+                context.coordinator.lastReloadToken = reloadToken
+                context.coordinator.lastSelectedNodeID = nil
+                if loadedURLChanged || webView.url == nil {
+                    let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
+                    webView.loadFileURL(targetPageURL, allowingReadAccessTo: readAccessURL)
+                } else {
+                    webView.reloadFromOrigin()
+                }
+            }
+        }
+
+        if pageURL == nil, targetPageURL == nil {
+            context.coordinator.loadedURL = nil
             context.coordinator.lastReloadToken = reloadToken
             context.coordinator.lastSelectedNodeID = nil
-            let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
-            webView.loadFileURL(targetPageURL, allowingReadAccessTo: readAccessURL)
         }
 
         guard isInteractive else {
@@ -356,11 +368,73 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - webView: 読み込みが完了した WebView。
         ///   - navigation: 完了した navigation。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            renderLocalComponentReferences(in: webView)
             guard isInteractive else { return }
             collectNodes()
             Task { @MainActor in
                 setActiveTool(store.activeTool)
                 selectNode(store.selectedNodeID)
+            }
+        }
+
+        /// 論理名（日本語）: ローカルcomponent参照レンダリング関数
+        /// 処理概要: `file://` の component master を Swift 側で読み、runtime に渡して WKWebView の file URL 制約を補完します。
+        ///
+        /// - Parameter webView: component 参照を展開する WebView。
+        private func renderLocalComponentReferences(in webView: WKWebView) {
+            let discoveryScript = """
+            (function() {
+              return {
+                componentHrefs: Array.from(document.querySelectorAll('link[rel="opengraphite-components"][href]')).map((link) => link.href),
+                runtimeLoaded: !!(window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function'),
+                runtimeHrefs: Array.from(document.querySelectorAll('script[src*="OpenGraphite.runtime.js"]')).map((script) => script.src)
+              };
+            })();
+            """
+
+            webView.evaluateJavaScript(discoveryScript) { [weak self, weak webView] result, _ in
+                guard let self, let webView, let payload = result as? [String: Any] else { return }
+                let componentHrefs = payload["componentHrefs"] as? [String] ?? []
+                let componentHTMLs = self.localTextDocuments(from: componentHrefs)
+                guard !componentHTMLs.isEmpty else { return }
+
+                let runtimeLoaded = payload["runtimeLoaded"] as? Bool ?? false
+                let runtimeHrefs = payload["runtimeHrefs"] as? [String] ?? []
+                let runtimeSource = self.localTextDocuments(from: runtimeHrefs).first
+                guard runtimeLoaded || runtimeSource != nil else { return }
+
+                let htmlArray = componentHTMLs
+                    .map(Self.javaScriptLiteral)
+                    .joined(separator: ",")
+                let renderScript = """
+                (function() {
+                  \(runtimeSource ?? "")
+                  if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function') {
+                    window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(htmlArray)]);
+                    return true;
+                  }
+                  return false;
+                })();
+                """
+
+                webView.evaluateJavaScript(renderScript) { [weak self] result, _ in
+                    guard let self, (result as? Bool) == true else { return }
+                    if self.isInteractive {
+                        self.collectNodes()
+                    }
+                }
+            }
+        }
+
+        /// 論理名（日本語）: ローカルtext文書読み込み関数
+        /// 処理概要: JS から得た href のうち `file://` URL だけを UTF-8 text として読み込みます。
+        ///
+        /// - Parameter hrefs: component link や runtime script の href 一覧。
+        /// - Returns: 読み込みに成功した text document 一覧。
+        private func localTextDocuments(from hrefs: [String]) -> [String] {
+            hrefs.compactMap { href -> String? in
+                guard let url = URL(string: href), url.isFileURL else { return nil }
+                return try? String(contentsOf: url, encoding: .utf8)
             }
         }
 
@@ -529,6 +603,9 @@ struct WebCanvasView: NSViewRepresentable {
 
             let script = """
             (function() {
+              if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.serializeDocument === 'function') {
+                return window.OpenGraphiteRuntime.serializeDocument();
+              }
               const clone = document.documentElement.cloneNode(true);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
                 element.removeAttribute('data-og-selected');
@@ -957,14 +1034,18 @@ struct WebCanvasView: NSViewRepresentable {
         let count = 0;
         let parent = element.parentElement;
         while (parent && parent !== document.body && parent !== document.documentElement) {
-          count += 1;
+          if (parent.hasAttribute && parent.hasAttribute('data-og-id')) {
+            count += 1;
+          }
           parent = parent.parentElement;
         }
         return count;
       }
 
       function allEditableNodes() {
-        return Array.from(document.querySelectorAll('[data-og-id]'));
+        return Array.from(document.querySelectorAll('[data-og-id]')).filter((element) => {
+          return !(element.tagName && element.tagName.toLowerCase() === 'og-instance' && element.hasAttribute('data-og-expanded'));
+        });
       }
 
         function nodeWithID(id) {
@@ -1852,6 +1933,13 @@ struct WebCanvasView: NSViewRepresentable {
             candidates: layerCandidatesFor(element)
           });
         }, true);
+
+        document.addEventListener('opengraphite:components-ready', function() {
+          collectNodes();
+          if (currentSelectedID) {
+            selectNode(currentSelectedID);
+          }
+        });
 
       setTimeout(function() {
         collectNodes();

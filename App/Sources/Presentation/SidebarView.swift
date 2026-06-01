@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 論理名（日本語）: サイドバービュー
-/// 概要: Chapters、Pages、Layers をセグメントで切り替え、Chapter、ページ、レイヤー階層の選択を行う左ペインです。
+/// 概要: Chapters、Pages、Components を切り替え、各 HTML カード内でページや component canvas とレイヤー階層を選択する左ペインです。
 struct SidebarView: View {
     @EnvironmentObject private var store: EditorStore
     @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.chapters.rawValue
@@ -14,29 +14,48 @@ struct SidebarView: View {
                 .padding(.bottom, 10)
 
             Group {
-                if selectedPanel == SidebarPanel.chapters.rawValue {
+                if resolvedPanel == .chapters {
                     ChapterListView()
-                } else if selectedPanel == SidebarPanel.pages.rawValue {
+                } else if resolvedPanel == .pages {
                     PageListView()
                 } else {
-                    LayerOutlineView(
-                        nodes: store.nodes,
-                        selectedNodeID: $store.selectedNodeID
-                    )
+                    ComponentPageListView()
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }
+        .onAppear {
+            normalizeSelectedPanel()
+        }
+        .onChange(of: selectedPanel) { _, _ in
+            normalizeSelectedPanel()
+        }
         .onChange(of: store.selectedNodeID) { _, newValue in
             if newValue != nil {
-                selectedPanel = SidebarPanel.layers.rawValue
+                selectedPanel = store.selectedCanvasSegment == .components
+                    ? SidebarPanel.components.rawValue
+                    : SidebarPanel.pages.rawValue
             }
+        }
+    }
+
+    private var resolvedPanel: SidebarPanel {
+        SidebarPanel(rawValue: selectedPanel) ?? .pages
+    }
+
+    /// 論理名（日本語）: サイドバーパネル正規化関数
+    /// 処理概要: 旧バージョンの SceneStorage に残った Layers などの無効値を現在のパネルへ置き換えます。
+    private func normalizeSelectedPanel() {
+        if SidebarPanel(rawValue: selectedPanel) == nil {
+            selectedPanel = store.selectedCanvasSegment == .components
+                ? SidebarPanel.components.rawValue
+                : SidebarPanel.pages.rawValue
         }
     }
 }
 
 /// 論理名（日本語）: サイドバーパネル切替ビュー
-/// 概要: タイトルバー領域の下に Chapters、Pages、Layers の切替ボタンを表示します。
+/// 概要: タイトルバー領域の下に Chapters、Pages、Components の切替ボタンを表示します。
 ///
 /// プロパティ:
 /// - `selectedPanel`: 現在選択中のパネル種別。
@@ -159,19 +178,48 @@ private struct ChapterRow: View {
 }
 
 /// 論理名（日本語）: ページ一覧ビュー
-/// 概要: 左カラムの Pages パネルで選択 Chapter 内ページを軽量なカスタム行として表示します。
+/// 概要: 左カラムの Pages パネルで選択 Chapter 内ページを開閉可能な HTML カードとして表示します。
 private struct PageListView: View {
+    var body: some View {
+        PageLayerListView(segment: .pages)
+    }
+}
+
+/// 論理名（日本語）: Componentページ一覧ビュー
+/// 概要: 左カラムの Components パネルで component master を格納する HTML canvas を開閉可能なカードとして表示します。
+private struct ComponentPageListView: View {
+    var body: some View {
+        PageLayerListView(segment: .components)
+    }
+}
+
+/// 論理名（日本語）: HTMLレイヤーカード一覧ビュー
+/// 概要: Pages または Components の各 HTML を開閉可能なカードとして並べ、選択中 HTML の Layers をカード内へ表示します。
+///
+/// プロパティ:
+/// - `segment`: 表示対象の Pages / Components セグメント。
+private struct PageLayerListView: View {
     @EnvironmentObject private var store: EditorStore
+    @State private var expandedPageID: String?
+    var segment: OpenGraphiteCanvasSegment
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(store.selectedChapterPages) { page in
-                    PageRow(
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(pages) { page in
+                    PageLayerCard(
                         page: page,
-                        isSelected: page.id == store.selectedPageID,
+                        isSelected: isSelected(page),
+                        isExpanded: expandedPageID == page.id,
+                        nodes: isSelected(page) ? store.nodes : [],
+                        selectedNodeID: $store.selectedNodeID,
+                        systemImage: segment == .components ? "shippingbox" : "doc.text",
                         onSelect: {
-                            store.selectPage(id: page.id)
+                            select(page)
+                            expandedPageID = page.id
+                        },
+                        onToggle: {
+                            toggle(page)
                         }
                     )
                 }
@@ -181,43 +229,160 @@ private struct PageListView: View {
             .padding(.vertical, 10)
         }
         .frame(minHeight: 140)
+        .onAppear {
+            selectSegmentIfNeeded()
+            expandSelectedPage()
+        }
+        .onChange(of: store.selectedCanvasSegment) { _, newValue in
+            if newValue == segment {
+                expandSelectedPage()
+            }
+        }
+        .onChange(of: selectedPageID) { _, _ in
+            expandSelectedPage()
+        }
+    }
+
+    private var pages: [OpenGraphitePage] {
+        switch segment {
+        case .pages:
+            return store.selectedChapterPages
+        case .components:
+            return store.componentPages
+        }
+    }
+
+    private var selectedPageID: String? {
+        switch segment {
+        case .pages:
+            return store.selectedCanvasSegment == .pages ? store.selectedPageID : nil
+        case .components:
+            return store.selectedCanvasSegment == .components ? store.selectedComponentPageID : nil
+        }
+    }
+
+    /// 論理名（日本語）: HTML選択判定関数
+    /// 処理概要: 対象カードが現在の編集 HTML と一致するかを返します。
+    ///
+    /// - Parameter page: 判定対象の HTML page。
+    /// - Returns: 選択中であれば `true`。
+    private func isSelected(_ page: OpenGraphitePage) -> Bool {
+        store.selectedCanvasSegment == segment && selectedPageID == page.id
+    }
+
+    /// 論理名（日本語）: HTMLカード選択関数
+    /// 処理概要: セグメントに応じて通常 page または component master を選択します。
+    ///
+    /// - Parameter page: 選択する HTML page。
+    private func select(_ page: OpenGraphitePage) {
+        switch segment {
+        case .pages:
+            if store.selectedCanvasSegment != .pages {
+                store.selectPagesSegment()
+            }
+            store.selectPage(id: page.id)
+        case .components:
+            store.selectComponentPage(id: page.id)
+        }
+    }
+
+    /// 論理名（日本語）: セグメント選択関数
+    /// 処理概要: パネル表示時に中央 canvas の表示対象を現在の sidebar パネルへ合わせます。
+    private func selectSegmentIfNeeded() {
+        switch segment {
+        case .pages:
+            if store.selectedCanvasSegment != .pages {
+                store.selectPagesSegment()
+            }
+        case .components:
+            if store.selectedCanvasSegment != .components {
+                store.selectComponentsSegment()
+            }
+        }
+    }
+
+    /// 論理名（日本語）: HTMLカード開閉関数
+    /// 処理概要: カードを閉じるか、対象 HTML を選択してそのカードだけを展開します。
+    ///
+    /// - Parameter page: 開閉対象の HTML page。
+    private func toggle(_ page: OpenGraphitePage) {
+        if expandedPageID == page.id {
+            expandedPageID = nil
+        } else {
+            select(page)
+            expandedPageID = page.id
+        }
+    }
+
+    /// 論理名（日本語）: 選択HTML展開関数
+    /// 処理概要: 選択中 HTML が現在パネルに属するとき、そのカードを自動展開します。
+    private func expandSelectedPage() {
+        guard let selectedPageID else { return }
+        expandedPageID = selectedPageID
     }
 }
 
-/// 論理名（日本語）: ページ行ビュー
-/// 概要: ページ ID と HTML パスを Sidebar 向けの軽量行として表示します。
+/// 論理名（日本語）: HTMLレイヤーカードビュー
+/// 概要: HTML page の見出しと、展開時のレイヤー階層を一つの Sidebar カードとして表示します。
 ///
 /// プロパティ:
 /// - `page`: 表示するページ定義。
 /// - `isSelected`: 現在選択中のページか。
+/// - `isExpanded`: レイヤー階層を展開中か。
+/// - `nodes`: 選択中 HTML から収集された DOM ノード一覧。
+/// - `selectedNodeID`: 選択中ノード ID のバインディング。
+/// - `systemImage`: 見出しに表示する SF Symbols 名。
 /// - `onSelect`: 行選択時に呼び出す処理。
-private struct PageRow: View {
+/// - `onToggle`: 展開切替時に呼び出す処理。
+private struct PageLayerCard: View {
     var page: OpenGraphitePage
     var isSelected: Bool
+    var isExpanded: Bool
+    var nodes: [OpenGraphiteNode]
+    @Binding var selectedNodeID: String?
+    var systemImage: String
     var onSelect: () -> Void
+    var onToggle: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 9) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .frame(width: 18, height: 18)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(page.id)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Text(page.path)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Button(action: onToggle) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 16, height: 20)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(isExpanded ? "Collapse" : "Expand")
 
-                Spacer(minLength: 0)
+                Button(action: onSelect) {
+                    HStack(spacing: 9) {
+                        Image(systemName: systemImage)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                            .frame(width: 18, height: 18)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(page.displayName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+
+                            Text(page.path)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(page.path)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
@@ -226,58 +391,68 @@ private struct PageRow: View {
                 RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                     .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
             )
-            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+            if isExpanded {
+                LayerOutlineContentView(
+                    nodes: nodes,
+                    selectedNodeID: $selectedNodeID
+                )
+                .padding(.leading, 8)
+                .padding(.trailing, 6)
+                .padding(.bottom, 7)
+            }
         }
-        .buttonStyle(.plain)
-        .help(page.path)
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .fill(isSelected || isExpanded ? EditorColumnStyle.rowFill.opacity(0.92) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(isSelected || isExpanded ? Color(nsColor: .separatorColor).opacity(0.5) : Color.clear, lineWidth: 1)
+        )
     }
 }
 
-/// 論理名（日本語）: レイヤーアウトラインビュー
-/// 概要: DOM ノード一覧を階層ツリーへ変換し、選択ノードに合わせて祖先を展開する Layers 表示です。
+/// 論理名（日本語）: レイヤーアウトライン内容ビュー
+/// 概要: DOM ノード一覧を階層ツリーへ変換し、HTML カード内の Layers として表示します。
 ///
 /// プロパティ:
 /// - `nodes`: WebView から抽出されたノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
-private struct LayerOutlineView: View {
+private struct LayerOutlineContentView: View {
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
     @State private var expandedNodeIDs: Set<String> = []
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    ForEach(visibleRows) { row in
-                        LayerRow(
-                            row: row,
-                            isCollapsed: !expandedNodeIDs.contains(row.id),
-                            isSelected: row.id == selectedNodeID,
-                            onToggle: {
-                                toggle(row.id)
-                            },
-                            onSelect: {
-                                selectedNodeID = row.id
-                            }
-                        )
-                        .id(row.id)
+        LazyVStack(alignment: .leading, spacing: 2) {
+            ForEach(visibleRows) { row in
+                LayerRow(
+                    row: row,
+                    isCollapsed: !expandedNodeIDs.contains(row.id),
+                    isSelected: row.id == selectedNodeID,
+                    onToggle: {
+                        toggle(row.id)
+                    },
+                    onSelect: {
+                        selectedNodeID = row.id
                     }
-                }
-                .padding(.horizontal, EditorColumnStyle.outerPadding)
-                .padding(.vertical, 10)
+                )
             }
-            .onAppear {
-                revealSelection(selectedNodeID, proxy: proxy)
-            }
-            .onChange(of: selectedNodeID) { _, newValue in
-                revealSelection(newValue, proxy: proxy)
-            }
-            .onChange(of: nodes) { _, newValue in
-                if newValue.isEmpty {
-                    expandedNodeIDs = []
-                } else {
-                    revealSelection(selectedNodeID, proxy: proxy)
-                }
+        }
+        .padding(.top, 2)
+        .onAppear {
+            revealSelection(selectedNodeID)
+        }
+        .onChange(of: selectedNodeID) { _, newValue in
+            revealSelection(newValue)
+        }
+        .onChange(of: nodes) { _, newValue in
+            if newValue.isEmpty {
+                expandedNodeIDs = []
+            } else {
+                revealSelection(selectedNodeID)
             }
         }
     }
@@ -326,20 +501,12 @@ private struct LayerOutlineView: View {
     }
 
     /// 論理名（日本語）: 選択レイヤー表示関数
-    /// 処理概要: 選択ノードの祖先を展開し、該当行が見える位置へスクロールします。
+    /// 処理概要: 選択ノードの祖先を展開して、カード内の階層を見える状態にします。
     ///
-    /// - Parameters:
-    ///   - id: 表示する選択ノード ID。
-    ///   - proxy: List 内スクロールに使う `ScrollViewProxy`。
-    private func revealSelection(_ id: String?, proxy: ScrollViewProxy) {
+    /// - Parameter id: 表示する選択ノード ID。
+    private func revealSelection(_ id: String?) {
         guard let id else { return }
-
         expandAncestors(of: id)
-        DispatchQueue.main.async {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                proxy.scrollTo(id, anchor: .center)
-            }
-        }
     }
 
     /// 論理名（日本語）: 祖先レイヤー展開関数
@@ -433,16 +600,16 @@ private struct VisibleLayerRow: Identifiable {
 }
 
 /// 論理名（日本語）: サイドバーパネル
-/// 概要: 左ペインで表示する Chapters、Pages、Layers のセグメント種別を表します。
+/// 概要: 左ペインで表示する Chapters、Pages、Components のセグメント種別を表します。
 ///
 /// 定義内容:
 /// - `chapters`: Chapter 一覧。
 /// - `pages`: ページ一覧。
-/// - `layers`: DOM レイヤー一覧。
+/// - `components`: Component master canvas 一覧。
 private enum SidebarPanel: String, CaseIterable, Identifiable {
     case chapters
     case pages
-    case layers
+    case components
 
     var id: String { rawValue }
 
@@ -452,8 +619,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
             return "Chapters"
         case .pages:
             return "Pages"
-        case .layers:
-            return "Layers"
+        case .components:
+            return "Components"
         }
     }
 
@@ -463,8 +630,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
             return "book.closed"
         case .pages:
             return "rectangle.stack"
-        case .layers:
-            return "square.3.layers.3d"
+        case .components:
+            return "shippingbox"
         }
     }
 }

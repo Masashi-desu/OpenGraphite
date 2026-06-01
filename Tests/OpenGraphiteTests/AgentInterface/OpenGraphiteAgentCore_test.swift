@@ -413,6 +413,105 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages[0].canvas.height == 1200)
     }
 
+    /// 論理名（日本語）: プロジェクトコンポーネント作成テスト
+    /// 概要: `.ogp` 経由で新規 component HTML を作成し、Components セグメントへ登録できることを確認します。
+    @Test("project component createでHTML作成とcomponent登録を一体で実行できる")
+    func testCreateProjectComponentWritesHTMLAndManifest() throws {
+        // コンディション：home page を持つ project manifest と新規 component body を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        let bodyHTML = """
+            <ComponentLibrary data-og-id="component-page" data-og-type="page" data-og-layout="vertical">
+              <FeatureCard data-og-id="feature-card-master" data-og-type="frame" data-og-component="feature-card" data-og-component-kind="master">
+                <FeatureTitle data-og-id="title" data-og-type="text" data-og-slot="title">Feature</FeatureTitle>
+              </FeatureCard>
+            </ComponentLibrary>
+        """
+
+        // 検証内容：component HTML を作成して Components セグメントに登録する
+        let result = try fixture.core.createProjectComponent(
+            projectURL: projectURL,
+            id: "cards",
+            path: "_components/cards.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 960, height: 900),
+            title: "Cards",
+            lang: "ja",
+            stylesheetPath: nil,
+            bodyHTML: bodyHTML,
+            overwrite: false
+        )
+        let componentURL = fixture.rootURL.appendingPathComponent("_components/cards.html")
+        let componentHTML = try String(contentsOf: componentURL, encoding: .utf8)
+        let summary = try fixture.core.inspectProject(at: projectURL)
+
+        // 期待値：HTML file と `.ogp` の component entry が両方作成される
+        #expect(result.created == true)
+        #expect(FileManager.default.fileExists(atPath: componentURL.path))
+        #expect(componentHTML.contains("<title>Cards</title>"))
+        #expect(summary.pages.map(\.id) == ["home"])
+        #expect(summary.components.map(\.id) == ["cards"])
+        #expect(result.page?.segment == "components")
+    }
+
+    /// 論理名（日本語）: プロジェクトコンポーネント配置テスト
+    /// 概要: `.ogp` 内の既存 component entry の canvas 配置を部分更新できることを確認します。
+    @Test("project component placeで既存componentの配置を更新できる")
+    func testPlaceProjectComponentUpdatesCanvas() throws {
+        // コンディション：Components セグメントを持つ project manifest を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
+            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        // 検証内容：既存 cards component の width/height だけを更新する
+        let summary = try fixture.core.placeProjectComponent(
+            projectURL: projectURL,
+            id: "cards",
+            x: nil,
+            y: nil,
+            width: 1040,
+            height: 960
+        )
+
+        // 期待値：未指定の x/y は維持され、指定サイズだけが更新される
+        #expect(summary.components[0].canvas.x == 0)
+        #expect(summary.components[0].canvas.y == 0)
+        #expect(summary.components[0].canvas.width == 1040)
+        #expect(summary.components[0].canvas.height == 960)
+    }
+
+    /// 論理名（日本語）: プロジェクトコンポーネント削除テスト
+    /// 概要: `.ogp` 内の component entry を削除し、指定時は HTML file も削除できることを確認します。
+    @Test("project component removeでcomponent登録とHTMLを削除できる")
+    func testRemoveProjectComponentDeletesManifestEntryAndHTML() throws {
+        // コンディション：Components セグメントを持つ project manifest と component HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
+            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        // 検証内容：既存 cards component を manifest と file system から削除する
+        let summary = try fixture.core.removeProjectComponent(
+            projectURL: projectURL,
+            id: "cards",
+            deleteFile: true
+        )
+
+        // 期待値：Components セグメントから cards が消え、HTML file も削除される
+        #expect(summary.components.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: componentURL.path))
+    }
+
     /// 論理名（日本語）: プロジェクト経由ノード編集テスト
     /// 概要: `.ogp` の page ID から解決した HTML だけを node 編集対象にできることを確認します。
     @Test(".ogpのpage ID経由でnodeを編集できる")
@@ -558,6 +657,80 @@ struct OpenGraphiteAgentCoreTests {
         #expect(stderr.contains(".ogp"))
     }
 
+    /// 論理名（日本語）: CLIコンポーネント編集テスト
+    /// 概要: `ogkiln` が `--component-id` 経由で Components セグメントの HTML を編集できることを確認します。
+    @Test("CLIはcomponent ID経由でComponents HTMLを編集できる")
+    func testCLIEditsComponentByComponentID() throws {
+        // コンディション：通常 page と component canvas を持つ project manifest と CLI 出力受け取り先を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"><Title data-og-id=\"title\" data-og-type=\"text\">Old</Title></Cards></body></html>"
+            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：`--component-id` 経由で component master 側の text を更新する
+        let code = cli.run(
+            arguments: [
+                "node", "text", "set", "Sample.ogp",
+                "--component-id", "cards",
+                "--id", "title",
+                "--value", "New"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let componentHTML = try String(contentsOf: componentURL, encoding: .utf8)
+
+        // 期待値：Components HTML だけが更新され、CLI は成功する
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"updated\" : true"))
+        #expect(componentHTML.contains(">New<"))
+    }
+
+    /// 論理名（日本語）: CLI対象ID相互排他テスト
+    /// 概要: `--page-id` と `--component-id` を同時指定した node 操作を拒否することを確認します。
+    @Test("CLIはpage IDとcomponent IDの同時指定を拒否する")
+    func testCLIRejectsBothPageIDAndComponentID() throws {
+        // コンディション：通常 page と component canvas を持つ project manifest を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
+            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：node query に `--page-id` と `--component-id` を同時に渡す
+        let code = cli.run(
+            arguments: [
+                "node", "query", "Sample.ogp",
+                "--page-id", "home",
+                "--component-id", "cards",
+                "--json"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+
+        // 期待値：曖昧な対象指定は拒否される
+        #expect(code == 2)
+        #expect(stdout.isEmpty)
+        #expect(stderr.contains("--page-id と --component-id は同時に指定できません"))
+    }
+
     /// 論理名（日本語）: 現在プロジェクトストアテスト
     /// 概要: OpenGraphite.app が開いた `.ogp` を CLI が読めるレコードとして保存できることを確認します。
     @Test("現在開いているprojectをApplication Support形式のレコードへ保存できる")
@@ -597,6 +770,110 @@ struct OpenGraphiteAgentCoreTests {
         #expect(contract.types.contains("frame"))
         #expect(contract.layouts.contains("horizontal"))
         #expect(contract.cssVariables.contains { $0.name == "--og-gap" && $0.editable })
+    }
+
+    /// 論理名（日本語）: Componentsセグメント要約テスト
+    /// 概要: `.ogp` の top-level components が project summary と page graph 対象として扱われることを確認します。
+    @Test("project inspectがComponentsセグメントを返す")
+    func testInspectProjectIncludesComponentsSegment() throws {
+        // コンディション：通常 page と component canvas を持つ project manifest を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
+            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        // 検証内容：project summary と component page graph を取得する
+        let summary = try fixture.core.inspectProject(at: projectURL)
+        let graph = try fixture.core.pageGraph(projectURL: projectURL, pageID: "cards")
+
+        // 期待値：components が通常 pages とは別配列として返り、page ID 経由で graph 化できる
+        #expect(summary.pages.map(\.id) == ["home"])
+        #expect(summary.components.map(\.id) == ["cards"])
+        #expect(summary.components[0].segment == "components")
+        #expect(graph.nodes.map(\.id) == ["cards"])
+    }
+
+    /// 論理名（日本語）: Componentsセグメント検証テスト
+    /// 概要: project validation が Components セグメントの HTML も検証対象に含めることを確認します。
+    @Test("project validateはComponents HTMLも検証する")
+    func testValidateProjectIncludesComponentsSegment() throws {
+        // コンディション：不正な data-og-type を持つ component HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"unknown\"></Cards></body></html>"
+            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        // 検証内容：project 全体を validate する
+        let result = try fixture.core.validateProject(at: projectURL)
+
+        // 期待値：components 側の validation error により project validation が失敗する
+        #expect(result.valid == false)
+        #expect(result.diagnostics.contains { $0.nodeID == "cards" })
+    }
+
+    /// 論理名（日本語）: component buildテスト
+    /// 概要: `ogkiln build` と同じ builder が `<og-instance>` を静的 HTML へ展開できることを確認します。
+    @Test("component参照を静的HTMLへbuildできる")
+    func testComponentBuilderExpandsInstances() throws {
+        // コンディション：component link、runtime script、og-instance を持つ page と master HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        let componentDirectory = fixture.rootURL.appendingPathComponent("_components")
+        let assetDirectory = fixture.rootURL.appendingPathComponent("assets")
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: assetDirectory, withIntermediateDirectories: true)
+        try "body{margin:0}".write(to: fixture.rootURL.appendingPathComponent("OpenGraphite.css"), atomically: true, encoding: .utf8)
+        try "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+            .write(to: assetDirectory.appendingPathComponent("preview.svg"), atomically: true, encoding: .utf8)
+        try """
+        <!doctype html>
+        <html><body>
+          <FeatureCard data-og-id="feature-card-master" data-og-type="frame" data-og-component="feature-card" data-og-component-kind="master">
+            <FeatureTitle data-og-id="title" data-og-type="text" data-og-slot="title">Fallback</FeatureTitle>
+          </FeatureCard>
+        </body></html>
+        """.write(to: componentDirectory.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try """
+        <!doctype html>
+        <html><head>
+          <link rel="stylesheet" href="./OpenGraphite.css">
+          <link rel="opengraphite-components" href="./_components/cards.html">
+          <script src="./OpenGraphite.runtime.js" defer></script>
+        </head><body>
+          <Page data-og-id="page" data-og-type="page">
+            <Preview data-og-id="preview" data-og-type="image"><img src="./assets/preview.svg" alt=""></Preview>
+            <og-instance data-og-id="home-card" data-og-component="feature-card">
+              <span slot="title">Built Title</span>
+            </og-instance>
+          </Page>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：builder で dist 相当のディレクトリへ出力する
+        let outputURL = fixture.rootURL.appendingPathComponent("dist")
+        let result = try OpenGraphiteComponentBuilder().buildProject(projectURL: projectURL, outputURL: outputURL)
+        let builtHTML = try String(contentsOf: outputURL.appendingPathComponent("index.html"), encoding: .utf8)
+
+        // 期待値：og-instance と runtime 参照は残らず、component master が instance ID で展開される
+        #expect(result.built == true)
+        #expect(result.pages.map(\.id) == ["home"])
+        #expect(builtHTML.contains("<FeatureCard"))
+        #expect(builtHTML.contains("data-og-id=\"home-card\""))
+        #expect(builtHTML.contains("Built Title"))
+        #expect(!builtHTML.contains("<og-instance"))
+        #expect(!builtHTML.contains("OpenGraphite.runtime.js"))
+        #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("OpenGraphite.css").path))
+        #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("assets/preview.svg").path))
+        #expect(FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("OpenGraphite.css").path))
+        #expect(FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("assets/preview.svg").path))
     }
 }
 
@@ -653,6 +930,54 @@ private struct AgentInterfaceFixture {
                   }
                 }
               ]
+            }
+          ]
+        }
+        """
+        try project.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: component付きproject manifest書き込み関数
+    /// 処理概要: fixture 用に通常 page と Components セグメントを持つ `.ogp` を作成します。
+    ///
+    /// - Parameter url: 書き込み先 `.ogp` URL。
+    func writeProjectWithComponents(to url: URL) throws {
+        let project = """
+        {
+          "version": "0.1.0",
+          "name": "Fixture",
+          "repositoryRoot": ".",
+          "htmlRoot": ".",
+          "cssLibrary": "OpenGraphite.css",
+          "chapters": [
+            {
+              "id": "main",
+              "title": "Main",
+              "pages": [
+                {
+                  "id": "home",
+                  "path": "index.html",
+                  "canvas": {
+                    "x": 0,
+                    "y": 0,
+                    "width": 1440,
+                    "height": 1200
+                  }
+                }
+              ]
+            }
+          ],
+          "components": [
+            {
+              "id": "cards",
+              "title": "Cards",
+              "path": "cards.html",
+              "canvas": {
+                "x": 0,
+                "y": 0,
+                "width": 960,
+                "height": 900
+              }
             }
           ]
         }

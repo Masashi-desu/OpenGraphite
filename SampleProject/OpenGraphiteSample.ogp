@@ -1,7 +1,4 @@
 {
-  "cssLibrary" : "CSS/OpenGraphite.css",
-  "htmlRoot" : "public",
-  "name" : "OpenGraphite Sample",
   "chapters" : [
     {
       "id" : "main",
@@ -40,6 +37,21 @@
       "title" : "Main"
     }
   ],
+  "components" : [
+    {
+      "canvas" : {
+        "height" : 1900,
+        "width" : 1180,
+        "x" : 1120,
+        "y" : 0
+      },
+      "id" : "design-system",
+      "path" : "_components/design-system.html"
+    }
+  ],
+  "cssLibrary" : "CSS/OpenGraphite.css",
+  "htmlRoot" : "public",
+  "name" : "OpenGraphite Sample",
   "repositoryRoot" : "..",
   "version" : "0.1.0"
 }

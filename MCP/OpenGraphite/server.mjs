@@ -128,6 +128,18 @@ function resourcesList() {
       mimeType: "application/json"
     },
     {
+      uri: "opengraphite://components/sample",
+      name: "Sample Components",
+      description: "Sample project component canvases as resolved by ogkiln.",
+      mimeType: "application/json"
+    },
+    {
+      uri: "opengraphite://components/current",
+      name: "Current App Project Components",
+      description: "Component canvases from the project currently opened by OpenGraphite.app.",
+      mimeType: "application/json"
+    },
+    {
       uri: "opengraphite://pages/sample/home/graph",
       name: "Sample Home Graph",
       description: "OpenGraphite node graph for the sample home page.",
@@ -137,6 +149,18 @@ function resourcesList() {
       uri: "opengraphite://pages/sample/home/html",
       name: "Sample Home HTML",
       description: "Source HTML for the sample home page.",
+      mimeType: "text/html"
+    },
+    {
+      uri: "opengraphite://components/sample/design-system/graph",
+      name: "Sample Design System Component Graph",
+      description: "OpenGraphite node graph for the sample design-system component canvas.",
+      mimeType: "application/json"
+    },
+    {
+      uri: "opengraphite://components/sample/design-system/html",
+      name: "Sample Design System Component HTML",
+      description: "Source HTML for the sample design-system component canvas.",
       mimeType: "text/html"
     }
   ];
@@ -158,10 +182,22 @@ function readResource(uri) {
       const project = JSON.parse(runOgkiln(["project", "current", "--json"]).stdout);
       return textResource(uri, "application/json", JSON.stringify(project.pages, null, 2));
     }
+    case "opengraphite://components/sample": {
+      const project = JSON.parse(runOgkiln(["project", "inspect", "SampleProject/OpenGraphiteSample.ogp", "--json"]).stdout);
+      return textResource(uri, "application/json", JSON.stringify(project.components, null, 2));
+    }
+    case "opengraphite://components/current": {
+      const project = JSON.parse(runOgkiln(["project", "current", "--json"]).stdout);
+      return textResource(uri, "application/json", JSON.stringify(project.components, null, 2));
+    }
     case "opengraphite://pages/sample/home/graph":
       return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--page-id", "home", "--json"]).stdout);
     case "opengraphite://pages/sample/home/html":
       return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "index.html"), "utf8"));
+    case "opengraphite://components/sample/design-system/graph":
+      return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--component-id", "design-system", "--json"]).stdout);
+    case "opengraphite://components/sample/design-system/html":
+      return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "_components", "design-system.html"), "utf8"));
     default:
       throw new Error(`Unknown resource: ${uri}`);
   }
@@ -184,6 +220,14 @@ function toolsList() {
       name: "get_contract",
       description: "Return the active OpenGraphite contract used by ogkiln.",
       inputSchema: objectSchema({}, [])
+    },
+    {
+      name: "build_project",
+      description: "Build project pages by statically expanding og-instance component references into an output directory.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        outputPath: { type: "string" }
+      }, ["projectPath", "outputPath"])
     },
     {
       name: "add_project_page",
@@ -229,12 +273,60 @@ function toolsList() {
       }, ["projectPath", "pageID"])
     },
     {
-      name: "list_nodes",
-      description: "Return the OpenGraphite page graph for a page registered in an .ogp project.",
+      name: "add_project_component",
+      description: "Add an existing HTML file to the Components segment of an OpenGraphite .ogp project.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" }
-      }, ["projectPath", "pageID"])
+        componentID: { type: "string" },
+        path: { type: "string", description: "HTML path relative to the project's htmlRoot." },
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" }
+      }, ["projectPath", "componentID", "path"])
+    },
+    {
+      name: "create_project_component",
+      description: "Create a new component canvas HTML file and register it in the Components segment.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        componentID: { type: "string" },
+        path: { type: "string", description: "HTML path relative to the project's htmlRoot." },
+        title: { type: "string" },
+        lang: { type: "string" },
+        stylesheet: { type: "string" },
+        bodyHTML: { type: "string" },
+        overwrite: { type: "boolean" }
+      }, ["projectPath", "componentID", "path", "title", "bodyHTML"])
+    },
+    {
+      name: "place_project_component",
+      description: "Update the canvas placement for an existing component canvas.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        componentID: { type: "string" },
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" }
+      }, ["projectPath", "componentID"])
+    },
+    {
+      name: "remove_project_component",
+      description: "Remove a component canvas registration, optionally deleting its HTML file.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        componentID: { type: "string" },
+        deleteFile: { type: "boolean" }
+      }, ["projectPath", "componentID"])
+    },
+    {
+      name: "list_nodes",
+      description: "Return the OpenGraphite graph for a page or component canvas registered in an .ogp project.",
+      inputSchema: targetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        ...pageSelectorProperties()
+      }, ["projectPath"])
     },
     {
       name: "screenshot_canvas",
@@ -246,155 +338,155 @@ function toolsList() {
     },
     {
       name: "screenshot_page",
-      description: "Render one project-registered OpenGraphite page to a PNG file.",
-      inputSchema: objectSchema({
+      description: "Render one project-registered OpenGraphite page or component canvas to a PNG file.",
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         outputPath: { type: "string" },
         width: { type: "number" },
         height: { type: "number" },
         fullPage: { type: "boolean" }
-      }, ["projectPath", "pageID", "outputPath"])
+      }, ["projectPath", "outputPath"])
     },
     {
       name: "screenshot_node",
-      description: "Render one data-og-id node from a project-registered page to a cropped PNG file.",
-      inputSchema: objectSchema({
+      description: "Render one data-og-id node from a project-registered page or component canvas to a cropped PNG file.",
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         outputPath: { type: "string" },
         width: { type: "number" },
         height: { type: "number" },
         padding: { type: "number" }
-      }, ["projectPath", "pageID", "id", "outputPath"])
+      }, ["projectPath", "id", "outputPath"])
     },
     {
       name: "query_nodes",
-      description: "Filter OpenGraphite nodes in a project-registered page by id, type, role, tag, or text content.",
-      inputSchema: objectSchema({
+      description: "Filter OpenGraphite nodes in a project-registered page or component canvas by id, type, role, tag, or text content.",
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         idContains: { type: "string" },
         type: { type: "string" },
         role: { type: "string" },
         tag: { type: "string" },
         textContains: { type: "string" }
-      }, ["projectPath", "pageID"])
+      }, ["projectPath"])
     },
     {
       name: "get_node",
       description: "Return a single node by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" }
-      }, ["projectPath", "pageID", "id"])
+      }, ["projectPath", "id"])
     },
     {
       name: "set_css_variable",
       description: "Set a --og-* CSS variable on a node selected by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         variable: { type: "string" },
         value: { type: "string" }
-      }, ["projectPath", "pageID", "id", "variable", "value"])
+      }, ["projectPath", "id", "variable", "value"])
     },
     {
       name: "remove_css_variable",
       description: "Remove a --og-* CSS variable from a node selected by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         variable: { type: "string" }
-      }, ["projectPath", "pageID", "id", "variable"])
+      }, ["projectPath", "id", "variable"])
     },
     {
       name: "set_node_attribute",
       description: "Set an editable data-og-* attribute on a node selected by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         name: { type: "string" },
         value: { type: "string" }
-      }, ["projectPath", "pageID", "id", "name", "value"])
+      }, ["projectPath", "id", "name", "value"])
     },
     {
       name: "remove_node_attribute",
       description: "Remove an editable data-og-* attribute from a node selected by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         name: { type: "string" }
-      }, ["projectPath", "pageID", "id", "name"])
+      }, ["projectPath", "id", "name"])
     },
     {
       name: "set_text_content",
       description: "Replace a node's inner content with escaped plain text.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         text: { type: "string" }
-      }, ["projectPath", "pageID", "id", "text"])
+      }, ["projectPath", "id", "text"])
     },
     {
       name: "insert_html",
       description: "Insert an HTML fragment before, after, prepend, or append relative to an anchor node.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         position: { type: "string", enum: ["before", "after", "prepend", "append"] },
         html: { type: "string" }
-      }, ["projectPath", "pageID", "id", "position", "html"])
+      }, ["projectPath", "id", "position", "html"])
     },
     {
       name: "replace_node_html",
       description: "Replace a node subtree with an HTML fragment.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         html: { type: "string" }
-      }, ["projectPath", "pageID", "id", "html"])
+      }, ["projectPath", "id", "html"])
     },
     {
       name: "delete_node",
       description: "Delete a node subtree selected by data-og-id.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" }
-      }, ["projectPath", "pageID", "id"])
+      }, ["projectPath", "id"])
     },
     {
       name: "move_node",
       description: "Move a node subtree before, after, prepend, or append relative to a target node.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         target: { type: "string" },
         position: { type: "string", enum: ["before", "after", "prepend", "append"] }
-      }, ["projectPath", "pageID", "id", "target", "position"])
+      }, ["projectPath", "id", "target", "position"])
     },
     {
       name: "copy_node",
       description: "Copy a node subtree, prefix copied data-og-id values, and insert it relative to a target node.",
-      inputSchema: objectSchema({
+      inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        pageID: { type: "string" },
+        ...pageSelectorProperties(),
         id: { type: "string" },
         target: { type: "string" },
         position: { type: "string", enum: ["before", "after", "prepend", "append"] },
         idPrefix: { type: "string" }
-      }, ["projectPath", "pageID", "id", "target", "position", "idPrefix"])
+      }, ["projectPath", "id", "target", "position", "idPrefix"])
     }
   ];
 }
@@ -405,6 +497,16 @@ function objectSchema(properties, required) {
     properties,
     required,
     additionalProperties: false
+  };
+}
+
+function targetObjectSchema(properties, required) {
+  return {
+    ...objectSchema(properties, required),
+    oneOf: [
+      { required: ["pageID"] },
+      { required: ["componentID"] }
+    ]
   };
 }
 
@@ -424,6 +526,8 @@ function commandForTool(name, args) {
       return ["validate", requiredArg(args, "projectPath"), "--json"];
     case "get_contract":
       return ["contract", "get", "--json"];
+    case "build_project":
+      return ["build", requiredArg(args, "projectPath"), "--output", requiredArg(args, "outputPath")];
     case "add_project_page":
       return [
         "project",
@@ -475,8 +579,65 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "width", "--width"),
         ...optionalValueFlag(args, "height", "--height")
       ];
+    case "add_project_component":
+      return [
+        "project",
+        "component",
+        "add",
+        requiredArg(args, "projectPath"),
+        "--component-id",
+        requiredArg(args, "componentID"),
+        "--path",
+        requiredArg(args, "path"),
+        ...optionalValueFlag(args, "x", "--x"),
+        ...optionalValueFlag(args, "y", "--y"),
+        ...optionalValueFlag(args, "width", "--width"),
+        ...optionalValueFlag(args, "height", "--height")
+      ];
+    case "create_project_component":
+      return [
+        "project",
+        "component",
+        "create",
+        requiredArg(args, "projectPath"),
+        "--component-id",
+        requiredArg(args, "componentID"),
+        "--path",
+        requiredArg(args, "path"),
+        "--title",
+        requiredArg(args, "title"),
+        ...optionalFlag(args, "lang", "--lang"),
+        ...optionalFlag(args, "stylesheet", "--stylesheet"),
+        "--body-html",
+        requiredArg(args, "bodyHTML"),
+        ...(args?.overwrite === true ? ["--overwrite"] : []),
+        "--json"
+      ];
+    case "place_project_component":
+      return [
+        "project",
+        "component",
+        "place",
+        requiredArg(args, "projectPath"),
+        "--component-id",
+        requiredArg(args, "componentID"),
+        ...optionalValueFlag(args, "x", "--x"),
+        ...optionalValueFlag(args, "y", "--y"),
+        ...optionalValueFlag(args, "width", "--width"),
+        ...optionalValueFlag(args, "height", "--height")
+      ];
+    case "remove_project_component":
+      return [
+        "project",
+        "component",
+        "remove",
+        requiredArg(args, "projectPath"),
+        "--component-id",
+        requiredArg(args, "componentID"),
+        ...(args?.deleteFile === true ? ["--delete-file"] : [])
+      ];
     case "list_nodes":
-      return ["page", "graph", requiredArg(args, "projectPath"), "--page-id", requiredArg(args, "pageID"), "--json"];
+      return ["page", "graph", requiredArg(args, "projectPath"), ...pageSelectorArgs(args), "--json"];
     case "screenshot_canvas":
       return [
         "screenshot",
@@ -490,8 +651,7 @@ function commandForTool(name, args) {
         "screenshot",
         "page",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--output",
         requiredArg(args, "outputPath"),
         ...optionalValueFlag(args, "width", "--width"),
@@ -503,8 +663,7 @@ function commandForTool(name, args) {
         "screenshot",
         "node",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--output",
@@ -518,8 +677,7 @@ function commandForTool(name, args) {
         "node",
         "query",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         ...optionalFlag(args, "idContains", "--id-contains"),
         ...optionalFlag(args, "type", "--type"),
         ...optionalFlag(args, "role", "--role"),
@@ -532,8 +690,7 @@ function commandForTool(name, args) {
         "node",
         "get",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--json"
@@ -544,8 +701,7 @@ function commandForTool(name, args) {
         "style",
         "set",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--var",
@@ -559,8 +715,7 @@ function commandForTool(name, args) {
         "style",
         "remove",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--var",
@@ -572,8 +727,7 @@ function commandForTool(name, args) {
         "attr",
         "set",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--name",
@@ -587,8 +741,7 @@ function commandForTool(name, args) {
         "attr",
         "remove",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--name",
@@ -600,8 +753,7 @@ function commandForTool(name, args) {
         "text",
         "set",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--value",
@@ -613,8 +765,7 @@ function commandForTool(name, args) {
         "html",
         "insert",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--position",
@@ -628,8 +779,7 @@ function commandForTool(name, args) {
         "html",
         "replace",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--html",
@@ -640,8 +790,7 @@ function commandForTool(name, args) {
         "node",
         "delete",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id")
       ];
@@ -650,8 +799,7 @@ function commandForTool(name, args) {
         "node",
         "move",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--target",
@@ -664,8 +812,7 @@ function commandForTool(name, args) {
         "node",
         "copy",
         requiredArg(args, "projectPath"),
-        "--page-id",
-        requiredArg(args, "pageID"),
+        ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
         "--target",
@@ -678,6 +825,28 @@ function commandForTool(name, args) {
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
+}
+
+function pageSelectorProperties() {
+  return {
+    pageID: { type: "string", description: "Page ID. Mutually exclusive with componentID." },
+    componentID: { type: "string", description: "Component canvas ID. Mutually exclusive with pageID." }
+  };
+}
+
+function pageSelectorArgs(args) {
+  const pageID = optionalStringArg(args, "pageID");
+  const componentID = optionalStringArg(args, "componentID");
+  if (pageID && componentID) {
+    throw new Error("Specify pageID or componentID, not both.");
+  }
+  if (componentID) {
+    return ["--component-id", componentID];
+  }
+  if (pageID) {
+    return ["--page-id", pageID];
+  }
+  throw new Error("Missing required argument: pageID or componentID");
 }
 
 function optionalFlag(args, key, flag) {
@@ -694,6 +863,14 @@ function optionalValueFlag(args, key, flag) {
     return [];
   }
   return [flag, String(value)];
+}
+
+function optionalStringArg(args, key) {
+  const value = args?.[key];
+  if (typeof value !== "string" || value.length === 0) {
+    return undefined;
+  }
+  return value;
 }
 
 function requiredArg(args, key) {

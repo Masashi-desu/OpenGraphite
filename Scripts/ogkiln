@@ -13,6 +13,7 @@ sources=(
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCurrentProjectStore.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteHTMLDocument.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteAgentCore.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteComponentBuilder.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteScreenshotRenderer.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OgkilnCLI.swift"
   "$ROOT_DIR/Tools/ogkiln/main.swift"

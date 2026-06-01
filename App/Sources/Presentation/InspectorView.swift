@@ -695,7 +695,7 @@ private struct InspectorEmptyStateView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Text("Layers または Canvas でページかノードを選択してください。")
+            Text("Pages / Components のカードまたは Canvas でページかノードを選択してください。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

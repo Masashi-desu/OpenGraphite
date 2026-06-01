@@ -1,12 +1,14 @@
 import Foundation
 
 /// 論理名（日本語）: エディター状態ストア
-/// 概要: 読み込み済みプロジェクト、Chapter とページ選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
+/// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
 /// プロパティ:
 /// - `loadedProject`: 現在開いている `.ogp`。
+/// - `selectedCanvasSegment`: 中央キャンバスに表示する Pages / Components セグメント。
 /// - `selectedChapterID`: 選択中 Chapter の ID。
 /// - `selectedPageID`: 選択中ページの ID。
+/// - `selectedComponentPageID`: 選択中 component canvas の ID。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
 /// - `selectedNodeID`: 選択中ノードの `data-og-id`。
 /// - `zoom`: キャンバス表示倍率。
@@ -17,8 +19,10 @@ import Foundation
 @MainActor
 final class EditorStore: ObservableObject {
     @Published private(set) var loadedProject: LoadedOpenGraphiteProject?
+    @Published var selectedCanvasSegment: OpenGraphiteCanvasSegment = .pages
     @Published var selectedChapterID: String?
     @Published var selectedPageID: String?
+    @Published var selectedComponentPageID: String?
     @Published private(set) var nodes: [OpenGraphiteNode] = []
     @Published var selectedNodeID: String?
     @Published var zoom: Double = 0.72
@@ -41,6 +45,7 @@ final class EditorStore: ObservableObject {
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
+    private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
     private var monitoredProjectURL: URL?
     private static var isRunningTests: Bool {
@@ -67,6 +72,9 @@ final class EditorStore: ObservableObject {
         for monitor in pageChangeMonitorsByURL.values {
             monitor.cancel()
         }
+        for monitor in dependencyChangeMonitorsByURL.values {
+            monitor.cancel()
+        }
         projectChangeMonitor.cancel()
     }
 
@@ -80,9 +88,37 @@ final class EditorStore: ObservableObject {
         selectedChapter?.pages ?? []
     }
 
+    var componentPages: [OpenGraphitePage] {
+        loadedProject?.project.components ?? []
+    }
+
+    var selectedCanvasPages: [OpenGraphitePage] {
+        switch selectedCanvasSegment {
+        case .pages:
+            return selectedChapterPages
+        case .components:
+            return componentPages
+        }
+    }
+
+    var selectedCanvasTitle: String {
+        switch selectedCanvasSegment {
+        case .pages:
+            return selectedChapter?.displayName ?? "Pages"
+        case .components:
+            return "Components"
+        }
+    }
+
     var selectedPage: OpenGraphitePage? {
-        guard let selectedPageID else { return nil }
-        return selectedChapterPages.first { $0.id == selectedPageID }
+        switch selectedCanvasSegment {
+        case .pages:
+            guard let selectedPageID else { return nil }
+            return selectedChapterPages.first { $0.id == selectedPageID }
+        case .components:
+            guard let selectedComponentPageID else { return nil }
+            return componentPages.first { $0.id == selectedComponentPageID }
+        }
     }
 
     var selectedPageURL: URL? {
@@ -134,8 +170,10 @@ final class EditorStore: ObservableObject {
         do {
             let project = try loader.loadProject(at: url)
             loadedProject = project
+            selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.components.isEmpty ? .components : .pages
             selectedChapterID = project.project.chapters.first?.id
             selectedPageID = project.project.chapters.first?.pages.first?.id
+            selectedComponentPageID = project.project.components.first?.id
             selectedNodeID = nil
             nodes = []
             cssMutation = nil
@@ -153,6 +191,7 @@ final class EditorStore: ObservableObject {
             prepareHistoryForSelectedPage()
             restartExternalProjectMonitoring(force: true)
             restartExternalPageMonitoring(force: true)
+            restartExternalDependencyMonitoring(force: true)
             statusMessage = "\(project.project.name) を開きました。"
         } catch {
             lastError = error.localizedDescription
@@ -164,7 +203,12 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter id: 選択するページ ID。`nil` の場合はページ選択を解除します。
     func selectPage(id: String?) {
-        selectedPageID = id
+        switch selectedCanvasSegment {
+        case .pages:
+            selectedPageID = id
+        case .components:
+            selectedComponentPageID = id
+        }
         selectedNodeID = nil
         nodes = []
         if let page = selectedPage {
@@ -183,6 +227,7 @@ final class EditorStore: ObservableObject {
         guard let loadedProject else { return }
         let chapter = loadedProject.project.chapters.first { $0.id == id }
             ?? loadedProject.project.chapters.first
+        selectedCanvasSegment = .pages
         selectedChapterID = chapter?.id
         selectedPageID = chapter?.pages.first?.id
         selectedNodeID = nil
@@ -190,6 +235,49 @@ final class EditorStore: ObservableObject {
 
         if let chapter {
             statusMessage = "\(chapter.displayName) を表示しています。"
+        }
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: Pagesセグメント選択関数
+    /// 処理概要: 通常 Pages canvas を表示し、必要に応じて選択 Chapter 内の先頭ページを選択します。
+    func selectPagesSegment() {
+        selectedCanvasSegment = .pages
+        if selectedPageID == nil || !selectedChapterPages.contains(where: { $0.id == selectedPageID }) {
+            selectedPageID = selectedChapterPages.first?.id
+        }
+        selectedNodeID = nil
+        nodes = []
+        statusMessage = "Pages を表示しています。"
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: Componentsセグメント選択関数
+    /// 処理概要: Components canvas を表示し、必要に応じて先頭 component page を選択します。
+    func selectComponentsSegment() {
+        selectedCanvasSegment = .components
+        if selectedComponentPageID == nil || !componentPages.contains(where: { $0.id == selectedComponentPageID }) {
+            selectedComponentPageID = componentPages.first?.id
+        }
+        selectedNodeID = nil
+        nodes = []
+        statusMessage = "Components を表示しています。"
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: Componentページ選択関数
+    /// 処理概要: Components セグメント内の HTML canvas を選択します。
+    ///
+    /// - Parameter id: 選択する component page ID。
+    func selectComponentPage(id: String?) {
+        selectedCanvasSegment = .components
+        selectedComponentPageID = id
+        selectedNodeID = nil
+        nodes = []
+        if let page = selectedPage {
+            statusMessage = "\(page.path) を表示しています。"
+        } else {
+            statusMessage = "Component ページ選択を解除しました。"
         }
         prepareHistoryForSelectedPage()
     }
@@ -215,36 +303,48 @@ final class EditorStore: ObservableObject {
             lastError = "キャンバス配置の入力が不正です。"
             return
         }
-        guard var loadedProject, let selectedPageID else { return }
-
-        var chapterIndex: Array<OpenGraphiteChapter>.Index?
-        if let selectedChapterID,
-           let selectedChapterIndex = loadedProject.project.chapters.firstIndex(where: { $0.id == selectedChapterID }),
-           loadedProject.project.chapters[selectedChapterIndex].pages.contains(where: { $0.id == selectedPageID }) {
-            chapterIndex = selectedChapterIndex
-        }
-        if chapterIndex == nil {
-            chapterIndex = loadedProject.project.chapters.firstIndex { chapter in
-                chapter.pages.contains { $0.id == selectedPageID }
-            }
-        }
-        guard let chapterIndex,
-              let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: { $0.id == selectedPageID })
-        else {
-            return
-        }
+        guard var loadedProject else { return }
 
         let nextCanvas = OpenGraphiteCanvas(x: x, y: y, width: width, height: height)
-        guard loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas != nextCanvas else { return }
-
-        loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas = nextCanvas
+        let updatedPage: OpenGraphitePage
+        switch selectedCanvasSegment {
+        case .pages:
+            guard let selectedPageID else { return }
+            var chapterIndex: Array<OpenGraphiteChapter>.Index?
+            if let selectedChapterID,
+               let selectedChapterIndex = loadedProject.project.chapters.firstIndex(where: { $0.id == selectedChapterID }),
+               loadedProject.project.chapters[selectedChapterIndex].pages.contains(where: { $0.id == selectedPageID }) {
+                chapterIndex = selectedChapterIndex
+            }
+            if chapterIndex == nil {
+                chapterIndex = loadedProject.project.chapters.firstIndex { chapter in
+                    chapter.pages.contains { $0.id == selectedPageID }
+                }
+            }
+            guard let chapterIndex,
+                  let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: { $0.id == selectedPageID })
+            else {
+                return
+            }
+            guard loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas != nextCanvas else { return }
+            loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas = nextCanvas
+            updatedPage = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
+        case .components:
+            guard let selectedComponentPageID,
+                  let pageIndex = loadedProject.project.components.firstIndex(where: { $0.id == selectedComponentPageID })
+            else {
+                return
+            }
+            guard loadedProject.project.components[pageIndex].canvas != nextCanvas else { return }
+            loadedProject.project.components[pageIndex].canvas = nextCanvas
+            updatedPage = loadedProject.project.components[pageIndex]
+        }
 
         do {
             try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
             self.loadedProject = loadedProject
             lastError = nil
-            let page = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
-            statusMessage = "\(page.path) のキャンバス配置を更新しました。"
+            statusMessage = "\(updatedPage.path) のキャンバス配置を更新しました。"
             restartExternalProjectMonitoring(force: true)
         } catch {
             lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
@@ -464,7 +564,9 @@ final class EditorStore: ObservableObject {
             }
 
             let previousSelectedPageID = selectedPageID
+            let previousSelectedComponentPageID = selectedComponentPageID
             let previousSelectedChapterID = selectedChapterID
+            let previousSelectedCanvasSegment = selectedCanvasSegment
             let previousSelectedPageURL = selectedPageURL
             loadedProject = reloadedProject
             seedKnownHTMLForProject(reloadedProject)
@@ -486,6 +588,19 @@ final class EditorStore: ObservableObject {
                 selectedPageID = nil
             }
 
+            if let previousSelectedComponentPageID,
+               reloadedProject.project.components.contains(where: { $0.id == previousSelectedComponentPageID }) {
+                selectedComponentPageID = previousSelectedComponentPageID
+            } else {
+                selectedComponentPageID = reloadedProject.project.components.first?.id
+            }
+
+            if previousSelectedCanvasSegment == .components, !reloadedProject.project.components.isEmpty {
+                selectedCanvasSegment = .components
+            } else {
+                selectedCanvasSegment = .pages
+            }
+
             if selectedPageURL != previousSelectedPageURL {
                 selectedNodeID = nil
                 nodes = []
@@ -493,10 +608,23 @@ final class EditorStore: ObservableObject {
             }
 
             restartExternalPageMonitoring(force: true)
+            restartExternalDependencyMonitoring(force: true)
             statusMessage = "\(reloadedProject.project.name) の .ogp 外部変更を同期しました。"
         } catch {
             lastError = ".ogp の再読み込みに失敗しました: \(error.localizedDescription)"
         }
+    }
+
+    /// 論理名（日本語）: project依存ファイル外部変更同期関数
+    /// 処理概要: CSS、runtime、component master など HTML 以外の依存変更を全 WebView の reload token へ反映します。
+    func refreshProjectDependenciesFromDisk() {
+        guard let loadedProject else { return }
+
+        for page in loadedProject.project.allPages {
+            incrementReloadToken(for: loadedProject.htmlURL(for: page))
+        }
+        restartExternalDependencyMonitoring(force: true)
+        statusMessage = "CSS / Components の外部変更を表示へ同期しました。"
     }
 
     /// 論理名（日本語）: WebViewエラー報告関数
@@ -689,6 +817,41 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 外部依存ファイル監視再起動関数
+    /// 処理概要: CSS、component master、runtime script など page 表示に影響するファイルを監視します。
+    ///
+    /// - Parameter force: 同じ URL でも監視を作り直す場合は `true`。
+    private func restartExternalDependencyMonitoring(force: Bool = false) {
+        guard !Self.isRunningTests else {
+            cancelDependencyChangeMonitors()
+            return
+        }
+
+        guard let loadedProject else {
+            cancelDependencyChangeMonitors()
+            return
+        }
+
+        let dependencyURLs = projectDependencyURLs(for: loadedProject)
+        for monitoredURL in Array(dependencyChangeMonitorsByURL.keys) where !dependencyURLs.contains(monitoredURL) {
+            dependencyChangeMonitorsByURL[monitoredURL]?.cancel()
+            dependencyChangeMonitorsByURL.removeValue(forKey: monitoredURL)
+        }
+
+        for dependencyURL in dependencyURLs where force || dependencyChangeMonitorsByURL[dependencyURL] == nil {
+            dependencyChangeMonitorsByURL[dependencyURL]?.cancel()
+            let monitor = OpenGraphiteFileChangeMonitor()
+            monitor.start(url: dependencyURL) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    Task { @MainActor [weak self] in
+                        self?.refreshProjectDependenciesFromDisk()
+                    }
+                }
+            }
+            dependencyChangeMonitorsByURL[dependencyURL] = monitor
+        }
+    }
+
     /// 論理名（日本語）: ページ変更監視停止関数
     /// 処理概要: 登録済みの全 HTML ファイル監視を停止します。
     private func cancelPageChangeMonitors() {
@@ -696,6 +859,15 @@ final class EditorStore: ObservableObject {
             monitor.cancel()
         }
         pageChangeMonitorsByURL = [:]
+    }
+
+    /// 論理名（日本語）: 依存ファイル監視停止関数
+    /// 処理概要: 登録済みの CSS / component / runtime file 監視を停止します。
+    private func cancelDependencyChangeMonitors() {
+        for monitor in dependencyChangeMonitorsByURL.values {
+            monitor.cancel()
+        }
+        dependencyChangeMonitorsByURL = [:]
     }
 
     /// 論理名（日本語）: 外部プロジェクト監視再起動関数
@@ -724,6 +896,105 @@ final class EditorStore: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 論理名（日本語）: project依存URL抽出関数
+    /// 処理概要: project の HTML から local stylesheet、component link、runtime script の URL を収集します。
+    private func projectDependencyURLs(for loadedProject: LoadedOpenGraphiteProject) -> Set<URL> {
+        var urls: Set<URL> = []
+        let fileManager = FileManager.default
+
+        let cssURL = loadedProject.cssURL.standardizedFileURL
+        if fileManager.fileExists(atPath: cssURL.path) {
+            urls.insert(cssURL)
+        }
+
+        for component in loadedProject.project.components {
+            let componentURL = loadedProject.htmlURL(for: component).standardizedFileURL
+            if fileManager.fileExists(atPath: componentURL.path) {
+                urls.insert(componentURL)
+            }
+        }
+
+        for page in loadedProject.project.allPages {
+            let pageURL = loadedProject.htmlURL(for: page).standardizedFileURL
+            guard let html = readHTMLFromDisk(at: pageURL) else { continue }
+            for href in dependencyHrefs(in: html) {
+                let dependencyURL = resolveDependencyURL(href, relativeTo: pageURL).standardizedFileURL
+                if dependencyURL.isFileURL, fileManager.fileExists(atPath: dependencyURL.path) {
+                    urls.insert(dependencyURL)
+                }
+            }
+        }
+
+        let pageURLs = Set(loadedProject.project.chapters.flatMap(\.pages).map { loadedProject.htmlURL(for: $0).standardizedFileURL })
+        return urls.subtracting(pageURLs)
+    }
+
+    /// 論理名（日本語）: HTML依存href抽出関数
+    /// 処理概要: stylesheet、component link、script src の local 依存候補を HTML から取り出します。
+    private func dependencyHrefs(in html: String) -> [String] {
+        var hrefs: [String] = []
+        for tag in matches(pattern: #"<link\b[^>]*>"#, in: html) {
+            let rel = attribute("rel", in: tag)?.lowercased() ?? ""
+            guard rel == "stylesheet" || rel == "opengraphite-components" else { continue }
+            if let href = attribute("href", in: tag) {
+                hrefs.append(href)
+            }
+        }
+        for tag in matches(pattern: #"<script\b[^>]*>"#, in: html) {
+            if let src = attribute("src", in: tag) {
+                hrefs.append(src)
+            }
+        }
+        return hrefs
+    }
+
+    /// 論理名（日本語）: HTML属性値抽出関数
+    /// 処理概要: 開始タグ文字列から指定属性の値を単純抽出します。
+    private func attribute(_ name: String, in tag: String) -> String? {
+        let pattern = #"\b\#(NSRegularExpression.escapedPattern(for: name))\s*=\s*(["'])(.*?)\1"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: tag, options: [], range: NSRange(tag.startIndex..<tag.endIndex, in: tag)),
+              let range = Range(match.range(at: 2), in: tag)
+        else {
+            return nil
+        }
+        return String(tag[range])
+    }
+
+    /// 論理名（日本語）: HTML正規表現一致抽出関数
+    /// 処理概要: 指定 pattern に一致する部分文字列を順序通りに返します。
+    private func matches(pattern: String, in text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, options: [], range: range).compactMap { match in
+            guard let swiftRange = Range(match.range(at: 0), in: text) else { return nil }
+            return String(text[swiftRange])
+        }
+    }
+
+    /// 論理名（日本語）: 依存URL解決関数
+    /// 処理概要: HTML 内の相対 URL を HTML ファイル位置から file URL へ解決します。
+    private func resolveDependencyURL(_ href: String, relativeTo pageURL: URL) -> URL {
+        let hrefWithoutFragment = href
+            .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? href
+        let hrefWithoutQuery = hrefWithoutFragment
+            .split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+            .first
+            .map(String.init) ?? hrefWithoutFragment
+
+        if hrefWithoutQuery.hasPrefix("/") {
+            return URL(fileURLWithPath: hrefWithoutQuery)
+        }
+        if hrefWithoutQuery.contains("://") {
+            return URL(string: hrefWithoutQuery) ?? pageURL.deletingLastPathComponent().appendingPathComponent(hrefWithoutQuery)
+        }
+        return pageURL.deletingLastPathComponent().appendingPathComponent(hrefWithoutQuery)
     }
 
     /// 論理名（日本語）: 履歴ステータスメッセージ生成関数

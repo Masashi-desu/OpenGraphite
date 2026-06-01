@@ -24,6 +24,7 @@ OpenGraphite documents are ordinary HTML. `OpenGraphite.css` renders elements by
 - semantic tag names chosen by the author;
 - `data-og-*` attributes for OpenGraphite structure and variants;
 - inline `--og-*` CSS variables for design values;
+- optional component master HTML in the project `components` segment and `<og-instance>` references in pages;
 - standard CSS values such as lengths, colors, shorthands, gradients, `min()`, `max()`, and `clamp()`.
 
 Class names may be used by the surrounding website, but do not make class names the OpenGraphite editing contract. Prefer `data-og-*` and `--og-*` for content that should remain understandable to OpenGraphite-aware tools.
@@ -50,15 +51,28 @@ Include the stylesheet and mark editable/rendered elements with `data-og-type`:
 </main>
 ```
 
+For component references, keep masters in component canvas HTML and reference them from pages with a component source link plus the optional runtime:
+
+```html
+<link rel="stylesheet" href="OpenGraphite.css">
+<link rel="opengraphite-components" href="_components/design-system.html">
+<script src="OpenGraphite.runtime.js" defer></script>
+```
+
 ## Attributes
 
 - `data-og-id`: stable element identifier. Use unique IDs when tools or people need to refer to specific nodes.
 - `data-og-type`: primitive rendering type. Known values are `page`, `frame`, `text`, `button`, and `image`.
 - `data-og-layout`: child layout mode. Known values are `vertical`, `horizontal`, and `absolute`.
 - `data-og-role`: reusable visual or semantic variant. Known roles include `page-preview`, `landing-hero`, `primary-button`, `secondary-button`, `card`, `eyebrow`, and `muted`.
+- `data-og-component`: component identifier used by a master root or an `<og-instance>`.
+- `data-og-component-kind="master"`: marks a component master subtree in the Components segment.
+- `data-og-variant`: optional component or role variant.
+- `data-og-slot`: slot target inside a component master. The element's existing contents are fallback content.
+- `data-og-part`: stable part name inside a component. Use `root` on the master root when runtime ID mapping should preserve the instance ID.
 - `data-og-hidden="true"`: hides the element.
 - `data-og-locked="true"`: marks the element as locked and changes the cursor.
-- `data-og-selected="true"` and `data-og-editing="true"` are UI/session states. Do not include them in hand-authored static HTML unless you intentionally want the selection or editing outline visible.
+- `data-og-selected="true"` and `data-og-editing="true"` are UI/session states. Runtime expansion can also add `data-og-expanded`, `data-og-generated`, `data-og-component-error`, `data-og-host-id`, `data-og-instance-source`, `data-og-source-component`, `data-og-source-instance`, and `data-og-slot-origin`. Do not include runtime attributes in hand-authored source HTML unless you are explicitly debugging runtime output.
 
 ## Types
 
@@ -143,6 +157,9 @@ Roles are reusable variants, not unique identifiers. Multiple elements can share
 - Avoid invented decomposed variables such as `--og-padding-top`, `--og-border-color`, or `--og-shadow-blur` unless the user's stylesheet explicitly supports them.
 - Do not replace the OpenGraphite contract with classes. Classes can coexist, but `data-og-*` and `--og-*` should remain understandable on their own.
 - For generated snippets, include enough `data-og-id` values to make the structure easy to inspect and edit.
+- Put reusable multi-node components in component canvas HTML registered under `.ogp` `components[]`; keep pages lightweight with `<og-instance>` references when runtime or build expansion is desired.
+- Use `OpenGraphite.runtime.js` for lightweight source-first projects. Use `ogkiln build` when static deployment, SEO, or no-JS delivery matters.
+- Slot overrides in pages use the standard `slot` attribute, while master targets use `data-og-slot`.
 
 ## Common Patterns
 
@@ -196,6 +213,46 @@ Absolute placement:
 </Canvas>
 ```
 
+Component master:
+
+```html
+<FeatureCard
+  data-og-id="feature-card-master"
+  data-og-type="frame"
+  data-og-layout="vertical"
+  data-og-component="feature-card"
+  data-og-component-kind="master"
+  data-og-part="root"
+  style="--og-gap:16px; --og-padding:28px; --og-radius:6px;">
+  <FeatureCardTitle
+    data-og-id="feature-card-title"
+    data-og-type="text"
+    data-og-slot="title"
+    style="--og-font-size:28px; --og-font-weight:800;">
+    Fallback title
+  </FeatureCardTitle>
+  <FeatureCardBody
+    data-og-id="feature-card-body"
+    data-og-type="text"
+    data-og-role="muted"
+    data-og-slot="body">
+    Fallback body
+  </FeatureCardBody>
+</FeatureCard>
+```
+
+Component instance:
+
+```html
+<og-instance
+  data-og-id="availability-card"
+  data-og-type="frame"
+  data-og-component="feature-card">
+  <span slot="title">Availability-ready card</span>
+  <span slot="body">Pages keep references while the master stays reusable.</span>
+</og-instance>
+```
+
 ## Debugging
 
 When rendering looks wrong:
@@ -207,3 +264,5 @@ When rendering looks wrong:
 5. For image/video sizing, put the media element directly inside a `data-og-type="image"` wrapper.
 6. For absolute layout, set `data-og-layout="absolute"` on the parent and `--og-x` / `--og-y` on direct child elements.
 7. Check responsive behavior at 760px and below if horizontal layouts or buttons changed shape.
+8. For `<og-instance>`, confirm the page has a valid `rel="opengraphite-components"` link, `OpenGraphite.runtime.js` is loaded when using runtime expansion, and the master has matching `data-og-component` plus `data-og-component-kind="master"`.
+9. If deployment output is wrong but runtime preview is correct, verify `ogkiln build <project.ogp|current> --output <dir>` and inspect the generated static HTML.

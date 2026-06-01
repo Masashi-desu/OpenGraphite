@@ -43,6 +43,45 @@ struct ProjectLoaderTests {
         #expect(loadedProject.htmlURL(for: loadedProject.project.allPages[0]) == publicDirectory.appendingPathComponent("index.html"))
     }
 
+    /// 論理名（日本語）: 旧pages形式プロジェクト読み込みテスト
+    /// 概要: Chapter 導入前の top-level pages 形式を既定 Chapter として読み込めることを検証します。
+    @Test("旧top-level pages形式を既定Chapterとして読み込める")
+    func testLoadProjectAcceptsLegacyTopLevelPages() throws {
+        // コンディション：旧形式の pages を持つ .ogp と HTML を用意する
+        let fixture = try ProjectLoaderFixture()
+        let publicDirectory = fixture.rootURL.appendingPathComponent("public")
+        try FileManager.default.createDirectory(at: publicDirectory, withIntermediateDirectories: true)
+        try "<!doctype html><html><body></body></html>".write(
+            to: publicDirectory.appendingPathComponent("index.html"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let projectURL = fixture.rootURL.appendingPathComponent("Legacy.ogp")
+        try """
+        {
+          "version": "0.1.0",
+          "name": "Legacy",
+          "htmlRoot": "public",
+          "cssLibrary": "CSS/OpenGraphite.css",
+          "pages": [
+            {
+              "id": "home",
+              "path": "index.html",
+              "canvas": { "x": 0, "y": 0, "width": 1440, "height": 1200 }
+            }
+          ]
+        }
+        """.write(to: projectURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：プロジェクトを読み込む
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+
+        // 期待値：旧 pages が既定 Chapter 配下へ正規化される
+        #expect(loadedProject.project.chapters.map(\.id) == [OpenGraphiteChapter.defaultID])
+        #expect(loadedProject.project.chapters[0].pages.map(\.id) == ["home"])
+        #expect(loadedProject.project.components.isEmpty)
+    }
+
     /// 論理名（日本語）: ページ未定義エラーテスト
     /// 概要: pages が空の .ogp を読み込んだときに missingPages が発生することを検証します。
     @Test("pagesが空ならmissingPagesを返す")

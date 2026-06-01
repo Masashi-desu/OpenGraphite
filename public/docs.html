@@ -7,100 +7,94 @@
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
   </head>
   <body>
-    <OpenGraphitePage
-      data-og-id="page"
-      data-og-type="page"
-      data-og-layout="vertical"
-      data-og-role="page-preview"
-      style="--og-gap:0; --og-padding:30px 52px 76px; --og-background:#151514; --og-foreground:#ece7de;">
-      <SiteHeader
-        data-og-id="site-header"
-        data-og-type="frame"
-        data-og-layout="horizontal"
-        style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-padding:0 0 18px; --og-gap:24px; --og-align:center; --og-justify:space-between; border-bottom:1px solid #3a3833;">
-        <HeaderBrand data-og-id="site-header-brand" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:12px; --og-align:center;">
-          <BrandMark data-og-id="brand-mark" data-og-type="frame" style="--og-width:30px; --og-height:30px; --og-radius:3px; --og-background:#2b2a27; --og-border:1px solid #8a8378;"></BrandMark>
-          <BrandText data-og-id="brand-text" data-og-type="text" style="--og-font-size:18px; --og-font-weight:780; --og-letter-spacing:0;">OpenGraphite</BrandText>
-        </HeaderBrand>
-        <HeaderNav data-og-id="site-header-nav" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:8px; --og-align:center;">
-          <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;">Home</a>
-          <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;">Downloads</a>
-          <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;">Docs</a>
-        </HeaderNav>
-      </SiteHeader>
+    <link rel="opengraphite-components" href="./_components/design-system.html">
+<OpenGraphitePage
+  data-og-id="page"
+  data-og-type="page"
+  data-og-layout="vertical"
+  data-og-role="page-preview"
+  style="--og-gap:0; --og-padding:30px 52px 76px; --og-background:#151514; --og-foreground:#ece7de;">
+  <og-instance data-og-id="site-header" data-og-type="frame" data-og-component="site-header">
+    <template slot="nav">
+      <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;">Home</a>
+      <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;">Downloads</a>
+      <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;">Docs</a>
+    </template>
+  </og-instance>
 
-      <DocsIntro
+  <DocsIntro
   data-og-id="docs-hero"
   data-og-type="frame"
   data-og-layout="horizontal"
   data-og-role="landing-hero"
   style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-gap:58px; --og-align:stretch; --og-padding:58px 0 42px; border-bottom:1px solid #34322e;">
-  <HeroCopy data-og-id="docs-hero-copy" data-og-type="frame" data-og-layout="vertical" style="--og-gap:22px; --og-flex:1 1 0; --og-justify:center;">
-    <EyebrowText data-og-id="docs-eyebrow" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#b8b0a3; --og-font-size:12px;">Docs / Interface Contract</EyebrowText>
-    <PageTitle data-og-id="docs-title" data-og-type="text" style="--og-font-size:52px; --og-font-weight:820; --og-line-height:1.03; --og-letter-spacing:0; --og-max-width:760px; overflow-wrap:anywhere;">リポジトリとAIが同じ面を編集する。</PageTitle>
-    <LeadText data-og-id="docs-lead" data-og-type="text" data-og-role="muted" style="--og-font-size:19px; --og-line-height:1.72; --og-foreground:#aaa49a; --og-max-width:760px;">OpenGraphite.app、OpenGraphite.css、ogkiln、MCPは、HTMLを生成物ではなく正本として扱います。画面、CLI、AIの編集が同じファイルへ収束します。</LeadText>
+  <HeroCopy
+    data-og-id="docs-hero-copy"
+    data-og-type="frame"
+    data-og-layout="vertical"
+    style="--og-gap:22px; --og-flex:1 1 0; --og-justify:center;">
+    <EyebrowText data-og-id="docs-hero-eyebrow" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#b8b0a3; --og-font-size:12px;">Docs / Interface Contract</EyebrowText>
+    <PageTitle data-og-id="docs-hero-title" data-og-type="text" style="--og-font-size:52px; --og-font-weight:820; --og-line-height:1.03; --og-letter-spacing:0; --og-max-width:760px; overflow-wrap:anywhere;">リポジトリとAIが同じ面を編集する。</PageTitle>
+    <LeadText data-og-id="docs-hero-lead" data-og-type="text" data-og-role="muted" style="--og-font-size:19px; --og-line-height:1.72; --og-foreground:#aaa49a; --og-max-width:760px;">OpenGraphite.app、OpenGraphite.css、ogkiln、MCPは、HTMLを生成物ではなく正本として扱います。画面、CLI、AIの編集が同じファイルへ収束します。</LeadText>
   </HeroCopy>
-  <InterfaceStack data-og-id="docs-interface-stack" data-og-type="frame" data-og-layout="vertical" style="--og-width:380px; --og-gap:0; --og-padding:18px 0 0; background:#1a1a18; border:1px solid #3b3832; border-radius:2px; align-self:center; height:max-content;">
-  <StackLabel data-og-id="docs-stack-label" data-og-type="text" data-og-role="eyebrow" style="--og-padding:0 24px 16px; --og-foreground:#d7d0c4; --og-font-size:11px;">Canonical Surface</StackLabel>
-  <StackRow data-og-id="docs-stack-app" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
-    <StackNumber data-og-id="docs-stack-app-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">01</StackNumber>
-    <StackText data-og-id="docs-stack-app-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite.app<br>visual edit</StackText>
-  </StackRow>
-  <StackRow data-og-id="docs-stack-css" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
-    <StackNumber data-og-id="docs-stack-css-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">02</StackNumber>
-    <StackText data-og-id="docs-stack-css-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite.css<br>render contract</StackText>
-  </StackRow>
-  <StackRow data-og-id="docs-stack-cli" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
-    <StackNumber data-og-id="docs-stack-cli-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">03</StackNumber>
-    <StackText data-og-id="docs-stack-cli-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">ogkiln<br>reproducible edit</StackText>
-  </StackRow>
-  <StackRow data-og-id="docs-stack-mcp" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
-    <StackNumber data-og-id="docs-stack-mcp-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">04</StackNumber>
-    <StackText data-og-id="docs-stack-mcp-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite MCP<br>AI tool surface</StackText>
-  </StackRow>
-</InterfaceStack>
+  <HeroAside
+    data-og-id="docs-hero-aside"
+    data-og-type="frame"
+    data-og-layout="vertical"
+    style="--og-width:380px; --og-gap:0; --og-padding:18px 0 0; background:#1a1a18; border:1px solid #3b3832; border-radius:2px; align-self:center; height:max-content;">
+    <StackLabel data-og-id="docs-stack-label" data-og-type="text" data-og-role="eyebrow" style="--og-padding:0 24px 16px; --og-foreground:#d7d0c4; --og-font-size:11px;">Canonical Surface</StackLabel>
+    <StackRow data-og-id="docs-stack-app" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
+      <StackNumber data-og-id="docs-stack-app-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">01</StackNumber>
+      <StackText data-og-id="docs-stack-app-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite.app<br>visual edit</StackText>
+    </StackRow>
+    <StackRow data-og-id="docs-stack-css" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
+      <StackNumber data-og-id="docs-stack-css-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">02</StackNumber>
+      <StackText data-og-id="docs-stack-css-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite.css<br>render contract</StackText>
+    </StackRow>
+    <StackRow data-og-id="docs-stack-cli" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
+      <StackNumber data-og-id="docs-stack-cli-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">03</StackNumber>
+      <StackText data-og-id="docs-stack-cli-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">ogkiln<br>reproducible edit</StackText>
+    </StackRow>
+    <StackRow data-og-id="docs-stack-mcp" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;">
+      <StackNumber data-og-id="docs-stack-mcp-no" data-og-type="text" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;">04</StackNumber>
+      <StackText data-og-id="docs-stack-mcp-text" data-og-type="text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;">OpenGraphite MCP<br>AI tool surface</StackText>
+    </StackRow>
+  </HeroAside>
 </DocsIntro>
 
-      <DocsList
-  data-og-id="docs-list"
-  data-og-type="frame"
-  data-og-layout="vertical"
-  style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-gap:0; --og-padding:26px 0 0;">
-  <DocItem data-og-id="doc-app" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:30px; --og-align:flex-start; --og-padding:28px 0; border-top:1px solid #34322e;">
-    <DocIndex data-og-id="doc-app-index" data-og-type="text" style="--og-width:74px; --og-font-size:12px; --og-font-weight:760; --og-foreground:#8f887d;">01</DocIndex>
-    <DocTitle data-og-id="doc-app-title" data-og-type="text" style="--og-width:250px; --og-font-size:23px; --og-font-weight:780; --og-line-height:1.2;">OpenGraphite.app</DocTitle>
-    <DocBody data-og-id="doc-app-body" data-og-type="frame" data-og-layout="vertical" style="--og-gap:10px; --og-flex:1 1 0;">
-      <DocText data-og-id="doc-app-text" data-og-type="text" data-og-role="muted" style="--og-line-height:1.68; --og-foreground:#aaa49a; --og-max-width:760px;">`.ogp` からHTMLとCSSを解決し、Canvas、Layers、Inspectorで編集します。外部変更を検出して、表示を同じ正本へ追従させます。</DocText>
-      <DocMeta data-og-id="doc-app-meta" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#c9c0b2; --og-font-size:11px;">Canvas / Layers / Inspector / external sync</DocMeta>
-    </DocBody>
-  </DocItem>
-  <DocItem data-og-id="doc-css" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:30px; --og-align:flex-start; --og-padding:28px 0; border-top:1px solid #34322e;">
-    <DocIndex data-og-id="doc-css-index" data-og-type="text" style="--og-width:74px; --og-font-size:12px; --og-font-weight:760; --og-foreground:#8f887d;">02</DocIndex>
-    <DocTitle data-og-id="doc-css-title" data-og-type="text" style="--og-width:250px; --og-font-size:23px; --og-font-weight:780; --og-line-height:1.2;">OpenGraphite.css</DocTitle>
-    <DocBody data-og-id="doc-css-body" data-og-type="frame" data-og-layout="vertical" style="--og-gap:10px; --og-flex:1 1 0;">
-      <DocText data-og-id="doc-css-text" data-og-type="text" data-og-role="muted" style="--og-line-height:1.68; --og-foreground:#aaa49a; --og-max-width:760px;">`data-og-type`、`data-og-layout`、`data-og-role`、`--og-*` 変数を読み取り、HTMLをそのままデザイン成果物として表示するCSS contractです。</DocText>
-      <DocMeta data-og-id="doc-css-meta" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#c9c0b2; --og-font-size:11px;">semantic tags / data-og-* / --og-* variables</DocMeta>
-    </DocBody>
-  </DocItem>
-  <DocItem data-og-id="doc-cli" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:30px; --og-align:flex-start; --og-padding:28px 0; border-top:1px solid #34322e;">
-    <DocIndex data-og-id="doc-cli-index" data-og-type="text" style="--og-width:74px; --og-font-size:12px; --og-font-weight:760; --og-foreground:#8f887d;">03</DocIndex>
-    <DocTitle data-og-id="doc-cli-title" data-og-type="text" style="--og-width:250px; --og-font-size:23px; --og-font-weight:780; --og-line-height:1.2;">OpenGraphite CLI</DocTitle>
-    <DocBody data-og-id="doc-cli-body" data-og-type="frame" data-og-layout="vertical" style="--og-gap:14px; --og-flex:1 1 0;">
-      <DocText data-og-id="doc-cli-text" data-og-type="text" data-og-role="muted" style="--og-line-height:1.68; --og-foreground:#aaa49a; --og-max-width:760px;">`ogkiln` は構造取得、検証、node単位編集、page配置、canvas/page/node screenshotを同じコマンド体系で提供します。</DocText>
-      <CodeText data-og-id="doc-cli-code" data-og-type="text" style="--og-font-size:13px; --og-line-height:1.75; --og-foreground:#d9d3c8; --og-background:#1b1b19; --og-padding:16px 18px; --og-radius:2px; --og-border:1px solid #3e3b35; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere;">./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
-./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --page-id docs --id doc-cli --output screenshots/doc-cli.png</CodeText>
-    </DocBody>
-  </DocItem>
-  <DocItem data-og-id="doc-mcp" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:30px; --og-align:flex-start; --og-padding:28px 0; border-top:1px solid #34322e; border-bottom:1px solid #34322e;">
-    <DocIndex data-og-id="doc-mcp-index" data-og-type="text" style="--og-width:74px; --og-font-size:12px; --og-font-weight:760; --og-foreground:#8f887d;">04</DocIndex>
-    <DocTitle data-og-id="doc-mcp-title" data-og-type="text" style="--og-width:250px; --og-font-size:23px; --og-font-weight:780; --og-line-height:1.2;">OpenGraphite MCP</DocTitle>
-    <DocBody data-og-id="doc-mcp-body" data-og-type="frame" data-og-layout="vertical" style="--og-gap:14px; --og-flex:1 1 0;">
-      <DocText data-og-id="doc-mcp-text" data-og-type="text" data-og-role="muted" style="--og-line-height:1.68; --og-foreground:#aaa49a; --og-max-width:760px;">AIクライアントにresourcesとtoolsを公開し、write toolとscreenshot toolは`ogkiln`と同じ検証・レンダリング経路を通してHTMLとPNGを扱います。</DocText>
-      <CodeText data-og-id="doc-mcp-code" data-og-type="text" style="--og-font-size:13px; --og-line-height:1.75; --og-foreground:#d9d3c8; --og-background:#1b1b19; --og-padding:16px 18px; --og-radius:2px; --og-border:1px solid #3e3b35; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere;">tools: validate, query_nodes, insert_html, move_node, copy_node
-screenshot_canvas, screenshot_page, screenshot_node</CodeText>
-    </DocBody>
-  </DocItem>
-</DocsList>
-    </OpenGraphitePage>
+  <DocsList
+    data-og-id="docs-list"
+    data-og-type="frame"
+    data-og-layout="vertical"
+    style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-gap:0; --og-padding:26px 0 0;">
+    <og-instance data-og-id="doc-app" data-og-type="frame" data-og-component="doc-row">
+      <span slot="index">01</span>
+      <span slot="title">OpenGraphite.app</span>
+      <span slot="body">`.ogp` からHTMLとCSSを解決し、Canvas、Layers、Inspectorで編集します。外部変更を検出して、表示を同じ正本へ追従させます。</span>
+      <span slot="meta">Canvas / Layers / Inspector / external sync</span>
+    </og-instance>
+    <og-instance data-og-id="doc-css" data-og-type="frame" data-og-component="doc-row">
+      <span slot="index">02</span>
+      <span slot="title">OpenGraphite.css</span>
+      <span slot="body">`data-og-type`、`data-og-layout`、`data-og-role`、`--og-*` 変数を読み取り、HTMLをそのままデザイン成果物として表示するCSS contractです。</span>
+      <span slot="meta">semantic tags / data-og-* / --og-* variables</span>
+    </og-instance>
+    <og-instance data-og-id="doc-cli" data-og-type="frame" data-og-component="doc-code-row">
+      <span slot="index">03</span>
+      <span slot="title">OpenGraphite CLI</span>
+      <span slot="body">`ogkiln` は構造取得、検証、node単位編集、page配置、canvas/page/node screenshotを同じコマンド体系で提供します。</span>
+      <span slot="code">./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
+./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --page-id docs --id doc-cli --output screenshots/doc-cli.png</span>
+    </og-instance>
+    <og-instance data-og-id="doc-mcp" data-og-type="frame" data-og-component="doc-code-row" style="border-bottom:1px solid #34322e;">
+      <span slot="index">04</span>
+      <span slot="title">OpenGraphite MCP</span>
+      <span slot="body">AIクライアントにresourcesとtoolsを公開し、write toolとscreenshot toolは`ogkiln`と同じ検証・レンダリング経路を通してHTMLとPNGを扱います。</span>
+      <span slot="code">tools: validate, query_nodes, insert_html, move_node, copy_node
+screenshot_canvas, screenshot_page, screenshot_node</span>
+    </og-instance>
+  </DocsList>
+</OpenGraphitePage>
+<script src="./OpenGraphite.runtime.js" defer></script>
   </body>
 </html>

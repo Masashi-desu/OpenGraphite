@@ -232,7 +232,13 @@ private struct EditorProjectSummaryView: View {
                 PathBadge(title: "Public", path: publicRootPath)
             }
 
-            if let chapterName = store.selectedChapter?.displayName {
+            Text(store.selectedCanvasSegment.title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if store.selectedCanvasSegment == .pages, let chapterName = store.selectedChapter?.displayName {
                 Text(chapterName)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -371,10 +377,10 @@ private struct CanvasPaneView: View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
-            if let loadedProject = store.loadedProject, !store.selectedChapterPages.isEmpty {
+            if let loadedProject = store.loadedProject, !store.selectedCanvasPages.isEmpty {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
-                    documentID: canvasDocumentID(for: loadedProject, chapter: store.selectedChapter),
+                    documentID: canvasDocumentID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
                     overlayAvoidance: overlayAvoidance,
                     onEmptyCanvasClick: {
                         store.selectPage(id: nil)
@@ -383,7 +389,7 @@ private struct CanvasPaneView: View {
                     CanvasProjectView(
                         store: store,
                         loadedProject: loadedProject,
-                        pages: store.selectedChapterPages,
+                        pages: store.selectedCanvasPages,
                         zoom: store.zoom
                     )
                 }
@@ -411,9 +417,9 @@ private struct CanvasPaneView: View {
                 .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
             } else {
                 ContentUnavailableView(
-                    "No Page",
-                    systemImage: "doc",
-                    description: Text("pages を持つ Chapter を選択してください。")
+                    store.selectedCanvasSegment == .components ? "No Components" : "No Page",
+                    systemImage: store.selectedCanvasSegment == .components ? "shippingbox" : "doc",
+                    description: Text(store.selectedCanvasSegment == .components ? "components に HTML canvas が登録されていません。" : "pages を持つ Chapter を選択してください。")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -429,20 +435,20 @@ private struct CanvasPaneView: View {
     }
 
     /// 論理名（日本語）: キャンバスドキュメントID生成関数
-    /// 処理概要: 選択 Chapter のページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
+    /// 処理概要: 選択セグメントのページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
     ///
     /// - Parameters:
     ///   - project: 表示中の読み込み済みプロジェクト。
-    ///   - chapter: 表示中の Chapter。
+    ///   - segment: 表示中の Pages / Components セグメント。
+    ///   - pages: 表示対象ページ一覧。
     /// - Returns: キャンバス構成を表す安定 ID。
-    private func canvasDocumentID(for project: LoadedOpenGraphiteProject, chapter: OpenGraphiteChapter?) -> String {
-        let pages = chapter?.pages ?? []
+    private func canvasDocumentID(for project: LoadedOpenGraphiteProject, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
         let pageID = pages
             .map { page in
                 "\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
             }
             .joined(separator: "|")
-        return "\(project.fileURL.path)#\(chapter?.id ?? "none")#\(pageID)"
+        return "\(project.fileURL.path)#\(segment.rawValue)#\(pageID)"
     }
 
     /// 論理名（日本語）: ズーム調整関数

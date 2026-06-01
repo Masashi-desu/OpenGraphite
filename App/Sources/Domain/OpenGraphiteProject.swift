@@ -10,6 +10,7 @@ import Foundation
 /// - `htmlRoot`: HTML 成果物を置く public ルート。
 /// - `cssLibrary`: OpenGraphite.css の参照パス。
 /// - `chapters`: Chapter ごとのキャンバス定義。
+/// - `components`: Component master を格納する HTML キャンバス一覧。
 struct OpenGraphiteProject: Codable, Equatable {
     var version: String
     var name: String
@@ -17,9 +18,64 @@ struct OpenGraphiteProject: Codable, Equatable {
     var htmlRoot: String
     var cssLibrary: String
     var chapters: [OpenGraphiteChapter]
+    var components: [OpenGraphitePage]
 
     var allPages: [OpenGraphitePage] {
-        chapters.flatMap(\.pages)
+        chapters.flatMap(\.pages) + components
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case name
+        case repositoryRoot
+        case htmlRoot
+        case cssLibrary
+        case chapters
+        case pages
+        case components
+    }
+
+    /// 論理名（日本語）: project JSONデコード関数
+    /// 処理概要: 旧 top-level `pages` 形式と互換性を保ち、未指定の `components` を空配列として扱います。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(String.self, forKey: .version)
+        name = try container.decode(String.self, forKey: .name)
+        repositoryRoot = try container.decodeIfPresent(String.self, forKey: .repositoryRoot)
+        htmlRoot = try container.decode(String.self, forKey: .htmlRoot)
+        cssLibrary = try container.decode(String.self, forKey: .cssLibrary)
+        if let decodedChapters = try container.decodeIfPresent([OpenGraphiteChapter].self, forKey: .chapters) {
+            chapters = decodedChapters
+        } else {
+            let legacyPages = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .pages) ?? []
+            chapters = [
+                OpenGraphiteChapter(
+                    id: OpenGraphiteChapter.defaultID,
+                    title: OpenGraphiteChapter.defaultTitle,
+                    pages: legacyPages
+                )
+            ]
+        }
+        components = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .components) ?? []
+    }
+
+    /// 論理名（日本語）: project JSONエンコード関数
+    /// 処理概要: `components` を含む現行 `.ogp` 形式として project manifest を保存します。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(name, forKey: .name)
+        try container.encodeIfPresent(repositoryRoot, forKey: .repositoryRoot)
+        try container.encode(htmlRoot, forKey: .htmlRoot)
+        try container.encode(cssLibrary, forKey: .cssLibrary)
+        try container.encode(chapters, forKey: .chapters)
+        if !components.isEmpty {
+            try container.encode(components, forKey: .components)
+        }
     }
 
     /// 論理名（日本語）: 既定Chapterプロジェクト初期化関数
@@ -38,13 +94,15 @@ struct OpenGraphiteProject: Codable, Equatable {
         repositoryRoot: String?,
         htmlRoot: String,
         cssLibrary: String,
-        pages: [OpenGraphitePage]
+        pages: [OpenGraphitePage],
+        components: [OpenGraphitePage] = []
     ) {
         self.version = version
         self.name = name
         self.repositoryRoot = repositoryRoot
         self.htmlRoot = htmlRoot
         self.cssLibrary = cssLibrary
+        self.components = components
         self.chapters = [
             OpenGraphiteChapter(
                 id: OpenGraphiteChapter.defaultID,
@@ -70,7 +128,8 @@ struct OpenGraphiteProject: Codable, Equatable {
         repositoryRoot: String?,
         htmlRoot: String,
         cssLibrary: String,
-        chapters: [OpenGraphiteChapter]
+        chapters: [OpenGraphiteChapter],
+        components: [OpenGraphitePage] = []
     ) {
         self.version = version
         self.name = name
@@ -78,6 +137,7 @@ struct OpenGraphiteProject: Codable, Equatable {
         self.htmlRoot = htmlRoot
         self.cssLibrary = cssLibrary
         self.chapters = chapters
+        self.components = components
     }
 }
 
@@ -107,12 +167,19 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
 ///
 /// プロパティ:
 /// - `id`: ページ識別子。
+/// - `title`: UI 表示用タイトル。未指定時は `id` を使います。
 /// - `path`: `htmlRoot` から見た HTML ファイルパス。
 /// - `canvas`: キャンバス上の配置とサイズ。
 struct OpenGraphitePage: Codable, Equatable, Identifiable {
     var id: String
+    var title: String?
     var path: String
     var canvas: OpenGraphiteCanvas
+
+    var displayName: String {
+        guard let title, !title.isEmpty else { return id }
+        return title
+    }
 }
 
 /// 論理名（日本語）: OpenGraphiteキャンバス定義
@@ -179,5 +246,25 @@ struct LoadedOpenGraphiteProject: Identifiable, Equatable {
         rootURL
             .appendingPathComponent(project.htmlRoot)
             .appendingPathComponent(page.path)
+    }
+}
+
+/// 論理名（日本語）: キャンバス表示セグメント
+/// 概要: エディタ中央キャンバスが通常 Pages と Components のどちらを表示しているかを表します。
+///
+/// 定義内容:
+/// - `pages`: `.ogp` の `chapters[].pages[]` を表示する通常ページ編集セグメント。
+/// - `components`: `.ogp` の top-level `components[]` を表示する component master 編集セグメント。
+enum OpenGraphiteCanvasSegment: String, Equatable {
+    case pages
+    case components
+
+    var title: String {
+        switch self {
+        case .pages:
+            return "Pages"
+        case .components:
+            return "Components"
+        }
     }
 }

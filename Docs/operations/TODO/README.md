@@ -1,6 +1,6 @@
 # Operations TODO Index
 
-更新日: 2026-05-31
+更新日: 2026-06-01
 
 OpenGraphite の運用 TODO は、残タスクだけを直列化して管理する。作成・更新・削除の正本は [TODO Document Governance](GOVERNANCE.md)、新規文書の雛形は [TEMPLATE.md](TEMPLATE.md) とする。
 

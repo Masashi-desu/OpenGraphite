@@ -7,6 +7,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `OpenGraphite.app`: macOS SwiftUI app generated from `project.yml`
 - `CSS/OpenGraphite.css`: distributable CSS library for `data-og-*` and `--og-*`
 - `OpenGraphite.contract.json`: machine-readable `data-og-*` and `--og-*` contract
+- `public/OpenGraphite.runtime.js`: optional runtime that expands `<og-instance>` component references in the browser
 - `Scripts/ogkiln`: CLI for repository-backed inspection, validation, and node-level HTML edits
 - `MCP/OpenGraphite/server.mjs`: OpenGraphite MCP server backed by `ogkiln`
 - `SampleProject/OpenGraphiteSample.ogp`: sample project file
@@ -37,7 +38,7 @@ HTML is the canonical document.
 </HeroSection>
 ```
 
-OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules.
+OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in the project `components` segment and referenced from pages with `<og-instance>`.
 
 ## Build
 
@@ -77,7 +78,7 @@ The gate regenerates `OpenGraphite.xcodeproj` from `project.yml` and runs the Sw
 
 ## Agent Interface
 
-Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
+Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters or component canvases registered under `components` in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
 
 ```bash
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
@@ -85,19 +86,27 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id docs --path docs.html --title 'OpenGraphite Docs' --body-file docs.body.html --x 2960 --y 0
 ./Scripts/ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id legacy --path legacy.html --x 4440 --y 0
 ./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id docs --x 3040 --y 0
+./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
+./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id design-system --width 1180 --height 1900
+./Scripts/ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --delete-file
 ./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
 ./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id docs --output screenshots/docs.png
 ./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --page-id docs --id doc-cli --output screenshots/doc-cli.png
+./Scripts/ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
 ./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --page-id home --json
+./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --component-id design-system --json
 ./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id home --type button --text-contains Docs --json
 ./Scripts/ogkiln node get SampleProject/OpenGraphiteSample.ogp --page-id home --id hero --json
 ./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id home --id hero --var --og-gap --value 32px
+./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id design-system --id feature-card-title --value 'Availability-ready card'
 ./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id home --id title --value 'OpenGraphite'
 ./Scripts/ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id home --id page --position prepend --html '<Header data-og-id="site-header" data-og-type="frame"></Header>'
 ./Scripts/ogkiln node move SampleProject/OpenGraphiteSample.ogp --page-id home --id footer --target hero --position after
 ./Scripts/ogkiln node copy SampleProject/OpenGraphiteSample.ogp --page-id home --id card --target card-list --position append --id-prefix copy-
 ```
+
+`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css` plus non-HTML public assets into the output directory.
 
 The OpenGraphite MCP server exposes the same repository-backed operations over stdio:
 
@@ -157,10 +166,10 @@ When launched without that environment variable, Open Sample Project treats the 
 ## Current Editor Features
 
 - Welcome screen with sample and arbitrary `.ogp` open actions
-- Chapters/Pages/Layers sidebar
+- Chapters/Pages/Components sidebar with layers nested inside each HTML card
 - WKWebView canvas using `.ogp` canvas dimensions
 - DOM layer extraction from `[data-og-id]`
-- Canvas and Layer node selection
+- Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
 - Inspector editing for common `--og-*` CSS variables with direct HTML write-back
 

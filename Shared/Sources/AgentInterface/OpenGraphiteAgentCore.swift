@@ -152,6 +152,7 @@ struct OpenGraphitePageWriteResult: Codable, Equatable {
 /// - `cssURL`: CSS library URL。
 /// - `chapters`: Chapter 要約一覧。
 /// - `pages`: 全 Chapter のページ要約一覧。
+/// - `components`: Components セグメントの page 要約一覧。
 /// - `diagnostics`: 検証結果。
 struct OpenGraphiteProjectSummary: Codable, Equatable {
     var schemaVersion: String
@@ -162,6 +163,7 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
     var cssURL: String
     var chapters: [OpenGraphiteChapterSummary]
     var pages: [OpenGraphitePageSummary]
+    var components: [OpenGraphitePageSummary]
     var diagnostics: [OpenGraphiteDiagnostic]
 }
 
@@ -183,12 +185,14 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
 ///
 /// プロパティ:
 /// - `chapterID`: 所属 Chapter ID。
+/// - `segment`: `pages` または `components`。
 /// - `id`: ページ ID。
 /// - `path`: `htmlRoot` からの相対パス。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: キャンバス定義。
 struct OpenGraphitePageSummary: Codable, Equatable {
     var chapterID: String
+    var segment: String
     var id: String
     var path: String
     var htmlURL: String
@@ -323,9 +327,13 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// メソッド:
 /// - `inspectProject(at:)`: `.ogp` を解決して要約する。
 /// - `addProjectPage(projectURL:id:path:canvas:)`: `.ogp` に page entry を追加する。
+/// - `addProjectComponent(projectURL:id:path:canvas:)`: `.ogp` に component entry を追加する。
+/// - `removeProjectComponent(projectURL:id:deleteFile:)`: `.ogp` から component entry を削除する。
 /// - `createProjectPage(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と page entry 登録を一体で行う。
+/// - `createProjectComponent(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
 /// - `projectPageReference(projectURL:pageID:)`: `.ogp` の page ID から HTML を解決する。
 /// - `placeProjectPage(projectURL:id:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
+/// - `placeProjectComponent(projectURL:id:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
 /// - `createPage(at:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML page file を作成する。
 /// - `pageGraph(at:)`: HTML から node graph を抽出する。
 /// - `validateHTML(at:)`: HTML を契約に対して検証する。
@@ -372,7 +380,7 @@ struct OpenGraphiteAgentCore {
 
         let chapters = loadedProject.project.chapters.map { chapter in
             let pages = chapter.pages.map { page in
-                pageSummary(for: page, chapterID: chapter.id, loadedProject: loadedProject)
+                pageSummary(for: page, chapterID: chapter.id, segment: "pages", loadedProject: loadedProject)
             }
             return OpenGraphiteChapterSummary(
                 id: chapter.id,
@@ -381,6 +389,9 @@ struct OpenGraphiteAgentCore {
             )
         }
         let pages = chapters.flatMap(\.pages)
+        let components = loadedProject.project.components.map { page in
+            pageSummary(for: page, chapterID: "components", segment: "components", loadedProject: loadedProject)
+        }
 
         return OpenGraphiteProjectSummary(
             schemaVersion: Self.schemaVersion,
@@ -391,6 +402,7 @@ struct OpenGraphiteAgentCore {
             cssURL: loadedProject.cssURL.path,
             chapters: chapters,
             pages: pages,
+            components: components,
             diagnostics: diagnostics
         )
     }
@@ -459,6 +471,77 @@ struct OpenGraphiteAgentCore {
         }
 
         project.chapters[targetChapterIndex].pages.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
+        try writeProject(project, to: projectURL)
+        return try inspectProject(at: projectURL)
+    }
+
+    /// 論理名（日本語）: プロジェクトコンポーネント追加関数
+    /// 処理概要: `.ogp` の Components セグメントに既存 HTML component canvas 定義を追加し、更新後 summary を返します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 追加する component ID。
+    ///   - path: `htmlRoot` から見た component HTML path。
+    ///   - canvas: キャンバス配置。
+    /// - Returns: 更新後 project summary。
+    func addProjectComponent(
+        projectURL: URL,
+        id: String,
+        path: String,
+        canvas: OpenGraphiteCanvas
+    ) throws -> OpenGraphiteProjectSummary {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        try validateProjectPagePath(path)
+        var project = loadedProject.project
+        if project.allPages.contains(where: { $0.id == id }) {
+            throw OpenGraphiteAgentCoreError(message: "page or component id \"\(id)\" は既に存在します。")
+        }
+        if project.allPages.contains(where: { $0.path == path }) {
+            throw OpenGraphiteAgentCoreError(message: "page or component path \"\(path)\" は既に存在します。")
+        }
+        let htmlURL = loadedProject.rootURL.appendingPathComponent(project.htmlRoot).appendingPathComponent(path)
+        guard FileManager.default.fileExists(atPath: htmlURL.path) else {
+            throw OpenGraphiteAgentCoreError(message: "追加する component HTML が見つかりません: \(htmlURL.path)")
+        }
+
+        project.components.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
+        try writeProject(project, to: projectURL)
+        return try inspectProject(at: projectURL)
+    }
+
+    /// 論理名（日本語）: プロジェクトコンポーネント削除関数
+    /// 処理概要: `.ogp` の Components セグメントから component entry を削除し、指定時は HTML file も削除します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 削除する component ID。
+    ///   - deleteFile: component HTML file も削除するか。
+    /// - Returns: 更新後 project summary。
+    func removeProjectComponent(
+        projectURL: URL,
+        id: String,
+        deleteFile: Bool
+    ) throws -> OpenGraphiteProjectSummary {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        var project = loadedProject.project
+        guard let componentIndex = project.components.firstIndex(where: { $0.id == id }) else {
+            throw OpenGraphiteAgentCoreError(message: "component id \"\(id)\" が見つかりません。")
+        }
+
+        let removedComponent = project.components.remove(at: componentIndex)
+        if deleteFile {
+            let htmlRootURL = loadedProject.rootURL
+                .appendingPathComponent(project.htmlRoot)
+                .standardizedFileURL
+            let htmlURL = htmlRootURL
+                .appendingPathComponent(removedComponent.path)
+                .standardizedFileURL
+            try ensureHTMLURL(htmlURL, staysInside: htmlRootURL)
+            if FileManager.default.fileExists(atPath: htmlURL.path) {
+                try FileManager.default.removeItem(at: htmlURL)
+            }
+        }
+
         try writeProject(project, to: projectURL)
         return try inspectProject(at: projectURL)
     }
@@ -548,6 +631,91 @@ struct OpenGraphiteAgentCore {
         }
     }
 
+    /// 論理名（日本語）: プロジェクトコンポーネント作成関数
+    /// 処理概要: `.ogp` の `htmlRoot` 配下へ component HTML を作成し、同じ処理で Components セグメントに登録します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 追加する component ID。
+    ///   - path: `htmlRoot` から見た component HTML path。
+    ///   - canvas: キャンバス配置。
+    ///   - title: `<title>` のテキスト。
+    ///   - lang: HTML lang。
+    ///   - stylesheetPath: stylesheet href。`nil` の場合は `.ogp` の CSS 参照から相対 path を計算します。
+    ///   - bodyHTML: `<body>` 内へ入れる OpenGraphite HTML。
+    ///   - overwrite: 既存 HTML を上書きするか。
+    /// - Returns: 作成と登録の結果。
+    func createProjectComponent(
+        projectURL: URL,
+        id: String,
+        path: String,
+        canvas: OpenGraphiteCanvas,
+        title: String,
+        lang: String,
+        stylesheetPath: String?,
+        bodyHTML: String,
+        overwrite: Bool
+    ) throws -> OpenGraphiteProjectPageCreateResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        try validateProjectPagePath(path)
+        if loadedProject.project.allPages.contains(where: { $0.id == id }) {
+            throw OpenGraphiteAgentCoreError(message: "page or component id \"\(id)\" は既に存在します。")
+        }
+        if loadedProject.project.allPages.contains(where: { $0.path == path }) {
+            throw OpenGraphiteAgentCoreError(message: "page or component path \"\(path)\" は既に存在します。")
+        }
+
+        let htmlURL = loadedProject.rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot)
+            .appendingPathComponent(path)
+            .standardizedFileURL
+        try ensureHTMLURL(htmlURL, staysInside: loadedProject.rootURL.appendingPathComponent(loadedProject.project.htmlRoot))
+
+        let fileManager = FileManager.default
+        let previousData = fileManager.fileExists(atPath: htmlURL.path) ? try Data(contentsOf: htmlURL) : nil
+        let stylesheet = stylesheetPath ?? Self.relativePath(
+            from: htmlURL.deletingLastPathComponent(),
+            to: loadedProject.cssURL
+        )
+        let writeResult = try createPage(
+            at: htmlURL,
+            title: title,
+            lang: lang,
+            stylesheetPath: stylesheet,
+            bodyHTML: bodyHTML,
+            overwrite: overwrite
+        )
+        guard writeResult.created else {
+            return OpenGraphiteProjectPageCreateResult(
+                schemaVersion: Self.schemaVersion,
+                created: false,
+                project: try? inspectProject(at: projectURL),
+                page: nil,
+                htmlPath: htmlURL.path,
+                diagnostics: writeResult.diagnostics
+            )
+        }
+
+        do {
+            let summary = try addProjectComponent(projectURL: projectURL, id: id, path: path, canvas: canvas)
+            return OpenGraphiteProjectPageCreateResult(
+                schemaVersion: Self.schemaVersion,
+                created: true,
+                project: summary,
+                page: summary.components.first { $0.id == id },
+                htmlPath: htmlURL.path,
+                diagnostics: writeResult.diagnostics + summary.diagnostics
+            )
+        } catch {
+            if let previousData {
+                try? previousData.write(to: htmlURL, options: .atomic)
+            } else {
+                try? fileManager.removeItem(at: htmlURL)
+            }
+            throw error
+        }
+    }
+
     /// 論理名（日本語）: プロジェクトページ配置関数
     /// 処理概要: `.ogp` の既存 page entry に対して canvas 座標とサイズを部分更新し、更新後 summary を返します。
     ///
@@ -579,8 +747,60 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "--height は 0 より大きい数値で指定してください。")
         }
 
-        let currentCanvas = project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas
-        project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+        if pageLocation.chapterIndex == -1 {
+            let currentCanvas = project.components[pageLocation.pageIndex].canvas
+            project.components[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+                x: x ?? currentCanvas.x,
+                y: y ?? currentCanvas.y,
+                width: width ?? currentCanvas.width,
+                height: height ?? currentCanvas.height
+            )
+        } else {
+            let currentCanvas = project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas
+            project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+                x: x ?? currentCanvas.x,
+                y: y ?? currentCanvas.y,
+                width: width ?? currentCanvas.width,
+                height: height ?? currentCanvas.height
+            )
+        }
+        try writeProject(project, to: projectURL)
+        return try inspectProject(at: projectURL)
+    }
+
+    /// 論理名（日本語）: プロジェクトコンポーネント配置関数
+    /// 処理概要: `.ogp` の既存 component entry に対して canvas 座標とサイズを部分更新し、更新後 summary を返します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 更新する component ID。
+    ///   - x: 更新後 X 座標。`nil` の場合は既存値を維持します。
+    ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
+    ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
+    ///   - height: 更新後プレビュー高さ。`nil` の場合は既存値を維持します。
+    /// - Returns: 更新後 project summary。
+    func placeProjectComponent(
+        projectURL: URL,
+        id: String,
+        x: Double?,
+        y: Double?,
+        width: Double?,
+        height: Double?
+    ) throws -> OpenGraphiteProjectSummary {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        var project = loadedProject.project
+        guard let componentIndex = project.components.firstIndex(where: { $0.id == id }) else {
+            throw OpenGraphiteAgentCoreError(message: "component id \"\(id)\" が見つかりません。")
+        }
+        if let width, width <= 0 {
+            throw OpenGraphiteAgentCoreError(message: "--width は 0 より大きい数値で指定してください。")
+        }
+        if let height, height <= 0 {
+            throw OpenGraphiteAgentCoreError(message: "--height は 0 より大きい数値で指定してください。")
+        }
+
+        let currentCanvas = project.components[componentIndex].canvas
+        project.components[componentIndex].canvas = OpenGraphiteCanvas(
             x: x ?? currentCanvas.x,
             y: y ?? currentCanvas.y,
             width: width ?? currentCanvas.width,
@@ -743,7 +963,7 @@ struct OpenGraphiteAgentCore {
     func validateProject(at url: URL) throws -> OpenGraphiteValidationResult {
         let summary = try inspectProject(at: url)
         var diagnostics = summary.diagnostics
-        for page in summary.pages {
+        for page in summary.pages + summary.components {
             diagnostics.append(contentsOf: try validateHTML(at: URL(fileURLWithPath: page.htmlURL)).diagnostics)
         }
 
@@ -1213,8 +1433,15 @@ struct OpenGraphiteAgentCore {
         guard let location = pageLocation(in: loadedProject.project, pageID: pageID) else {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(pageID)\" が .ogp に存在しません。")
         }
-        let chapter = loadedProject.project.chapters[location.chapterIndex]
-        let page = chapter.pages[location.pageIndex]
+        let chapter: OpenGraphiteChapter
+        let page: OpenGraphitePage
+        if location.chapterIndex == -1 {
+            chapter = OpenGraphiteChapter(id: "components", title: "Components", pages: loadedProject.project.components)
+            page = loadedProject.project.components[location.pageIndex]
+        } else {
+            chapter = loadedProject.project.chapters[location.chapterIndex]
+            page = chapter.pages[location.pageIndex]
+        }
         try validateProjectPagePath(page.path)
         let htmlURL = loadedProject.htmlURL(for: page).standardizedFileURL
         try ensureHTMLURL(htmlURL, staysInside: loadedProject.rootURL.appendingPathComponent(loadedProject.project.htmlRoot))
@@ -1254,6 +1481,9 @@ struct OpenGraphiteAgentCore {
                 return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
             }
         }
+        if let componentIndex = project.components.firstIndex(where: { $0.id == pageID }) {
+            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: componentIndex)
+        }
         return nil
     }
 
@@ -1268,10 +1498,12 @@ struct OpenGraphiteAgentCore {
     private func pageSummary(
         for page: OpenGraphitePage,
         chapterID: String,
+        segment: String,
         loadedProject: LoadedOpenGraphiteProject
     ) -> OpenGraphitePageSummary {
         OpenGraphitePageSummary(
             chapterID: chapterID,
+            segment: segment,
             id: page.id,
             path: page.path,
             htmlURL: loadedProject.htmlURL(for: page).path,

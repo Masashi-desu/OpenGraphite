@@ -291,6 +291,7 @@ struct OpenGraphiteScreenshotRenderer {
         )
         let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
+        try await snapshotter.renderLocalComponentReferences()
         let documentSize = try await snapshotter.documentSize()
         snapshotter.resize(to: documentSize)
         try await snapshotter.waitForLayout()
@@ -325,6 +326,7 @@ struct OpenGraphiteScreenshotRenderer {
     ) async throws -> NSImage {
         let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
+        try await snapshotter.renderLocalComponentReferences()
         if fullPage {
             let documentSize = try await snapshotter.documentSize()
             snapshotter.resize(to: documentSize)
@@ -470,6 +472,53 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         }
     }
 
+    /// 論理名（日本語）: ローカルcomponent参照レンダリング関数
+    /// 処理概要: `file://` component master を Swift 側で読み込み、runtime に渡して screenshot の表示を Pages と揃えます。
+    func renderLocalComponentReferences() async throws {
+        let discoveryValue = try await evaluateJavaScript(
+            """
+            (function() {
+              return {
+                componentHrefs: Array.from(document.querySelectorAll('link[rel="opengraphite-components"][href]')).map((link) => link.href),
+                runtimeLoaded: !!(window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function'),
+                runtimeHrefs: Array.from(document.querySelectorAll('script[src*="OpenGraphite.runtime.js"]')).map((script) => script.src)
+              };
+            })()
+            """
+        )
+        let payload = try dictionaryValue(discoveryValue, description: "component reference discovery")
+        let componentHTMLs = localTextDocuments(from: payload["componentHrefs"] as? [String] ?? [])
+        guard !componentHTMLs.isEmpty else { return }
+
+        let runtimeLoaded = payload["runtimeLoaded"] as? Bool ?? false
+        let runtimeSource = runtimeLoaded ? nil : localTextDocuments(from: payload["runtimeHrefs"] as? [String] ?? []).first
+        guard runtimeLoaded || runtimeSource != nil else { return }
+
+        let renderScript = """
+        (function() {
+          \(runtimeSource ?? "")
+          if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function') {
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments(\(try javaScriptArrayLiteral(componentHTMLs)));
+            return true;
+          }
+          return false;
+        })()
+        """
+        _ = try await evaluateJavaScript(renderScript)
+    }
+
+    /// 論理名（日本語）: ローカルtext文書読み込み関数
+    /// 処理概要: JavaScript から得た href のうち `file://` URL だけを UTF-8 text として読み込みます。
+    ///
+    /// - Parameter hrefs: component link や runtime script の href 一覧。
+    /// - Returns: 読み込みに成功した text document 一覧。
+    private func localTextDocuments(from hrefs: [String]) -> [String] {
+        hrefs.compactMap { href -> String? in
+            guard let url = URL(string: href), url.isFileURL else { return nil }
+            return try? String(contentsOf: url, encoding: .utf8)
+        }
+    }
+
     /// 論理名（日本語）: WebViewリサイズ関数
     /// 処理概要: document 全体や canvas サイズに合わせて offscreen WKWebView をリサイズします。
     ///
@@ -611,6 +660,11 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         let data = try JSONSerialization.data(withJSONObject: [value])
         let json = String(data: data, encoding: .utf8) ?? "[\"\"]"
         return String(json.dropFirst().dropLast())
+    }
+
+    private func javaScriptArrayLiteral(_ values: [String]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: values)
+        return String(data: data, encoding: .utf8) ?? "[]"
     }
 
     private func dictionaryValue(_ value: Any?, description: String) throws -> [String: Any] {

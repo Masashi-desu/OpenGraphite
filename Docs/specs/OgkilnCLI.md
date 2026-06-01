@@ -1,14 +1,14 @@
 # ogkiln CLI Specification
 
-`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は正本だが、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` に明示された HTML だけに限定する。
+`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は正本だが、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` または top-level `components[]` に明示された HTML だけに限定する。
 
 ## Principles
 
 - `.ogp` は編集対象資源の可視リストであり、`ogkiln` は `.ogp` を経由しない HTML 書き込みを行わない。
 - `projectPath` には `.ogp` path または `current` を指定できる。`current` は OpenGraphite.app が現在開いている `.ogp` を Application Support のレコードから解決する。
-- `.ogp` にない既存 HTML を編集したい場合は、先に `project page add` で既定 Chapter の `pages[]` に追加する。
-- 新規 HTML を配置したい場合は、`project page create` で HTML 作成と既定 Chapter の `pages[]` 追加を一体で行う。
-- page は `--page-id`、node は `--id` で指定する。
+- `.ogp` にない既存 HTML を編集したい場合は、先に `project page add` または `project component add` で可視リストに追加する。
+- 新規 HTML を配置したい場合は、`project page create` または `project component create` で HTML 作成と `.ogp` 登録を一体で行う。
+- page は `--page-id`、component は `--component-id`、node は `--id` で指定する。node edit 系コマンドは `--page-id` と `--component-id` のどちらも受け付けるが、同時指定は invalid である。
 - write operation は書き込み前に candidate HTML を validation し、`error` diagnostic がある場合はファイルを書き換えない。
 - runtime state は正本 HTML から取り除く。対象は `OpenGraphite.contract.json` の `runtimeAttributes` と `editable:false` の `--og-*` CSS variables。
 - 出力は JSON を基本とし、MCP server はこの JSON をそのまま tool result として返せる。
@@ -20,9 +20,12 @@ ogkiln contract get --json
 ogkiln project current --json
 ogkiln project inspect <project.ogp|current> --json
 ogkiln validate <project.ogp|current> --json
+ogkiln build <project.ogp|current> --output <dir>
 ```
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
+
+`build` は Pages HTML 内の `<og-instance data-og-component>` を Components HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。Components セグメントの HTML と runtime script は公開 page として出力せず、OpenGraphite.css と `htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。
 
 ## Page Management
 
@@ -37,12 +40,24 @@ ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [-
 
 `project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。
 
+## Component Management
+
+```bash
+ogkiln project component add <project.ogp|current> --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+ogkiln project component place <project.ogp|current> --component-id <component-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
+```
+
+Components は component master を置く asset canvas として扱う。`project component add/create/place/remove` は `.ogp` の top-level `components[]` を更新し、node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
+
 ## Read Commands
 
 ```bash
-ogkiln page graph <project.ogp|current> --page-id <page-id> --json
-ogkiln node query <project.ogp|current> --page-id <page-id> [filters] --json
-ogkiln node get <project.ogp|current> --page-id <page-id> --id <data-og-id> --json
+ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
+ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [filters] --json
+ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --json
 ```
 
 `node query` filters:
@@ -57,8 +72,8 @@ ogkiln node get <project.ogp|current> --page-id <page-id> --id <data-og-id> --js
 
 ```bash
 ogkiln screenshot canvas <project.ogp|current> --output <png>
-ogkiln screenshot page <project.ogp|current> --page-id <page-id> --output <png> [--width <n>] [--height <n>] [--full-page]
-ogkiln screenshot node <project.ogp|current> --page-id <page-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
+ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
+ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
 ```
 
 `screenshot canvas` は `.ogp` の先頭 Chapter の `pages[].canvas` 配置に従って各ページを WebKit でレンダリングし、キャンバス全体を 1 枚の PNG に合成する。
@@ -70,12 +85,12 @@ ogkiln screenshot node <project.ogp|current> --page-id <page-id> --id <data-og-i
 ## Update Commands
 
 ```bash
-ogkiln node style set <project.ogp|current> --page-id <page-id> --id <id> --var <--og-var> --value <css-value>
-ogkiln node style remove <project.ogp|current> --page-id <page-id> --id <id> --var <--og-var>
-ogkiln node attr set <project.ogp|current> --page-id <page-id> --id <id> --name <data-og-attr> --value <value>
-ogkiln node attr remove <project.ogp|current> --page-id <page-id> --id <id> --name <data-og-attr>
-ogkiln node text set <project.ogp|current> --page-id <page-id> --id <id> --value <text>
-ogkiln node text set <project.ogp|current> --page-id <page-id> --id <id> --text-file <text-file>
+ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --var <--og-var> --value <css-value>
+ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --var <--og-var>
+ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --name <data-og-attr> --value <value>
+ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --name <data-og-attr>
+ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --value <text>
+ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --text-file <text-file>
 ```
 
 `node style set/remove` は `--og-*` だけを扱う。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-id` は変更しない。
@@ -85,13 +100,13 @@ ogkiln node text set <project.ogp|current> --page-id <page-id> --id <id> --text-
 ## Structure Commands
 
 ```bash
-ogkiln node html insert <project.ogp|current> --page-id <page-id> --id <anchor-id> --position <before|after|prepend|append> --html <fragment-html>
-ogkiln node html insert <project.ogp|current> --page-id <page-id> --id <anchor-id> --position <before|after|prepend|append> --html-file <fragment.html>
-ogkiln node html replace <project.ogp|current> --page-id <page-id> --id <id> --html <replacement-html>
-ogkiln node html replace <project.ogp|current> --page-id <page-id> --id <id> --html-file <replacement.html>
-ogkiln node delete <project.ogp|current> --page-id <page-id> --id <id>
-ogkiln node move <project.ogp|current> --page-id <page-id> --id <source-id> --target <target-id> --position <before|after|prepend|append>
-ogkiln node copy <project.ogp|current> --page-id <page-id> --id <source-id> --target <target-id> --position <before|after|prepend|append> --id-prefix <prefix>
+ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-id> --position <before|after|prepend|append> --html <fragment-html>
+ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-id> --position <before|after|prepend|append> --html-file <fragment.html>
+ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --html <replacement-html>
+ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id> --html-file <replacement.html>
+ogkiln node delete <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <id>
+ogkiln node move <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-id> --target <target-id> --position <before|after|prepend|append>
+ogkiln node copy <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-id> --target <target-id> --position <before|after|prepend|append> --id-prefix <prefix>
 ```
 
 `position` の意味:
