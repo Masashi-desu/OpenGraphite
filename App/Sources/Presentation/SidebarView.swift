@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// 論理名（日本語）: サイドバービュー
-/// 概要: Chapters、Pages、Components を切り替え、各 HTML カード内でページや component canvas とレイヤー階層を選択する左ペインです。
+/// 概要: Pages、Components を切り替え、上段で Chapter / Collection、下段で HTML カード内レイヤー階層を選択する左ペインです。
 struct SidebarView: View {
     @EnvironmentObject private var store: EditorStore
-    @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.chapters.rawValue
+    @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.pages.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -14,9 +14,7 @@ struct SidebarView: View {
                 .padding(.bottom, 10)
 
             Group {
-                if resolvedPanel == .chapters {
-                    ChapterListView()
-                } else if resolvedPanel == .pages {
+                if resolvedPanel == .pages {
                     PageListView()
                 } else {
                     ComponentPageListView()
@@ -55,7 +53,7 @@ struct SidebarView: View {
 }
 
 /// 論理名（日本語）: サイドバーパネル切替ビュー
-/// 概要: タイトルバー領域の下に Chapters、Pages、Components の切替ボタンを表示します。
+/// 概要: タイトルバー領域の下に Pages、Components の切替ボタンを表示します。
 ///
 /// プロパティ:
 /// - `selectedPanel`: 現在選択中のパネル種別。
@@ -95,77 +93,42 @@ private struct SidebarPanelSwitcher: View {
     }
 }
 
-/// 論理名（日本語）: Chapter一覧ビュー
-/// 概要: 左カラムの Chapters パネルでプロジェクト内 Chapter を軽量なカスタム行として表示します。
-private struct ChapterListView: View {
-    @EnvironmentObject private var store: EditorStore
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(store.loadedProject?.project.chapters ?? [], id: \.internalID) { chapter in
-                    ChapterRow(
-                        chapter: chapter,
-                        isSelected: chapter.internalID == store.selectedChapter?.internalID,
-                        onSelect: {
-                            store.selectChapter(internalID: chapter.internalID)
-                        },
-                        onCopyReferenceID: {
-                            store.copyChapterReferenceIDToPasteboard(chapter)
-                        }
-                    )
-                    .onCopyCommand {
-                        guard chapter.internalID == store.selectedChapter?.internalID else { return [] }
-                        return OpenGraphiteReferenceCopy.itemProviders(for: store.chapterReferenceID(for: chapter))
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, EditorColumnStyle.outerPadding)
-            .padding(.vertical, 10)
-        }
-        .frame(minHeight: 140)
-    }
-}
-
-/// 論理名（日本語）: Chapter行ビュー
-/// 概要: Chapter 名と保持ページ数を Sidebar 向けの軽量行として表示します。
+/// 論理名（日本語）: サイドバーグループ行ビュー
+/// 概要: Chapter または Collection 名と保持 HTML 数を Sidebar 向けの軽量行として表示します。
 ///
 /// プロパティ:
-/// - `chapter`: 表示する Chapter 定義。
-/// - `isSelected`: 現在選択中の Chapter か。
+/// - `title`: 表示名。
+/// - `detail`: 補助表示する ID。
+/// - `count`: グループ内 HTML 数。
+/// - `systemImage`: グループ種別アイコン。
+/// - `isSelected`: 現在選択中のグループか。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onCopyReferenceID`: 参照 ID コピー時に呼び出す処理。
-private struct ChapterRow: View {
-    var chapter: OpenGraphiteChapter
+private struct SidebarGroupRow: View {
+    var title: String
+    var detail: String
+    var count: Int
+    var systemImage: String
     var isSelected: Bool
     var onSelect: () -> Void
     var onCopyReferenceID: () -> Void
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 9) {
-                Image(systemName: "book.closed")
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                     .frame(width: 18, height: 18)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(chapter.displayName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Text(chapter.id)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
                 Spacer(minLength: 0)
 
-                Text("\(chapter.pages.count)")
+                Text("\(count)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)
@@ -185,7 +148,58 @@ private struct ChapterRow: View {
         .contextMenu {
             Button("参照IDをコピー", action: onCopyReferenceID)
         }
-        .help(chapter.displayName)
+        .help(detail.isEmpty ? title : "\(title) (\(detail))")
+    }
+}
+
+/// 論理名（日本語）: サイドバーセクション見出しビュー
+/// 概要: Chapter / Collection 一覧と HTML 一覧を分ける小見出しを表示します。
+///
+/// プロパティ:
+/// - `title`: セクション名。
+/// - `count`: 右側に表示する件数。不要な場合は `nil`。
+private struct SidebarSectionHeader: View {
+    var title: String
+    var count: Int?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 0)
+
+            if let count {
+                Text("\(count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+/// 論理名（日本語）: サイドバー空状態行ビュー
+/// 概要: Chapter / Collection または HTML がない状態をコンパクトに表示します。
+///
+/// プロパティ:
+/// - `text`: 表示する空状態文言。
+private struct SidebarEmptyStateRow: View {
+    var text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .fill(EditorColumnStyle.rowFill)
+            )
     }
 }
 
@@ -205,8 +219,27 @@ private struct ComponentPageListView: View {
     }
 }
 
+/// 論理名（日本語）: サイドバーページグループ
+/// 概要: Pages タブの Chapter または Components タブの Collection と、その配下 HTML をまとめる表示モデルです。
+///
+/// プロパティ:
+/// - `internalID`: `.ogp` 内のグループ内部 ID。
+/// - `title`: グループ表示名。
+/// - `detail`: 補助表示する ID。
+/// - `systemImage`: グループ種別アイコン。
+/// - `pages`: グループ配下の HTML 定義。
+private struct SidebarPageGroup: Identifiable {
+    var internalID: String
+    var title: String
+    var detail: String
+    var systemImage: String
+    var pages: [OpenGraphitePage]
+
+    var id: String { internalID }
+}
+
 /// 論理名（日本語）: HTMLレイヤーカード一覧ビュー
-/// 概要: Pages または Components の各 HTML を開閉可能なカードとして並べ、選択中 HTML の Layers をカード内へ表示します。
+/// 概要: 上段に Chapter / Collection を並べ、下段に選択グループ内 HTML カードと Layers を表示します。
 ///
 /// プロパティ:
 /// - `segment`: 表示対象の Pages / Components セグメント。
@@ -217,42 +250,85 @@ private struct PageLayerListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 6) {
-                ForEach(pages, id: \.internalID) { page in
-                    PageLayerCard(
-                        page: page,
-                        isSelected: isSelected(page),
-                        isExpanded: expansionState.isExpanded(pageID: page.internalID),
-                        nodes: isSelected(page) ? store.nodes : [],
-                        selectedNodeID: $store.selectedNodeID,
-                        systemImage: segment == .components ? "shippingbox" : "doc.text",
-                        onSelect: {
-                            select(page)
-                            expansionState.expand(pageID: page.internalID)
-                        },
-                        onToggle: {
-                            toggle(page)
-                        },
-                        onCopyReferenceID: {
-                            select(page)
-                            store.copyPageReferenceIDToPasteboard(page, segment: segment)
-                        },
-                        onCopyNodeReferenceID: { node in
-                            if !isSelected(page) {
-                                select(page)
+            LazyVStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    SidebarSectionHeader(title: groupSectionTitle, count: groups.count)
+
+                    if groups.isEmpty {
+                        SidebarEmptyStateRow(text: emptyGroupMessage)
+                    } else {
+                        ForEach(groups) { group in
+                            SidebarGroupRow(
+                                title: group.title,
+                                detail: group.detail,
+                                count: group.pages.count,
+                                systemImage: group.systemImage,
+                                isSelected: isGroupSelected(group),
+                                onSelect: {
+                                    select(group)
+                                },
+                                onCopyReferenceID: {
+                                    copyGroupReferenceID(group)
+                                }
+                            )
+                            .onCopyCommand {
+                                guard isGroupSelected(group), selectedPageID == nil else { return [] }
+                                return OpenGraphiteReferenceCopy.itemProviders(for: groupReferenceID(group))
                             }
-                            store.selectNode(id: node.id)
-                            store.copyNodeReferenceIDToPasteboard(node)
-                        },
-                        nodeReferenceID: { node in
-                            store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
                         }
-                    )
-                    .onCopyCommand {
-                        guard isSelected(page), store.selectedNodeID == nil else { return [] }
-                        return OpenGraphiteReferenceCopy.itemProviders(
-                            for: store.pageReferenceID(for: page, segment: segment)
-                        )
+                    }
+                }
+
+                Divider()
+                    .overlay(EditorColumnStyle.separatorColor)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    SidebarSectionHeader(title: contentSectionTitle, count: visiblePages.count)
+
+                    if let group = selectedDisplayGroup {
+                        if group.pages.isEmpty {
+                            SidebarEmptyStateRow(text: emptyPageMessage)
+                        } else {
+                            ForEach(group.pages, id: \.internalID) { page in
+                                PageLayerCard(
+                                    page: page,
+                                    isSelected: isSelected(page, in: group),
+                                    isExpanded: expansionState.isExpanded(pageID: page.internalID),
+                                    nodes: isSelected(page, in: group) ? store.nodes : [],
+                                    selectedNodeID: $store.selectedNodeID,
+                                    systemImage: segment == .components ? "shippingbox" : "doc.text",
+                                    onSelect: {
+                                        select(page, in: group)
+                                        expansionState.expand(pageID: page.internalID)
+                                    },
+                                    onToggle: {
+                                        toggle(page, in: group)
+                                    },
+                                    onCopyReferenceID: {
+                                        select(page, in: group)
+                                        store.copyPageReferenceIDToPasteboard(page, segment: segment)
+                                    },
+                                    onCopyNodeReferenceID: { node in
+                                        if !isSelected(page, in: group) {
+                                            select(page, in: group)
+                                        }
+                                        store.selectNode(id: node.id)
+                                        store.copyNodeReferenceIDToPasteboard(node)
+                                    },
+                                    nodeReferenceID: { node in
+                                        store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
+                                    }
+                                )
+                                .onCopyCommand {
+                                    guard isSelected(page, in: group), store.selectedNodeID == nil else { return [] }
+                                    return OpenGraphiteReferenceCopy.itemProviders(
+                                        for: store.pageReferenceID(for: page, segment: segment)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        SidebarEmptyStateRow(text: emptyPageMessage)
                     }
                 }
             }
@@ -270,17 +346,95 @@ private struct PageLayerListView: View {
                 expandSelectedPage()
             }
         }
+        .onChange(of: selectedGroupID) { _, _ in
+            expandSelectedPage()
+        }
         .onChange(of: selectedPageID) { _, _ in
             expandSelectedPage()
         }
     }
 
-    private var pages: [OpenGraphitePage] {
+    private var groups: [SidebarPageGroup] {
+        guard let project = store.loadedProject?.project else { return [] }
         switch segment {
         case .pages:
-            return store.selectedChapterPages
+            return project.chapters.map { chapter in
+                SidebarPageGroup(
+                    internalID: chapter.internalID,
+                    title: chapter.displayName,
+                    detail: chapter.id,
+                    systemImage: "book.closed",
+                    pages: chapter.pages
+                )
+            }
         case .components:
-            return store.componentPages
+            return project.collections.map { collection in
+                SidebarPageGroup(
+                    internalID: collection.internalID,
+                    title: collection.displayName,
+                    detail: collection.id,
+                    systemImage: "square.grid.2x2",
+                    pages: collection.components
+                )
+            }
+        }
+    }
+
+    private var selectedDisplayGroup: SidebarPageGroup? {
+        if let selectedGroupID,
+           let group = groups.first(where: { $0.internalID == selectedGroupID }) {
+            return group
+        }
+
+        return groups.first
+    }
+
+    private var visiblePages: [OpenGraphitePage] {
+        selectedDisplayGroup?.pages ?? []
+    }
+
+    private var groupSectionTitle: String {
+        switch segment {
+        case .pages:
+            return "Chapters"
+        case .components:
+            return "Collections"
+        }
+    }
+
+    private var contentSectionTitle: String {
+        switch segment {
+        case .pages:
+            return "Pages"
+        case .components:
+            return "Components"
+        }
+    }
+
+    private var emptyGroupMessage: String {
+        switch segment {
+        case .pages:
+            return "No chapters"
+        case .components:
+            return "No collections"
+        }
+    }
+
+    private var emptyPageMessage: String {
+        switch segment {
+        case .pages:
+            return "No pages in this chapter"
+        case .components:
+            return "No components in this collection"
+        }
+    }
+
+    private var selectedGroupID: String? {
+        switch segment {
+        case .pages:
+            return store.selectedCanvasSegment == .pages ? store.selectedChapterInternalID : nil
+        case .components:
+            return store.selectedCanvasSegment == .components ? store.selectedCollectionInternalID : nil
         }
     }
 
@@ -293,28 +447,96 @@ private struct PageLayerListView: View {
         }
     }
 
+    /// 論理名（日本語）: グループ選択判定関数
+    /// 処理概要: 対象 Chapter / Collection が現在の表示グループと一致するかを返します。
+    ///
+    /// - Parameter group: 判定対象グループ。
+    /// - Returns: 選択中であれば `true`。
+    private func isGroupSelected(_ group: SidebarPageGroup) -> Bool {
+        store.selectedCanvasSegment == segment && selectedGroupID == group.internalID
+    }
+
     /// 論理名（日本語）: HTML選択判定関数
     /// 処理概要: 対象カードが現在の編集 HTML と一致するかを返します。
     ///
-    /// - Parameter page: 判定対象の HTML page。
+    /// - Parameters:
+    ///   - page: 判定対象の HTML page。
+    ///   - group: page が属する Chapter / Collection。
     /// - Returns: 選択中であれば `true`。
-    private func isSelected(_ page: OpenGraphitePage) -> Bool {
-        store.selectedCanvasSegment == segment && selectedPageID == page.internalID
+    private func isSelected(_ page: OpenGraphitePage, in group: SidebarPageGroup) -> Bool {
+        isGroupSelected(group) && selectedPageID == page.internalID
+    }
+
+    /// 論理名（日本語）: グループ選択関数
+    /// 処理概要: セグメントに応じて Chapter または Collection を選択します。
+    ///
+    /// - Parameter group: 選択する Chapter / Collection。
+    private func select(_ group: SidebarPageGroup) {
+        switch segment {
+        case .pages:
+            store.selectChapter(internalID: group.internalID)
+        case .components:
+            store.selectCollection(internalID: group.internalID)
+        }
     }
 
     /// 論理名（日本語）: HTMLカード選択関数
-    /// 処理概要: セグメントに応じて通常 page または component master を選択します。
+    /// 処理概要: 所属 Chapter / Collection を選択してから通常 page または component master を選択します。
     ///
-    /// - Parameter page: 選択する HTML page。
-    private func select(_ page: OpenGraphitePage) {
+    /// - Parameters:
+    ///   - page: 選択する HTML page。
+    ///   - group: page が属する Chapter / Collection。
+    private func select(_ page: OpenGraphitePage, in group: SidebarPageGroup) {
         switch segment {
         case .pages:
-            if store.selectedCanvasSegment != .pages {
-                store.selectPagesSegment()
+            if store.selectedChapterInternalID != group.internalID || store.selectedCanvasSegment != .pages {
+                store.selectChapter(internalID: group.internalID)
             }
             store.selectPage(internalID: page.internalID)
         case .components:
+            if store.selectedCollectionInternalID != group.internalID || store.selectedCanvasSegment != .components {
+                store.selectCollection(internalID: group.internalID)
+            }
             store.selectComponentPage(internalID: page.internalID)
+        }
+    }
+
+    /// 論理名（日本語）: グループ参照ID取得関数
+    /// 処理概要: Chapter / Collection の agent 向け参照 ID を返します。
+    ///
+    /// - Parameter group: 参照 ID を取得するグループ。
+    /// - Returns: 参照 ID。該当グループがない場合は `nil`。
+    private func groupReferenceID(_ group: SidebarPageGroup) -> String? {
+        switch segment {
+        case .pages:
+            guard let chapter = store.loadedProject?.project.chapters.first(where: { $0.internalID == group.internalID }) else {
+                return nil
+            }
+            return store.chapterReferenceID(for: chapter)
+        case .components:
+            guard let collection = store.loadedProject?.project.collections.first(where: { $0.internalID == group.internalID }) else {
+                return nil
+            }
+            return store.collectionReferenceID(for: collection)
+        }
+    }
+
+    /// 論理名（日本語）: グループ参照IDコピー関数
+    /// 処理概要: Chapter / Collection の agent 向け参照 ID を pasteboard へ保存します。
+    ///
+    /// - Parameter group: コピー対象グループ。
+    private func copyGroupReferenceID(_ group: SidebarPageGroup) {
+        switch segment {
+        case .pages:
+            guard let chapter = store.loadedProject?.project.chapters.first(where: { $0.internalID == group.internalID }) else {
+                return
+            }
+            store.copyChapterReferenceIDToPasteboard(chapter)
+        case .components:
+            guard let collection = store.loadedProject?.project.collections.first(where: { $0.internalID == group.internalID }) else {
+                return
+            }
+            store.copyReferenceIDToPasteboard(store.collectionReferenceID(for: collection), label: "Collection \(collection.displayName)")
         }
     }
 
@@ -336,22 +558,24 @@ private struct PageLayerListView: View {
     /// 論理名（日本語）: HTMLカード開閉関数
     /// 処理概要: カードを閉じるか、対象 HTML を選択してそのカードだけを展開します。
     ///
-    /// - Parameter page: 開閉対象の HTML page。
-    private func toggle(_ page: OpenGraphitePage) {
+    /// - Parameters:
+    ///   - page: 開閉対象の HTML page。
+    ///   - group: page が属する Chapter / Collection。
+    private func toggle(_ page: OpenGraphitePage, in group: SidebarPageGroup) {
         if expansionState.isExpanded(pageID: page.internalID) {
             expansionState.toggle(pageID: page.internalID)
         } else {
-            select(page)
+            select(page, in: group)
             expansionState.expand(pageID: page.internalID)
         }
     }
 
     /// 論理名（日本語）: 選択HTML展開関数
-    /// 処理概要: 選択中 HTML が現在パネルに属するときは展開し、選択解除時は残った展開表示を消します。
+    /// 処理概要: 選択中 HTML が表示中グループに属するときは展開し、選択解除時は残った展開表示を消します。
     private func expandSelectedPage() {
         expansionState.synchronizeSelection(
             selectedPageID: selectedPageID,
-            validPageIDs: Set(pages.map(\.internalID))
+            validPageIDs: Set(visiblePages.map(\.internalID))
         )
     }
 }
@@ -660,14 +884,12 @@ private struct VisibleLayerRow: Identifiable {
 }
 
 /// 論理名（日本語）: サイドバーパネル
-/// 概要: 左ペインで表示する Chapters、Pages、Components のセグメント種別を表します。
+/// 概要: 左ペインで表示する Pages、Components のセグメント種別を表します。
 ///
 /// 定義内容:
-/// - `chapters`: Chapter 一覧。
-/// - `pages`: ページ一覧。
-/// - `components`: Component master canvas 一覧。
+/// - `pages`: Chapter ごとのページ一覧。
+/// - `components`: Collection ごとの component master canvas 一覧。
 private enum SidebarPanel: String, CaseIterable, Identifiable {
-    case chapters
     case pages
     case components
 
@@ -675,8 +897,6 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .chapters:
-            return "Chapters"
         case .pages:
             return "Pages"
         case .components:
@@ -686,8 +906,6 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .chapters:
-            return "book.closed"
         case .pages:
             return "rectangle.stack"
         case .components:

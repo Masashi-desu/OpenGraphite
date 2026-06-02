@@ -358,15 +358,19 @@ struct OpenGraphiteScreenshotRenderer {
                 .pages
                 .first { $0.internalID == pageID }
         case .component, .componentNode:
-            let componentID = referenceID.parts[0]
-            return project.components.first { $0.internalID == componentID }
-        case .chapter:
+            let collectionID = referenceID.parts[0]
+            let componentID = referenceID.parts[1]
+            return project.collections
+                .first { $0.internalID == collectionID }?
+                .components
+                .first { $0.internalID == componentID }
+        case .chapter, .collection:
             return nil
         }
     }
 
     /// 論理名（日本語）: 複合スクリーンショットページ解決関数
-    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<componentInternalID>:<nodeInternalID>` を page entry へ解決します。
+    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<collectionInternalID>:<componentInternalID>` を page entry へ解決します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` project。
@@ -382,7 +386,8 @@ struct OpenGraphiteScreenshotRenderer {
         }
 
         if parts.count >= 2,
-           let page = project.components.first(where: { $0.internalID == parts[0] }) {
+           let collection = project.collections.first(where: { $0.internalID == parts[0] }),
+           let page = collection.components.first(where: { $0.internalID == parts[1] }) {
             return page
         }
 

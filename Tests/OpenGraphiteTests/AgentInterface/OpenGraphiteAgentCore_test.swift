@@ -594,6 +594,7 @@ struct OpenGraphiteAgentCoreTests {
         // 検証内容：component HTML を作成して Components セグメントに登録する
         let result = try fixture.core.createProjectComponent(
             projectURL: projectURL,
+            collectionID: nil,
             id: "cards",
             path: "_components/cards.html",
             canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 960, height: 900),
@@ -1037,7 +1038,7 @@ struct OpenGraphiteAgentCoreTests {
     }
 
     /// 論理名（日本語）: Componentsセグメント要約テスト
-    /// 概要: `.ogp` の top-level components が project summary と page graph 対象として扱われることを確認します。
+    /// 概要: `.ogp` の Collection 内 components が project summary と page graph 対象として扱われることを確認します。
     @Test("project inspectがComponentsセグメントを返す")
     func testInspectProjectIncludesComponentsSegment() throws {
         // コンディション：通常 page と component canvas を持つ project manifest を用意する
@@ -1150,6 +1151,7 @@ struct OpenGraphiteAgentCoreTests {
 private struct AgentInterfaceFixture {
     let chapterInternalID = "a7f21c"
     let homePageInternalID = "b8e42d"
+    let componentCollectionInternalID = "component-main"
     let componentPageInternalID = "c9a63f"
     let rootURL: URL
     let htmlURL: URL
@@ -1247,7 +1249,7 @@ private struct AgentInterfaceFixture {
     }
 
     /// 論理名（日本語）: component付きproject manifest書き込み関数
-    /// 処理概要: fixture 用に通常 page と Components セグメントを持つ `.ogp` を作成します。
+    /// 処理概要: fixture 用に通常 page と component Collection を持つ `.ogp` を作成します。
     ///
     /// - Parameter url: 書き込み先 `.ogp` URL。
     func writeProjectWithComponents(to url: URL) throws {
@@ -1279,19 +1281,26 @@ private struct AgentInterfaceFixture {
               ]
             }
           ],
-          "components": [
+          "collections": [
             {
-              "id": "cards",
-              "internalID": "\(componentPageInternalID)",
-              "title": "Cards",
-              "path": "cards.html",
-              "canvas": {
-                "name": "",
-                "x": 0,
-                "y": 0,
-                "width": 960,
-                "height": 900
-              }
+              "id": "main",
+              "internalID": "\(componentCollectionInternalID)",
+              "title": "Main",
+              "components": [
+                {
+                  "id": "cards",
+                  "internalID": "\(componentPageInternalID)",
+                  "title": "Cards",
+                  "path": "cards.html",
+                  "canvas": {
+                    "name": "",
+                    "x": 0,
+                    "y": 0,
+                    "width": 960,
+                    "height": 900
+                  }
+                }
+              ]
             }
           ]
         }

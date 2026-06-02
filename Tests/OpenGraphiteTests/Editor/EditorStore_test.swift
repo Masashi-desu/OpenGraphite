@@ -125,6 +125,36 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "index.html を表示しています。")
     }
 
+    /// 論理名（日本語）: 同一Chapter再選択時のノード保持テスト
+    /// 概要: Chapters パネルで現在の Chapter を押しても、同じ HTML のレイヤー一覧が空にならないことを検証します。
+    @Test("同じChapterの再選択ではノード一覧を保持する")
+    func testSelectChapterPreservesNodesWhenSelectingSamePageAgain() throws {
+        // コンディション：プロジェクトを開き、選択ページの DOM ノード一覧が収集済みの状態を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "tagName": "title",
+                "type": "text",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "title")
+
+        // 検証内容：Chapters パネルで現在の Chapter を再選択する想定で selectChapter を再実行する（When）
+        let selectedChapterInternalID = try #require(store.selectedChapter?.internalID)
+        store.selectChapter(internalID: selectedChapterInternalID)
+
+        // 期待値：同じ page のノード一覧は保持され、ノード選択だけが解除される（Then）
+        #expect(store.selectedPageID == "home")
+        #expect(store.selectedNodeID == nil)
+        #expect(store.nodes.map(\.id) == ["title"])
+        #expect(store.statusMessage == "Main を表示しています。")
+    }
+
     /// 論理名（日本語）: 選択ページキャンバス配置保存テスト
     /// 概要: 選択中ページの座標と解像度が Store と `.ogp` に保存されることを検証します。
     @Test("選択ページのキャンバス配置をogpへ保存する")
@@ -768,6 +798,7 @@ struct EditorStoreTests {
         let loadedProject = try #require(store.loadedProject?.project)
         let docsChapter = loadedProject.chapters[1]
         let docsPage = try #require(docsChapter.pages.first)
+        let componentCollection = try #require(loadedProject.collections.first)
         let componentPage = try #require(loadedProject.components.first)
         store.selectChapter(internalID: docsChapter.internalID)
         let docsPageReferenceID = store.selectedPageReferenceID()
@@ -775,13 +806,14 @@ struct EditorStoreTests {
         let componentReferenceID = store.selectedPageReferenceID()
         let hierarchyInternalIDs = loadedProject.chapters.map(\.internalID)
             + loadedProject.chapters.flatMap(\.pages).map(\.internalID)
+            + loadedProject.collections.map(\.internalID)
             + loadedProject.components.map(\.internalID)
 
         // 期待値：内部 ID は manifest 階層全体で一意になり、page は Chapter を含む複合参照になる
         #expect(Set(hierarchyInternalIDs).count == hierarchyInternalIDs.count)
         #expect(store.chapterReferenceID(for: docsChapter) == "ogref:chapter:\(docsChapter.internalID)")
         #expect(docsPageReferenceID == "ogref:page:\(docsChapter.internalID):\(docsPage.internalID)")
-        #expect(componentReferenceID == "ogref:component:\(componentPage.internalID)")
+        #expect(componentReferenceID == "ogref:component:\(componentCollection.internalID):\(componentPage.internalID)")
     }
 }
 

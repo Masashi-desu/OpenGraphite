@@ -38,7 +38,7 @@ HTML is the canonical document.
 </HeroSection>
 ```
 
-OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in the project `components` segment and referenced from pages with `<og-instance>`.
+OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`.
 
 ## Build
 
@@ -78,7 +78,7 @@ The gate regenerates `OpenGraphite.xcodeproj` from `project.yml` and runs the Sw
 
 ## Agent Interface
 
-Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters or component canvases registered under `components` in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
+Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters or component canvases registered under collections in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
 
 ```bash
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
@@ -86,20 +86,20 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id tutorial --path tutorial.html --title Tutorial --body-file tutorial.body.html --x 2960 --y 0
 ./Scripts/ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id archive --path archive.html --x 4440 --y 0
 ./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --name Desktop --x 3040 --y 0
-./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
-./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:3bgx6phkz3jv5 --name Desktop --width 1180 --height 1900
+./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --collection-id component-main --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
+./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --name Desktop --width 1180 --height 1900
 ./Scripts/ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id <shared-ui-internal-id> --delete-file
 ./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
 ./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png
 ./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:2opic2blumreb:fb1954bc9811 --output screenshots/doc-cli.png
 ./Scripts/ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
 ./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --json
-./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:3bgx6phkz3jv5 --json
+./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --json
 ./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --type button --text-contains Docs --json
 ./Scripts/ogkiln node get SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:kl1xxsgkiuue:3aefceddb042 --json
 ./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap --value 32px
-./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Availability-ready card'
+./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Availability-ready card'
 ./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
 ./Scripts/ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 72222bd6f11e --position prepend --html '<Header data-og-id="site-header" data-og-type="frame"></Header>'
 ./Scripts/ogkiln node move SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id efeaffcc2273 --target 3aefceddb042 --position after
@@ -166,7 +166,7 @@ When launched without that environment variable, Open Sample Project treats the 
 ## Current Editor Features
 
 - Welcome screen with sample and arbitrary `.ogp` open actions
-- Chapters/Pages/Components sidebar with layers nested inside each HTML card
+- Pages/Components sidebar with separate Chapter/Collection selectors and layers inside each HTML card
 - WKWebView canvas using `.ogp` canvas dimensions
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection

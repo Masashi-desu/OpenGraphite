@@ -43,10 +43,10 @@ struct ProjectLoaderTests {
         #expect(loadedProject.htmlURL(for: loadedProject.project.allPages[0]) == publicDirectory.appendingPathComponent("index.html"))
     }
 
-    /// 論理名（日本語）: 旧pages形式プロジェクト読み込みテスト
-    /// 概要: Chapter 導入前の top-level pages 形式を既定 Chapter として読み込めることを検証します。
-    @Test("旧top-level pages形式を既定Chapterとして読み込める")
-    func testLoadProjectAcceptsLegacyTopLevelPages() throws {
+    /// 論理名（日本語）: 旧pages形式プロジェクト拒否テスト
+    /// 概要: Chapter 導入前の top-level pages 形式を現行 schema として読み込まないことを検証します。
+    @Test("旧top-level pages形式を拒否する")
+    func testLoadProjectRejectsLegacyTopLevelPages() throws {
         // コンディション：旧形式の pages を持つ .ogp と HTML を用意する
         let fixture = try ProjectLoaderFixture()
         let publicDirectory = fixture.rootURL.appendingPathComponent("public")
@@ -74,12 +74,15 @@ struct ProjectLoaderTests {
         """.write(to: projectURL, atomically: true, encoding: .utf8)
 
         // 検証内容：プロジェクトを読み込む
-        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        var rejected = false
+        do {
+            _ = try ProjectLoader().loadProject(at: projectURL)
+        } catch {
+            rejected = true
+        }
 
-        // 期待値：旧 pages が既定 Chapter 配下へ正規化される
-        #expect(loadedProject.project.chapters.map(\.id) == [OpenGraphiteChapter.defaultID])
-        #expect(loadedProject.project.chapters[0].pages.map(\.id) == ["home"])
-        #expect(loadedProject.project.components.isEmpty)
+        // 期待値：現行 schema では chapters が必須なので旧形式は拒否される
+        #expect(rejected)
     }
 
     /// 論理名（日本語）: 内部ID補完テスト

@@ -130,13 +130,13 @@ function resourcesList() {
     {
       uri: "opengraphite://components/sample",
       name: "Sample Components",
-      description: "Sample project component canvases as resolved by ogkiln.",
+      description: "Sample project component collections as resolved by ogkiln.",
       mimeType: "application/json"
     },
     {
       uri: "opengraphite://components/current",
       name: "Current App Project Components",
-      description: "Component canvases from the project currently opened by OpenGraphite.app.",
+      description: "Component collections from the project currently opened by OpenGraphite.app.",
       mimeType: "application/json"
     },
     {
@@ -184,18 +184,18 @@ function readResource(uri) {
     }
     case "opengraphite://components/sample": {
       const project = JSON.parse(runOgkiln(["project", "inspect", "SampleProject/OpenGraphiteSample.ogp", "--json"]).stdout);
-      return textResource(uri, "application/json", JSON.stringify(project.components, null, 2));
+      return textResource(uri, "application/json", JSON.stringify(project.collections, null, 2));
     }
     case "opengraphite://components/current": {
       const project = JSON.parse(runOgkiln(["project", "current", "--json"]).stdout);
-      return textResource(uri, "application/json", JSON.stringify(project.components, null, 2));
+      return textResource(uri, "application/json", JSON.stringify(project.collections, null, 2));
     }
     case "opengraphite://pages/sample/home/graph":
       return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--page-id", "home", "--json"]).stdout);
     case "opengraphite://pages/sample/home/html":
       return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "index.html"), "utf8"));
     case "opengraphite://components/sample/design-system/graph":
-      return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--component-id", "design-system", "--json"]).stdout);
+      return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--component-id", "ogref:component:component-main:3bgx6phkz3jv5", "--json"]).stdout);
     case "opengraphite://components/sample/design-system/html":
       return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "_components", "design-system.html"), "utf8"));
     default:
@@ -275,9 +275,10 @@ function toolsList() {
     },
     {
       name: "add_project_component",
-      description: "Add an existing HTML file to the Components segment of an OpenGraphite .ogp project.",
+      description: "Add an existing HTML file to a component Collection in an OpenGraphite .ogp project.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
+        collectionID: { type: "string", description: "Collection ID, internal ID, or ogref:collection. Defaults to the first/default Collection." },
         componentID: { type: "string" },
         path: { type: "string", description: "HTML path relative to the project's htmlRoot." },
         x: { type: "number" },
@@ -288,9 +289,10 @@ function toolsList() {
     },
     {
       name: "create_project_component",
-      description: "Create a new component canvas HTML file and register it in the Components segment.",
+      description: "Create a new component canvas HTML file and register it in a component Collection.",
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
+        collectionID: { type: "string", description: "Collection ID, internal ID, or ogref:collection. Defaults to the first/default Collection." },
         componentID: { type: "string" },
         path: { type: "string", description: "HTML path relative to the project's htmlRoot." },
         title: { type: "string" },
@@ -592,6 +594,7 @@ function commandForTool(name, args) {
         "component",
         "add",
         requiredArg(args, "projectPath"),
+        ...optionalFlag(args, "collectionID", "--collection-id"),
         "--component-id",
         requiredArg(args, "componentID"),
         "--path",
@@ -607,6 +610,7 @@ function commandForTool(name, args) {
         "component",
         "create",
         requiredArg(args, "projectPath"),
+        ...optionalFlag(args, "collectionID", "--collection-id"),
         "--component-id",
         requiredArg(args, "componentID"),
         "--path",
@@ -838,7 +842,7 @@ function commandForTool(name, args) {
 function pageSelectorProperties() {
   return {
     pageID: { type: "string", description: "Page reference ID. Mutually exclusive with componentID." },
-    componentID: { type: "string", description: "Component canvas reference ID. Mutually exclusive with pageID." }
+    componentID: { type: "string", description: "Component canvas reference ID, e.g. ogref:component:<collectionInternalID>:<componentInternalID>. Mutually exclusive with pageID." }
   };
 }
 

@@ -238,8 +238,8 @@ private struct EditorProjectSummaryView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
 
-            if store.selectedCanvasSegment == .pages, let chapterName = store.selectedChapter?.displayName {
-                Text(chapterName)
+            if let groupName = selectedGroupName {
+                Text(groupName)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -264,6 +264,15 @@ private struct EditorProjectSummaryView: View {
         return loadedProject.rootURL
             .appendingPathComponent(loadedProject.project.htmlRoot)
             .path
+    }
+
+    private var selectedGroupName: String? {
+        switch store.selectedCanvasSegment {
+        case .pages:
+            return store.selectedChapter?.displayName
+        case .components:
+            return store.selectedComponentCollection?.displayName
+        }
     }
 }
 
@@ -419,7 +428,7 @@ private struct CanvasPaneView: View {
                 ContentUnavailableView(
                     store.selectedCanvasSegment == .components ? "No Components" : "No Page",
                     systemImage: store.selectedCanvasSegment == .components ? "shippingbox" : "doc",
-                    description: Text(store.selectedCanvasSegment == .components ? "components に HTML canvas が登録されていません。" : "pages を持つ Chapter を選択してください。")
+                    description: Text(store.selectedCanvasSegment == .components ? "component を持つ Collection を選択してください。" : "pages を持つ Chapter を選択してください。")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

@@ -4,6 +4,7 @@ import Foundation
 /// 概要: agent に渡す `ogref` 参照 ID が指す階層を表します。
 enum OpenGraphiteReferenceType: String, Codable, Equatable {
     case chapter
+    case collection
     case page
     case component
     case node
@@ -13,11 +14,11 @@ enum OpenGraphiteReferenceType: String, Codable, Equatable {
     /// 処理概要: 種別ごとに `ogref:<type>:` 以降へ必要な ID 部品数を返します。
     var requiredPartCount: Int {
         switch self {
-        case .chapter, .component:
+        case .chapter, .collection:
             return 1
-        case .page, .componentNode:
+        case .page, .component:
             return 2
-        case .node:
+        case .node, .componentNode:
             return 3
         }
     }
@@ -84,6 +85,15 @@ struct OpenGraphiteReferenceID: Equatable {
         OpenGraphiteReferenceID(type: .chapter, parts: [chapterID])
     }
 
+    /// 論理名（日本語）: Collection参照ID生成関数
+    /// 処理概要: Collection 内部 ID から `ogref:collection` を作ります。
+    ///
+    /// - Parameter collectionID: Collection 内部 ID。
+    /// - Returns: Collection 参照 ID。
+    static func collection(_ collectionID: String) -> OpenGraphiteReferenceID {
+        OpenGraphiteReferenceID(type: .collection, parts: [collectionID])
+    }
+
     /// 論理名（日本語）: Page参照ID生成関数
     /// 処理概要: Chapter 内部 ID と page 内部 ID から `ogref:page` を作ります。
     ///
@@ -96,12 +106,14 @@ struct OpenGraphiteReferenceID: Equatable {
     }
 
     /// 論理名（日本語）: Component参照ID生成関数
-    /// 処理概要: component canvas 内部 ID から `ogref:component` を作ります。
+    /// 処理概要: Collection 内部 ID と component canvas 内部 ID から `ogref:component` を作ります。
     ///
-    /// - Parameter componentID: component canvas 内部 ID。
+    /// - Parameters:
+    ///   - collectionID: Collection 内部 ID。
+    ///   - componentID: component canvas 内部 ID。
     /// - Returns: Component 参照 ID。
-    static func component(_ componentID: String) -> OpenGraphiteReferenceID {
-        OpenGraphiteReferenceID(type: .component, parts: [componentID])
+    static func component(collectionID: String, componentID: String) -> OpenGraphiteReferenceID {
+        OpenGraphiteReferenceID(type: .component, parts: [collectionID, componentID])
     }
 
     /// 論理名（日本語）: Node参照ID生成関数
@@ -117,14 +129,15 @@ struct OpenGraphiteReferenceID: Equatable {
     }
 
     /// 論理名（日本語）: Component Node参照ID生成関数
-    /// 処理概要: component canvas / node の内部 ID から `ogref:component-node` を作ります。
+    /// 処理概要: Collection / component canvas / node の内部 ID から `ogref:component-node` を作ります。
     ///
     /// - Parameters:
+    ///   - collectionID: Collection 内部 ID。
     ///   - componentID: component canvas 内部 ID。
     ///   - nodeID: Node 内部 ID。
     /// - Returns: Component node 参照 ID。
-    static func componentNode(componentID: String, nodeID: String) -> OpenGraphiteReferenceID {
-        OpenGraphiteReferenceID(type: .componentNode, parts: [componentID, nodeID])
+    static func componentNode(collectionID: String, componentID: String, nodeID: String) -> OpenGraphiteReferenceID {
+        OpenGraphiteReferenceID(type: .componentNode, parts: [collectionID, componentID, nodeID])
     }
 
     /// 論理名（日本語）: 含有ページ参照抽出関数
@@ -146,9 +159,9 @@ struct OpenGraphiteReferenceID: Equatable {
                 .stringValue
         case .componentNode:
             return OpenGraphiteReferenceID
-                .component(reference.parts[0])
+                .component(collectionID: reference.parts[0], componentID: reference.parts[1])
                 .stringValue
-        case .chapter:
+        case .chapter, .collection:
             return nil
         }
     }
@@ -167,8 +180,8 @@ struct OpenGraphiteReferenceID: Equatable {
         case .node:
             return reference.parts[2]
         case .componentNode:
-            return reference.parts[1]
-        case .chapter, .page, .component:
+            return reference.parts[2]
+        case .chapter, .collection, .page, .component:
             return nil
         }
     }
@@ -184,6 +197,26 @@ struct OpenGraphiteReferenceID: Equatable {
         }
 
         switch reference.type {
+        case .component, .componentNode:
+            return reference.parts[1]
+        case .chapter, .collection, .page, .node:
+            return nil
+        }
+    }
+
+    /// 論理名（日本語）: Collection内部ID抽出関数
+    /// 処理概要: typed collection / component 参照 ID から Collection 内部 ID を取り出します。
+    ///
+    /// - Parameter value: `ogref:collection`、`ogref:component`、`ogref:component-node`。
+    /// - Returns: Collection 内部 ID。Collection / component 参照ではない場合は `nil`。
+    static func collectionInternalID(from value: String) -> String? {
+        guard let reference = OpenGraphiteReferenceID(parsing: value) else {
+            return nil
+        }
+
+        switch reference.type {
+        case .collection:
+            return reference.parts[0]
         case .component, .componentNode:
             return reference.parts[0]
         case .chapter, .page, .node:

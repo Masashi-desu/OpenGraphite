@@ -138,6 +138,7 @@ struct OgkilnCLI {
                 )
                 let summary = try core.addProjectComponent(
                     projectURL: projectURL,
+                    collectionID: try optionalOption("--collection-id", in: arguments),
                     id: id,
                     path: pagePath,
                     canvas: canvas
@@ -159,6 +160,7 @@ struct OgkilnCLI {
                     ?? htmlFromFile(requiredOption("--body-file", in: arguments), currentDirectory: currentDirectory)
                 let result = try core.createProjectComponent(
                     projectURL: projectURL,
+                    collectionID: try optionalOption("--collection-id", in: arguments),
                     id: id,
                     path: pagePath,
                     canvas: canvas,
@@ -517,7 +519,7 @@ struct OgkilnCLI {
     }
 
     /// 論理名（日本語）: 必須コンポーネントID取得関数
-    /// 処理概要: `.ogp` の Components セグメントを指定する `--component-id` を取得します。
+    /// 処理概要: `.ogp` の Collection 内 component canvas を指定する `--component-id` を取得します。
     ///
     /// - Parameter arguments: CLI 引数。
     /// - Returns: component ID。
@@ -553,9 +555,9 @@ struct OgkilnCLI {
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page place <project.ogp|current> --page-id <page-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
-      ogkiln project component add <project.ogp|current> --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
-      ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+      ogkiln project component add <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
+      ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
       ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json

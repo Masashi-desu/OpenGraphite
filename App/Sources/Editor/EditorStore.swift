@@ -11,6 +11,8 @@ import Foundation
 /// - `selectedChapterInternalID`: 選択中 Chapter の内部 ID。
 /// - `selectedPageID`: 選択中ページの ID。
 /// - `selectedPageInternalID`: 選択中ページカードの内部 ID。
+/// - `selectedCollectionID`: 選択中 Component Collection の ID。
+/// - `selectedCollectionInternalID`: 選択中 Component Collection の内部 ID。
 /// - `selectedComponentPageID`: 選択中 component canvas の ID。
 /// - `selectedComponentPageInternalID`: 選択中 component canvas カードの内部 ID。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
@@ -29,6 +31,8 @@ final class EditorStore: ObservableObject {
     @Published var selectedChapterInternalID: String?
     @Published var selectedPageID: String?
     @Published var selectedPageInternalID: String?
+    @Published var selectedCollectionID: String?
+    @Published var selectedCollectionInternalID: String?
     @Published var selectedComponentPageID: String?
     @Published var selectedComponentPageInternalID: String?
     @Published private(set) var nodes: [OpenGraphiteNode] = []
@@ -98,8 +102,14 @@ final class EditorStore: ObservableObject {
         selectedChapter?.pages ?? []
     }
 
+    var selectedComponentCollection: OpenGraphiteComponentCollection? {
+        guard let loadedProject else { return nil }
+        return loadedProject.project.collections.first { $0.internalID == selectedCollectionInternalID }
+            ?? loadedProject.project.collections.first
+    }
+
     var componentPages: [OpenGraphitePage] {
-        loadedProject?.project.components ?? []
+        selectedComponentCollection?.components ?? []
     }
 
     var selectedCanvasPages: [OpenGraphitePage] {
@@ -116,7 +126,7 @@ final class EditorStore: ObservableObject {
         case .pages:
             return selectedChapter?.displayName ?? "Pages"
         case .components:
-            return "Components"
+            return selectedComponentCollection?.displayName ?? "Components"
         }
     }
 
@@ -159,13 +169,27 @@ final class EditorStore: ObservableObject {
         return OpenGraphiteReferenceID.chapter(chapter.internalID).stringValue
     }
 
+    /// 論理名（日本語）: Component Collection参照ID生成関数
+    /// 処理概要: `.ogp` 内で Component Collection を一意に指す agent 向け参照 ID を返します。
+    ///
+    /// - Parameter collection: 参照する Component Collection。
+    /// - Returns: `ogref:collection:<collectionInternalID>`。現在の project に含まれない場合は `nil`。
+    func collectionReferenceID(for collection: OpenGraphiteComponentCollection) -> String? {
+        guard loadedProject?.project.collections.contains(where: { $0.internalID == collection.internalID }) == true,
+              !collection.internalID.isEmpty
+        else {
+            return nil
+        }
+        return OpenGraphiteReferenceID.collection(collection.internalID).stringValue
+    }
+
     /// 論理名（日本語）: ページ参照ID生成関数
     /// 処理概要: Pages / Components の HTML カードを `.ogp` 内で一意に指す agent 向け参照 ID を返します。
     ///
     /// - Parameters:
     ///   - page: 参照する page entry。
     ///   - segment: page が属する Pages / Components セグメント。
-    /// - Returns: Pages は `ogref:page:<chapterInternalID>:<pageInternalID>`、Components は `ogref:component:<componentInternalID>`。
+    /// - Returns: Pages は `ogref:page:<chapterInternalID>:<pageInternalID>`、Components は `ogref:component:<collectionInternalID>:<componentInternalID>`。
     func pageReferenceID(for page: OpenGraphitePage, segment: OpenGraphiteCanvasSegment) -> String? {
         let pageInternalID = page.internalID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pageInternalID.isEmpty, let loadedProject else { return nil }
@@ -181,10 +205,14 @@ final class EditorStore: ObservableObject {
                 .page(chapterID: chapter.internalID, pageID: pageInternalID)
                 .stringValue
         case .components:
-            guard loadedProject.project.components.contains(where: { $0.internalID == pageInternalID }) else {
+            guard let collection = loadedProject.project.collections.first(where: { collection in
+                collection.components.contains { $0.internalID == pageInternalID }
+            }), !collection.internalID.isEmpty else {
                 return nil
             }
-            return OpenGraphiteReferenceID.component(pageInternalID).stringValue
+            return OpenGraphiteReferenceID
+                .component(collectionID: collection.internalID, componentID: pageInternalID)
+                .stringValue
         }
     }
 
@@ -265,6 +293,11 @@ final class EditorStore: ObservableObject {
         if let selectedPage, copyPageReferenceIDToPasteboard(selectedPage, segment: selectedCanvasSegment) {
             return true
         }
+        if selectedCanvasSegment == .components,
+           let selectedComponentCollection,
+           copyReferenceIDToPasteboard(collectionReferenceID(for: selectedComponentCollection), label: "Collection \(selectedComponentCollection.displayName)") {
+            return true
+        }
         if selectedCanvasSegment == .pages,
            let selectedChapter,
            copyChapterReferenceIDToPasteboard(selectedChapter) {
@@ -289,7 +322,7 @@ final class EditorStore: ObservableObject {
     /// - Parameters:
     ///   - nodeID: 参照する DOM node の `data-og-id`。
     ///   - nodeInternalID: 参照する DOM node の `data-og-internal-id`。
-    /// - Returns: Pages は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、Components は `ogref:component-node:<componentInternalID>:<nodeInternalID>`。
+    /// - Returns: Pages は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、Components は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>`。
     func nodeReferenceID(forNodeID nodeID: String, nodeInternalID: String?) -> String? {
         guard !nodeID.isEmpty, let page = selectedPage else { return nil }
         let pageInternalID = page.internalID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -305,8 +338,9 @@ final class EditorStore: ObservableObject {
                 .node(chapterID: chapter.internalID, pageID: pageInternalID, nodeID: resolvedNodeInternalID)
                 .stringValue
         case .components:
+            guard let collection = selectedComponentCollection, !collection.internalID.isEmpty else { return nil }
             return OpenGraphiteReferenceID
-                .componentNode(componentID: pageInternalID, nodeID: resolvedNodeInternalID)
+                .componentNode(collectionID: collection.internalID, componentID: pageInternalID, nodeID: resolvedNodeInternalID)
                 .stringValue
         }
     }
@@ -375,8 +409,15 @@ final class EditorStore: ObservableObject {
                 }
             }
         case .components:
-            if let componentIndex = loadedProject?.project.components.firstIndex(where: { $0.internalID == page.internalID }) {
-                payload["componentIndex"] = componentIndex
+            if let collection = selectedComponentCollection {
+                payload["collectionID"] = collection.id
+                payload["collectionInternalID"] = collection.internalID
+                if let collectionIndex = loadedProject?.project.collections.firstIndex(where: { $0.internalID == collection.internalID }) {
+                    payload["collectionIndex"] = collectionIndex
+                    if let componentIndex = loadedProject?.project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == page.internalID }) {
+                        payload["componentIndex"] = componentIndex
+                    }
+                }
             }
         }
 
@@ -417,14 +458,17 @@ final class EditorStore: ObservableObject {
     func openProject(at url: URL) {
         do {
             let project = try loader.loadProject(at: url)
+            let initialCollection = Self.preferredCollection(in: project.project)
             loadedProject = project
             selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.components.isEmpty ? .components : .pages
             selectedChapterID = project.project.chapters.first?.id
             selectedChapterInternalID = project.project.chapters.first?.internalID
             selectedPageID = project.project.chapters.first?.pages.first?.id
             selectedPageInternalID = project.project.chapters.first?.pages.first?.internalID
-            selectedComponentPageID = project.project.components.first?.id
-            selectedComponentPageInternalID = project.project.components.first?.internalID
+            selectedCollectionID = initialCollection?.id
+            selectedCollectionInternalID = initialCollection?.internalID
+            selectedComponentPageID = initialCollection?.components.first?.id
+            selectedComponentPageInternalID = initialCollection?.components.first?.internalID
             selectedNodeID = nil
             nodes = []
             cssMutation = nil
@@ -522,16 +566,63 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter chapter: 選択する Chapter。`nil` の場合は未選択状態にします。
     private func selectChapter(_ chapter: OpenGraphiteChapter?) {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
         selectedCanvasSegment = .pages
         selectedChapterID = chapter?.id
         selectedChapterInternalID = chapter?.internalID
         selectedPageID = chapter?.pages.first?.id
         selectedPageInternalID = chapter?.pages.first?.internalID
         selectedNodeID = nil
-        nodes = []
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
 
         if let chapter {
             statusMessage = "\(chapter.displayName) を表示しています。"
+        }
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: Collection選択解除関数
+    /// 処理概要: `nil` 指定時に先頭 Collection を表示し、component canvas 選択と DOM ノード一覧をリセットします。
+    ///
+    /// - Parameter id: `nil` の場合のみ先頭 Collection が表示対象になります。
+    func selectCollection(id: String?) {
+        guard id == nil else { return }
+        guard let loadedProject else { return }
+        selectCollection(Self.preferredCollection(in: loadedProject.project))
+    }
+
+    /// 論理名（日本語）: 内部ID Collection選択関数
+    /// 処理概要: Collection 内部 ID で Components セグメントの表示対象を切り替えます。
+    ///
+    /// - Parameter internalID: 選択する Collection 内部 ID。`nil` の場合は先頭 Collection が表示対象になります。
+    func selectCollection(internalID: String?) {
+        guard let loadedProject else { return }
+        let collection = Self.preferredCollection(in: loadedProject.project, internalID: internalID)
+        selectCollection(collection)
+    }
+
+    /// 論理名（日本語）: Collection選択共通関数
+    /// 処理概要: 指定 Collection を Components セグメントへ反映し、先頭 component canvas を選択します。
+    ///
+    /// - Parameter collection: 選択する Collection。`nil` の場合は未選択状態にします。
+    private func selectCollection(_ collection: OpenGraphiteComponentCollection?) {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
+        selectedCanvasSegment = .components
+        selectedCollectionID = collection?.id
+        selectedCollectionInternalID = collection?.internalID
+        selectedComponentPageID = collection?.components.first?.id
+        selectedComponentPageInternalID = collection?.components.first?.internalID
+        selectedNodeID = nil
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
+
+        if let collection {
+            statusMessage = "\(collection.displayName) を表示しています。"
         }
         prepareHistoryForSelectedPage()
     }
@@ -560,6 +651,12 @@ final class EditorStore: ObservableObject {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
         selectedCanvasSegment = .components
+        if selectedCollectionInternalID == nil
+            || loadedProject?.project.collections.contains(where: { $0.internalID == selectedCollectionInternalID }) != true {
+            let collection = loadedProject.flatMap { Self.preferredCollection(in: $0.project) }
+            selectedCollectionID = collection?.id
+            selectedCollectionInternalID = collection?.internalID
+        }
         if selectedComponentPageInternalID == nil || !componentPages.contains(where: { $0.internalID == selectedComponentPageInternalID }) {
             selectedComponentPageID = componentPages.first?.id
             selectedComponentPageInternalID = componentPages.first?.internalID
@@ -596,8 +693,20 @@ final class EditorStore: ObservableObject {
     private func selectComponentPage(matching predicate: (OpenGraphitePage) -> Bool) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
-        let page = componentPages.first(where: predicate)
+        var collection = selectedComponentCollection
+        var page = collection?.components.first(where: predicate)
+        if page == nil, let loadedProject {
+            for candidateCollection in loadedProject.project.collections {
+                if let candidatePage = candidateCollection.components.first(where: predicate) {
+                    collection = candidateCollection
+                    page = candidatePage
+                    break
+                }
+            }
+        }
         selectedCanvasSegment = .components
+        selectedCollectionID = collection?.id
+        selectedCollectionInternalID = collection?.internalID
         selectedComponentPageID = page?.id
         selectedComponentPageInternalID = page?.internalID
         selectedNodeID = nil
@@ -680,14 +789,28 @@ final class EditorStore: ObservableObject {
             loadedProject.project.chapters[chapterIndex].pages[pageIndex].canvas = nextCanvas
             updatedPage = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
         case .components:
-            guard let selectedComponentPageInternalID,
-                  let pageIndex = loadedProject.project.components.firstIndex(where: { $0.internalID == selectedComponentPageInternalID })
+            guard let selectedComponentPageInternalID else {
+                return
+            }
+            var collectionIndex: Array<OpenGraphiteComponentCollection>.Index?
+            if let selectedCollectionInternalID,
+               let selectedCollectionIndex = loadedProject.project.collections.firstIndex(where: { $0.internalID == selectedCollectionInternalID }),
+               loadedProject.project.collections[selectedCollectionIndex].components.contains(where: { $0.internalID == selectedComponentPageInternalID }) {
+                collectionIndex = selectedCollectionIndex
+            }
+            if collectionIndex == nil {
+                collectionIndex = loadedProject.project.collections.firstIndex { collection in
+                    collection.components.contains { $0.internalID == selectedComponentPageInternalID }
+                }
+            }
+            guard let collectionIndex,
+                  let pageIndex = loadedProject.project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == selectedComponentPageInternalID })
             else {
                 return
             }
-            guard loadedProject.project.components[pageIndex].canvas != nextCanvas else { return }
-            loadedProject.project.components[pageIndex].canvas = nextCanvas
-            updatedPage = loadedProject.project.components[pageIndex]
+            guard loadedProject.project.collections[collectionIndex].components[pageIndex].canvas != nextCanvas else { return }
+            loadedProject.project.collections[collectionIndex].components[pageIndex].canvas = nextCanvas
+            updatedPage = loadedProject.project.collections[collectionIndex].components[pageIndex]
         }
 
         do {
@@ -927,6 +1050,7 @@ final class EditorStore: ObservableObject {
             let previousSelectedPageInternalID = selectedPageInternalID
             let previousSelectedComponentPageInternalID = selectedComponentPageInternalID
             let previousSelectedChapterInternalID = selectedChapterInternalID
+            let previousSelectedCollectionInternalID = selectedCollectionInternalID
             let previousSelectedCanvasSegment = selectedCanvasSegment
             let previousSelectedPageURL = selectedPageURL
             loadedProject = reloadedProject
@@ -956,14 +1080,37 @@ final class EditorStore: ObservableObject {
                 selectedPageInternalID = nil
             }
 
-            if let componentPage = reloadedProject.project.components.first(where: {
+            if let collection = Self.preferredCollection(in: reloadedProject.project, internalID: previousSelectedCollectionInternalID) {
+                selectedCollectionID = collection.id
+                selectedCollectionInternalID = collection.internalID
+            } else {
+                selectedCollectionID = nil
+                selectedCollectionInternalID = nil
+            }
+
+            let currentCollectionComponents = selectedComponentCollection?.components ?? []
+            if let componentPage = currentCollectionComponents.first(where: {
                 $0.internalID == previousSelectedComponentPageInternalID
             }) {
                 selectedComponentPageID = componentPage.id
                 selectedComponentPageInternalID = componentPage.internalID
+            } else if previousSelectedComponentPageInternalID != nil,
+                      let containingCollection = reloadedProject.project.collections.first(where: { collection in
+                          collection.components.contains { $0.internalID == previousSelectedComponentPageInternalID }
+                      }),
+                      let componentPage = containingCollection.components.first(where: {
+                          $0.internalID == previousSelectedComponentPageInternalID
+                      }) {
+                selectedCollectionID = containingCollection.id
+                selectedCollectionInternalID = containingCollection.internalID
+                selectedComponentPageID = componentPage.id
+                selectedComponentPageInternalID = componentPage.internalID
             } else {
-                selectedComponentPageID = reloadedProject.project.components.first?.id
-                selectedComponentPageInternalID = reloadedProject.project.components.first?.internalID
+                let fallbackCollection = Self.preferredCollection(in: reloadedProject.project, internalID: selectedCollectionInternalID)
+                selectedCollectionID = fallbackCollection?.id
+                selectedCollectionInternalID = fallbackCollection?.internalID
+                selectedComponentPageID = fallbackCollection?.components.first?.id
+                selectedComponentPageInternalID = fallbackCollection?.components.first?.internalID
             }
 
             if previousSelectedCanvasSegment == .components, !reloadedProject.project.components.isEmpty {
@@ -1067,6 +1214,21 @@ final class EditorStore: ObservableObject {
     /// - Returns: 保存用の配置名。名前なしの場合は空文字。
     private static func normalizedCanvasName(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 論理名（日本語）: 優先Collection解決関数
+    /// 処理概要: 指定内部 ID の Collection、component を持つ先頭 Collection、先頭 Collection の順に選択対象を解決します。
+    ///
+    /// - Parameters:
+    ///   - project: Collection を保持する project manifest。
+    ///   - internalID: 優先して選択する Collection 内部 ID。
+    /// - Returns: 選択候補の Collection。Collection が存在しない場合は `nil`。
+    private static func preferredCollection(in project: OpenGraphiteProject, internalID: String? = nil) -> OpenGraphiteComponentCollection? {
+        if let internalID,
+           let collection = project.collections.first(where: { $0.internalID == internalID }) {
+            return collection
+        }
+        return project.collections.first { !$0.components.isEmpty } ?? project.collections.first
     }
 
     /// 論理名（日本語）: プロジェクトmanifest保存関数

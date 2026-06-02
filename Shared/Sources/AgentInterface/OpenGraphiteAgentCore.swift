@@ -153,8 +153,9 @@ struct OpenGraphitePageWriteResult: Codable, Equatable {
 /// - `htmlRoot`: HTML root。
 /// - `cssURL`: CSS library URL。
 /// - `chapters`: Chapter 要約一覧。
+/// - `collections`: Collection 要約一覧。
 /// - `pages`: 全 Chapter のページ要約一覧。
-/// - `components`: Components セグメントの page 要約一覧。
+/// - `components`: 全 Collection の component canvas 要約一覧。
 /// - `diagnostics`: 検証結果。
 struct OpenGraphiteProjectSummary: Codable, Equatable {
     var schemaVersion: String
@@ -164,6 +165,7 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
     var htmlRoot: String
     var cssURL: String
     var chapters: [OpenGraphiteChapterSummary]
+    var collections: [OpenGraphiteComponentCollectionSummary]
     var pages: [OpenGraphitePageSummary]
     var components: [OpenGraphitePageSummary]
     var diagnostics: [OpenGraphiteDiagnostic]
@@ -186,27 +188,52 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
     var pages: [OpenGraphitePageSummary]
 }
 
+/// 論理名（日本語）: Component Collection要約
+/// 概要: `.ogp` 内の Collection と、その Collection に属する component summary を JSON 出力向けに表します。
+///
+/// プロパティ:
+/// - `id`: Collection ID。
+/// - `internalID`: `.ogp` 内で一意な Collection 内部 ID。
+/// - `index`: `.ogp` 内の Collection index。
+/// - `title`: Collection 表示名。
+/// - `components`: Collection 内の component canvas 要約一覧。
+struct OpenGraphiteComponentCollectionSummary: Codable, Equatable {
+    var id: String
+    var internalID: String
+    var index: Int
+    var title: String?
+    var components: [OpenGraphitePageSummary]
+}
+
 /// 論理名（日本語）: ページ要約
 /// 概要: `.ogp` 内のページと解決済み HTML URL を JSON 出力向けに表します。
 ///
 /// プロパティ:
-/// - `chapterID`: 所属 Chapter ID。
+/// - `chapterID`: 所属 Chapter ID。Components では `nil`。
+/// - `chapterInternalID`: 所属 Chapter 内部 ID。Components では `nil`。
+/// - `collectionID`: 所属 Collection ID。Pages セグメントでは `nil`。
+/// - `collectionInternalID`: 所属 Collection 内部 ID。Pages セグメントでは `nil`。
 /// - `segment`: `pages` または `components`。
 /// - `id`: ページ ID。
 /// - `internalID`: `.ogp` 内で一意な HTML カード内部 ID。
 /// - `referenceID`: `segment` と内部 ID を組み合わせた agent 向け page 参照 ID。
 /// - `chapterIndex`: Pages セグメント内の Chapter index。
-/// - `pageIndex`: Chapter または Components 配列内の page index。
+/// - `collectionIndex`: Components 内の Collection index。
+/// - `pageIndex`: Chapter または Collection 配列内の page index。
 /// - `path`: `htmlRoot` からの相対パス。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: キャンバス定義。
 struct OpenGraphitePageSummary: Codable, Equatable {
-    var chapterID: String
+    var chapterID: String?
+    var chapterInternalID: String?
+    var collectionID: String?
+    var collectionInternalID: String?
     var segment: String
     var id: String
     var internalID: String
     var referenceID: String
     var chapterIndex: Int?
+    var collectionIndex: Int?
     var pageIndex: Int
     var path: String
     var htmlURL: String
@@ -214,12 +241,15 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 }
 
 /// 論理名（日本語）: プロジェクトページ参照
-/// 概要: `.ogp` の `chapters[].pages[]` から解決された編集対象 HTML と読み取り許可範囲を表します。
+/// 概要: `.ogp` の page / component canvas から解決された編集対象 HTML と読み取り許可範囲を表します。
 ///
 /// プロパティ:
 /// - `projectURL`: 参照元 `.ogp` の URL。
-/// - `chapterID`: `.ogp` 内の Chapter ID。
-/// - `chapterInternalID`: `.ogp` 内で一意な Chapter 内部 ID。
+/// - `segment`: 対象が Pages / Components のどちらに属するか。
+/// - `chapterID`: `.ogp` 内の Chapter ID。Components では `nil`。
+/// - `chapterInternalID`: `.ogp` 内で一意な Chapter 内部 ID。Components では `nil`。
+/// - `collectionID`: `.ogp` 内の Collection ID。Pages セグメントでは `nil`。
+/// - `collectionInternalID`: `.ogp` 内で一意な Collection 内部 ID。Pages セグメントでは `nil`。
 /// - `pageID`: ``.ogp` 内の page 参照 ID。
 /// - `pageInternalID`: `.ogp` 内で一意な HTML カード内部 ID。
 /// - `referenceID`: agent 向け page 参照 ID。
@@ -229,8 +259,11 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 /// - `canvas`: `.ogp` 上の canvas 配置。
 struct OpenGraphiteProjectPageReference: Codable, Equatable {
     var projectURL: String
-    var chapterID: String
-    var chapterInternalID: String
+    var segment: String
+    var chapterID: String?
+    var chapterInternalID: String?
+    var collectionID: String?
+    var collectionInternalID: String?
     var pageID: String
     var pageInternalID: String
     var referenceID: String
@@ -265,25 +298,29 @@ struct OpenGraphiteProjectPageCreateResult: Codable, Equatable {
 /// プロパティ:
 /// - `loadedProject`: 読み込み済み `.ogp`。
 /// - `segment`: 対象が Pages / Components のどちらに属するか。
-/// - `chapter`: 対象 page entry を含む Chapter。
+/// - `chapter`: 対象 page entry を含む Chapter。Components では `nil`。
+/// - `collection`: 対象 component entry を含む Collection。Pages セグメントでは `nil`。
 /// - `page`: 対象 page entry。
 /// - `htmlURL`: 解決済み HTML URL。
 private struct OpenGraphiteProjectPageTarget {
     var loadedProject: LoadedOpenGraphiteProject
     var segment: String
-    var chapter: OpenGraphiteChapter
+    var chapter: OpenGraphiteChapter?
+    var collection: OpenGraphiteComponentCollection?
     var page: OpenGraphitePage
     var htmlURL: URL
 }
 
 /// 論理名（日本語）: プロジェクトページ位置
-/// 概要: `.ogp` 内で対象 page が属する Chapter index と page index を表します。
+/// 概要: `.ogp` 内で対象 HTML が属するセグメント、グループ index、page index を表します。
 ///
 /// プロパティ:
-/// - `chapterIndex`: Chapter 配列内の位置。
-/// - `pageIndex`: Chapter 内 pages 配列の位置。
+/// - `segment`: Pages / Components の区分。
+/// - `groupIndex`: Chapter または Collection 配列内の位置。
+/// - `pageIndex`: Chapter 内 pages または Collection 内 components 配列の位置。
 private struct OpenGraphiteProjectPageLocation: Equatable {
-    var chapterIndex: Int
+    var segment: OpenGraphiteCanvasSegment
+    var groupIndex: Int
     var pageIndex: Int
 }
 
@@ -349,10 +386,10 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// メソッド:
 /// - `inspectProject(at:)`: `.ogp` を解決して要約する。
 /// - `addProjectPage(projectURL:id:path:canvas:)`: `.ogp` に page entry を追加する。
-/// - `addProjectComponent(projectURL:id:path:canvas:)`: `.ogp` に component entry を追加する。
+/// - `addProjectComponent(projectURL:collectionID:id:path:canvas:)`: `.ogp` に component entry を追加する。
 /// - `removeProjectComponent(projectURL:id:deleteFile:)`: `.ogp` から component entry を削除する。
 /// - `createProjectPage(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と page entry 登録を一体で行う。
-/// - `createProjectComponent(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
+/// - `createProjectComponent(projectURL:collectionID:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
 /// - `projectPageReference(projectURL:pageID:)`: ``.ogp` の page 参照 ID から HTML を解決する。
 /// - `placeProjectPage(projectURL:id:name:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
 /// - `placeProjectComponent(projectURL:id:name:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
@@ -405,7 +442,9 @@ struct OpenGraphiteAgentCore {
                 pageSummary(
                     for: page,
                     chapter: chapter,
+                    collection: nil,
                     chapterIndex: chapterIndex,
+                    collectionIndex: nil,
                     pageIndex: pageIndex,
                     segment: "pages",
                     loadedProject: loadedProject
@@ -420,16 +459,28 @@ struct OpenGraphiteAgentCore {
             )
         }
         let pages = chapters.flatMap(\.pages)
-        let components = loadedProject.project.components.enumerated().map { pageIndex, page in
-            pageSummary(
-                for: page,
-                chapter: nil,
-                chapterIndex: nil,
-                pageIndex: pageIndex,
-                segment: "components",
-                loadedProject: loadedProject
+        let collections = loadedProject.project.collections.enumerated().map { collectionIndex, collection in
+            let components = collection.components.enumerated().map { pageIndex, page in
+                pageSummary(
+                    for: page,
+                    chapter: nil,
+                    collection: collection,
+                    chapterIndex: nil,
+                    collectionIndex: collectionIndex,
+                    pageIndex: pageIndex,
+                    segment: "components",
+                    loadedProject: loadedProject
+                )
+            }
+            return OpenGraphiteComponentCollectionSummary(
+                id: collection.id,
+                internalID: collection.internalID,
+                index: collectionIndex,
+                title: collection.title,
+                components: components
             )
         }
+        let components = collections.flatMap(\.components)
 
         return OpenGraphiteProjectSummary(
             schemaVersion: Self.schemaVersion,
@@ -439,6 +490,7 @@ struct OpenGraphiteAgentCore {
             htmlRoot: loadedProject.project.htmlRoot,
             cssURL: loadedProject.cssURL.path,
             chapters: chapters,
+            collections: collections,
             pages: pages,
             components: components,
             diagnostics: diagnostics
@@ -457,11 +509,14 @@ struct OpenGraphiteAgentCore {
         let target = try projectPageTarget(loadedProject: loadedProject, pageID: pageID)
         return OpenGraphiteProjectPageReference(
             projectURL: loadedProject.fileURL.path,
-            chapterID: target.chapter.id,
-            chapterInternalID: target.chapter.internalID,
+            segment: target.segment,
+            chapterID: target.chapter?.id,
+            chapterInternalID: target.chapter?.internalID,
+            collectionID: target.collection?.id,
+            collectionInternalID: target.collection?.internalID,
             pageID: target.page.id,
             pageInternalID: target.page.internalID,
-            referenceID: pageReferenceID(segment: target.segment, chapter: target.chapter, page: target.page),
+            referenceID: pageReferenceID(segment: target.segment, chapter: target.chapter, collection: target.collection, page: target.page),
             path: target.page.path,
             htmlURL: target.htmlURL.path,
             rootURL: loadedProject.rootURL.path,
@@ -517,16 +572,18 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント追加関数
-    /// 処理概要: `.ogp` の Components セグメントに既存 HTML component canvas 定義を追加し、更新後 summary を返します。
+    /// 処理概要: `.ogp` の Collection に既存 HTML component canvas 定義を追加し、更新後 summary を返します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
+    ///   - collectionID: 追加先 Collection の ID / 内部 ID / `ogref:collection`。`nil` の場合は既定 Collection。
     ///   - id: 追加する component ID。
     ///   - path: `htmlRoot` から見た component HTML path。
     ///   - canvas: キャンバス配置。
     /// - Returns: 更新後 project summary。
     func addProjectComponent(
         projectURL: URL,
+        collectionID: String?,
         id: String,
         path: String,
         canvas: OpenGraphiteCanvas
@@ -545,13 +602,14 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "追加する component HTML が見つかりません: \(htmlURL.path)")
         }
 
-        project.components.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
+        let collectionIndex = try writableComponentCollectionIndex(in: &project, collectionID: collectionID)
+        project.collections[collectionIndex].components.append(OpenGraphitePage(id: id, path: path, canvas: canvas))
         try writeProject(project, to: projectURL)
         return try inspectProject(at: projectURL)
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント削除関数
-    /// 処理概要: `.ogp` の Components セグメントから component entry を削除し、指定時は HTML file も削除します。
+    /// 処理概要: `.ogp` の Collection から component entry を削除し、指定時は HTML file も削除します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
@@ -563,14 +621,15 @@ struct OpenGraphiteAgentCore {
         id: String,
         deleteFile: Bool
     ) throws -> OpenGraphiteProjectSummary {
-        let componentInternalID = resolvedComponentID(id)
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
-        guard let componentIndex = project.components.firstIndex(where: { $0.internalID == componentInternalID }) else {
+        guard let componentLocation = pageLocation(in: project, pageID: id),
+              componentLocation.segment == .components
+        else {
             throw OpenGraphiteAgentCoreError(message: "component internalID \"\(id)\" が見つかりません。")
         }
 
-        let removedComponent = project.components.remove(at: componentIndex)
+        let removedComponent = project.collections[componentLocation.groupIndex].components.remove(at: componentLocation.pageIndex)
         if deleteFile {
             let htmlRootURL = loadedProject.rootURL
                 .appendingPathComponent(project.htmlRoot)
@@ -674,10 +733,11 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント作成関数
-    /// 処理概要: `.ogp` の `htmlRoot` 配下へ component HTML を作成し、同じ処理で Components セグメントに登録します。
+    /// 処理概要: `.ogp` の `htmlRoot` 配下へ component HTML を作成し、同じ処理で Collection に登録します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
+    ///   - collectionID: 登録先 Collection の ID / 内部 ID / `ogref:collection`。`nil` の場合は既定 Collection。
     ///   - id: 追加する component ID。
     ///   - path: `htmlRoot` から見た component HTML path。
     ///   - canvas: キャンバス配置。
@@ -689,6 +749,7 @@ struct OpenGraphiteAgentCore {
     /// - Returns: 作成と登録の結果。
     func createProjectComponent(
         projectURL: URL,
+        collectionID: String?,
         id: String,
         path: String,
         canvas: OpenGraphiteCanvas,
@@ -739,7 +800,7 @@ struct OpenGraphiteAgentCore {
         }
 
         do {
-            let summary = try addProjectComponent(projectURL: projectURL, id: id, path: path, canvas: canvas)
+            let summary = try addProjectComponent(projectURL: projectURL, collectionID: collectionID, id: id, path: path, canvas: canvas)
             return OpenGraphiteProjectPageCreateResult(
                 schemaVersion: Self.schemaVersion,
                 created: true,
@@ -791,9 +852,9 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "--height は 0 より大きい数値で指定してください。")
         }
 
-        if pageLocation.chapterIndex == -1 {
-            let currentCanvas = project.components[pageLocation.pageIndex].canvas
-            project.components[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+        if pageLocation.segment == .components {
+            let currentCanvas = project.collections[pageLocation.groupIndex].components[pageLocation.pageIndex].canvas
+            project.collections[pageLocation.groupIndex].components[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
                 name: normalizedCanvasName(name) ?? currentCanvas.name,
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
@@ -801,8 +862,8 @@ struct OpenGraphiteAgentCore {
                 height: height ?? currentCanvas.height
             )
         } else {
-            let currentCanvas = project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas
-            project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+            let currentCanvas = project.chapters[pageLocation.groupIndex].pages[pageLocation.pageIndex].canvas
+            project.chapters[pageLocation.groupIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
                 name: normalizedCanvasName(name) ?? currentCanvas.name,
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
@@ -835,10 +896,11 @@ struct OpenGraphiteAgentCore {
         width: Double?,
         height: Double?
     ) throws -> OpenGraphiteProjectSummary {
-        let componentInternalID = resolvedComponentID(id)
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
-        guard let componentIndex = project.components.firstIndex(where: { $0.internalID == componentInternalID }) else {
+        guard let componentLocation = pageLocation(in: project, pageID: id),
+              componentLocation.segment == .components
+        else {
             throw OpenGraphiteAgentCoreError(message: "component internalID \"\(id)\" が見つかりません。")
         }
         if let width, width <= 0 {
@@ -848,8 +910,8 @@ struct OpenGraphiteAgentCore {
             throw OpenGraphiteAgentCoreError(message: "--height は 0 より大きい数値で指定してください。")
         }
 
-        let currentCanvas = project.components[componentIndex].canvas
-        project.components[componentIndex].canvas = OpenGraphiteCanvas(
+        let currentCanvas = project.collections[componentLocation.groupIndex].components[componentLocation.pageIndex].canvas
+        project.collections[componentLocation.groupIndex].components[componentLocation.pageIndex].canvas = OpenGraphiteCanvas(
             name: normalizedCanvasName(name) ?? currentCanvas.name,
             x: x ?? currentCanvas.x,
             y: y ?? currentCanvas.y,
@@ -1504,15 +1566,6 @@ struct OpenGraphiteAgentCore {
         OpenGraphiteReferenceID.nodeInternalID(from: id) ?? id
     }
 
-    /// 論理名（日本語）: Component ID正規化関数
-    /// 処理概要: typed component 参照 ID が渡された場合は component canvas 内部 ID へ変換します。
-    ///
-    /// - Parameter id: raw component 内部 ID または `ogref:component`。
-    /// - Returns: `.ogp` manifest で使う component 内部 ID。
-    private func resolvedComponentID(_ id: String) -> String {
-        OpenGraphiteReferenceID.componentInternalID(from: id) ?? id
-    }
-
     /// 論理名（日本語）: 参照IDページ整合性検証関数
     /// 処理概要: typed node 参照が含む page / component が互いに、また明示 page ID と一致するか検証します。
     ///
@@ -1579,19 +1632,20 @@ struct OpenGraphiteAgentCore {
         guard let location = pageLocation(in: loadedProject.project, pageID: pageID) else {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(pageID)\" が .ogp に存在しません。")
         }
-        let chapter: OpenGraphiteChapter
         let page: OpenGraphitePage
-        if location.chapterIndex == -1 {
-            chapter = OpenGraphiteChapter(
-                id: "components",
-                internalID: "components",
-                title: "Components",
-                pages: loadedProject.project.components
-            )
-            page = loadedProject.project.components[location.pageIndex]
-        } else {
-            chapter = loadedProject.project.chapters[location.chapterIndex]
-            page = chapter.pages[location.pageIndex]
+        let chapter: OpenGraphiteChapter?
+        let collection: OpenGraphiteComponentCollection?
+        switch location.segment {
+        case .pages:
+            let resolvedChapter = loadedProject.project.chapters[location.groupIndex]
+            chapter = resolvedChapter
+            collection = nil
+            page = resolvedChapter.pages[location.pageIndex]
+        case .components:
+            chapter = nil
+            let resolvedCollection = loadedProject.project.collections[location.groupIndex]
+            collection = resolvedCollection
+            page = resolvedCollection.components[location.pageIndex]
         }
         try validateProjectPagePath(page.path)
         let htmlURL = loadedProject.htmlURL(for: page).standardizedFileURL
@@ -1601,8 +1655,9 @@ struct OpenGraphiteAgentCore {
         }
         return OpenGraphiteProjectPageTarget(
             loadedProject: loadedProject,
-            segment: location.chapterIndex == -1 ? "components" : "pages",
+            segment: location.segment.rawValue,
             chapter: chapter,
+            collection: collection,
             page: page,
             htmlURL: htmlURL
         )
@@ -1620,8 +1675,50 @@ struct OpenGraphiteAgentCore {
         return 0
     }
 
+    /// 論理名（日本語）: 書き込み可能Collection位置取得関数
+    /// 処理概要: component 追加先 Collection を解決し、未指定かつ Collection がない場合は既定 Collection を作成します。
+    ///
+    /// - Parameters:
+    ///   - project: 更新対象 `.ogp` project。
+    ///   - collectionID: Collection の ID / 内部 ID / `ogref:collection`。
+    /// - Returns: component 追加先 Collection の index。
+    private func writableComponentCollectionIndex(
+        in project: inout OpenGraphiteProject,
+        collectionID: String?
+    ) throws -> Int {
+        let normalizedCollectionID = collectionID?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let normalizedCollectionID, !normalizedCollectionID.isEmpty {
+            let resolvedCollectionID = OpenGraphiteReferenceID.collectionInternalID(from: normalizedCollectionID)
+                ?? normalizedCollectionID
+            if let collectionIndex = project.collections.firstIndex(where: {
+                $0.internalID == resolvedCollectionID || $0.id == resolvedCollectionID
+            }) {
+                return collectionIndex
+            }
+            throw OpenGraphiteAgentCoreError(message: "collection id \"\(collectionID ?? "")\" が見つかりません。")
+        }
+
+        if let collectionIndex = project.collections.firstIndex(where: { !$0.components.isEmpty }) {
+            return collectionIndex
+        }
+        if let collectionIndex = project.collections.indices.first {
+            return collectionIndex
+        }
+
+        project.collections.append(
+            OpenGraphiteComponentCollection(
+                id: OpenGraphiteComponentCollection.defaultID,
+                internalID: "components",
+                title: OpenGraphiteComponentCollection.defaultTitle,
+                components: []
+            )
+        )
+        return project.collections.count - 1
+    }
+
     /// 論理名（日本語）: ページ位置検索関数
-    /// 処理概要: Chapter 配列を横断し、指定 page 内部 ID または複合参照 ID の Chapter index と page index を返します。
+    /// 処理概要: Chapter / Collection 配列を横断し、指定 HTML 内部 ID または複合参照 ID の位置を返します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` プロジェクト。
@@ -1638,11 +1735,13 @@ struct OpenGraphiteAgentCore {
 
         for chapterIndex in project.chapters.indices {
             if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == normalizedPageID }) {
-                return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+                return OpenGraphiteProjectPageLocation(segment: .pages, groupIndex: chapterIndex, pageIndex: pageIndex)
             }
         }
-        if let componentIndex = project.components.firstIndex(where: { $0.internalID == normalizedPageID }) {
-            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: componentIndex)
+        for collectionIndex in project.collections.indices {
+            if let componentIndex = project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == normalizedPageID }) {
+                return OpenGraphiteProjectPageLocation(segment: .components, groupIndex: collectionIndex, pageIndex: componentIndex)
+            }
         }
 
         return nil
@@ -1669,20 +1768,23 @@ struct OpenGraphiteAgentCore {
             else {
                 return nil
             }
-            return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+            return OpenGraphiteProjectPageLocation(segment: .pages, groupIndex: chapterIndex, pageIndex: pageIndex)
         case .component, .componentNode:
-            let componentID = reference.parts[0]
-            guard let pageIndex = project.components.firstIndex(where: { $0.internalID == componentID }) else {
+            let collectionID = reference.parts[0]
+            let componentID = reference.parts[1]
+            guard let collectionIndex = project.collections.firstIndex(where: { $0.internalID == collectionID }),
+                  let pageIndex = project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == componentID })
+            else {
                 return nil
             }
-            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: pageIndex)
-        case .chapter:
+            return OpenGraphiteProjectPageLocation(segment: .components, groupIndex: collectionIndex, pageIndex: pageIndex)
+        case .chapter, .collection:
             return nil
         }
     }
 
     /// 論理名（日本語）: 複合ページ参照解決関数
-    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<componentInternalID>:<nodeInternalID>` を page 位置へ解決します。
+    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<collectionInternalID>:<componentInternalID>` を page 位置へ解決します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` プロジェクト。
@@ -1694,12 +1796,13 @@ struct OpenGraphiteAgentCore {
         if parts.count >= 2,
            let chapterIndex = project.chapters.firstIndex(where: { $0.internalID == parts[0] }),
            let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == parts[1] }) {
-            return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+            return OpenGraphiteProjectPageLocation(segment: .pages, groupIndex: chapterIndex, pageIndex: pageIndex)
         }
 
         if parts.count >= 2,
-           let pageIndex = project.components.firstIndex(where: { $0.internalID == parts[0] }) {
-            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: pageIndex)
+           let collectionIndex = project.collections.firstIndex(where: { $0.internalID == parts[0] }),
+           let pageIndex = project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == parts[1] }) {
+            return OpenGraphiteProjectPageLocation(segment: .components, groupIndex: collectionIndex, pageIndex: pageIndex)
         }
 
         return nil
@@ -1710,26 +1813,34 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - page: 要約する page 定義。
-    ///   - chapter: 所属 Chapter。Components セグメントの場合は `nil`。
-    ///   - chapterIndex: 所属 Chapter index。Components セグメントの場合は `nil`。
-    ///   - pageIndex: Chapter または Components 配列内の page index。
+    ///   - chapter: 所属 Chapter。Components の場合は `nil`。
+    ///   - collection: 所属 Collection。Pages セグメントの場合は `nil`。
+    ///   - chapterIndex: 所属 Chapter index。Components の場合は `nil`。
+    ///   - collectionIndex: 所属 Collection index。Pages セグメントの場合は `nil`。
+    ///   - pageIndex: Chapter または Collection 配列内の page index。
     ///   - loadedProject: 読み込み済み `.ogp`。
     /// - Returns: JSON 出力用 page summary。
     private func pageSummary(
         for page: OpenGraphitePage,
         chapter: OpenGraphiteChapter?,
+        collection: OpenGraphiteComponentCollection?,
         chapterIndex: Int?,
+        collectionIndex: Int?,
         pageIndex: Int,
         segment: String,
         loadedProject: LoadedOpenGraphiteProject
     ) -> OpenGraphitePageSummary {
         OpenGraphitePageSummary(
-            chapterID: chapter?.id ?? "components",
+            chapterID: chapter?.id,
+            chapterInternalID: chapter?.internalID,
+            collectionID: collection?.id,
+            collectionInternalID: collection?.internalID,
             segment: segment,
             id: page.id,
             internalID: page.internalID,
-            referenceID: pageReferenceID(segment: segment, chapter: chapter, page: page),
+            referenceID: pageReferenceID(segment: segment, chapter: chapter, collection: collection, page: page),
             chapterIndex: chapterIndex,
+            collectionIndex: collectionIndex,
             pageIndex: pageIndex,
             path: page.path,
             htmlURL: loadedProject.htmlURL(for: page).path,
@@ -1742,12 +1853,20 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - segment: `pages` または `components`。
-    ///   - chapter: 所属 Chapter。Components セグメントの場合は `nil`。
+    ///   - chapter: 所属 Chapter。Components の場合は `nil`。
+    ///   - collection: 所属 Collection。Pages セグメントの場合は `nil`。
     ///   - page: 参照対象 page entry。
-    /// - Returns: `ogref:page:<chapterInternalID>:<pageInternalID>` または `ogref:component:<componentInternalID>`。
-    private func pageReferenceID(segment: String, chapter: OpenGraphiteChapter?, page: OpenGraphitePage) -> String {
+    /// - Returns: `ogref:page:<chapterInternalID>:<pageInternalID>` または `ogref:component:<collectionInternalID>:<componentInternalID>`。
+    private func pageReferenceID(
+        segment: String,
+        chapter: OpenGraphiteChapter?,
+        collection: OpenGraphiteComponentCollection?,
+        page: OpenGraphitePage
+    ) -> String {
         if segment == "components" {
-            return OpenGraphiteReferenceID.component(page.internalID).stringValue
+            return OpenGraphiteReferenceID
+                .component(collectionID: collection?.internalID ?? "", componentID: page.internalID)
+                .stringValue
         }
 
         return OpenGraphiteReferenceID

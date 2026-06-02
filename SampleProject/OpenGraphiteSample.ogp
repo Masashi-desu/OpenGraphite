@@ -44,18 +44,25 @@
       "title" : "Main"
     }
   ],
-  "components" : [
+  "collections" : [
     {
-      "canvas" : {
-        "height" : 1900,
-        "name" : "Desktop",
-        "width" : 1180,
-        "x" : 1120,
-        "y" : 0
-      },
-      "id" : "design-system",
-      "internalID" : "3bgx6phkz3jv5",
-      "path" : "_components/design-system.html"
+      "components" : [
+        {
+          "canvas" : {
+            "height" : 1900,
+            "name" : "Desktop",
+            "width" : 1180,
+            "x" : 1120,
+            "y" : 0
+          },
+          "id" : "design-system",
+          "internalID" : "3bgx6phkz3jv5",
+          "path" : "_components/design-system.html"
+        }
+      ],
+      "id" : "main",
+      "internalID" : "component-main",
+      "title" : "Main"
     }
   ],
   "cssLibrary" : "CSS/OpenGraphite.css",

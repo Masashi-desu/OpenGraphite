@@ -10,7 +10,7 @@ import Foundation
 /// - `htmlRoot`: HTML 成果物を置く public ルート。
 /// - `cssLibrary`: OpenGraphite.css の参照パス。
 /// - `chapters`: Chapter ごとのキャンバス定義。
-/// - `components`: Component master を格納する HTML キャンバス一覧。
+/// - `collections`: Component master を格納する Collection 一覧。
 struct OpenGraphiteProject: Codable, Equatable {
     var version: String
     var name: String
@@ -18,10 +18,14 @@ struct OpenGraphiteProject: Codable, Equatable {
     var htmlRoot: String
     var cssLibrary: String
     var chapters: [OpenGraphiteChapter]
-    var components: [OpenGraphitePage]
+    var collections: [OpenGraphiteComponentCollection]
 
     var allPages: [OpenGraphitePage] {
         chapters.flatMap(\.pages) + components
+    }
+
+    var components: [OpenGraphitePage] {
+        collections.flatMap(\.components)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -31,12 +35,11 @@ struct OpenGraphiteProject: Codable, Equatable {
         case htmlRoot
         case cssLibrary
         case chapters
-        case pages
-        case components
+        case collections
     }
 
     /// 論理名（日本語）: project JSONデコード関数
-    /// 処理概要: Chapter 配列を読み込み、未指定の `components` を空配列として扱います。
+    /// 処理概要: Chapter 配列と Component Collection 配列を読み込みます。
     ///
     /// - Parameter decoder: JSON decoder。
     init(from decoder: Decoder) throws {
@@ -46,23 +49,12 @@ struct OpenGraphiteProject: Codable, Equatable {
         repositoryRoot = try container.decodeIfPresent(String.self, forKey: .repositoryRoot)
         htmlRoot = try container.decode(String.self, forKey: .htmlRoot)
         cssLibrary = try container.decode(String.self, forKey: .cssLibrary)
-        if let decodedChapters = try container.decodeIfPresent([OpenGraphiteChapter].self, forKey: .chapters) {
-            chapters = decodedChapters
-        } else {
-            let topLevelPages = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .pages) ?? []
-            chapters = [
-                OpenGraphiteChapter(
-                    id: OpenGraphiteChapter.defaultID,
-                    title: OpenGraphiteChapter.defaultTitle,
-                    pages: topLevelPages
-                )
-            ]
-        }
-        components = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .components) ?? []
+        chapters = try container.decode([OpenGraphiteChapter].self, forKey: .chapters)
+        collections = try container.decodeIfPresent([OpenGraphiteComponentCollection].self, forKey: .collections) ?? []
     }
 
     /// 論理名（日本語）: project JSONエンコード関数
-    /// 処理概要: `components` を含む現行 `.ogp` 形式として project manifest を保存します。
+    /// 処理概要: `collections` を含む現行 `.ogp` 形式として project manifest を保存します。
     ///
     /// - Parameter encoder: JSON encoder。
     func encode(to encoder: Encoder) throws {
@@ -73,8 +65,8 @@ struct OpenGraphiteProject: Codable, Equatable {
         try container.encode(htmlRoot, forKey: .htmlRoot)
         try container.encode(cssLibrary, forKey: .cssLibrary)
         try container.encode(chapters, forKey: .chapters)
-        if !components.isEmpty {
-            try container.encode(components, forKey: .components)
+        if !collections.isEmpty {
+            try container.encode(collections, forKey: .collections)
         }
     }
 
@@ -95,6 +87,7 @@ struct OpenGraphiteProject: Codable, Equatable {
         htmlRoot: String,
         cssLibrary: String,
         pages: [OpenGraphitePage],
+        collections: [OpenGraphiteComponentCollection] = [],
         components: [OpenGraphitePage] = []
     ) {
         self.version = version
@@ -102,7 +95,6 @@ struct OpenGraphiteProject: Codable, Equatable {
         self.repositoryRoot = repositoryRoot
         self.htmlRoot = htmlRoot
         self.cssLibrary = cssLibrary
-        self.components = components
         self.chapters = [
             OpenGraphiteChapter(
                 id: OpenGraphiteChapter.defaultID,
@@ -110,6 +102,7 @@ struct OpenGraphiteProject: Codable, Equatable {
                 pages: pages
             )
         ]
+        self.collections = Self.resolvedCollections(collections: collections, components: components)
     }
 
     /// 論理名（日本語）: Chapterプロジェクト初期化関数
@@ -129,6 +122,7 @@ struct OpenGraphiteProject: Codable, Equatable {
         htmlRoot: String,
         cssLibrary: String,
         chapters: [OpenGraphiteChapter],
+        collections: [OpenGraphiteComponentCollection] = [],
         components: [OpenGraphitePage] = []
     ) {
         self.version = version
@@ -137,7 +131,7 @@ struct OpenGraphiteProject: Codable, Equatable {
         self.htmlRoot = htmlRoot
         self.cssLibrary = cssLibrary
         self.chapters = chapters
-        self.components = components
+        self.collections = Self.resolvedCollections(collections: collections, components: components)
     }
 
     /// 論理名（日本語）: 内部ID正規化関数
@@ -185,26 +179,67 @@ struct OpenGraphiteProject: Codable, Equatable {
             }
         }
 
-        for componentIndex in normalized.components.indices {
-            let component = normalized.components[componentIndex]
-            let componentBase = Self.identityBase(
-                preferred: component.internalID,
-                semanticPrefix: "component",
+        for collectionIndex in normalized.collections.indices {
+            let collectionBase = Self.identityBase(
+                preferred: normalized.collections[collectionIndex].internalID,
+                semanticPrefix: "collection",
                 seed: [
-                    "component",
-                    "\(componentIndex)",
-                    component.id,
-                    component.title ?? "",
-                    component.path
+                    "collection",
+                    "\(collectionIndex)",
+                    normalized.collections[collectionIndex].id,
+                    normalized.collections[collectionIndex].title ?? ""
                 ].joined(separator: "|")
             )
-            normalized.components[componentIndex].internalID = Self.uniqueIdentityID(
-                base: componentBase,
+            normalized.collections[collectionIndex].internalID = Self.uniqueIdentityID(
+                base: collectionBase,
                 used: &usedManifestIDs
             )
+
+            for componentIndex in normalized.collections[collectionIndex].components.indices {
+                let component = normalized.collections[collectionIndex].components[componentIndex]
+                let componentBase = Self.identityBase(
+                    preferred: component.internalID,
+                    semanticPrefix: "component",
+                    seed: [
+                        "component",
+                        "\(collectionIndex)",
+                        "\(componentIndex)",
+                        component.id,
+                        component.title ?? "",
+                        component.path
+                    ].joined(separator: "|")
+                )
+                normalized.collections[collectionIndex].components[componentIndex].internalID = Self.uniqueIdentityID(
+                    base: componentBase,
+                    used: &usedManifestIDs
+                )
+            }
         }
 
         return normalized
+    }
+
+    /// 論理名（日本語）: Component Collection解決関数
+    /// 処理概要: 明示 Collection がない場合に既定 Collection へ component 配列を格納します。
+    ///
+    /// - Parameters:
+    ///   - collections: 明示された Collection 一覧。
+    ///   - components: 既定 Collection に格納する component 一覧。
+    /// - Returns: project に保持する Collection 一覧。
+    private static func resolvedCollections(
+        collections: [OpenGraphiteComponentCollection],
+        components: [OpenGraphitePage]
+    ) -> [OpenGraphiteComponentCollection] {
+        if !collections.isEmpty || components.isEmpty {
+            return collections
+        }
+        return [
+            OpenGraphiteComponentCollection(
+                id: OpenGraphiteComponentCollection.defaultID,
+                title: OpenGraphiteComponentCollection.defaultTitle,
+                components: components
+            )
+        ]
     }
 
     /// 論理名（日本語）: 内部ID基底値生成関数
@@ -364,6 +399,77 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         }
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(pages, forKey: .pages)
+    }
+}
+
+/// 論理名（日本語）: OpenGraphite Component Collection定義
+/// 概要: Components セグメントの上位概念として、独立したキャンバスに配置される component master 群を表します。
+///
+/// プロパティ:
+/// - `id`: Collection 識別子。
+/// - `internalID`: `.ogp` 内で Collection を一意に指す内部識別子。
+/// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
+/// - `components`: Collection 内の component master HTML 一覧。
+struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
+    static let defaultID = "main"
+    static let defaultTitle = "Main"
+
+    var id: String
+    var internalID: String
+    var title: String?
+    var components: [OpenGraphitePage]
+
+    var displayName: String {
+        guard let title, !title.isEmpty else { return id }
+        return title
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case internalID
+        case title
+        case components
+    }
+
+    /// 論理名（日本語）: Component Collection初期化関数
+    /// 処理概要: 表示用 ID と内部 ID、component 一覧から Collection 定義を構成します。
+    ///
+    /// - Parameters:
+    ///   - id: 表示用 Collection ID。
+    ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
+    ///   - title: UI 表示タイトル。
+    ///   - components: Collection に含まれる component entry 一覧。
+    init(id: String, internalID: String = "", title: String? = nil, components: [OpenGraphitePage]) {
+        self.id = id
+        self.internalID = internalID
+        self.title = title
+        self.components = components
+    }
+
+    /// 論理名（日本語）: Component Collectionデコード初期化関数
+    /// 処理概要: `internalID` が未指定の場合は空として読み込み、正規化時に補完します。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        components = try container.decode([OpenGraphitePage].self, forKey: .components)
+    }
+
+    /// 論理名（日本語）: Component Collectionエンコード関数
+    /// 処理概要: 内部 ID が未補完の場合は省略します。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        if !internalID.isEmpty {
+            try container.encode(internalID, forKey: .internalID)
+        }
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(components, forKey: .components)
     }
 }
 
@@ -527,7 +633,7 @@ struct LoadedOpenGraphiteProject: Identifiable, Equatable {
 ///
 /// 定義内容:
 /// - `pages`: `.ogp` の `chapters[].pages[]` を表示する通常ページ編集セグメント。
-/// - `components`: `.ogp` の top-level `components[]` を表示する component master 編集セグメント。
+/// - `components`: `.ogp` の `collections[].components[]` を表示する component master 編集セグメント。
 enum OpenGraphiteCanvasSegment: String, Equatable {
     case pages
     case components
