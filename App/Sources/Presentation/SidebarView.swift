@@ -200,7 +200,7 @@ private struct ComponentPageListView: View {
 /// - `segment`: 表示対象の Pages / Components セグメント。
 private struct PageLayerListView: View {
     @EnvironmentObject private var store: EditorStore
-    @State private var expandedPageID: String?
+    @State private var expansionState = SidebarPageExpansionState()
     var segment: OpenGraphiteCanvasSegment
 
     var body: some View {
@@ -210,13 +210,13 @@ private struct PageLayerListView: View {
                     PageLayerCard(
                         page: page,
                         isSelected: isSelected(page),
-                        isExpanded: expandedPageID == page.id,
+                        isExpanded: expansionState.isExpanded(pageID: page.id),
                         nodes: isSelected(page) ? store.nodes : [],
                         selectedNodeID: $store.selectedNodeID,
                         systemImage: segment == .components ? "shippingbox" : "doc.text",
                         onSelect: {
                             select(page)
-                            expandedPageID = page.id
+                            expansionState.expand(pageID: page.id)
                         },
                         onToggle: {
                             toggle(page)
@@ -306,19 +306,21 @@ private struct PageLayerListView: View {
     ///
     /// - Parameter page: 開閉対象の HTML page。
     private func toggle(_ page: OpenGraphitePage) {
-        if expandedPageID == page.id {
-            expandedPageID = nil
+        if expansionState.isExpanded(pageID: page.id) {
+            expansionState.toggle(pageID: page.id)
         } else {
             select(page)
-            expandedPageID = page.id
+            expansionState.expand(pageID: page.id)
         }
     }
 
     /// 論理名（日本語）: 選択HTML展開関数
-    /// 処理概要: 選択中 HTML が現在パネルに属するとき、そのカードを自動展開します。
+    /// 処理概要: 選択中 HTML が現在パネルに属するときは展開し、選択解除時は残った展開表示を消します。
     private func expandSelectedPage() {
-        guard let selectedPageID else { return }
-        expandedPageID = selectedPageID
+        expansionState.synchronizeSelection(
+            selectedPageID: selectedPageID,
+            validPageIDs: Set(pages.map(\.id))
+        )
     }
 }
 

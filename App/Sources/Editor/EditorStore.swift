@@ -203,6 +203,8 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter id: 選択するページ ID。`nil` の場合はページ選択を解除します。
     func selectPage(id: String?) {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
         switch selectedCanvasSegment {
         case .pages:
             selectedPageID = id
@@ -210,7 +212,9 @@ final class EditorStore: ObservableObject {
             selectedComponentPageID = id
         }
         selectedNodeID = nil
-        nodes = []
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
         if let page = selectedPage {
             statusMessage = "\(page.path) を表示しています。"
         } else {
@@ -242,12 +246,16 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: Pagesセグメント選択関数
     /// 処理概要: 通常 Pages canvas を表示し、必要に応じて選択 Chapter 内の先頭ページを選択します。
     func selectPagesSegment() {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
         selectedCanvasSegment = .pages
         if selectedPageID == nil || !selectedChapterPages.contains(where: { $0.id == selectedPageID }) {
             selectedPageID = selectedChapterPages.first?.id
         }
         selectedNodeID = nil
-        nodes = []
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
         statusMessage = "Pages を表示しています。"
         prepareHistoryForSelectedPage()
     }
@@ -255,12 +263,16 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: Componentsセグメント選択関数
     /// 処理概要: Components canvas を表示し、必要に応じて先頭 component page を選択します。
     func selectComponentsSegment() {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
         selectedCanvasSegment = .components
         if selectedComponentPageID == nil || !componentPages.contains(where: { $0.id == selectedComponentPageID }) {
             selectedComponentPageID = componentPages.first?.id
         }
         selectedNodeID = nil
-        nodes = []
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
         statusMessage = "Components を表示しています。"
         prepareHistoryForSelectedPage()
     }
@@ -270,10 +282,14 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter id: 選択する component page ID。
     func selectComponentPage(id: String?) {
+        let previousCanvasSegment = selectedCanvasSegment
+        let previousPageURL = selectedPageURL
         selectedCanvasSegment = .components
         selectedComponentPageID = id
         selectedNodeID = nil
-        nodes = []
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+            nodes = []
+        }
         if let page = selectedPage {
             statusMessage = "\(page.path) を表示しています。"
         } else {

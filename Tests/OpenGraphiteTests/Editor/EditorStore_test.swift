@@ -95,6 +95,35 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "ページ選択を解除しました。")
     }
 
+    /// 論理名（日本語）: 同一ページ再選択時のノード保持テスト
+    /// 概要: 左カラムで同じ HTML カードを再度開いたとき、収集済み DOM ノード一覧が空にならないことを検証します。
+    @Test("同じページの再選択ではノード一覧を保持する")
+    func testSelectPagePreservesNodesWhenSelectingSamePageAgain() throws {
+        // コンディション：プロジェクトを開き、選択ページの DOM ノード一覧が収集済みの状態を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "tagName": "title",
+                "type": "text",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "title")
+
+        // 検証内容：左カラムで同じページカードを再選択する想定で selectPage を再実行する（When）
+        store.selectPage(id: "home")
+
+        // 期待値：ページ内ノード一覧は保持され、ノード選択だけが解除される（Then）
+        #expect(store.selectedPageID == "home")
+        #expect(store.selectedNodeID == nil)
+        #expect(store.nodes.map(\.id) == ["title"])
+        #expect(store.statusMessage == "index.html を表示しています。")
+    }
+
     /// 論理名（日本語）: 選択ページキャンバス配置保存テスト
     /// 概要: 選択中ページの座標と解像度が Store と `.ogp` に保存されることを検証します。
     @Test("選択ページのキャンバス配置をogpへ保存する")
