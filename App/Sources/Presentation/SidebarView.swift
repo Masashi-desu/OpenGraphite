@@ -152,34 +152,6 @@ private struct SidebarGroupRow: View {
     }
 }
 
-/// 論理名（日本語）: サイドバーセクション見出しビュー
-/// 概要: Chapter / Collection 一覧と HTML 一覧を分ける小見出しを表示します。
-///
-/// プロパティ:
-/// - `title`: セクション名。
-/// - `count`: 右側に表示する件数。不要な場合は `nil`。
-private struct SidebarSectionHeader: View {
-    var title: String
-    var count: Int?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 0)
-
-            if let count {
-                Text("\(count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 2)
-    }
-}
-
 /// 論理名（日本語）: サイドバー空状態行ビュー
 /// 概要: Chapter / Collection または HTML がない状態をコンパクトに表示します。
 ///
@@ -200,6 +172,94 @@ private struct SidebarEmptyStateRow: View {
                 RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                     .fill(EditorColumnStyle.rowFill)
             )
+    }
+}
+
+/// 論理名（日本語）: サイドバー分割セクション寸法
+/// 概要: Chapter / Collection と所属 HTML ペインを標準分割表示するための高さ制約をまとめます。
+///
+/// 定義内容:
+/// - `collapsedHeight`: 最小化時に残すヘッダー高さ。
+/// - `groupMinHeight`: Chapter / Collection ペインの展開時最小高さ。
+/// - `contentMinHeight`: 所属 HTML ペインの展開時最小高さ。
+private enum SidebarSplitMetrics {
+    static let collapsedHeight: CGFloat = 34
+    static let groupMinHeight: CGFloat = 92
+    static let contentMinHeight: CGFloat = 120
+}
+
+/// 論理名（日本語）: サイドバー分割セクションビュー
+/// 概要: `VSplitView` 内で使う折りたたみ可能な標準ペインを表します。
+///
+/// プロパティ:
+/// - `title`: セクション名。
+/// - `count`: セクション内の項目数。
+/// - `isCollapsed`: 最小化状態。
+/// - `content`: 展開時に表示する本文。
+private struct SidebarSplitSection<Content: View>: View {
+    var title: String
+    var count: Int
+    @Binding var isCollapsed: Bool
+    var content: Content
+
+    /// 論理名（日本語）: サイドバー分割セクション初期化関数
+    /// 処理概要: セクション見出しと折りたたみ状態、本文 view を受け取ります。
+    ///
+    /// - Parameters:
+    ///   - title: セクション名。
+    ///   - count: セクション内の項目数。
+    ///   - isCollapsed: 最小化状態。
+    ///   - content: 展開時に表示する本文。
+    init(
+        title: String,
+        count: Int,
+        isCollapsed: Binding<Bool>,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.count = count
+        _isCollapsed = isCollapsed
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.14)) {
+                    isCollapsed.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 18)
+
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text("\(count)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isCollapsed ? "Expand" : "Collapse")
+
+            if !isCollapsed {
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -245,97 +305,43 @@ private struct SidebarPageGroup: Identifiable {
 /// - `segment`: 表示対象の Pages / Components セグメント。
 private struct PageLayerListView: View {
     @EnvironmentObject private var store: EditorStore
+    @SceneStorage("sidebar.pagesGroupSectionCollapsed") private var isPagesGroupSectionCollapsed = false
+    @SceneStorage("sidebar.pagesContentSectionCollapsed") private var isPagesContentSectionCollapsed = false
+    @SceneStorage("sidebar.componentsGroupSectionCollapsed") private var isComponentsGroupSectionCollapsed = false
+    @SceneStorage("sidebar.componentsContentSectionCollapsed") private var isComponentsContentSectionCollapsed = false
     @State private var expansionState = SidebarPageExpansionState()
     var segment: OpenGraphiteCanvasSegment
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    SidebarSectionHeader(title: groupSectionTitle, count: groups.count)
-
-                    if groups.isEmpty {
-                        SidebarEmptyStateRow(text: emptyGroupMessage)
-                    } else {
-                        ForEach(groups) { group in
-                            SidebarGroupRow(
-                                title: group.title,
-                                detail: group.detail,
-                                count: group.pages.count,
-                                systemImage: group.systemImage,
-                                isSelected: isGroupSelected(group),
-                                onSelect: {
-                                    select(group)
-                                },
-                                onCopyReferenceID: {
-                                    copyGroupReferenceID(group)
-                                }
-                            )
-                            .onCopyCommand {
-                                guard isGroupSelected(group), selectedPageID == nil else { return [] }
-                                return OpenGraphiteReferenceCopy.itemProviders(for: groupReferenceID(group))
-                            }
-                        }
-                    }
-                }
-
-                Divider()
-                    .overlay(EditorColumnStyle.separatorColor)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    SidebarSectionHeader(title: contentSectionTitle, count: visiblePages.count)
-
-                    if let group = selectedDisplayGroup {
-                        if group.pages.isEmpty {
-                            SidebarEmptyStateRow(text: emptyPageMessage)
-                        } else {
-                            ForEach(group.pages, id: \.internalID) { page in
-                                PageLayerCard(
-                                    page: page,
-                                    isSelected: isSelected(page, in: group),
-                                    isExpanded: expansionState.isExpanded(pageID: page.internalID),
-                                    nodes: isSelected(page, in: group) ? store.nodes : [],
-                                    selectedNodeID: $store.selectedNodeID,
-                                    systemImage: segment == .components ? "shippingbox" : "doc.text",
-                                    onSelect: {
-                                        select(page, in: group)
-                                        expansionState.expand(pageID: page.internalID)
-                                    },
-                                    onToggle: {
-                                        toggle(page, in: group)
-                                    },
-                                    onCopyReferenceID: {
-                                        select(page, in: group)
-                                        store.copyPageReferenceIDToPasteboard(page, segment: segment)
-                                    },
-                                    onCopyNodeReferenceID: { node in
-                                        if !isSelected(page, in: group) {
-                                            select(page, in: group)
-                                        }
-                                        store.selectNode(id: node.id)
-                                        store.copyNodeReferenceIDToPasteboard(node)
-                                    },
-                                    nodeReferenceID: { node in
-                                        store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
-                                    }
-                                )
-                                .onCopyCommand {
-                                    guard isSelected(page, in: group), store.selectedNodeID == nil else { return [] }
-                                    return OpenGraphiteReferenceCopy.itemProviders(
-                                        for: store.pageReferenceID(for: page, segment: segment)
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        SidebarEmptyStateRow(text: emptyPageMessage)
-                    }
-                }
+        VSplitView {
+            SidebarSplitSection(
+                title: groupSectionTitle,
+                count: groups.count,
+                isCollapsed: groupSectionCollapsedBinding
+            ) {
+                groupSectionContent
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, EditorColumnStyle.outerPadding)
-            .padding(.vertical, 10)
+            .frame(
+                minHeight: groupSectionMinHeight,
+                idealHeight: groupSectionIdealHeight,
+                maxHeight: groupSectionMaxHeight
+            )
+
+            SidebarSplitSection(
+                title: contentSectionTitle,
+                count: visiblePages.count,
+                isCollapsed: contentSectionCollapsedBinding
+            ) {
+                contentSectionContent
+            }
+            .frame(
+                minHeight: contentSectionMinHeight,
+                idealHeight: contentSectionIdealHeight,
+                maxHeight: contentSectionMaxHeight
+            )
         }
+        .padding(.horizontal, EditorColumnStyle.outerPadding)
+        .padding(.vertical, 10)
         .frame(minHeight: 140)
         .onAppear {
             selectSegmentIfNeeded()
@@ -351,6 +357,94 @@ private struct PageLayerListView: View {
         }
         .onChange(of: selectedPageID) { _, _ in
             expandSelectedPage()
+        }
+    }
+
+    @ViewBuilder
+    private var groupSectionContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 5) {
+                if groups.isEmpty {
+                    SidebarEmptyStateRow(text: emptyGroupMessage)
+                } else {
+                    ForEach(groups) { group in
+                        SidebarGroupRow(
+                            title: group.title,
+                            detail: group.detail,
+                            count: group.pages.count,
+                            systemImage: group.systemImage,
+                            isSelected: isGroupSelected(group),
+                            onSelect: {
+                                select(group)
+                            },
+                            onCopyReferenceID: {
+                                copyGroupReferenceID(group)
+                            }
+                        )
+                        .onCopyCommand {
+                            guard isGroupSelected(group), selectedPageID == nil else { return [] }
+                            return OpenGraphiteReferenceCopy.itemProviders(for: groupReferenceID(group))
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder
+    private var contentSectionContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                if let group = selectedDisplayGroup {
+                    if group.pages.isEmpty {
+                        SidebarEmptyStateRow(text: emptyPageMessage)
+                    } else {
+                        ForEach(group.pages, id: \.internalID) { page in
+                            PageLayerCard(
+                                page: page,
+                                isSelected: isSelected(page, in: group),
+                                isExpanded: expansionState.isExpanded(pageID: page.internalID),
+                                nodes: isSelected(page, in: group) ? store.nodes : [],
+                                selectedNodeID: $store.selectedNodeID,
+                                systemImage: segment == .components ? "shippingbox" : "doc.text",
+                                onSelect: {
+                                    select(page, in: group)
+                                    expansionState.expand(pageID: page.internalID)
+                                },
+                                onToggle: {
+                                    toggle(page, in: group)
+                                },
+                                onCopyReferenceID: {
+                                    select(page, in: group)
+                                    store.copyPageReferenceIDToPasteboard(page, segment: segment)
+                                },
+                                onCopyNodeReferenceID: { node in
+                                    if !isSelected(page, in: group) {
+                                        select(page, in: group)
+                                    }
+                                    store.selectNode(id: node.id)
+                                    store.copyNodeReferenceIDToPasteboard(node)
+                                },
+                                nodeReferenceID: { node in
+                                    store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
+                                }
+                            )
+                            .onCopyCommand {
+                                guard isSelected(page, in: group), store.selectedNodeID == nil else { return [] }
+                                return OpenGraphiteReferenceCopy.itemProviders(
+                                    for: store.pageReferenceID(for: page, segment: segment)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    SidebarEmptyStateRow(text: emptyPageMessage)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.top, 2)
         }
     }
 
@@ -378,6 +472,74 @@ private struct PageLayerListView: View {
                 )
             }
         }
+    }
+
+    private var isGroupSectionCollapsed: Bool {
+        switch segment {
+        case .pages:
+            return isPagesGroupSectionCollapsed
+        case .components:
+            return isComponentsGroupSectionCollapsed
+        }
+    }
+
+    private var isContentSectionCollapsed: Bool {
+        switch segment {
+        case .pages:
+            return isPagesContentSectionCollapsed
+        case .components:
+            return isComponentsContentSectionCollapsed
+        }
+    }
+
+    private var groupSectionCollapsedBinding: Binding<Bool> {
+        Binding {
+            isGroupSectionCollapsed
+        } set: { newValue in
+            switch segment {
+            case .pages:
+                isPagesGroupSectionCollapsed = newValue
+            case .components:
+                isComponentsGroupSectionCollapsed = newValue
+            }
+        }
+    }
+
+    private var contentSectionCollapsedBinding: Binding<Bool> {
+        Binding {
+            isContentSectionCollapsed
+        } set: { newValue in
+            switch segment {
+            case .pages:
+                isPagesContentSectionCollapsed = newValue
+            case .components:
+                isComponentsContentSectionCollapsed = newValue
+            }
+        }
+    }
+
+    private var groupSectionMinHeight: CGFloat {
+        isGroupSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : SidebarSplitMetrics.groupMinHeight
+    }
+
+    private var groupSectionIdealHeight: CGFloat {
+        isGroupSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : 160
+    }
+
+    private var groupSectionMaxHeight: CGFloat {
+        isGroupSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : .infinity
+    }
+
+    private var contentSectionMinHeight: CGFloat {
+        isContentSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : SidebarSplitMetrics.contentMinHeight
+    }
+
+    private var contentSectionIdealHeight: CGFloat {
+        isContentSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : 360
+    }
+
+    private var contentSectionMaxHeight: CGFloat {
+        isContentSectionCollapsed ? SidebarSplitMetrics.collapsedHeight : .infinity
     }
 
     private var selectedDisplayGroup: SidebarPageGroup? {

@@ -166,7 +166,7 @@ When launched without that environment variable, Open Sample Project treats the 
 ## Current Editor Features
 
 - Welcome screen with sample and arbitrary `.ogp` open actions
-- Pages/Components sidebar with separate Chapter/Collection selectors and layers inside each HTML card
+- Pages/Components sidebar with resizable, collapsible Chapter/Collection selectors and layers inside each HTML card
 - WKWebView canvas using `.ogp` canvas dimensions
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
