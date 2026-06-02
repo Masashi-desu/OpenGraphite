@@ -241,6 +241,7 @@ private final class SampleProjectLocatorFixture {
             {
               "canvas": {
                 "height": 1200,
+                "name": "",
                 "width": 1440,
                 "x": 0,
                 "y": 0

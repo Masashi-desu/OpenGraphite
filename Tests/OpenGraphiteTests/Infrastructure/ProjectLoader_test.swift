@@ -67,7 +67,7 @@ struct ProjectLoaderTests {
             {
               "id": "home",
               "path": "index.html",
-              "canvas": { "x": 0, "y": 0, "width": 1440, "height": 1200 }
+              "canvas": { "name": "", "x": 0, "y": 0, "width": 1440, "height": 1200 }
             }
           ]
         }

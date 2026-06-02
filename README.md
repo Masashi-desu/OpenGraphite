@@ -85,9 +85,9 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project current --json
 ./Scripts/ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id docs --path docs.html --title 'OpenGraphite Docs' --body-file docs.body.html --x 2960 --y 0
 ./Scripts/ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id legacy --path legacy.html --x 4440 --y 0
-./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id docs --x 3040 --y 0
+./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id docs --name Desktop --x 3040 --y 0
 ./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
-./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id design-system --width 1180 --height 1900
+./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id design-system --name Desktop --width 1180 --height 1900
 ./Scripts/ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --delete-file
 ./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
 ./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id docs --output screenshots/docs.png

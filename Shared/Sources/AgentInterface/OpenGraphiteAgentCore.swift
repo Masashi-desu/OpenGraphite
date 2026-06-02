@@ -332,8 +332,8 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// - `createProjectPage(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と page entry 登録を一体で行う。
 /// - `createProjectComponent(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
 /// - `projectPageReference(projectURL:pageID:)`: `.ogp` の page ID から HTML を解決する。
-/// - `placeProjectPage(projectURL:id:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
-/// - `placeProjectComponent(projectURL:id:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
+/// - `placeProjectPage(projectURL:id:name:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
+/// - `placeProjectComponent(projectURL:id:name:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
 /// - `createPage(at:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML page file を作成する。
 /// - `pageGraph(at:)`: HTML から node graph を抽出する。
 /// - `validateHTML(at:)`: HTML を契約に対して検証する。
@@ -722,6 +722,7 @@ struct OpenGraphiteAgentCore {
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
     ///   - id: 更新する page ID。
+    ///   - name: 更新後の配置名。`nil` の場合は既存値を維持します。
     ///   - x: 更新後 X 座標。`nil` の場合は既存値を維持します。
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
@@ -730,6 +731,7 @@ struct OpenGraphiteAgentCore {
     func placeProjectPage(
         projectURL: URL,
         id: String,
+        name: String?,
         x: Double?,
         y: Double?,
         width: Double?,
@@ -750,6 +752,7 @@ struct OpenGraphiteAgentCore {
         if pageLocation.chapterIndex == -1 {
             let currentCanvas = project.components[pageLocation.pageIndex].canvas
             project.components[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+                name: normalizedCanvasName(name) ?? currentCanvas.name,
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
                 width: width ?? currentCanvas.width,
@@ -758,6 +761,7 @@ struct OpenGraphiteAgentCore {
         } else {
             let currentCanvas = project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas
             project.chapters[pageLocation.chapterIndex].pages[pageLocation.pageIndex].canvas = OpenGraphiteCanvas(
+                name: normalizedCanvasName(name) ?? currentCanvas.name,
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
                 width: width ?? currentCanvas.width,
@@ -774,6 +778,7 @@ struct OpenGraphiteAgentCore {
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
     ///   - id: 更新する component ID。
+    ///   - name: 更新後の配置名。`nil` の場合は既存値を維持します。
     ///   - x: 更新後 X 座標。`nil` の場合は既存値を維持します。
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
@@ -782,6 +787,7 @@ struct OpenGraphiteAgentCore {
     func placeProjectComponent(
         projectURL: URL,
         id: String,
+        name: String?,
         x: Double?,
         y: Double?,
         width: Double?,
@@ -801,6 +807,7 @@ struct OpenGraphiteAgentCore {
 
         let currentCanvas = project.components[componentIndex].canvas
         project.components[componentIndex].canvas = OpenGraphiteCanvas(
+            name: normalizedCanvasName(name) ?? currentCanvas.name,
             x: x ?? currentCanvas.x,
             y: y ?? currentCanvas.y,
             width: width ?? currentCanvas.width,
@@ -1509,6 +1516,15 @@ struct OpenGraphiteAgentCore {
             htmlURL: loadedProject.htmlURL(for: page).path,
             canvas: page.canvas
         )
+    }
+
+    /// 論理名（日本語）: キャンバス配置名正規化関数
+    /// 処理概要: CLI / MCP から指定された配置名を trim し、未指定なら `nil` として既存値維持を表します。
+    ///
+    /// - Parameter name: ユーザー指定の配置名。`nil` の場合は未指定。
+    /// - Returns: 保存する配置名。空白だけの場合は空文字。
+    private func normalizedCanvasName(_ name: String?) -> String? {
+        name?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 論理名（日本語）: プロジェクトページパス検証関数

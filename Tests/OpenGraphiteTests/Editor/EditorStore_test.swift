@@ -151,6 +151,36 @@ struct EditorStoreTests {
         #expect(store.statusMessage.contains("キャンバス配置を更新"))
     }
 
+    /// 論理名（日本語）: 選択ページキャンバス配置名保存テスト
+    /// 概要: 選択中ページの任意配置名が Store と `.ogp` に保存され、座標だけの更新では保持されることを検証します。
+    @Test("選択ページのキャンバス配置名をogpへ保存する")
+    func testUpdateSelectedPageCanvasPersistsName() throws {
+        // Given: 一時プロジェクトを開き、フロー解決用の配置名を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // When: 選択ページの配置名とキャンバス配置を更新する
+        store.updateSelectedPageCanvas(x: 24, y: -12, width: 390, height: 844, name: " mobile ")
+
+        // Then: Store とディスク上の `.ogp` が trim 済み配置名を保持する
+        #expect(store.selectedPage?.canvas.name == "mobile")
+        var reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        var persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas.name == "mobile")
+
+        // When: 従来の座標更新 API で配置だけを更新する
+        store.updateSelectedPageCanvas(x: 40, y: 0, width: 414, height: 896)
+
+        // Then: 既存の配置名は消えずに保持される
+        #expect(store.selectedPage?.canvas.name == "mobile")
+        reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas.name == "mobile")
+        #expect(persistedPage.canvas.width == 414)
+    }
+
     /// 論理名（日本語）: 不正キャンバス配置拒否テスト
     /// 概要: 解像度が 0 以下の場合に Store と `.ogp` を更新しないことを検証します。
     @Test("不正な解像度ではキャンバス配置を更新しない")

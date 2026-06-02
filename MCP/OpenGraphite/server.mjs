@@ -266,6 +266,7 @@ function toolsList() {
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         pageID: { type: "string" },
+        name: { type: "string", description: "Canvas placement name. Empty string clears the name." },
         x: { type: "number" },
         y: { type: "number" },
         width: { type: "number" },
@@ -305,6 +306,7 @@ function toolsList() {
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         componentID: { type: "string" },
+        name: { type: "string", description: "Canvas placement name. Empty string clears the name." },
         x: { type: "number" },
         y: { type: "number" },
         width: { type: "number" },
@@ -574,6 +576,7 @@ function commandForTool(name, args) {
         requiredArg(args, "projectPath"),
         "--page-id",
         requiredArg(args, "pageID"),
+        ...optionalNullableStringFlag(args, "name", "--name"),
         ...optionalValueFlag(args, "x", "--x"),
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
@@ -621,6 +624,7 @@ function commandForTool(name, args) {
         requiredArg(args, "projectPath"),
         "--component-id",
         requiredArg(args, "componentID"),
+        ...optionalNullableStringFlag(args, "name", "--name"),
         ...optionalValueFlag(args, "x", "--x"),
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
@@ -855,6 +859,14 @@ function optionalFlag(args, key, flag) {
     return [];
   }
   return [flag, value];
+}
+
+function optionalNullableStringFlag(args, key, flag) {
+  const value = args?.[key];
+  if (value === undefined || value === null) {
+    return [];
+  }
+  return [flag, String(value)];
 }
 
 function optionalValueFlag(args, key, flag) {

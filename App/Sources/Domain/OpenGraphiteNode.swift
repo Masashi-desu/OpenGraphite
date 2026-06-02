@@ -120,3 +120,43 @@ enum CanvasTool: String, CaseIterable, Identifiable {
         }
     }
 }
+
+/// 論理名（日本語）: プレビュー表示モード
+/// 概要: 中央プレビューで通常編集表示と画面遷移フロー表示を切り替える状態を表します。
+///
+/// 定義内容:
+/// - `normal`: 通常の編集プレビュー表示。
+/// - `flow`: 静的リンクから解決した画面遷移線を重ねるフロー表示。
+enum OpenGraphitePreviewDisplayMode: String, CaseIterable, Identifiable {
+    case normal
+    case flow
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .normal:
+            return "Normal"
+        case .flow:
+            return "Flow"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .normal:
+            return "eye"
+        case .flow:
+            return "arrow.right"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .normal:
+            return "通常表示"
+        case .flow:
+            return "フロー表示"
+        }
+    }
+}

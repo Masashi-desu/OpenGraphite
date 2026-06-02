@@ -13,6 +13,7 @@ import Foundation
 /// - `selectedNodeID`: 選択中ノードの `data-og-id`。
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
+/// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
 /// - `cssMutation`: WebView へ反映待ちの CSS 変数変更。
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
@@ -29,12 +30,14 @@ final class EditorStore: ObservableObject {
     @Published var statusMessage = "HTMLを正本として開きます。"
     @Published var lastError: String?
     @Published var activeTool: CanvasTool = .select
+    @Published var previewDisplayMode: OpenGraphitePreviewDisplayMode = .normal
     @Published private(set) var cssMutation: CSSVariableMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
+    @Published private(set) var staticFlowLinksByPageURL: [URL: [OpenGraphiteStaticFlowLink]] = [:]
 
     private let loader: ProjectLoader
     private let sampleProjectLocator: SampleProjectLocator
@@ -182,6 +185,7 @@ final class EditorStore: ObservableObject {
             syncHistories = [:]
             lastKnownPageHTMLByURL = [:]
             pageReloadTokensByURL = [:]
+            staticFlowLinksByPageURL = [:]
             do {
                 try currentProjectStore?.write(projectURL: project.fileURL)
             } catch {
@@ -307,7 +311,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 選択ページキャンバス配置更新関数
-    /// 処理概要: 選択中ページのキャンバス座標と解像度を `.ogp` へ保存し、表示中 project state へ反映します。
+    /// 処理概要: 既存の配置名を保持したまま、選択中ページのキャンバス座標と解像度を `.ogp` へ保存します。
     ///
     /// - Parameters:
     ///   - x: キャンバス上の X 座標。
@@ -315,13 +319,33 @@ final class EditorStore: ObservableObject {
     ///   - width: ページプレビュー幅。0 より大きい値が必要です。
     ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
     func updateSelectedPageCanvas(x: Double, y: Double, width: Double, height: Double) {
+        updateSelectedPageCanvas(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            name: selectedPage?.canvas.name ?? ""
+        )
+    }
+
+    /// 論理名（日本語）: 選択ページキャンバス配置更新関数
+    /// 処理概要: 選択中ページのキャンバス配置名、座標、解像度を `.ogp` へ保存し、表示中 project state へ反映します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: ページプレビュー幅。0 より大きい値が必要です。
+    ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
+    ///   - name: フロー解決で利用する配置名。空白のみの場合は空文字として保存します。
+    func updateSelectedPageCanvas(x: Double, y: Double, width: Double, height: Double, name: String) {
         guard x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0 else {
             lastError = "キャンバス配置の入力が不正です。"
             return
         }
         guard var loadedProject else { return }
 
-        let nextCanvas = OpenGraphiteCanvas(x: x, y: y, width: width, height: height)
+        let normalizedName = Self.normalizedCanvasName(name)
+        let nextCanvas = OpenGraphiteCanvas(name: normalizedName, x: x, y: y, width: width, height: height)
         let updatedPage: OpenGraphitePage
         switch selectedCanvasSegment {
         case .pages:
@@ -365,6 +389,17 @@ final class EditorStore: ObservableObject {
         } catch {
             lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
         }
+    }
+
+    /// 論理名（日本語）: 静的フローリンクpayload取り込み関数
+    /// 処理概要: WebView から届いた静的リンク一覧を page URL ごとに保持し、フロー表示オーバーレイの入力へ変換します。
+    ///
+    /// - Parameters:
+    ///   - payload: JavaScript から受け取ったリンク辞書配列。
+    ///   - pageURL: payload を収集した HTML page URL。
+    func ingestStaticFlowLinkPayload(_ payload: [[String: Any]], pageURL: URL) {
+        let links = payload.compactMap(OpenGraphiteStaticFlowLink.init(payload:))
+        staticFlowLinksByPageURL[pageURL.standardizedFileURL] = links
     }
 
     /// 論理名（日本語）: ノードpayload取り込み関数
@@ -703,6 +738,15 @@ final class EditorStore: ObservableObject {
     /// - Returns: 読み込めた HTML。失敗時は `nil`。
     private func readHTMLFromDisk(at pageURL: URL) -> String? {
         try? String(contentsOf: pageURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: キャンバス配置名正規化関数
+    /// 処理概要: Inspector 入力の前後空白を除去し、空白のみの名前を空文字に変換します。
+    ///
+    /// - Parameter name: 正規化する配置名。
+    /// - Returns: 保存用の配置名。名前なしの場合は空文字。
+    private static func normalizedCanvasName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 論理名（日本語）: プロジェクトmanifest保存関数

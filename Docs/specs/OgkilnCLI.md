@@ -33,12 +33,12 @@ ogkiln build <project.ogp|current> --output <dir>
 ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
 ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
 ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+ogkiln project page place <project.ogp|current> --page-id <page-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
 ```
 
 `--path` は `.ogp` の `htmlRoot` から見た相対 HTML path であり、絶対 path、`..`、HTML 以外の拡張子は受け付けない。これにより、ユーザーが `.ogp` で認知できない資源が編集対象になることを避ける。
 
-`project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。
+`project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。`project page place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。
 
 ## Component Management
 
@@ -46,11 +46,11 @@ ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [-
 ogkiln project component add <project.ogp|current> --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
 ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
 ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-ogkiln project component place <project.ogp|current> --component-id <component-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
 ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
 ```
 
-Components は component master を置く asset canvas として扱う。`project component add/create/place/remove` は `.ogp` の top-level `components[]` を更新し、node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
+Components は component master を置く asset canvas として扱う。`project component add/create/place/remove` は `.ogp` の top-level `components[]` を更新し、node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`project component place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
 
 ## Read Commands
 

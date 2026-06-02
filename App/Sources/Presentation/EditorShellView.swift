@@ -423,6 +423,13 @@ private struct CanvasPaneView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            CanvasPreviewModePicker(mode: $store.previewDisplayMode)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.trailing, overlayAvoidance.trailing + 14)
+                .padding(.top, overlayAvoidance.top + 14)
+                .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
+                .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
         }
     }
 
@@ -502,6 +509,17 @@ private struct CanvasProjectView: View {
                     y: CGFloat(page.canvas.y) - bounds.minY
                 )
             }
+
+            if store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages {
+                CanvasStaticFlowOverlay(
+                    connections: OpenGraphiteStaticFlowResolver.connections(
+                        pages: pages,
+                        loadedProject: loadedProject,
+                        linksByPageURL: store.staticFlowLinksByPageURL
+                    )
+                )
+                .allowsHitTesting(false)
+            }
         }
         .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
         .scaleEffect(scale, anchor: .topLeading)
@@ -544,6 +562,7 @@ private struct CanvasDocumentView: View {
         .overlay(alignment: .topLeading) {
             CanvasPageNameCard(
                 title: page.id,
+                placementName: page.canvas.displayName,
                 path: page.path,
                 resolution: page.canvas.resolutionLabel,
                 isSelected: isSelected,
@@ -565,17 +584,139 @@ private struct CanvasDocumentView: View {
     }
 }
 
+/// 論理名（日本語）: キャンバスプレビュー表示モードピッカー
+/// 概要: プレビュー右上で通常表示とフロー表示を切り替える小型セグメントボタンです。
+///
+/// プロパティ:
+/// - `mode`: 現在のプレビュー表示モード。
+private struct CanvasPreviewModePicker: View {
+    @Binding var mode: OpenGraphitePreviewDisplayMode
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(OpenGraphitePreviewDisplayMode.allCases) { option in
+                Button {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        mode = option
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: option.systemImage)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(option.title)
+                            .font(.caption.weight(.semibold))
+                    }
+                    .lineLimit(1)
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .foregroundStyle(mode == option ? Color.white : Color.primary)
+                    .background(
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .fill(mode == option ? Color.accentColor : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(option.help)
+                .accessibilityLabel(option.help)
+            }
+        }
+        .padding(4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
+    }
+}
+
+/// 論理名（日本語）: キャンバス静的フローオーバーレイ
+/// 概要: 静的リンクから解決した画面遷移を、キャンバス上のベジェ曲線と矢印として描画します。
+///
+/// プロパティ:
+/// - `connections`: 描画対象の静的フロー接続一覧。
+private struct CanvasStaticFlowOverlay: View {
+    var connections: [OpenGraphiteStaticFlowConnection]
+
+    var body: some View {
+        Canvas { context, _ in
+            for connection in connections {
+                draw(connection, in: context)
+            }
+        }
+    }
+
+    /// 論理名（日本語）: フロー接続描画関数
+    /// 処理概要: 単一の接続を曲線、始点ドット、終点矢印として描画します。
+    ///
+    /// - Parameters:
+    ///   - connection: 描画対象の静的フロー接続。
+    ///   - context: SwiftUI Canvas の描画 context。
+    private func draw(_ connection: OpenGraphiteStaticFlowConnection, in context: GraphicsContext) {
+        let source = connection.sourcePoint
+        let target = connection.targetPoint
+        let controlOffset = max(abs(target.x - source.x) * 0.35, 96)
+        let firstControl = CGPoint(x: source.x + controlOffset, y: source.y)
+        let targetControlDirection: CGFloat = connection.targetSide == .right ? 1 : -1
+        let secondControl = CGPoint(x: target.x + controlOffset * targetControlDirection, y: target.y)
+        let color = Color.accentColor.opacity(0.82)
+
+        var path = Path()
+        path.move(to: source)
+        path.addCurve(to: target, control1: firstControl, control2: secondControl)
+        context.stroke(
+            path,
+            with: .color(color),
+            style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
+        )
+
+        let sourceDotRect = CGRect(x: source.x - 4, y: source.y - 4, width: 8, height: 8)
+        context.fill(Path(ellipseIn: sourceDotRect), with: .color(color))
+        context.fill(arrowHead(at: target, from: secondControl), with: .color(color))
+    }
+
+    /// 論理名（日本語）: 矢印ヘッド生成関数
+    /// 処理概要: 曲線終端の接線方向に合わせた三角形パスを生成します。
+    ///
+    /// - Parameters:
+    ///   - point: 矢印先端座標。
+    ///   - previousPoint: 終端接線を推定するための直前制御点。
+    /// - Returns: 矢印ヘッドのパス。
+    private func arrowHead(at point: CGPoint, from previousPoint: CGPoint) -> Path {
+        let angle = atan2(point.y - previousPoint.y, point.x - previousPoint.x)
+        let length: CGFloat = 14
+        let spread = CGFloat.pi / 7
+        let left = CGPoint(
+            x: point.x - cos(angle - spread) * length,
+            y: point.y - sin(angle - spread) * length
+        )
+        let right = CGPoint(
+            x: point.x - cos(angle + spread) * length,
+            y: point.y - sin(angle + spread) * length
+        )
+
+        var path = Path()
+        path.move(to: point)
+        path.addLine(to: left)
+        path.addLine(to: right)
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// 論理名（日本語）: キャンバスページ名カード
 /// 概要: キャンバス上のページ枠左上外側に表示するページ識別子カードです。
 ///
 /// プロパティ:
 /// - `title`: 表示するページ識別子。
+/// - `placementName`: フロー解決に使う配置名。
 /// - `path`: HTML root から見た相対パス。
 /// - `resolution`: ページプレビューの解像度表示。
 /// - `isSelected`: 対象ページが選択中か。
 /// - `maxTextWidth`: ページ幅に応じたテキスト最大幅。
 private struct CanvasPageNameCard: View {
     var title: String
+    var placementName: String?
     var path: String
     var resolution: String
     var isSelected: Bool
@@ -589,7 +730,7 @@ private struct CanvasPageNameCard: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Text("\(path) · \(resolution)")
+            Text(detailText)
                 .font(.caption2.monospaced())
                 .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.secondary)
                 .lineLimit(1)
@@ -607,8 +748,15 @@ private struct CanvasPageNameCard: View {
                     .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
-            .help("\(title) · \(path) · \(resolution)")
-            .accessibilityLabel("\(title), \(path), \(resolution)")
+            .help("\(title) · \(detailText)")
+            .accessibilityLabel("\(title), \(detailText)")
+    }
+
+    private var detailText: String {
+        ([placementName, path, resolution].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }).joined(separator: " · ")
     }
 }
 

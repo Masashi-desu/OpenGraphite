@@ -400,6 +400,7 @@ struct OpenGraphiteAgentCoreTests {
         let summary = try fixture.core.placeProjectPage(
             projectURL: projectURL,
             id: "home",
+            name: " Desktop ",
             x: 1520,
             y: 80,
             width: nil,
@@ -407,6 +408,7 @@ struct OpenGraphiteAgentCoreTests {
         )
 
         // 期待値：未指定の width/height は維持され、指定座標だけが更新される
+        #expect(summary.pages[0].canvas.name == "Desktop")
         #expect(summary.pages[0].canvas.x == 1520)
         #expect(summary.pages[0].canvas.y == 80)
         #expect(summary.pages[0].canvas.width == 1440)
@@ -470,20 +472,36 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeProjectWithComponents(to: projectURL)
 
         // 検証内容：既存 cards component の width/height だけを更新する
-        let summary = try fixture.core.placeProjectComponent(
+        var summary = try fixture.core.placeProjectComponent(
             projectURL: projectURL,
             id: "cards",
+            name: " Components ",
             x: nil,
             y: nil,
             width: 1040,
             height: 960
         )
 
-        // 期待値：未指定の x/y は維持され、指定サイズだけが更新される
+        // 期待値：未指定の x/y は維持され、指定サイズと配置名だけが更新される
+        #expect(summary.components[0].canvas.name == "Components")
         #expect(summary.components[0].canvas.x == 0)
         #expect(summary.components[0].canvas.y == 0)
         #expect(summary.components[0].canvas.width == 1040)
         #expect(summary.components[0].canvas.height == 960)
+
+        // 検証内容：配置名を空白で指定して名前なしへ戻す（When）
+        summary = try fixture.core.placeProjectComponent(
+            projectURL: projectURL,
+            id: "cards",
+            name: "   ",
+            x: nil,
+            y: nil,
+            width: nil,
+            height: nil
+        )
+
+        // 期待値：空白だけの配置名は空文字として保存される（Then）
+        #expect(summary.components[0].canvas.name == "")
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント削除テスト
@@ -655,6 +673,40 @@ struct OpenGraphiteAgentCoreTests {
         #expect(rejectedCode == 2)
         #expect(html.contains("--og-gap:32px;"))
         #expect(stderr.contains(".ogp"))
+    }
+
+    /// 論理名（日本語）: CLIページ配置名更新テスト
+    /// 概要: `ogkiln project page place` が canvas 配置名を更新できることを確認します。
+    @Test("CLIはproject page placeでcanvas配置名を更新できる")
+    func testCLIPlaceProjectPageUpdatesCanvasName() throws {
+        // コンディション：単一 page を持つ project manifest と CLI 出力受け取り先を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で home page の canvas 配置名を更新する（When）
+        let code = cli.run(
+            arguments: [
+                "project", "page", "place", "Sample.ogp",
+                "--page-id", "home",
+                "--name", " Desktop "
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+
+        // 期待値：CLI は成功し、配置名は trim されて JSON と manifest の両方へ反映される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"name\" : \"Desktop\""))
+        #expect(loadedProject.project.allPages[0].canvas.name == "Desktop")
     }
 
     /// 論理名（日本語）: CLIコンポーネント編集テスト
@@ -923,6 +975,7 @@ private struct AgentInterfaceFixture {
                   "id": "home",
                   "path": "index.html",
                   "canvas": {
+                    "name": "",
                     "x": 0,
                     "y": 0,
                     "width": 1440,
@@ -958,6 +1011,7 @@ private struct AgentInterfaceFixture {
                   "id": "home",
                   "path": "index.html",
                   "canvas": {
+                    "name": "",
                     "x": 0,
                     "y": 0,
                     "width": 1440,
@@ -973,6 +1027,7 @@ private struct AgentInterfaceFixture {
               "title": "Cards",
               "path": "cards.html",
               "canvas": {
+                "name": "",
                 "x": 0,
                 "y": 0,
                 "width": 960,

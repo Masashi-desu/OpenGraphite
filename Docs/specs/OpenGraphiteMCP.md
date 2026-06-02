@@ -77,7 +77,7 @@ page / component canvas / node を対象にする tool は `pageID` または `c
 
 `create_project_page` は page 登録と初期 canvas 配置を同時に扱える。`create_project_component` は component HTML の作成と登録を行い、配置変更は `place_project_component` で行う。
 
-`place_project_page` と `place_project_component` の `x`、`y`、`width`、`height` は任意であり、省略した値は `.ogp` 内の現在値を維持する。
+`place_project_page` と `place_project_component` の `name`、`x`、`y`、`width`、`height` は任意であり、省略した値は `.ogp` 内の現在値を維持する。`name` はフロー解決用の canvas 配置名として保存され、空文字または空白だけを指定すると名前なしとして保存する。
 
 `remove_project_component.deleteFile` は既定で `false` である。`true` の場合のみ、`.ogp` からの登録削除に加えて component HTML file も削除する。
 

@@ -256,8 +256,8 @@ struct InspectorView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else if let page = store.selectedPage {
-                PageInspectorView(page: page) { x, y, width, height in
-                    store.updateSelectedPageCanvas(x: x, y: y, width: width, height: height)
+                PageInspectorView(page: page) { x, y, width, height, name in
+                    store.updateSelectedPageCanvas(x: x, y: y, width: width, height: height, name: name)
                 }
                 .id(page.id)
             } else {
@@ -328,11 +328,13 @@ private struct NodeSummaryPanel: View {
 /// - `y`: キャンバス上の Y 座標。
 /// - `width`: ページプレビュー幅。
 /// - `height`: ページプレビュー高さ。
+/// - `name`: フロー解決に使う配置名。名前なしは空文字です。
 private struct PageCanvasInput: Equatable {
     var x: Double
     var y: Double
     var width: Double
     var height: Double
+    var name: String
 
     /// 論理名（日本語）: ページキャンバス入力値初期化関数
     /// 処理概要: `OpenGraphiteCanvas` から Inspector 入力比較用の値を生成します。
@@ -343,6 +345,7 @@ private struct PageCanvasInput: Equatable {
         y = canvas.y
         width = canvas.width
         height = canvas.height
+        name = Self.normalizedName(canvas.name)
     }
 
     /// 論理名（日本語）: ページキャンバス入力値初期化関数
@@ -353,11 +356,22 @@ private struct PageCanvasInput: Equatable {
     ///   - y: キャンバス上の Y 座標。
     ///   - width: ページプレビュー幅。
     ///   - height: ページプレビュー高さ。
-    init(x: Double, y: Double, width: Double, height: Double) {
+    ///   - name: フロー解決に使う配置名。
+    init(x: Double, y: Double, width: Double, height: Double, name: String) {
         self.x = x
         self.y = y
         self.width = width
         self.height = height
+        self.name = Self.normalizedName(name)
+    }
+
+    /// 論理名（日本語）: ページキャンバス配置名正規化関数
+    /// 処理概要: 入力された配置名の前後空白を除去し、空なら空文字へ変換します。
+    ///
+    /// - Parameter name: 正規化する配置名。
+    /// - Returns: 比較・保存用の配置名。
+    private static func normalizedName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -369,8 +383,9 @@ private struct PageCanvasInput: Equatable {
 /// - `onCommit`: 有効なキャンバス入力を適用する処理。
 private struct PageInspectorView: View {
     var page: OpenGraphitePage
-    var onCommit: (Double, Double, Double, Double) -> Void
+    var onCommit: (Double, Double, Double, Double, String) -> Void
 
+    @State private var nameDraft: String
     @State private var xDraft: String
     @State private var yDraft: String
     @State private var widthDraft: String
@@ -382,9 +397,10 @@ private struct PageInspectorView: View {
     /// - Parameters:
     ///   - page: 表示・編集対象のページ。
     ///   - onCommit: 有効なキャンバス入力を適用する処理。
-    init(page: OpenGraphitePage, onCommit: @escaping (Double, Double, Double, Double) -> Void) {
+    init(page: OpenGraphitePage, onCommit: @escaping (Double, Double, Double, Double, String) -> Void) {
         self.page = page
         self.onCommit = onCommit
+        _nameDraft = State(initialValue: page.canvas.displayName ?? "")
         _xDraft = State(initialValue: Self.draftText(for: page.canvas.x))
         _yDraft = State(initialValue: Self.draftText(for: page.canvas.y))
         _widthDraft = State(initialValue: Self.draftText(for: page.canvas.width))
@@ -398,11 +414,18 @@ private struct PageInspectorView: View {
 
                 InspectorSection(title: "Context") {
                     InspectorInfoRow(label: "path", value: page.path)
+                    InspectorInfoRow(label: "name", value: page.canvas.displayName ?? "-")
                     InspectorInfoRow(label: "resolution", value: page.canvas.resolutionLabel)
                     InspectorInfoRow(label: "position", value: page.canvas.positionLabel)
                 }
 
                 InspectorSection(title: "Canvas") {
+                    OptionalCanvasNameField(
+                        label: "Name",
+                        text: $nameDraft,
+                        onSubmit: commitIfValid
+                    )
+
                     InspectorFieldGrid {
                         RequiredCanvasNumberField(
                             label: "X",
@@ -477,6 +500,10 @@ private struct PageInspectorView: View {
         ]
     }
 
+    private var normalizedNameDraft: String {
+        nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var parsedInput: PageCanvasInput? {
         guard validationMessage == nil else { return nil }
         let values = normalizedDrafts
@@ -487,7 +514,7 @@ private struct PageInspectorView: View {
         else {
             return nil
         }
-        return PageCanvasInput(x: x, y: y, width: width, height: height)
+        return PageCanvasInput(x: x, y: y, width: width, height: height, name: normalizedNameDraft)
     }
 
     private var validationMessage: String? {
@@ -520,7 +547,7 @@ private struct PageInspectorView: View {
     /// 処理概要: 必須入力と数値条件を満たす場合だけキャンバス配置を適用します。
     private func commitIfValid() {
         guard let parsedInput else { return }
-        onCommit(parsedInput.x, parsedInput.y, parsedInput.width, parsedInput.height)
+        onCommit(parsedInput.x, parsedInput.y, parsedInput.width, parsedInput.height, parsedInput.name)
     }
 
     /// 論理名（日本語）: ページキャンバスdraftリセット関数
@@ -528,6 +555,7 @@ private struct PageInspectorView: View {
     ///
     /// - Parameter canvas: 入力欄へ反映するキャンバス定義。
     private func resetDrafts(with canvas: OpenGraphiteCanvas) {
+        nameDraft = canvas.displayName ?? ""
         xDraft = Self.draftText(for: canvas.x)
         yDraft = Self.draftText(for: canvas.y)
         widthDraft = Self.draftText(for: canvas.width)
@@ -602,6 +630,45 @@ private struct PageSummaryPanel: View {
             RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
                 .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
         )
+    }
+}
+
+/// 論理名（日本語）: 任意キャンバス名フィールド
+/// 概要: Page canvas のフロー解決用配置名を入力する任意テキスト欄です。
+///
+/// プロパティ:
+/// - `label`: 入力欄ラベル。
+/// - `text`: 入力文字列 binding。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct OptionalCanvasNameField: View {
+    var label: String
+    @Binding var text: String
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text("optional")
+                    .font(.caption2)
+                    .foregroundStyle(Color.secondary.opacity(0.72))
+                    .lineLimit(1)
+            }
+
+            TextField("desktop", text: $text)
+                .textFieldStyle(.plain)
+                .font(.caption.monospaced())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .onSubmit(onSubmit)
+                .frame(minWidth: 0, maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

@@ -186,15 +186,28 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
 /// 概要: ページプレビューをキャンバスへ配置するための座標とサイズを表します。
 ///
 /// プロパティ:
+/// - `name`: 同一キャンバス内でフロー解決対象を絞り込む配置名。名前なしは空文字として明示します。
 /// - `x`: キャンバス上の X 座標。
 /// - `y`: キャンバス上の Y 座標。
 /// - `width`: プレビュー幅。
 /// - `height`: プレビュー高さ。
 struct OpenGraphiteCanvas: Codable, Equatable {
+    var name: String = ""
     var x: Double
     var y: Double
     var width: Double
     var height: Double
+
+    /// フロー解決で比較する正規化済み配置名。
+    var flowResolutionName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// UI 表示向けの配置名。未指定時は `nil` を返します。
+    var displayName: String? {
+        let normalizedName = flowResolutionName
+        return normalizedName.isEmpty ? nil : normalizedName
+    }
 
     /// 解像度を UI 表示向けに短く整形した文字列。
     var resolutionLabel: String {

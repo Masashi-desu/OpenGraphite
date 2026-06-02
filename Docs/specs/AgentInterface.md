@@ -44,7 +44,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
           "id": "home",
           "path": "index.html",
           "htmlURL": "/repo/public/index.html",
-          "canvas": { "x": 0, "y": 0, "width": 1440, "height": 1200 }
+          "canvas": { "name": "", "x": 0, "y": 0, "width": 1440, "height": 1200 }
         }
       ]
     }
@@ -56,7 +56,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "id": "home",
       "path": "index.html",
       "htmlURL": "/repo/public/index.html",
-      "canvas": { "x": 0, "y": 0, "width": 1440, "height": 1200 }
+      "canvas": { "name": "", "x": 0, "y": 0, "width": 1440, "height": 1200 }
     }
   ],
   "components": [
@@ -66,7 +66,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "id": "design-system",
       "path": "_components/design-system.html",
       "htmlURL": "/repo/public/_components/design-system.html",
-      "canvas": { "x": 1120, "y": 0, "width": 1180, "height": 1900 }
+      "canvas": { "name": "", "x": 1120, "y": 0, "width": 1180, "height": 1900 }
     }
   ],
   "diagnostics": []
@@ -135,10 +135,10 @@ ogkiln contract get --json
 ogkiln project current --json
 ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id docs --path docs.html --title Docs --body-file docs.body.html --x 2960 --y 0
 ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id legacy --path legacy.html --x 4440 --y 0
-ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id docs --x 3040 --y 0
+ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id docs --name Desktop --x 3040 --y 0
 ogkiln project component create SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
 ogkiln project component add SampleProject/OpenGraphiteSample.ogp --component-id legacy-ui --path _components/legacy-ui.html --width 960 --height 900
-ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --width 1180 --height 1900
+ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id shared-ui --name Desktop --width 1180 --height 1900
 ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id legacy-ui
 ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id docs --output screenshots/docs.png

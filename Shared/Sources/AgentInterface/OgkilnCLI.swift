@@ -112,6 +112,7 @@ struct OgkilnCLI {
                 let summary = try core.placeProjectPage(
                     projectURL: projectURL,
                     id: id,
+                    name: try optionalOption("--name", in: arguments),
                     x: try doubleOption("--x", in: arguments),
                     y: try doubleOption("--y", in: arguments),
                     width: try doubleOption("--width", in: arguments),
@@ -174,6 +175,7 @@ struct OgkilnCLI {
                 let summary = try core.placeProjectComponent(
                     projectURL: projectURL,
                     id: id,
+                    name: try optionalOption("--name", in: arguments),
                     x: try doubleOption("--x", in: arguments),
                     y: try doubleOption("--y", in: arguments),
                     width: try doubleOption("--width", in: arguments),
@@ -546,11 +548,11 @@ struct OgkilnCLI {
       ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project page place <project.ogp|current> --page-id <page-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project page place <project.ogp|current> --page-id <page-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component add <project.ogp|current> --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project component create <project.ogp|current> --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project component place <project.ogp|current> --component-id <component-id> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
       ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
       ogkiln validate <project.ogp|current> [--json]

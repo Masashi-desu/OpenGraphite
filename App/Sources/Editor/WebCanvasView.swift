@@ -177,6 +177,7 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteContextMenu")
         userContentController.add(context.coordinator, name: "openGraphiteScrollState")
         userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
+        userContentController.add(context.coordinator, name: "openGraphiteStaticFlowLinks")
         userContentController.addUserScript(
             WKUserScript(
                 source: Self.bridgeScript,
@@ -283,6 +284,7 @@ struct WebCanvasView: NSViewRepresentable {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteContextMenu")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteScrollState")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteDocumentChange")
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteStaticFlowLinks")
         WebScrollStateRegistry.shared.remove(for: nsView)
     }
 
@@ -325,7 +327,12 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - userContentController: メッセージ送信元の user content controller。
         ///   - message: JavaScript bridge から届いたメッセージ。
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard isInteractive || message.name == "openGraphiteScrollState" else { return }
+            guard isInteractive
+                    || message.name == "openGraphiteScrollState"
+                    || message.name == "openGraphiteStaticFlowLinks"
+            else {
+                return
+            }
 
             if message.name == "openGraphiteNodes", let payload = message.body as? [[String: Any]] {
                 Task { @MainActor in
@@ -359,6 +366,13 @@ struct WebCanvasView: NSViewRepresentable {
                     serializeAndSyncHTML {}
                 }
             }
+
+            if message.name == "openGraphiteStaticFlowLinks", let payload = message.body as? [[String: Any]] {
+                Task { @MainActor in
+                    guard let loadedURL else { return }
+                    store.ingestStaticFlowLinkPayload(payload, pageURL: loadedURL)
+                }
+            }
         }
 
         /// 論理名（日本語）: WebView読み込み完了関数
@@ -369,6 +383,7 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - navigation: 完了した navigation。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             renderLocalComponentReferences(in: webView)
+            collectStaticFlowLinks()
             guard isInteractive else { return }
             collectNodes()
             Task { @MainActor in
@@ -419,6 +434,7 @@ struct WebCanvasView: NSViewRepresentable {
 
                 webView.evaluateJavaScript(renderScript) { [weak self] result, _ in
                     guard let self, (result as? Bool) == true else { return }
+                    self.collectStaticFlowLinks()
                     if self.isInteractive {
                         self.collectNodes()
                     }
@@ -442,6 +458,12 @@ struct WebCanvasView: NSViewRepresentable {
         /// 処理概要: 表示中 DOM から OpenGraphite node graph を JavaScript bridge 経由で再収集します。
         func collectNodes() {
             webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
+        }
+
+        /// 論理名（日本語）: WebView静的フローリンク収集関数
+        /// 処理概要: 表示中 DOM の静的リンク要素と viewport 矩形を JavaScript bridge 経由で再収集します。
+        func collectStaticFlowLinks() {
+            webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectStaticFlowLinks();")
         }
 
         /// 論理名（日本語）: WebView読み込み失敗関数
@@ -1155,6 +1177,85 @@ struct WebCanvasView: NSViewRepresentable {
           return deepestText && !hasLockedAncestor(deepestText) ? deepestText : null;
         }
 
+        var staticFlowCollectionFrame = null;
+
+        function staticFlowTargetFor(element) {
+          const rawTarget = [
+            element.getAttribute('href'),
+            element.getAttribute('data-og-target'),
+            element.getAttribute('data-og-href'),
+            element.getAttribute('data-og-link')
+          ].find((value) => value && value.trim().length > 0) || '';
+          if (!rawTarget) { return null; }
+
+          let resolvedTarget = '';
+          if (typeof element.href === 'string' && element.href.trim().length > 0) {
+            resolvedTarget = element.href;
+          } else {
+            try {
+              resolvedTarget = new URL(rawTarget, window.location.href).href;
+            } catch (_) {
+              resolvedTarget = rawTarget;
+            }
+          }
+
+          return {
+            raw: rawTarget,
+            resolved: resolvedTarget
+          };
+        }
+
+        function sourceLabelForStaticFlow(element, fallback) {
+          const text = (element.innerText || element.textContent || '').trim().replace(/\\s+/g, ' ');
+          if (text.length > 0) { return text; }
+          return fallback || '';
+        }
+
+        function collectStaticFlowLinks() {
+          const selector = [
+            'a[href]',
+            '[data-og-type="button"][href]',
+            '[data-og-type="button"][data-og-target]',
+            '[data-og-type="button"][data-og-href]',
+            '[data-og-type="button"][data-og-link]'
+          ].join(',');
+          const elements = Array.from(new Set(Array.from(document.querySelectorAll(selector))));
+          const links = elements.flatMap((element, index) => {
+            const target = staticFlowTargetFor(element);
+            if (!target) { return []; }
+
+            const rect = element.getBoundingClientRect();
+            if (!Number.isFinite(rect.x) || !Number.isFinite(rect.y) || rect.width <= 0 || rect.height <= 0) {
+              return [];
+            }
+
+            const sourceNodeID = element.getAttribute('data-og-id') || element.id || '';
+            const fallbackID = 'static-flow-' + index + '-' + target.raw;
+            const id = (sourceNodeID || fallbackID) + ':' + target.raw;
+            return [{
+              id: id,
+              sourceNodeID: sourceNodeID,
+              sourceLabel: sourceLabelForStaticFlow(element, sourceNodeID),
+              targetHref: target.raw,
+              targetURL: target.resolved,
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height
+            }];
+          });
+          window.webkit.messageHandlers.openGraphiteStaticFlowLinks.postMessage(links);
+          return links;
+        }
+
+        function scheduleStaticFlowLinkCollection() {
+          if (staticFlowCollectionFrame !== null) { return; }
+          staticFlowCollectionFrame = window.requestAnimationFrame(function() {
+            staticFlowCollectionFrame = null;
+            collectStaticFlowLinks();
+          });
+        }
+
       function collectNodes() {
         const nodes = allEditableNodes().map((element) => ({
           id: element.getAttribute('data-og-id') || '',
@@ -1168,6 +1269,7 @@ struct WebCanvasView: NSViewRepresentable {
           depth: depth(element)
         }));
         window.webkit.messageHandlers.openGraphiteNodes.postMessage(nodes);
+        scheduleStaticFlowLinkCollection();
         return nodes;
       }
 
@@ -1680,6 +1782,7 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           postScrollState(emptyScrollState(false));
+          collectStaticFlowLinks();
           return true;
         }
 
@@ -1769,11 +1872,13 @@ struct WebCanvasView: NSViewRepresentable {
             selectNode(selectedID);
             notifySelection(selectedID);
           }
+          collectStaticFlowLinks();
           return { success: true, selectedID: selectedID };
         }
 
         window.OpenGraphite = {
           collectNodes: collectNodes,
+          collectStaticFlowLinks: collectStaticFlowLinks,
           selectNode: selectNode,
           setActiveTool: setActiveTool,
           setCSSVariable: setCSSVariable,
@@ -1877,11 +1982,25 @@ struct WebCanvasView: NSViewRepresentable {
 
         document.addEventListener('mouseleave', markPointerOutside, { capture: true });
 
-        document.addEventListener('scroll', updateLastPointerScrollState, true);
+        document.addEventListener('scroll', function() {
+          updateLastPointerScrollState();
+          scheduleStaticFlowLinkCollection();
+        }, true);
 
         document.addEventListener('wheel', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
         }, passivePointerOptions);
+
+        window.addEventListener('resize', scheduleStaticFlowLinkCollection, passivePointerOptions);
+
+        if (window.ResizeObserver) {
+          const staticFlowResizeObserver = new ResizeObserver(scheduleStaticFlowLinkCollection);
+          staticFlowResizeObserver.observe(document.documentElement);
+          if (document.body) {
+            staticFlowResizeObserver.observe(document.body);
+          }
+          window.__openGraphiteStaticFlowResizeObserver = staticFlowResizeObserver;
+        }
 
         document.addEventListener('click', function(event) {
           if (suppressNextClick) {
@@ -1936,6 +2055,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         document.addEventListener('opengraphite:components-ready', function() {
           collectNodes();
+          collectStaticFlowLinks();
           if (currentSelectedID) {
             selectNode(currentSelectedID);
           }
@@ -1943,6 +2063,7 @@ struct WebCanvasView: NSViewRepresentable {
 
       setTimeout(function() {
         collectNodes();
+        collectStaticFlowLinks();
         postScrollState(emptyScrollState(false));
       }, 0);
     })();

@@ -6,6 +6,7 @@
         {
           "canvas" : {
             "height" : 1200,
+            "name" : "Desktop",
             "width" : 1440,
             "x" : 0,
             "y" : 0
@@ -16,6 +17,7 @@
         {
           "canvas" : {
             "height" : 1200,
+            "name" : "Desktop",
             "width" : 1440,
             "x" : 1520,
             "y" : 0
@@ -26,6 +28,7 @@
         {
           "canvas" : {
             "height" : 1200,
+            "name" : "Desktop",
             "width" : 1440,
             "x" : 3040,
             "y" : 0
@@ -41,6 +44,7 @@
     {
       "canvas" : {
         "height" : 1900,
+        "name" : "Desktop",
         "width" : 1180,
         "x" : 1120,
         "y" : 0
