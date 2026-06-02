@@ -683,7 +683,8 @@ private struct CanvasStaticFlowOverlay: View {
         let source = connection.sourcePoint
         let target = connection.targetPoint
         let controlOffset = max(abs(target.x - source.x) * 0.35, 96)
-        let firstControl = CGPoint(x: source.x + controlOffset, y: source.y)
+        let sourceControlDirection: CGFloat = connection.sourceSide == .right ? 1 : -1
+        let firstControl = CGPoint(x: source.x + controlOffset * sourceControlDirection, y: source.y)
         let targetControlDirection: CGFloat = connection.targetSide == .right ? 1 : -1
         let secondControl = CGPoint(x: target.x + controlOffset * targetControlDirection, y: target.y)
         let color = Color.accentColor.opacity(0.82)

@@ -62,18 +62,22 @@ struct OpenGraphiteStaticFlowTests {
         )
 
         // 期待値：desktop 名を持つ docs 配置だけへ接続され、mobile 配置は混在しない（Then）
-        let connection = try #require(connections.first)
         #expect(connections.count == 1)
+        guard let connection = connections.first else {
+            Issue.record("静的フロー接続が生成されませんでした。")
+            return
+        }
         #expect(connection.sourcePageID == "home-desktop")
         #expect(connection.targetPageID == "docs-desktop")
         #expect(connection.sourcePoint == CGPoint(x: 48, y: 28))
+        #expect(connection.sourceSide == .right)
         #expect(connection.targetPoint == CGPoint(x: 200, y: 0))
         #expect(connection.targetSide == .left)
     }
 
-    /// 論理名（日本語）: 遷移先右側接続テスト
-    /// 概要: 遷移元が遷移先より右側にある場合、遷移先プレビュー右上へ接続することを検証します。
-    @Test("遷移元が右側にある場合は遷移先右上へ静的フローを接続する")
+    /// 論理名（日本語）: 左向きフロー接続テスト
+    /// 概要: 遷移元が遷移先より右側にある場合、ボタン左端から遷移先プレビュー右上へ接続することを検証します。
+    @Test("遷移元が右側にある場合はボタン左端から遷移先右上へ静的フローを接続する")
     func testConnectionsUseTargetRightSideWhenSourceIsRightOfTarget() throws {
         // コンディション：source が target の右側に配置された project を用意する（Given）
         let pages = [
@@ -120,10 +124,14 @@ struct OpenGraphiteStaticFlowTests {
             ]
         )
 
-        // 期待値：target の左端ではなく、source に近い右上へ接続される（Then）
-        let connection = try #require(connections.first)
+        // 期待値：source ボタン左端から、target の左端ではなく source に近い右上へ接続される（Then）
         #expect(connections.count == 1)
-        #expect(connection.sourcePoint == CGPoint(x: 348, y: 28))
+        guard let connection = connections.first else {
+            Issue.record("静的フロー接続が生成されませんでした。")
+            return
+        }
+        #expect(connection.sourcePoint == CGPoint(x: 312, y: 28))
+        #expect(connection.sourceSide == .left)
         #expect(connection.targetPoint == CGPoint(x: 100, y: 0))
         #expect(connection.targetSide == .right)
     }

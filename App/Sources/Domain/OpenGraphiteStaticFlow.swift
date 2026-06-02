@@ -91,7 +91,8 @@ enum OpenGraphiteStaticFlowHorizontalSide: Equatable {
 /// - `id`: 接続線の安定 ID。
 /// - `sourcePageID`: 遷移元 page ID。
 /// - `targetPageID`: 遷移先 page ID。
-/// - `sourcePoint`: 遷移元ボタン右端のキャンバス座標。
+/// - `sourcePoint`: 遷移元ボタン接続端のキャンバス座標。
+/// - `sourceSide`: 遷移元ボタンの接続側。
 /// - `targetPoint`: 遷移先プレビュー上部の接続点キャンバス座標。
 /// - `targetSide`: 遷移先プレビューの接続側。
 /// - `link`: 元になった静的フローリンク。
@@ -100,6 +101,7 @@ struct OpenGraphiteStaticFlowConnection: Identifiable, Equatable {
     var sourcePageID: String
     var targetPageID: String
     var sourcePoint: CGPoint
+    var sourceSide: OpenGraphiteStaticFlowHorizontalSide
     var targetPoint: CGPoint
     var targetSide: OpenGraphiteStaticFlowHorizontalSide
     var link: OpenGraphiteStaticFlowLink
@@ -152,9 +154,16 @@ enum OpenGraphiteStaticFlowResolver {
                     x: CGFloat(targetPage.canvas.x) - minX,
                     y: CGFloat(targetPage.canvas.y) - minY
                 )
-                let sourcePoint = CGPoint(
-                    x: sourceOrigin.x + link.sourceRect.maxX,
-                    y: sourceOrigin.y + link.sourceRect.midY
+                let sourceSide = resolvedSourceSide(
+                    sourceOrigin: sourceOrigin,
+                    sourceRect: link.sourceRect,
+                    targetOrigin: targetOrigin,
+                    targetPage: targetPage
+                )
+                let sourcePoint = resolvedSourcePoint(
+                    origin: sourceOrigin,
+                    rect: link.sourceRect,
+                    side: sourceSide
                 )
                 let targetSide = resolvedTargetSide(
                     sourcePoint: sourcePoint,
@@ -167,6 +176,7 @@ enum OpenGraphiteStaticFlowResolver {
                     sourcePageID: sourcePage.id,
                     targetPageID: targetPage.id,
                     sourcePoint: sourcePoint,
+                    sourceSide: sourceSide,
                     targetPoint: targetPoint,
                     targetSide: targetSide,
                     link: link
@@ -178,11 +188,48 @@ enum OpenGraphiteStaticFlowResolver {
         return connections
     }
 
+    /// 論理名（日本語）: 遷移元接続側判定関数
+    /// 処理概要: 遷移先プレビュー中心に近い左右端を、遷移元ボタンの接続側として選択します。
+    ///
+    /// - Parameters:
+    ///   - sourceOrigin: 遷移元プレビュー左上のキャンバス座標。
+    ///   - sourceRect: WebView viewport 内の遷移元要素矩形。
+    ///   - targetOrigin: 遷移先プレビュー左上のキャンバス座標。
+    ///   - targetPage: 遷移先 page。
+    /// - Returns: 遷移元ボタンの接続側。
+    private static func resolvedSourceSide(
+        sourceOrigin: CGPoint,
+        sourceRect: CGRect,
+        targetOrigin: CGPoint,
+        targetPage: OpenGraphitePage
+    ) -> OpenGraphiteStaticFlowHorizontalSide {
+        let sourceMidX = sourceOrigin.x + sourceRect.midX
+        let targetMidX = targetOrigin.x + CGFloat(targetPage.canvas.width) / 2
+        return targetMidX < sourceMidX ? .left : .right
+    }
+
+    /// 論理名（日本語）: 遷移元接続点生成関数
+    /// 処理概要: 選択された左右端に応じて、遷移元ボタン中央高の接続点を生成します。
+    ///
+    /// - Parameters:
+    ///   - origin: 遷移元プレビュー左上のキャンバス座標。
+    ///   - rect: WebView viewport 内の遷移元要素矩形。
+    ///   - side: 遷移元ボタンの接続側。
+    /// - Returns: 遷移元ボタン接続端のキャンバス座標。
+    private static func resolvedSourcePoint(
+        origin: CGPoint,
+        rect: CGRect,
+        side: OpenGraphiteStaticFlowHorizontalSide
+    ) -> CGPoint {
+        let x = side == .left ? rect.minX : rect.maxX
+        return CGPoint(x: origin.x + x, y: origin.y + rect.midY)
+    }
+
     /// 論理名（日本語）: 遷移先接続側判定関数
     /// 処理概要: 遷移元点に近い左右端を、遷移先プレビュー上部の接続側として選択します。
     ///
     /// - Parameters:
-    ///   - sourcePoint: 遷移元ボタン右端のキャンバス座標。
+    ///   - sourcePoint: 遷移元ボタン接続端のキャンバス座標。
     ///   - targetOrigin: 遷移先プレビュー左上のキャンバス座標。
     ///   - targetPage: 遷移先 page。
     /// - Returns: 遷移先プレビューの接続側。
