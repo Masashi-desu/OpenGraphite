@@ -5,6 +5,7 @@ import Foundation
 ///
 /// プロパティ:
 /// - `id`: `data-og-id`。
+/// - `internalID`: `data-og-internal-id`。
 /// - `tagName`: 小文字化した HTML タグ名。
 /// - `type`: `data-og-type`。
 /// - `layout`: `data-og-layout`。
@@ -18,6 +19,7 @@ import Foundation
 /// - `attributes`: 開始タグの属性辞書。
 struct OpenGraphiteAgentNode: Codable, Equatable {
     var id: String
+    var internalID: String
     var tagName: String
     var type: String
     var layout: String?
@@ -172,10 +174,14 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
 ///
 /// プロパティ:
 /// - `id`: Chapter ID。
+/// - `internalID`: `.ogp` 内で一意な Chapter 内部 ID。
+/// - `index`: `.ogp` 内の Chapter index。
 /// - `title`: Chapter 表示名。
 /// - `pages`: Chapter 内のページ要約一覧。
 struct OpenGraphiteChapterSummary: Codable, Equatable {
     var id: String
+    var internalID: String
+    var index: Int
     var title: String?
     var pages: [OpenGraphitePageSummary]
 }
@@ -187,6 +193,10 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
 /// - `chapterID`: 所属 Chapter ID。
 /// - `segment`: `pages` または `components`。
 /// - `id`: ページ ID。
+/// - `internalID`: `.ogp` 内で一意な HTML カード内部 ID。
+/// - `referenceID`: `segment` と内部 ID を組み合わせた agent 向け page 参照 ID。
+/// - `chapterIndex`: Pages セグメント内の Chapter index。
+/// - `pageIndex`: Chapter または Components 配列内の page index。
 /// - `path`: `htmlRoot` からの相対パス。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: キャンバス定義。
@@ -194,6 +204,10 @@ struct OpenGraphitePageSummary: Codable, Equatable {
     var chapterID: String
     var segment: String
     var id: String
+    var internalID: String
+    var referenceID: String
+    var chapterIndex: Int?
+    var pageIndex: Int
     var path: String
     var htmlURL: String
     var canvas: OpenGraphiteCanvas
@@ -205,7 +219,10 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 /// プロパティ:
 /// - `projectURL`: 参照元 `.ogp` の URL。
 /// - `chapterID`: `.ogp` 内の Chapter ID。
-/// - `pageID`: `.ogp` 内の page ID。
+/// - `chapterInternalID`: `.ogp` 内で一意な Chapter 内部 ID。
+/// - `pageID`: ``.ogp` 内の page 参照 ID。
+/// - `pageInternalID`: `.ogp` 内で一意な HTML カード内部 ID。
+/// - `referenceID`: agent 向け page 参照 ID。
 /// - `path`: `htmlRoot` から見た HTML path。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `rootURL`: HTML / CSS / assets の読み取り許可ルート。
@@ -213,7 +230,10 @@ struct OpenGraphitePageSummary: Codable, Equatable {
 struct OpenGraphiteProjectPageReference: Codable, Equatable {
     var projectURL: String
     var chapterID: String
+    var chapterInternalID: String
     var pageID: String
+    var pageInternalID: String
+    var referenceID: String
     var path: String
     var htmlURL: String
     var rootURL: String
@@ -244,11 +264,13 @@ struct OpenGraphiteProjectPageCreateResult: Codable, Equatable {
 ///
 /// プロパティ:
 /// - `loadedProject`: 読み込み済み `.ogp`。
+/// - `segment`: 対象が Pages / Components のどちらに属するか。
 /// - `chapter`: 対象 page entry を含む Chapter。
 /// - `page`: 対象 page entry。
 /// - `htmlURL`: 解決済み HTML URL。
 private struct OpenGraphiteProjectPageTarget {
     var loadedProject: LoadedOpenGraphiteProject
+    var segment: String
     var chapter: OpenGraphiteChapter
     var page: OpenGraphitePage
     var htmlURL: URL
@@ -260,7 +282,7 @@ private struct OpenGraphiteProjectPageTarget {
 /// プロパティ:
 /// - `chapterIndex`: Chapter 配列内の位置。
 /// - `pageIndex`: Chapter 内 pages 配列の位置。
-private struct OpenGraphiteProjectPageLocation {
+private struct OpenGraphiteProjectPageLocation: Equatable {
     var chapterIndex: Int
     var pageIndex: Int
 }
@@ -331,7 +353,7 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// - `removeProjectComponent(projectURL:id:deleteFile:)`: `.ogp` から component entry を削除する。
 /// - `createProjectPage(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と page entry 登録を一体で行う。
 /// - `createProjectComponent(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
-/// - `projectPageReference(projectURL:pageID:)`: `.ogp` の page ID から HTML を解決する。
+/// - `projectPageReference(projectURL:pageID:)`: ``.ogp` の page 参照 ID から HTML を解決する。
 /// - `placeProjectPage(projectURL:id:name:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
 /// - `placeProjectComponent(projectURL:id:name:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
 /// - `createPage(at:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML page file を作成する。
@@ -378,19 +400,35 @@ struct OpenGraphiteAgentCore {
             )
         }
 
-        let chapters = loadedProject.project.chapters.map { chapter in
-            let pages = chapter.pages.map { page in
-                pageSummary(for: page, chapterID: chapter.id, segment: "pages", loadedProject: loadedProject)
+        let chapters = loadedProject.project.chapters.enumerated().map { chapterIndex, chapter in
+            let pages = chapter.pages.enumerated().map { pageIndex, page in
+                pageSummary(
+                    for: page,
+                    chapter: chapter,
+                    chapterIndex: chapterIndex,
+                    pageIndex: pageIndex,
+                    segment: "pages",
+                    loadedProject: loadedProject
+                )
             }
             return OpenGraphiteChapterSummary(
                 id: chapter.id,
+                internalID: chapter.internalID,
+                index: chapterIndex,
                 title: chapter.title,
                 pages: pages
             )
         }
         let pages = chapters.flatMap(\.pages)
-        let components = loadedProject.project.components.map { page in
-            pageSummary(for: page, chapterID: "components", segment: "components", loadedProject: loadedProject)
+        let components = loadedProject.project.components.enumerated().map { pageIndex, page in
+            pageSummary(
+                for: page,
+                chapter: nil,
+                chapterIndex: nil,
+                pageIndex: pageIndex,
+                segment: "components",
+                loadedProject: loadedProject
+            )
         }
 
         return OpenGraphiteProjectSummary(
@@ -408,11 +446,11 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページ参照解決関数
-    /// 処理概要: `.ogp` の page ID から編集対象 HTML と読み取り許可ルートを解決します。
+    /// 処理概要: ``.ogp` の page 参照 ID から編集対象 HTML と読み取り許可ルートを解決します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 解決済み page reference。
     func projectPageReference(projectURL: URL, pageID: String) throws -> OpenGraphiteProjectPageReference {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
@@ -420,7 +458,10 @@ struct OpenGraphiteAgentCore {
         return OpenGraphiteProjectPageReference(
             projectURL: loadedProject.fileURL.path,
             chapterID: target.chapter.id,
+            chapterInternalID: target.chapter.internalID,
             pageID: target.page.id,
+            pageInternalID: target.page.internalID,
+            referenceID: pageReferenceID(segment: target.segment, chapter: target.chapter, page: target.page),
             path: target.page.path,
             htmlURL: target.htmlURL.path,
             rootURL: loadedProject.rootURL.path,
@@ -429,11 +470,11 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページグラフ生成関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML だけを対象に node graph を生成します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML だけを対象に node graph を生成します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: page graph。
     func pageGraph(projectURL: URL, pageID: String) throws -> OpenGraphitePageGraph {
         let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
@@ -522,10 +563,11 @@ struct OpenGraphiteAgentCore {
         id: String,
         deleteFile: Bool
     ) throws -> OpenGraphiteProjectSummary {
+        let componentInternalID = resolvedComponentID(id)
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
-        guard let componentIndex = project.components.firstIndex(where: { $0.id == id }) else {
-            throw OpenGraphiteAgentCoreError(message: "component id \"\(id)\" が見つかりません。")
+        guard let componentIndex = project.components.firstIndex(where: { $0.internalID == componentInternalID }) else {
+            throw OpenGraphiteAgentCoreError(message: "component internalID \"\(id)\" が見つかりません。")
         }
 
         let removedComponent = project.components.remove(at: componentIndex)
@@ -777,7 +819,7 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - id: 更新する component ID。
+    ///   - id: 更新する component page 内部 ID。
     ///   - name: 更新後の配置名。`nil` の場合は既存値を維持します。
     ///   - x: 更新後 X 座標。`nil` の場合は既存値を維持します。
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
@@ -793,10 +835,11 @@ struct OpenGraphiteAgentCore {
         width: Double?,
         height: Double?
     ) throws -> OpenGraphiteProjectSummary {
+        let componentInternalID = resolvedComponentID(id)
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
-        guard let componentIndex = project.components.firstIndex(where: { $0.id == id }) else {
-            throw OpenGraphiteAgentCoreError(message: "component id \"\(id)\" が見つかりません。")
+        guard let componentIndex = project.components.firstIndex(where: { $0.internalID == componentInternalID }) else {
+            throw OpenGraphiteAgentCoreError(message: "component internalID \"\(id)\" が見つかりません。")
         }
         if let width, width <= 0 {
             throw OpenGraphiteAgentCoreError(message: "--width は 0 より大きい数値で指定してください。")
@@ -855,7 +898,7 @@ struct OpenGraphiteAgentCore {
             )
         }
 
-        let html = """
+        let rawHTML = """
         <!doctype html>
         <html lang="\(Self.escapeAttribute(lang))">
           <head>
@@ -869,6 +912,7 @@ struct OpenGraphiteAgentCore {
           </body>
         </html>
         """
+        let html = OpenGraphiteHTMLDocument(html: rawHTML).ensuringInternalIDs()
 
         let document = OpenGraphiteHTMLDocument(html: html)
         let diagnostics = validate(nodes: document.nodes(), tags: document.parsedTags(), path: url.path)
@@ -982,11 +1026,11 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページノード検索関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML から node を検索します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML から node を検索します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     ///   - query: 絞り込み条件。
     /// - Returns: node query result。
     func queryNodes(
@@ -999,16 +1043,17 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: ノード取得関数
-    /// 処理概要: HTML から一意な `data-og-id` に一致する node を取得します。
+    /// 処理概要: HTML から一意な `data-og-internal-id` に一致する node を取得します。
     ///
     /// - Parameters:
-    ///   - id: 対象 `data-og-id`。
+    ///   - id: 対象 `data-og-internal-id`。
     ///   - url: HTML ファイル URL。
     /// - Returns: edit result 形式の node 取得結果。
     func node(id: String, at url: URL) throws -> OpenGraphiteEditResult {
+        let resolvedID = resolvedNodeID(id)
         let graph = try pageGraph(at: url)
-        let matches = graph.nodes.filter { $0.id == id }
-        let diagnostics = uniqueNodeDiagnostics(matches: matches, id: id, path: url.path)
+        let matches = graph.nodes.filter { $0.internalID == resolvedID }
+        let diagnostics = uniqueNodeDiagnostics(matches: matches, id: resolvedID, path: url.path)
         return OpenGraphiteEditResult(
             schemaVersion: Self.schemaVersion,
             updated: false,
@@ -1020,16 +1065,16 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページノード取得関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML から `data-og-id` に一致する node を取得します。
+    /// 処理概要: `.ogp` の page 参照 ID で明示された HTML から `data-og-internal-id` に一致する node を取得します。
     ///
     /// - Parameters:
-    ///   - id: 対象 `data-og-id`。
+    ///   - id: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: `.ogp` 内の page 参照 ID。
     /// - Returns: edit result 形式の node 取得結果。
     func node(id: String, projectURL: URL, pageID: String) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try node(id: id, at: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [id])
+        return try node(id: resolvedNodeID(id), at: target.htmlURL)
     }
 
     /// 論理名（日本語）: CSS変数ファイル更新関数
@@ -1038,29 +1083,30 @@ struct OpenGraphiteAgentCore {
     /// - Parameters:
     ///   - variable: 更新する CSS 変数。
     ///   - value: CSS 値。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func setCSSVariable(_ variable: String, value: String, nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let mutation = OpenGraphiteHTMLDocument(html: html).settingCSSVariable(
             variable,
             value: value,
-            forNodeID: nodeID,
+            forNodeID: normalizedNodeID,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: nodeID)
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページCSS変数更新関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node の CSS 変数を更新します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node の CSS 変数を更新します。
     ///
     /// - Parameters:
     ///   - variable: 更新する CSS 変数。
     ///   - value: CSS 値。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func setCSSVariable(
         _ variable: String,
@@ -1069,8 +1115,8 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try setCSSVariable(variable, value: value, nodeID: nodeID, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try setCSSVariable(variable, value: value, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: ノード属性ファイル更新関数
@@ -1079,29 +1125,30 @@ struct OpenGraphiteAgentCore {
     /// - Parameters:
     ///   - name: 更新する属性名。
     ///   - value: 属性値。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func setAttribute(_ name: String, value: String, nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let mutation = OpenGraphiteHTMLDocument(html: html).settingAttribute(
             name: name,
             value: value,
-            forNodeID: nodeID,
+            forNodeID: normalizedNodeID,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: nodeID)
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページ属性更新関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node の編集可能属性を更新します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node の編集可能属性を更新します。
     ///
     /// - Parameters:
     ///   - name: 更新する属性名。
     ///   - value: 属性値。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func setAttribute(
         _ name: String,
@@ -1110,8 +1157,8 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try setAttribute(name, value: value, nodeID: nodeID, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try setAttribute(name, value: value, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: テキスト内容ファイル更新関数
@@ -1119,27 +1166,28 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - text: 設定するテキスト。HTML としてではなく text として escape されます。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func setTextContent(_ text: String, nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let mutation = OpenGraphiteHTMLDocument(html: html).settingTextContent(
             text,
-            forNodeID: nodeID,
+            forNodeID: normalizedNodeID,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: nodeID)
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページテキスト更新関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node の text content を更新します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node の text content を更新します。
     ///
     /// - Parameters:
     ///   - text: 設定するテキスト。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func setTextContent(
         _ text: String,
@@ -1147,8 +1195,8 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try setTextContent(text, nodeID: nodeID, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try setTextContent(text, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: HTML断片挿入ファイル更新関数
@@ -1156,7 +1204,7 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - fragmentHTML: 挿入する HTML 断片。
-    ///   - anchorNodeID: 基準 `data-og-id`。
+    ///   - anchorNodeID: 基準 `data-og-internal-id`。
     ///   - position: 挿入位置。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
@@ -1166,31 +1214,32 @@ struct OpenGraphiteAgentCore {
         position: OpenGraphiteHTMLInsertionPosition,
         htmlURL: URL
     ) throws -> OpenGraphiteEditResult {
+        let resolvedAnchorNodeID = resolvedNodeID(anchorNodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let beforeIDs = Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.id))
         let mutation = OpenGraphiteHTMLDocument(html: html).insertingHTML(
             fragmentHTML,
-            relativeToNodeID: anchorNodeID,
+            relativeToNodeID: resolvedAnchorNodeID,
             position: position,
             contract: contract
         )
         return try persistMutation(
             mutation,
             htmlURL: htmlURL,
-            nodeID: anchorNodeID,
+            nodeID: resolvedAnchorNodeID,
             insertedNodeIDsBeforeMutation: beforeIDs
         )
     }
 
     /// 論理名（日本語）: プロジェクトページHTML挿入関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML に対して anchor node 基準で HTML 断片を挿入します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML に対して anchor node 基準で HTML 断片を挿入します。
     ///
     /// - Parameters:
     ///   - fragmentHTML: 挿入する HTML 断片。
-    ///   - anchorNodeID: 基準 `data-og-id`。
+    ///   - anchorNodeID: 基準 `data-og-internal-id`。
     ///   - position: 挿入位置。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func insertHTML(
         _ fragmentHTML: String,
@@ -1199,8 +1248,8 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try insertHTML(fragmentHTML, anchorNodeID: anchorNodeID, position: position, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [anchorNodeID])
+        return try insertHTML(fragmentHTML, anchorNodeID: resolvedNodeID(anchorNodeID), position: position, htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: 子HTML先頭挿入ファイル更新関数
@@ -1208,7 +1257,7 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - childHTML: 挿入する HTML 断片。
-    ///   - parentNodeID: 親 `data-og-id`。
+    ///   - parentNodeID: 親 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func prependChildHTML(_ childHTML: String, parentNodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
@@ -1216,13 +1265,13 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページ子HTML先頭挿入関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node の先頭へ子 HTML を挿入します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node の先頭へ子 HTML を挿入します。
     ///
     /// - Parameters:
     ///   - childHTML: 挿入する HTML 断片。
-    ///   - parentNodeID: 親 `data-og-id`。
+    ///   - parentNodeID: 親 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func prependChildHTML(
         _ childHTML: String,
@@ -1238,33 +1287,34 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - replacementHTML: 置換後 HTML 断片。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func replaceNodeHTML(_ replacementHTML: String, nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let beforeIDs = Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.id))
         let mutation = OpenGraphiteHTMLDocument(html: html).replacingNodeHTML(
             replacementHTML,
-            nodeID: nodeID,
+            nodeID: normalizedNodeID,
             contract: contract
         )
         return try persistMutation(
             mutation,
             htmlURL: htmlURL,
-            nodeID: nodeID,
+            nodeID: normalizedNodeID,
             insertedNodeIDsBeforeMutation: beforeIDs
         )
     }
 
     /// 論理名（日本語）: プロジェクトページノードHTML置換関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node subtree を HTML 断片で置換します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node subtree を HTML 断片で置換します。
     ///
     /// - Parameters:
     ///   - replacementHTML: 置換後 HTML 断片。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func replaceNodeHTML(
         _ replacementHTML: String,
@@ -1272,45 +1322,46 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try replaceNodeHTML(replacementHTML, nodeID: nodeID, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try replaceNodeHTML(replacementHTML, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: ノード削除ファイル更新関数
     /// 処理概要: HTML ファイル内の指定 node subtree を削除し、成功時に同じファイルへ書き戻します。
     ///
     /// - Parameters:
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
     func deleteNode(nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let mutation = OpenGraphiteHTMLDocument(html: html).deletingNode(
-            nodeID: nodeID,
+            nodeID: normalizedNodeID,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: nodeID)
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページノード削除関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node subtree を削除します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node subtree を削除します。
     ///
     /// - Parameters:
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func deleteNode(nodeID: String, projectURL: URL, pageID: String) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try deleteNode(nodeID: nodeID, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try deleteNode(nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: ノード移動ファイル更新関数
     /// 処理概要: HTML ファイル内の node subtree を別 node 基準位置へ移動し、成功時に同じファイルへ書き戻します。
     ///
     /// - Parameters:
-    ///   - nodeID: 移動する `data-og-id`。
-    ///   - targetNodeID: 移動先基準 `data-og-id`。
+    ///   - nodeID: 移動する `data-og-internal-id`。
+    ///   - targetNodeID: 移動先基準 `data-og-internal-id`。
     ///   - position: 移動先位置。
     ///   - htmlURL: HTML ファイル URL。
     /// - Returns: 編集結果。
@@ -1320,25 +1371,27 @@ struct OpenGraphiteAgentCore {
         position: OpenGraphiteHTMLInsertionPosition,
         htmlURL: URL
     ) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
+        let normalizedTargetNodeID = resolvedNodeID(targetNodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let mutation = OpenGraphiteHTMLDocument(html: html).movingNode(
-            nodeID: nodeID,
-            relativeToNodeID: targetNodeID,
+            nodeID: normalizedNodeID,
+            relativeToNodeID: normalizedTargetNodeID,
             position: position,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: nodeID)
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページノード移動関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node subtree を移動します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node subtree を移動します。
     ///
     /// - Parameters:
-    ///   - nodeID: 移動する `data-og-id`。
-    ///   - targetNodeID: 移動先基準 `data-og-id`。
+    ///   - nodeID: 移動する `data-og-internal-id`。
+    ///   - targetNodeID: 移動先基準 `data-og-internal-id`。
     ///   - position: 移動先位置。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func moveNode(
         nodeID: String,
@@ -1347,16 +1400,21 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
-        return try moveNode(nodeID: nodeID, targetNodeID: targetNodeID, position: position, htmlURL: target.htmlURL)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID, targetNodeID])
+        return try moveNode(
+            nodeID: resolvedNodeID(nodeID),
+            targetNodeID: resolvedNodeID(targetNodeID),
+            position: position,
+            htmlURL: target.htmlURL
+        )
     }
 
     /// 論理名（日本語）: ノード複製ファイル更新関数
     /// 処理概要: HTML ファイル内の node subtree を `data-og-id` prefix 付きで複製し、成功時に同じファイルへ書き戻します。
     ///
     /// - Parameters:
-    ///   - nodeID: 複製元 `data-og-id`。
-    ///   - targetNodeID: 複製先基準 `data-og-id`。
+    ///   - nodeID: 複製元 `data-og-internal-id`。
+    ///   - targetNodeID: 複製先基準 `data-og-internal-id`。
     ///   - position: 複製先位置。
     ///   - idPrefix: 複製 node の `data-og-id` に付ける prefix。
     ///   - htmlURL: HTML ファイル URL。
@@ -1368,11 +1426,13 @@ struct OpenGraphiteAgentCore {
         idPrefix: String,
         htmlURL: URL
     ) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
+        let normalizedTargetNodeID = resolvedNodeID(targetNodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
         let beforeIDs = Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.id))
         let mutation = OpenGraphiteHTMLDocument(html: html).copyingNode(
-            nodeID: nodeID,
-            relativeToNodeID: targetNodeID,
+            nodeID: normalizedNodeID,
+            relativeToNodeID: normalizedTargetNodeID,
             position: position,
             idPrefix: idPrefix,
             contract: contract
@@ -1380,21 +1440,21 @@ struct OpenGraphiteAgentCore {
         return try persistMutation(
             mutation,
             htmlURL: htmlURL,
-            nodeID: "\(idPrefix)\(nodeID)",
+            nodeID: "\(idPrefix)\(normalizedNodeID)",
             insertedNodeIDsBeforeMutation: beforeIDs
         )
     }
 
     /// 論理名（日本語）: プロジェクトページノード複製関数
-    /// 処理概要: `.ogp` の page ID で明示された HTML 内 node subtree を prefix 付きで複製します。
+    /// 処理概要: ``.ogp` の page 参照 ID で明示された HTML 内 node subtree を prefix 付きで複製します。
     ///
     /// - Parameters:
-    ///   - nodeID: 複製元 `data-og-id`。
-    ///   - targetNodeID: 複製先基準 `data-og-id`。
+    ///   - nodeID: 複製元 `data-og-internal-id`。
+    ///   - targetNodeID: 複製先基準 `data-og-internal-id`。
     ///   - position: 複製先位置。
     ///   - idPrefix: 複製 node の `data-og-id` に付ける prefix。
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 編集結果。
     func copyNode(
         nodeID: String,
@@ -1404,10 +1464,10 @@ struct OpenGraphiteAgentCore {
         projectURL: URL,
         pageID: String
     ) throws -> OpenGraphiteEditResult {
-        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID, targetNodeID])
         return try copyNode(
-            nodeID: nodeID,
-            targetNodeID: targetNodeID,
+            nodeID: resolvedNodeID(nodeID),
+            targetNodeID: resolvedNodeID(targetNodeID),
             position: position,
             idPrefix: idPrefix,
             htmlURL: target.htmlURL
@@ -1419,11 +1479,90 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 内部ターゲット。
-    private func projectPageTarget(projectURL: URL, pageID: String) throws -> OpenGraphiteProjectPageTarget {
+    private func projectPageTarget(
+        projectURL: URL,
+        pageID: String,
+        nodeReferenceIDs: [String] = []
+    ) throws -> OpenGraphiteProjectPageTarget {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
-        return try projectPageTarget(loadedProject: loadedProject, pageID: pageID)
+        let resolvedPageID = try resolvedPageReferenceString(
+            in: loadedProject.project,
+            explicitPageID: pageID,
+            nodeReferenceIDs: nodeReferenceIDs
+        ) ?? pageID
+        return try projectPageTarget(loadedProject: loadedProject, pageID: resolvedPageID)
+    }
+
+    /// 論理名（日本語）: Node ID正規化関数
+    /// 処理概要: typed node 参照 ID が渡された場合は HTML 上の `data-og-internal-id` へ変換します。
+    ///
+    /// - Parameter id: raw node 内部 ID または `ogref:node` / `ogref:component-node`。
+    /// - Returns: HTML 編集で使う node 内部 ID。
+    private func resolvedNodeID(_ id: String) -> String {
+        OpenGraphiteReferenceID.nodeInternalID(from: id) ?? id
+    }
+
+    /// 論理名（日本語）: Component ID正規化関数
+    /// 処理概要: typed component 参照 ID が渡された場合は component canvas 内部 ID へ変換します。
+    ///
+    /// - Parameter id: raw component 内部 ID または `ogref:component`。
+    /// - Returns: `.ogp` manifest で使う component 内部 ID。
+    private func resolvedComponentID(_ id: String) -> String {
+        OpenGraphiteReferenceID.componentInternalID(from: id) ?? id
+    }
+
+    /// 論理名（日本語）: 参照IDページ整合性検証関数
+    /// 処理概要: typed node 参照が含む page / component が互いに、また明示 page ID と一致するか検証します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` プロジェクト。
+    ///   - explicitPageID: 呼び出し側が明示した page ID。
+    ///   - nodeReferenceIDs: raw ID または typed node 参照 ID 候補。
+    /// - Returns: typed node 参照から復元した `ogref:page` または `ogref:component`。存在しない場合は `nil`。
+    private func resolvedPageReferenceString(
+        in project: OpenGraphiteProject,
+        explicitPageID: String,
+        nodeReferenceIDs: [String]
+    ) throws -> String? {
+        var resolvedReferenceID: String?
+        var resolvedLocation: OpenGraphiteProjectPageLocation?
+
+        for nodeReferenceID in nodeReferenceIDs {
+            guard let pageReferenceID = OpenGraphiteReferenceID.containingPageReferenceString(from: nodeReferenceID) else {
+                continue
+            }
+            guard let pageLocation = pageLocation(in: project, pageID: pageReferenceID) else {
+                throw OpenGraphiteAgentCoreError(
+                    message: "node reference \"\(nodeReferenceID)\" が指す page \"\(pageReferenceID)\" が .ogp に存在しません。"
+                )
+            }
+
+            if let currentLocation = resolvedLocation, currentLocation != pageLocation {
+                throw OpenGraphiteAgentCoreError(
+                    message: "node reference IDs が異なる page を指しています: \"\(resolvedReferenceID ?? "")\" と \"\(pageReferenceID)\"。"
+                )
+            }
+
+            if resolvedLocation == nil {
+                resolvedReferenceID = pageReferenceID
+                resolvedLocation = pageLocation
+            }
+        }
+
+        guard let resolvedReferenceID, let resolvedLocation else {
+            return nil
+        }
+
+        if let explicitLocation = pageLocation(in: project, pageID: explicitPageID),
+           explicitLocation != resolvedLocation {
+            throw OpenGraphiteAgentCoreError(
+                message: "pageID \"\(explicitPageID)\" と node reference \"\(resolvedReferenceID)\" が異なる page を指しています。"
+            )
+        }
+
+        return resolvedReferenceID
     }
 
     /// 論理名（日本語）: 読み込み済みプロジェクトページターゲット解決関数
@@ -1431,7 +1570,7 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - loadedProject: 読み込み済み `.ogp`。
-    ///   - pageID: `.ogp` 内の page ID。
+    ///   - pageID: ``.ogp` 内の page 参照 ID。
     /// - Returns: 内部ターゲット。
     private func projectPageTarget(
         loadedProject: LoadedOpenGraphiteProject,
@@ -1443,7 +1582,12 @@ struct OpenGraphiteAgentCore {
         let chapter: OpenGraphiteChapter
         let page: OpenGraphitePage
         if location.chapterIndex == -1 {
-            chapter = OpenGraphiteChapter(id: "components", title: "Components", pages: loadedProject.project.components)
+            chapter = OpenGraphiteChapter(
+                id: "components",
+                internalID: "components",
+                title: "Components",
+                pages: loadedProject.project.components
+            )
             page = loadedProject.project.components[location.pageIndex]
         } else {
             chapter = loadedProject.project.chapters[location.chapterIndex]
@@ -1457,6 +1601,7 @@ struct OpenGraphiteAgentCore {
         }
         return OpenGraphiteProjectPageTarget(
             loadedProject: loadedProject,
+            segment: location.chapterIndex == -1 ? "components" : "pages",
             chapter: chapter,
             page: page,
             htmlURL: htmlURL
@@ -1476,21 +1621,87 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: ページ位置検索関数
-    /// 処理概要: Chapter 配列を横断し、指定 page ID の Chapter index と page index を返します。
+    /// 処理概要: Chapter 配列を横断し、指定 page 内部 ID または複合参照 ID の Chapter index と page index を返します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` プロジェクト。
-    ///   - pageID: 検索する page ID。
+    ///   - pageID: 検索する page 内部 ID または複合参照 ID。
     /// - Returns: 見つかった page の位置。存在しない場合は `nil`。
     private func pageLocation(in project: OpenGraphiteProject, pageID: String) -> OpenGraphiteProjectPageLocation? {
+        let normalizedPageID = pageID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let typedLocation = typedPageLocation(in: project, referenceID: normalizedPageID) {
+            return typedLocation
+        }
+        if let compoundLocation = compoundPageLocation(in: project, referenceID: normalizedPageID) {
+            return compoundLocation
+        }
+
         for chapterIndex in project.chapters.indices {
-            if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.id == pageID }) {
+            if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == normalizedPageID }) {
                 return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
             }
         }
-        if let componentIndex = project.components.firstIndex(where: { $0.id == pageID }) {
+        if let componentIndex = project.components.firstIndex(where: { $0.internalID == normalizedPageID }) {
             return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: componentIndex)
         }
+
+        return nil
+    }
+
+    /// 論理名（日本語）: typedページ参照解決関数
+    /// 処理概要: `ogref:page` / `ogref:component` / typed node 参照を page 位置へ解決します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` プロジェクト。
+    ///   - referenceID: typed agent 参照 ID。
+    /// - Returns: 見つかった page の位置。存在しない場合は `nil`。
+    private func typedPageLocation(in project: OpenGraphiteProject, referenceID: String) -> OpenGraphiteProjectPageLocation? {
+        guard let reference = OpenGraphiteReferenceID(parsing: referenceID) else {
+            return nil
+        }
+
+        switch reference.type {
+        case .page, .node:
+            let chapterID = reference.parts[0]
+            let pageID = reference.parts[1]
+            guard let chapterIndex = project.chapters.firstIndex(where: { $0.internalID == chapterID }),
+                  let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == pageID })
+            else {
+                return nil
+            }
+            return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+        case .component, .componentNode:
+            let componentID = reference.parts[0]
+            guard let pageIndex = project.components.firstIndex(where: { $0.internalID == componentID }) else {
+                return nil
+            }
+            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: pageIndex)
+        case .chapter:
+            return nil
+        }
+    }
+
+    /// 論理名（日本語）: 複合ページ参照解決関数
+    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<componentInternalID>:<nodeInternalID>` を page 位置へ解決します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` プロジェクト。
+    ///   - referenceID: agent 向け page または node 参照 ID。
+    /// - Returns: 見つかった page の位置。存在しない場合は `nil`。
+    private func compoundPageLocation(in project: OpenGraphiteProject, referenceID: String) -> OpenGraphiteProjectPageLocation? {
+        let parts = referenceID.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+
+        if parts.count >= 2,
+           let chapterIndex = project.chapters.firstIndex(where: { $0.internalID == parts[0] }),
+           let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == parts[1] }) {
+            return OpenGraphiteProjectPageLocation(chapterIndex: chapterIndex, pageIndex: pageIndex)
+        }
+
+        if parts.count >= 2,
+           let pageIndex = project.components.firstIndex(where: { $0.internalID == parts[0] }) {
+            return OpenGraphiteProjectPageLocation(chapterIndex: -1, pageIndex: pageIndex)
+        }
+
         return nil
     }
 
@@ -1499,23 +1710,49 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - page: 要約する page 定義。
-    ///   - chapterID: 所属 Chapter ID。
+    ///   - chapter: 所属 Chapter。Components セグメントの場合は `nil`。
+    ///   - chapterIndex: 所属 Chapter index。Components セグメントの場合は `nil`。
+    ///   - pageIndex: Chapter または Components 配列内の page index。
     ///   - loadedProject: 読み込み済み `.ogp`。
     /// - Returns: JSON 出力用 page summary。
     private func pageSummary(
         for page: OpenGraphitePage,
-        chapterID: String,
+        chapter: OpenGraphiteChapter?,
+        chapterIndex: Int?,
+        pageIndex: Int,
         segment: String,
         loadedProject: LoadedOpenGraphiteProject
     ) -> OpenGraphitePageSummary {
         OpenGraphitePageSummary(
-            chapterID: chapterID,
+            chapterID: chapter?.id ?? "components",
             segment: segment,
             id: page.id,
+            internalID: page.internalID,
+            referenceID: pageReferenceID(segment: segment, chapter: chapter, page: page),
+            chapterIndex: chapterIndex,
+            pageIndex: pageIndex,
             path: page.path,
             htmlURL: loadedProject.htmlURL(for: page).path,
             canvas: page.canvas
         )
+    }
+
+    /// 論理名（日本語）: ページ参照ID生成関数
+    /// 処理概要: 内部 ID から agent が HTML カードを一意に指定できる短い参照 ID を作ります。
+    ///
+    /// - Parameters:
+    ///   - segment: `pages` または `components`。
+    ///   - chapter: 所属 Chapter。Components セグメントの場合は `nil`。
+    ///   - page: 参照対象 page entry。
+    /// - Returns: `ogref:page:<chapterInternalID>:<pageInternalID>` または `ogref:component:<componentInternalID>`。
+    private func pageReferenceID(segment: String, chapter: OpenGraphiteChapter?, page: OpenGraphitePage) -> String {
+        if segment == "components" {
+            return OpenGraphiteReferenceID.component(page.internalID).stringValue
+        }
+
+        return OpenGraphiteReferenceID
+            .page(chapterID: chapter?.internalID ?? "", pageID: page.internalID)
+            .stringValue
     }
 
     /// 論理名（日本語）: キャンバス配置名正規化関数
@@ -1619,10 +1856,11 @@ struct OpenGraphiteAgentCore {
 
         try mutation.html.write(to: htmlURL, atomically: true, encoding: .utf8)
         let graph = try pageGraph(at: htmlURL)
-        let node = graph.nodes.first { $0.id == nodeID }
         let insertedNodes = insertedNodeIDsBeforeMutation.map { beforeIDs in
             graph.nodes.filter { !beforeIDs.contains($0.id) }
         }
+        let node = graph.nodes.first { $0.internalID == nodeID }
+            ?? insertedNodes?.first
         return OpenGraphiteEditResult(
             schemaVersion: Self.schemaVersion,
             updated: true,
@@ -1636,7 +1874,7 @@ struct OpenGraphiteAgentCore {
     private func writeProject(_ project: OpenGraphiteProject, to projectURL: URL) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        var data = try encoder.encode(project)
+        var data = try encoder.encode(project.normalizedInternalIDs())
         data.append(0x0A)
         try data.write(to: projectURL, options: .atomic)
     }
@@ -1657,6 +1895,31 @@ struct OpenGraphiteAgentCore {
                     message: "data-og-id \"\(id)\" が重複しています。",
                     path: path,
                     nodeID: id
+                )
+            )
+        }
+
+        for node in nodes where node.internalID.isEmpty {
+            diagnostics.append(
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-data-og-internal-id",
+                    message: "\(node.id) に data-og-internal-id がありません。",
+                    path: path,
+                    nodeID: node.id
+                )
+            )
+        }
+
+        let groupedInternalIDs = Dictionary(grouping: nodes.filter { !$0.internalID.isEmpty }, by: \.internalID)
+        for (id, matches) in groupedInternalIDs where matches.count > 1 {
+            diagnostics.append(
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "duplicate-data-og-internal-id",
+                    message: "data-og-internal-id \"\(id)\" が重複しています。",
+                    path: path,
+                    nodeID: matches.first?.id
                 )
             )
         }
@@ -1764,7 +2027,7 @@ struct OpenGraphiteAgentCore {
                 OpenGraphiteDiagnostic(
                     severity: .error,
                     code: "missing-node",
-                    message: "data-og-id \"\(id)\" を持つノードが見つかりません。",
+                    message: "data-og-internal-id \"\(id)\" を持つノードが見つかりません。",
                     path: path,
                     nodeID: id
                 )
@@ -1774,8 +2037,8 @@ struct OpenGraphiteAgentCore {
         return [
             OpenGraphiteDiagnostic(
                 severity: .error,
-                code: "duplicate-data-og-id",
-                message: "data-og-id \"\(id)\" が \(matches.count) 件あります。",
+                code: "duplicate-data-og-internal-id",
+                message: "data-og-internal-id \"\(id)\" が \(matches.count) 件あります。",
                 path: path,
                 nodeID: id
             )

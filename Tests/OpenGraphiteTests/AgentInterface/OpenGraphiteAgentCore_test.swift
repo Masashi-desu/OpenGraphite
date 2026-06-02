@@ -203,10 +203,12 @@ struct OpenGraphiteAgentCoreTests {
         // コンディション：既存 hero と同じ ID を持つ子 HTML を用意する
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
-        let originalHTML = """
+        let originalHTML = AgentInterfaceFixture.htmlWithInternalIDs(
+            """
         <!doctype html>
         <html><body><Page data-og-id="page" data-og-type="page"><Hero data-og-id="hero" data-og-type="frame"></Hero></Page></body></html>
         """
+        )
         try fixture.writeHTML(originalHTML)
 
         // 検証内容：重複 ID の断片を挿入する
@@ -352,7 +354,9 @@ struct OpenGraphiteAgentCoreTests {
         // 期待値：HTML file が保存され、page graph も取得できる
         #expect(result.created == true)
         #expect(html.contains("<title>Created Page</title>"))
+        #expect(html.contains("data-og-internal-id="))
         #expect(result.graph?.nodes.map(\.id) == ["page", "title"])
+        #expect(result.graph?.nodes.allSatisfy { !$0.internalID.isEmpty } == true)
         #expect(result.diagnostics.isEmpty)
     }
 
@@ -365,8 +369,10 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>"
-            .write(to: fixture.rootURL.appendingPathComponent("downloads.html"), atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>",
+            to: fixture.rootURL.appendingPathComponent("downloads.html")
+        )
         try fixture.writeProject(to: projectURL)
 
         // 検証内容：downloads page を追加する
@@ -399,7 +405,7 @@ struct OpenGraphiteAgentCoreTests {
         // 検証内容：既存 home page の x/y だけを更新する
         let summary = try fixture.core.placeProjectPage(
             projectURL: projectURL,
-            id: "home",
+            id: fixture.homePageInternalID,
             name: " Desktop ",
             x: 1520,
             y: 80,
@@ -413,6 +419,158 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages[0].canvas.y == 80)
         #expect(summary.pages[0].canvas.width == 1440)
         #expect(summary.pages[0].canvas.height == 1200)
+    }
+
+    /// 論理名（日本語）: 複合ページ参照解決テスト
+    /// 概要: Chapter と page の内部 ID を含む参照 ID で、重複 page ID の片方を一意に解決できることを確認します。
+    @Test("複合page参照IDでChapter跨ぎ重複pageを解決できる")
+    func testCompoundPageReferenceResolvesDuplicatePageIDs() throws {
+        // コンディション：Chapter 跨ぎで同じ page ID を持つ project manifest と HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("DuplicatePages.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Page data-og-id="home-page" data-og-type="page"></Page></body></html>
+            """
+        )
+        try fixture.writeHTML(
+            """
+        <!doctype html>
+        <html><body><Page data-og-id="docs-page" data-og-internal-id="node-opaque" data-og-type="page"></Page></body></html>
+        """,
+            to: fixture.rootURL.appendingPathComponent("docs.html")
+        )
+        let project = OpenGraphiteProject(
+            version: "0.1.0",
+            name: "Duplicate Pages",
+            repositoryRoot: ".",
+            htmlRoot: ".",
+            cssLibrary: "OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 1440, height: 1200)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 1520, y: 0, width: 1440, height: 1200)
+                        )
+                    ]
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: projectURL)
+        let summary = try fixture.core.inspectProject(at: projectURL)
+        let docsReferenceID = try #require(summary.pages.last?.referenceID)
+        let docsNodeReferenceID = "ogref:node:\(summary.chapters[1].internalID):\(summary.pages[1].internalID):node-opaque"
+
+        // 検証内容：複合 page 参照 ID と node ID 付き参照 ID で graph / node を取得する
+        let graph = try fixture.core.pageGraph(projectURL: projectURL, pageID: docsReferenceID)
+        let nodeResult = try fixture.core.node(
+            id: docsNodeReferenceID,
+            projectURL: projectURL,
+            pageID: docsNodeReferenceID
+        )
+
+        // 期待値：従来の page ID が重複していても docs 側 HTML が解決される
+        #expect(summary.pages.map(\.id) == ["home", "home"])
+        #expect(docsReferenceID == "ogref:page:\(summary.chapters[1].internalID):\(summary.pages[1].internalID)")
+        #expect(docsReferenceID.hasPrefix("ogref:page:"))
+        #expect(graph.nodes.map(\.id) == ["docs-page"])
+        #expect(graph.nodes.map(\.internalID) == ["node-opaque"])
+        #expect(nodeResult.node?.id == "docs-page")
+        #expect(nodeResult.node?.internalID == "node-opaque")
+    }
+
+    /// 論理名（日本語）: typed node参照ページ不一致拒否テスト
+    /// 概要: node 操作に渡した `ogref` が異なる page を指す場合に拒否されることを確認します。
+    @Test("project node editは異なるpageを指すogrefを拒否する")
+    func testProjectNodeEditRejectsConflictingTypedReferences() throws {
+        // コンディション：Chapter 跨ぎで source と target を持つ project manifest と HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("ConflictingReferences.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Page data-og-id="home-page" data-og-type="page"><Card data-og-id="source" data-og-type="frame"></Card></Page></body></html>
+            """
+        )
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Page data-og-id="docs-page" data-og-type="page"><Card data-og-id="target" data-og-type="frame"></Card></Page></body></html>
+            """,
+            to: fixture.rootURL.appendingPathComponent("docs.html")
+        )
+        let project = OpenGraphiteProject(
+            version: "0.1.0",
+            name: "Conflicting References",
+            repositoryRoot: ".",
+            htmlRoot: ".",
+            cssLibrary: "OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 1440, height: 1200)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "docs",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 1520, y: 0, width: 1440, height: 1200)
+                        )
+                    ]
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: projectURL)
+        let summary = try fixture.core.inspectProject(at: projectURL)
+        let homeChapter = try #require(summary.chapters.first)
+        let docsChapter = try #require(summary.chapters.dropFirst().first)
+        let homePage = try #require(homeChapter.pages.first)
+        let docsPage = try #require(docsChapter.pages.first)
+        let sourceReferenceID = "ogref:node:\(homeChapter.internalID):\(homePage.internalID):source"
+        let targetReferenceID = "ogref:node:\(docsChapter.internalID):\(docsPage.internalID):target"
+
+        // 検証内容：異なる page を指す typed node 参照同士で move を実行する
+        do {
+            _ = try fixture.core.moveNode(
+                nodeID: sourceReferenceID,
+                targetNodeID: targetReferenceID,
+                position: .after,
+                projectURL: projectURL,
+                pageID: homePage.referenceID
+            )
+            Issue.record("異なる page を指す ogref が拒否されませんでした。")
+        } catch {
+            // 期待値：片方の page へ暗黙に寄せず、参照不整合として失敗する
+            #expect(error.localizedDescription.contains("異なる page"))
+        }
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント作成テスト
@@ -467,14 +625,16 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
-            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
 
         // 検証内容：既存 cards component の width/height だけを更新する
         var summary = try fixture.core.placeProjectComponent(
             projectURL: projectURL,
-            id: "cards",
+            id: fixture.componentPageInternalID,
             name: " Components ",
             x: nil,
             y: nil,
@@ -492,7 +652,7 @@ struct OpenGraphiteAgentCoreTests {
         // 検証内容：配置名を空白で指定して名前なしへ戻す（When）
         summary = try fixture.core.placeProjectComponent(
             projectURL: projectURL,
-            id: "cards",
+            id: fixture.componentPageInternalID,
             name: "   ",
             x: nil,
             y: nil,
@@ -514,14 +674,16 @@ struct OpenGraphiteAgentCoreTests {
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
-            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: componentURL
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
 
         // 検証内容：既存 cards component を manifest と file system から削除する
         let summary = try fixture.core.removeProjectComponent(
             projectURL: projectURL,
-            id: "cards",
+            id: fixture.componentPageInternalID,
             deleteFile: true
         )
 
@@ -547,7 +709,12 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeProject(to: projectURL)
 
         // 検証内容：project URL と page ID を通して title を更新する
-        let result = try fixture.core.setTextContent("New", nodeID: "title", projectURL: projectURL, pageID: "home")
+        let result = try fixture.core.setTextContent(
+            "New",
+            nodeID: "title",
+            projectURL: projectURL,
+            pageID: fixture.homePageInternalID
+        )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
 
         // 期待値：`.ogp` に登録済みの home page だけが更新される
@@ -645,7 +812,7 @@ struct OpenGraphiteAgentCoreTests {
         let successCode = cli.run(
             arguments: [
                 "node", "style", "set", "Sample.ogp",
-                "--page-id", "home",
+                "--page-id", fixture.homePageInternalID,
                 "--id", "hero",
                 "--var", "--og-gap",
                 "--value", "32px"
@@ -657,7 +824,7 @@ struct OpenGraphiteAgentCoreTests {
         let rejectedCode = cli.run(
             arguments: [
                 "node", "style", "set", "index.html",
-                "--page-id", "home",
+                "--page-id", fixture.homePageInternalID,
                 "--id", "hero",
                 "--var", "--og-gap",
                 "--value", "40px"
@@ -673,6 +840,47 @@ struct OpenGraphiteAgentCoreTests {
         #expect(rejectedCode == 2)
         #expect(html.contains("--og-gap:32px;"))
         #expect(stderr.contains(".ogp"))
+    }
+
+    /// 論理名（日本語）: CLI typed node参照解決テスト
+    /// 概要: `ogkiln` が `ogref:node` から対象 page と node 内部 ID を復元できることを確認します。
+    @Test("CLIはogref node参照だけで対象pageを解決する")
+    func testCLIResolvesTypedNodeReferenceWithoutPageID() throws {
+        // コンディション：単一 page を持つ project manifest と typed node 参照 ID を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Hero data-og-id="hero" data-og-type="frame" style="--og-gap:24px;"></Hero></body></html>
+            """
+        )
+        try fixture.writeProject(to: projectURL)
+        let nodeReferenceID = "ogref:node:\(fixture.chapterInternalID):\(fixture.homePageInternalID):hero"
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：`--page-id` を渡さず、`--id` の typed node 参照だけで編集する
+        let code = cli.run(
+            arguments: [
+                "node", "style", "set", "Sample.ogp",
+                "--id", nodeReferenceID,
+                "--var", "--og-gap",
+                "--value", "40px"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：typed node 参照から page と node が解決され、対象 HTML が更新される
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"updated\" : true"))
+        #expect(html.contains("--og-gap:40px;"))
     }
 
     /// 論理名（日本語）: CLIページ配置名更新テスト
@@ -693,7 +901,7 @@ struct OpenGraphiteAgentCoreTests {
         let code = cli.run(
             arguments: [
                 "project", "page", "place", "Sample.ogp",
-                "--page-id", "home",
+                "--page-id", fixture.homePageInternalID,
                 "--name", " Desktop "
             ],
             currentDirectory: fixture.rootURL,
@@ -719,8 +927,10 @@ struct OpenGraphiteAgentCoreTests {
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"><Title data-og-id=\"title\" data-og-type=\"text\">Old</Title></Cards></body></html>"
-            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"><Title data-og-id=\"title\" data-og-type=\"text\">Old</Title></Cards></body></html>",
+            to: componentURL
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
         let cli = OgkilnCLI()
         var stdout = ""
@@ -730,7 +940,7 @@ struct OpenGraphiteAgentCoreTests {
         let code = cli.run(
             arguments: [
                 "node", "text", "set", "Sample.ogp",
-                "--component-id", "cards",
+                "--component-id", fixture.componentPageInternalID,
                 "--id", "title",
                 "--value", "New"
             ],
@@ -757,8 +967,10 @@ struct OpenGraphiteAgentCoreTests {
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         let componentURL = fixture.rootURL.appendingPathComponent("cards.html")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
-            .write(to: componentURL, atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: componentURL
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
         let cli = OgkilnCLI()
         var stdout = ""
@@ -768,8 +980,8 @@ struct OpenGraphiteAgentCoreTests {
         let code = cli.run(
             arguments: [
                 "node", "query", "Sample.ogp",
-                "--page-id", "home",
-                "--component-id", "cards",
+                "--page-id", fixture.homePageInternalID,
+                "--component-id", fixture.componentPageInternalID,
                 "--json"
             ],
             currentDirectory: fixture.rootURL,
@@ -833,13 +1045,15 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>"
-            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
 
         // 検証内容：project summary と component page graph を取得する
         let summary = try fixture.core.inspectProject(at: projectURL)
-        let graph = try fixture.core.pageGraph(projectURL: projectURL, pageID: "cards")
+        let graph = try fixture.core.pageGraph(projectURL: projectURL, pageID: fixture.componentPageInternalID)
 
         // 期待値：components が通常 pages とは別配列として返り、page ID 経由で graph 化できる
         #expect(summary.pages.map(\.id) == ["home"])
@@ -857,8 +1071,10 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
-        try "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"unknown\"></Cards></body></html>"
-            .write(to: fixture.rootURL.appendingPathComponent("cards.html"), atomically: true, encoding: .utf8)
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"unknown\"></Cards></body></html>",
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
         try fixture.writeProjectWithComponents(to: projectURL)
 
         // 検証内容：project 全体を validate する
@@ -932,6 +1148,9 @@ struct OpenGraphiteAgentCoreTests {
 /// 論理名（日本語）: Agentインターフェーステストfixture
 /// 概要: 一時ディレクトリに HTML と project を作り、core / CLI テストを分離します。
 private struct AgentInterfaceFixture {
+    let chapterInternalID = "a7f21c"
+    let homePageInternalID = "b8e42d"
+    let componentPageInternalID = "c9a63f"
     let rootURL: URL
     let htmlURL: URL
     let core: OpenGraphiteAgentCore
@@ -951,7 +1170,42 @@ private struct AgentInterfaceFixture {
     ///
     /// - Parameter html: 書き込む HTML。
     func writeHTML(_ html: String) throws {
-        try html.write(to: htmlURL, atomically: true, encoding: .utf8)
+        try Self.htmlWithInternalIDs(html).write(to: htmlURL, atomically: true, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: HTML書き込み関数
+    /// 処理概要: 指定 URL へ内部 ID を補完した HTML を書き込みます。
+    ///
+    /// - Parameters:
+    ///   - html: 書き込む HTML。
+    ///   - url: 書き込み先 URL。
+    func writeHTML(_ html: String, to url: URL) throws {
+        try Self.htmlWithInternalIDs(html).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: テストHTML内部ID補完関数
+    /// 処理概要: fixture HTML の `data-og-id` 要素に `data-og-internal-id` がなければ同じ値を補完します。
+    ///
+    /// - Parameter html: 入力 HTML。
+    /// - Returns: 内部 ID を補完した HTML。
+    static func htmlWithInternalIDs(_ html: String) -> String {
+        let pattern = #"<[^>]*\bdata-og-id=(["'])(.*?)\1[^>]*>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
+        var result = html
+        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+        for match in matches {
+            guard let tagRange = Range(match.range, in: result),
+                  let idRange = Range(match.range(at: 2), in: result)
+            else {
+                continue
+            }
+            let tag = String(result[tagRange])
+            guard !tag.contains("data-og-internal-id") else { continue }
+            let id = String(result[idRange])
+            guard let closeIndex = result[tagRange].lastIndex(of: ">") else { continue }
+            result.insert(contentsOf: " data-og-internal-id=\"\(id)\"", at: closeIndex)
+        }
+        return result
     }
 
     /// 論理名（日本語）: project manifest書き込み関数
@@ -969,10 +1223,12 @@ private struct AgentInterfaceFixture {
           "chapters": [
             {
               "id": "main",
+              "internalID": "\(chapterInternalID)",
               "title": "Main",
               "pages": [
                 {
                   "id": "home",
+                  "internalID": "\(homePageInternalID)",
                   "path": "index.html",
                   "canvas": {
                     "name": "",
@@ -1005,10 +1261,12 @@ private struct AgentInterfaceFixture {
           "chapters": [
             {
               "id": "main",
+              "internalID": "\(chapterInternalID)",
               "title": "Main",
               "pages": [
                 {
                   "id": "home",
+                  "internalID": "\(homePageInternalID)",
                   "path": "index.html",
                   "canvas": {
                     "name": "",
@@ -1024,6 +1282,7 @@ private struct AgentInterfaceFixture {
           "components": [
             {
               "id": "cards",
+              "internalID": "\(componentPageInternalID)",
               "title": "Cards",
               "path": "cards.html",
               "canvas": {

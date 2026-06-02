@@ -82,6 +82,68 @@ struct ProjectLoaderTests {
         #expect(loadedProject.project.components.isEmpty)
     }
 
+    /// 論理名（日本語）: 内部ID補完テスト
+    /// 概要: 旧形式 `.ogp` に内部 ID がない場合、Chapter と page に一意な内部 ID が補完されることを検証します。
+    @Test("旧形式projectにChapter/Page内部IDを補完する")
+    func testLoadProjectNormalizesInternalIDs() throws {
+        // コンディション：Chapter ID と page ID が重複する旧形式 `.ogp` と HTML を用意する
+        let fixture = try ProjectLoaderFixture()
+        let publicDirectory = fixture.rootURL.appendingPathComponent("public")
+        try FileManager.default.createDirectory(at: publicDirectory, withIntermediateDirectories: true)
+        try "<!doctype html><html><body>home</body></html>".write(
+            to: publicDirectory.appendingPathComponent("index.html"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "<!doctype html><html><body>docs</body></html>".write(
+            to: publicDirectory.appendingPathComponent("docs.html"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let projectURL = fixture.rootURL.appendingPathComponent("DuplicateIDs.ogp")
+        try """
+        {
+          "version": "0.1.0",
+          "name": "Duplicate IDs",
+          "htmlRoot": "public",
+          "cssLibrary": "CSS/OpenGraphite.css",
+          "chapters": [
+            {
+              "id": "main",
+              "pages": [
+                {
+                  "id": "home",
+                  "path": "index.html",
+                  "canvas": { "name": "", "x": 0, "y": 0, "width": 1440, "height": 1200 }
+                }
+              ]
+            },
+            {
+              "id": "main",
+              "pages": [
+                {
+                  "id": "home",
+                  "path": "docs.html",
+                  "canvas": { "name": "", "x": 1520, "y": 0, "width": 1440, "height": 1200 }
+                }
+              ]
+            }
+          ]
+        }
+        """.write(to: projectURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：プロジェクトを読み込む
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+
+        // 期待値：Chapter と page の内部 ID が意味付き slug ではない値で一意に補完される
+        let chapterInternalIDs = loadedProject.project.chapters.map(\.internalID)
+        let pageInternalIDs = loadedProject.project.chapters.flatMap(\.pages).map(\.internalID)
+        #expect(Set(chapterInternalIDs).count == 2)
+        #expect(Set(pageInternalIDs).count == 2)
+        #expect(!chapterInternalIDs.contains("chapter-main"))
+        #expect(!pageInternalIDs.contains("page-home"))
+    }
+
     /// 論理名（日本語）: ページ未定義エラーテスト
     /// 概要: pages が空の .ogp を読み込んだときに missingPages が発生することを検証します。
     @Test("pagesが空ならmissingPagesを返す")

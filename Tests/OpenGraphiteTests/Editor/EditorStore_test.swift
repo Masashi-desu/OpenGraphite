@@ -114,8 +114,9 @@ struct EditorStoreTests {
         ])
         store.selectNode(id: "title")
 
-        // 検証内容：左カラムで同じページカードを再選択する想定で selectPage を再実行する（When）
-        store.selectPage(id: "home")
+        // 検証内容：左カラムで同じページカードを再選択する想定で内部 ID による selectPage を再実行する（When）
+        let selectedPageInternalID = try #require(store.selectedPage?.internalID)
+        store.selectPage(internalID: selectedPageInternalID)
 
         // 期待値：ページ内ノード一覧は保持され、ノード選択だけが解除される（Then）
         #expect(store.selectedPageID == "home")
@@ -614,15 +615,173 @@ struct EditorStoreTests {
         try data.write(to: fixture.projectURL)
         let store = EditorStore()
 
-        // 検証内容：プロジェクトを開き、docs Chapter を選択する
+        // 検証内容：プロジェクトを開き、docs Chapter を内部 ID で選択する
         store.openProject(at: fixture.projectURL)
-        store.selectChapter(id: "docs")
+        let docsChapterInternalID = try #require(store.loadedProject?.project.chapters[1].internalID)
+        store.selectChapter(internalID: docsChapterInternalID)
 
         // 期待値：表示対象 Pages と選択ページが docs Chapter 内へ切り替わる
         #expect(store.selectedChapterID == "docs")
         #expect(store.selectedChapterPages.map(\.id) == ["docs-home"])
         #expect(store.selectedPageID == "docs-home")
         #expect(store.selectedPageURL == docsURL)
+    }
+
+    /// 論理名（日本語）: 複合ノード参照ID生成テスト
+    /// 概要: Chapter と page の内部 ID を含む agent 向け node 参照 ID と pasteboard payload を生成できることを確認します。
+    @Test("Chapter/Page内部IDを含むnode参照IDを生成する")
+    func testNodeReferenceIDUsesInternalIDs() throws {
+        // コンディション：Chapter 跨ぎで同じ page ID を持つ一時プロジェクトを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let docsURL = fixture.publicURL.appendingPathComponent("docs.html")
+        try "<!doctype html>\n<html><body>docs</body></html>".write(
+            to: docsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(project)
+        try data.write(to: fixture.projectURL)
+        let store = EditorStore()
+
+        // 検証内容：docs Chapter を内部 ID で選択し、node 参照 payload を生成する
+        store.openProject(at: fixture.projectURL)
+        let docsChapterInternalID = try #require(store.loadedProject?.project.chapters[1].internalID)
+        store.selectChapter(internalID: docsChapterInternalID)
+        let referenceID = store.nodeReferenceID(forNodeID: "hero", nodeInternalID: "node-opaque")
+        let payload = try #require(store.nodeReferencePasteboardPayload(
+            forNodeID: "hero",
+            nodeInternalID: "node-opaque",
+            html: "<Hero></Hero>"
+        ))
+
+        // 期待値：複合参照 ID は Chapter 内部 ID、page 内部 ID、node 内部 ID を含む
+        #expect(store.selectedPageURL == docsURL)
+        #expect(referenceID == "ogref:node:\(docsChapterInternalID):\(store.selectedPage?.internalID ?? ""):node-opaque")
+        #expect(payload["referenceID"] as? String == referenceID)
+        #expect(payload["nodeID"] as? String == "hero")
+        #expect(payload["nodeInternalID"] as? String == "node-opaque")
+        #expect(payload["chapterIndex"] as? Int == 1)
+        #expect(payload["pageIndex"] as? Int == 0)
+        #expect(payload["html"] as? String == "<Hero></Hero>")
+    }
+
+    /// 論理名（日本語）: 階層参照ID生成テスト
+    /// 概要: Chapter、page、component canvas が各階層で agent 向けの一意な参照 ID を生成できることを確認します。
+    @Test("Chapter/Page/Componentの参照IDを階層ごとに生成する")
+    func testHierarchyReferenceIDsUseInternalIDs() throws {
+        // コンディション：Chapter、page、component が内部 ID 候補を共有する project を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let docsURL = fixture.publicURL.appendingPathComponent("docs.html")
+        let componentURL = fixture.publicURL.appendingPathComponent("card.html")
+        try "<!doctype html>\n<html><body>docs</body></html>".write(
+            to: docsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "<!doctype html>\n<html><body>card</body></html>".write(
+            to: componentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    internalID: "opaque",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            internalID: "opaque",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    internalID: "opaque",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            internalID: "opaque",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 120, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "card",
+                    internalID: "opaque",
+                    path: "card.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 320, height: 240)
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(project)
+        try data.write(to: fixture.projectURL)
+        let store = EditorStore()
+
+        // 検証内容：読み込み後の正規化済み内部 ID から階層参照 ID を生成する
+        store.openProject(at: fixture.projectURL)
+        let loadedProject = try #require(store.loadedProject?.project)
+        let docsChapter = loadedProject.chapters[1]
+        let docsPage = try #require(docsChapter.pages.first)
+        let componentPage = try #require(loadedProject.components.first)
+        store.selectChapter(internalID: docsChapter.internalID)
+        let docsPageReferenceID = store.selectedPageReferenceID()
+        store.selectComponentPage(internalID: componentPage.internalID)
+        let componentReferenceID = store.selectedPageReferenceID()
+        let hierarchyInternalIDs = loadedProject.chapters.map(\.internalID)
+            + loadedProject.chapters.flatMap(\.pages).map(\.internalID)
+            + loadedProject.components.map(\.internalID)
+
+        // 期待値：内部 ID は manifest 階層全体で一意になり、page は Chapter を含む複合参照になる
+        #expect(Set(hierarchyInternalIDs).count == hierarchyInternalIDs.count)
+        #expect(store.chapterReferenceID(for: docsChapter) == "ogref:chapter:\(docsChapter.internalID)")
+        #expect(docsPageReferenceID == "ogref:page:\(docsChapter.internalID):\(docsPage.internalID)")
+        #expect(componentReferenceID == "ogref:component:\(componentPage.internalID)")
     }
 }
 

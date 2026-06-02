@@ -36,7 +36,7 @@ struct OpenGraphiteProject: Codable, Equatable {
     }
 
     /// 論理名（日本語）: project JSONデコード関数
-    /// 処理概要: 旧 top-level `pages` 形式と互換性を保ち、未指定の `components` を空配列として扱います。
+    /// 処理概要: Chapter 配列を読み込み、未指定の `components` を空配列として扱います。
     ///
     /// - Parameter decoder: JSON decoder。
     init(from decoder: Decoder) throws {
@@ -49,12 +49,12 @@ struct OpenGraphiteProject: Codable, Equatable {
         if let decodedChapters = try container.decodeIfPresent([OpenGraphiteChapter].self, forKey: .chapters) {
             chapters = decodedChapters
         } else {
-            let legacyPages = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .pages) ?? []
+            let topLevelPages = try container.decodeIfPresent([OpenGraphitePage].self, forKey: .pages) ?? []
             chapters = [
                 OpenGraphiteChapter(
                     id: OpenGraphiteChapter.defaultID,
                     title: OpenGraphiteChapter.defaultTitle,
-                    pages: legacyPages
+                    pages: topLevelPages
                 )
             ]
         }
@@ -139,6 +139,161 @@ struct OpenGraphiteProject: Codable, Equatable {
         self.chapters = chapters
         self.components = components
     }
+
+    /// 論理名（日本語）: 内部ID正規化関数
+    /// 処理概要: Chapter と HTML カードの内部 ID を `.ogp` 内で一意になるよう補完・重複解消します。
+    ///
+    /// - Returns: 内部 ID が一意に補完された project 定義。
+    func normalizedInternalIDs() -> OpenGraphiteProject {
+        var normalized = self
+        var usedManifestIDs: Set<String> = []
+
+        for chapterIndex in normalized.chapters.indices {
+            let chapterBase = Self.identityBase(
+                preferred: normalized.chapters[chapterIndex].internalID,
+                semanticPrefix: "chapter",
+                seed: [
+                    "chapter",
+                    "\(chapterIndex)",
+                    normalized.chapters[chapterIndex].id,
+                    normalized.chapters[chapterIndex].title ?? ""
+                ].joined(separator: "|")
+            )
+            normalized.chapters[chapterIndex].internalID = Self.uniqueIdentityID(
+                base: chapterBase,
+                used: &usedManifestIDs
+            )
+
+            for pageIndex in normalized.chapters[chapterIndex].pages.indices {
+                let page = normalized.chapters[chapterIndex].pages[pageIndex]
+                let pageBase = Self.identityBase(
+                    preferred: page.internalID,
+                    semanticPrefix: "page",
+                    seed: [
+                        "page",
+                        "\(chapterIndex)",
+                        "\(pageIndex)",
+                        page.id,
+                        page.title ?? "",
+                        page.path
+                    ].joined(separator: "|")
+                )
+                normalized.chapters[chapterIndex].pages[pageIndex].internalID = Self.uniqueIdentityID(
+                    base: pageBase,
+                    used: &usedManifestIDs
+                )
+            }
+        }
+
+        for componentIndex in normalized.components.indices {
+            let component = normalized.components[componentIndex]
+            let componentBase = Self.identityBase(
+                preferred: component.internalID,
+                semanticPrefix: "component",
+                seed: [
+                    "component",
+                    "\(componentIndex)",
+                    component.id,
+                    component.title ?? "",
+                    component.path
+                ].joined(separator: "|")
+            )
+            normalized.components[componentIndex].internalID = Self.uniqueIdentityID(
+                base: componentBase,
+                used: &usedManifestIDs
+            )
+        }
+
+        return normalized
+    }
+
+    /// 論理名（日本語）: 内部ID基底値生成関数
+    /// 処理概要: 既存の不透明内部 ID を維持し、未補完または意味付き ID の場合は不透明 ID を生成します。
+    ///
+    /// - Parameters:
+    ///   - preferred: 既存の内部 ID。
+    ///   - semanticPrefix: 意味付き ID 判定に使う prefix。
+    ///   - seed: 不透明 ID 生成の入力値。
+    /// - Returns: 内部 ID の基底値。
+    private static func identityBase(preferred: String, semanticPrefix: String, seed: String) -> String {
+        let preferredSlug = slug(preferred)
+        if !preferredSlug.isEmpty && !isSemanticInternalID(preferredSlug, prefix: semanticPrefix) {
+            return preferredSlug
+        }
+
+        return opaqueIdentityID(seed: seed)
+    }
+
+    /// 論理名（日本語）: 一意内部ID生成関数
+    /// 処理概要: 既に使われた ID と衝突する場合は `-2` 以降の suffix を付けます。
+    ///
+    /// - Parameters:
+    ///   - base: slug 化済み基底値。
+    ///   - used: 使用済み ID 集合。
+    /// - Returns: 使用済み集合に追加済みの一意 ID。
+    private static func uniqueIdentityID(base: String, used: inout Set<String>) -> String {
+        let normalizedBase = base.isEmpty ? "item" : base
+        var candidate = normalizedBase
+        var index = 2
+        while used.contains(candidate) {
+            candidate = "\(normalizedBase)-\(index)"
+            index += 1
+        }
+        used.insert(candidate)
+        return candidate
+    }
+
+    /// 論理名（日本語）: 意味付き内部ID判定関数
+    /// 処理概要: `chapter-*` / `page-*` / `component-*` 形式の意味を持つ内部 ID かを判定します。
+    ///
+    /// - Parameters:
+    ///   - id: 判定対象 ID。
+    ///   - prefix: 期待する旧 prefix。
+    /// - Returns: 意味付き内部 ID であれば `true`。
+    private static func isSemanticInternalID(_ id: String, prefix: String) -> Bool {
+        id == prefix || id.hasPrefix("\(prefix)-")
+    }
+
+    /// 論理名（日本語）: 不透明内部ID生成関数
+    /// 処理概要: seed を安定 hash 化し、表示名を含まない短い base36 ID を生成します。
+    ///
+    /// - Parameter seed: ID 生成元 seed。
+    /// - Returns: 意味を持たない内部 ID。
+    private static func opaqueIdentityID(seed: String) -> String {
+        String(stableHash(seed), radix: 36)
+    }
+
+    /// 論理名（日本語）: 安定hash関数
+    /// 処理概要: プロセスに依存しない FNV-1a 64bit hash を返します。
+    ///
+    /// - Parameter value: hash 化する文字列。
+    /// - Returns: 64bit hash。
+    private static func stableHash(_ value: String) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return hash
+    }
+
+    /// 論理名（日本語）: 内部ID用slug生成関数
+    /// 処理概要: 参照文字列に使いやすい英数字、ハイフン、アンダースコアだけの小文字 ID へ正規化します。
+    ///
+    /// - Parameter value: 正規化する文字列。
+    /// - Returns: slug 化した文字列。
+    private static func slug(_ value: String) -> String {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+        var result = ""
+        for character in value.lowercased() {
+            result.append(allowed.contains(character) ? character : "-")
+        }
+        while result.contains("--") {
+            result = result.replacingOccurrences(of: "--", with: "-")
+        }
+        result = result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result
+    }
 }
 
 /// 論理名（日本語）: OpenGraphite Chapter定義
@@ -146,6 +301,7 @@ struct OpenGraphiteProject: Codable, Equatable {
 ///
 /// プロパティ:
 /// - `id`: Chapter 識別子。
+/// - `internalID`: `.ogp` 内で Chapter を一意に指す内部識別子。
 /// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
 /// - `pages`: Chapter 内の HTML ページ一覧。
 struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
@@ -153,12 +309,61 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     static let defaultTitle = "Main"
 
     var id: String
+    var internalID: String
     var title: String?
     var pages: [OpenGraphitePage]
 
     var displayName: String {
         guard let title, !title.isEmpty else { return id }
         return title
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case internalID
+        case title
+        case pages
+    }
+
+    /// 論理名（日本語）: Chapter初期化関数
+    /// 処理概要: 表示用 ID と内部 ID、ページ一覧から Chapter 定義を構成します。
+    ///
+    /// - Parameters:
+    ///   - id: 表示用 Chapter ID。
+    ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
+    ///   - title: UI 表示タイトル。
+    ///   - pages: Chapter に含まれる page entry 一覧。
+    init(id: String, internalID: String = "", title: String? = nil, pages: [OpenGraphitePage]) {
+        self.id = id
+        self.internalID = internalID
+        self.title = title
+        self.pages = pages
+    }
+
+    /// 論理名（日本語）: Chapterデコード初期化関数
+    /// 処理概要: `internalID` が未指定の場合は空として読み込み、正規化時に補完します。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        pages = try container.decode([OpenGraphitePage].self, forKey: .pages)
+    }
+
+    /// 論理名（日本語）: Chapterエンコード関数
+    /// 処理概要: 内部 ID が未補完の場合は省略します。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        if !internalID.isEmpty {
+            try container.encode(internalID, forKey: .internalID)
+        }
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(pages, forKey: .pages)
     }
 }
 
@@ -167,11 +372,13 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
 ///
 /// プロパティ:
 /// - `id`: ページ識別子。
+/// - `internalID`: `.ogp` 内で HTML カードを一意に指す内部識別子。
 /// - `title`: UI 表示用タイトル。未指定時は `id` を使います。
 /// - `path`: `htmlRoot` から見た HTML ファイルパス。
 /// - `canvas`: キャンバス上の配置とサイズ。
 struct OpenGraphitePage: Codable, Equatable, Identifiable {
     var id: String
+    var internalID: String
     var title: String?
     var path: String
     var canvas: OpenGraphiteCanvas
@@ -179,6 +386,59 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
     var displayName: String {
         guard let title, !title.isEmpty else { return id }
         return title
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case internalID
+        case title
+        case path
+        case canvas
+    }
+
+    /// 論理名（日本語）: ページ定義初期化関数
+    /// 処理概要: 表示用 ID、内部 ID、HTML path、canvas 配置から page entry を構成します。
+    ///
+    /// - Parameters:
+    ///   - id: 表示用 page ID。
+    ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
+    ///   - title: UI 表示タイトル。
+    ///   - path: `htmlRoot` から見た HTML path。
+    ///   - canvas: キャンバス配置。
+    init(id: String, internalID: String = "", title: String? = nil, path: String, canvas: OpenGraphiteCanvas) {
+        self.id = id
+        self.internalID = internalID
+        self.title = title
+        self.path = path
+        self.canvas = canvas
+    }
+
+    /// 論理名（日本語）: ページデコード初期化関数
+    /// 処理概要: `internalID` が未指定の場合は空として読み込み、正規化時に補完します。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        path = try container.decode(String.self, forKey: .path)
+        canvas = try container.decode(OpenGraphiteCanvas.self, forKey: .canvas)
+    }
+
+    /// 論理名（日本語）: ページエンコード関数
+    /// 処理概要: 内部 ID が未補完の場合は省略します。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        if !internalID.isEmpty {
+            try container.encode(internalID, forKey: .internalID)
+        }
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encode(path, forKey: .path)
+        try container.encode(canvas, forKey: .canvas)
     }
 }
 

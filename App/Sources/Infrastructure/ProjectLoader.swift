@@ -37,7 +37,7 @@ struct ProjectLoader {
     /// - Returns: HTML 参照ルートを解決した読み込み済みプロジェクト。
     func loadProject(at fileURL: URL) throws -> LoadedOpenGraphiteProject {
         let data = try Data(contentsOf: fileURL)
-        let project = try JSONDecoder().decode(OpenGraphiteProject.self, from: data)
+        let project = try JSONDecoder().decode(OpenGraphiteProject.self, from: data).normalizedInternalIDs()
 
         guard !project.chapters.isEmpty || !project.components.isEmpty else {
             throw ProjectLoadError.missingChapters

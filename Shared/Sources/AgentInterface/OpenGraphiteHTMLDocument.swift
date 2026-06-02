@@ -1,7 +1,7 @@
 import Foundation
 
 /// 論理名（日本語）: OpenGraphite HTML文書
-/// 概要: `data-og-id` を持つ HTML ノードの抽出、検証、開始タグ単位の編集を担当します。
+/// 概要: `data-og-id` と `data-og-internal-id` を持つ HTML ノードの抽出、検証、開始タグ単位の編集を担当します。
 ///
 /// プロパティ:
 /// - `html`: 対象 HTML 文字列。
@@ -25,6 +25,7 @@ struct OpenGraphiteHTMLDocument {
 
             let node = OpenGraphiteAgentNode(
                 id: id,
+                internalID: tag.attributeValue(named: "data-og-internal-id") ?? "",
                 tagName: tag.tagName,
                 type: tag.attributeValue(named: "data-og-type") ?? "",
                 layout: tag.emptyNilAttribute(named: "data-og-layout"),
@@ -43,6 +44,14 @@ struct OpenGraphiteHTMLDocument {
             }
             return node
         }
+    }
+
+    /// 論理名（日本語）: 内部ID補完HTML生成関数
+    /// 処理概要: `data-og-id` を持つ要素へ、欠落または重複しない `data-og-internal-id` を補完します。
+    ///
+    /// - Returns: 内部 ID が補完された HTML。
+    func ensuringInternalIDs() -> String {
+        Self.ensuringInternalIDs(in: html, used: [])
     }
 
     /// 論理名（日本語）: 全開始タグ解析関数
@@ -107,12 +116,12 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: CSS変数設定関数
-    /// 処理概要: 一意な `data-og-id` を持つノードの inline style に `--og-*` CSS 変数を設定します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つノードの inline style に `--og-*` CSS 変数を設定します。
     ///
     /// - Parameters:
     ///   - variable: 更新する CSS 変数名。
     ///   - value: 設定値。空の場合は対象変数を削除します。
-    ///   - id: 対象ノードの `data-og-id`。
+    ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func settingCSSVariable(
@@ -169,12 +178,12 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: ノード属性設定関数
-    /// 処理概要: 一意な `data-og-id` を持つノードの許可済み `data-og-*` 属性を設定します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つノードの許可済み `data-og-*` 属性を設定します。
     ///
     /// - Parameters:
     ///   - name: 更新する属性名。
     ///   - value: 設定値。空の場合は属性を削除します。
-    ///   - id: 対象ノードの `data-og-id`。
+    ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func settingAttribute(
@@ -183,7 +192,10 @@ struct OpenGraphiteHTMLDocument {
         forNodeID id: String,
         contract: OpenGraphiteContract
     ) -> OpenGraphiteHTMLMutationResult {
-        guard name != "data-og-id", contract.editableAttributeSet.contains(name) else {
+        guard name != "data-og-id",
+              name != "data-og-internal-id",
+              contract.editableAttributeSet.contains(name)
+        else {
             return .failure(
                 html: html,
                 diagnostic: OpenGraphiteDiagnostic(
@@ -216,11 +228,11 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: 子HTML先頭挿入関数
-    /// 処理概要: 一意な `data-og-id` を持つノードの開始タグ直後へ子 HTML を挿入します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つノードの開始タグ直後へ子 HTML を挿入します。
     ///
     /// - Parameters:
     ///   - childHTML: 挿入する HTML 断片。
-    ///   - id: 親ノードの `data-og-id`。
+    ///   - id: 親ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func prependingChildHTML(
@@ -232,11 +244,11 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: テキスト内容設定関数
-    /// 処理概要: 一意な `data-og-id` を持つノードの内側を HTML escape 済み text content で置換します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つノードの内側を HTML escape 済み text content で置換します。
     ///
     /// - Parameters:
     ///   - text: 設定するプレーンテキスト。
-    ///   - id: 対象ノードの `data-og-id`。
+    ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func settingTextContent(
@@ -269,11 +281,11 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: HTML断片挿入関数
-    /// 処理概要: 一意な `data-og-id` を持つ anchor node を基準に HTML 断片を挿入します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つ anchor node を基準に HTML 断片を挿入します。
     ///
     /// - Parameters:
     ///   - fragmentHTML: 挿入する HTML 断片。
-    ///   - id: 基準ノードの `data-og-id`。
+    ///   - id: 基準ノードの `data-og-internal-id`。
     ///   - position: 挿入位置。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
@@ -318,16 +330,20 @@ struct OpenGraphiteHTMLDocument {
             )
         }
 
-        Self.insertRawHTML(boundaryTrimmedFragmentHTML, into: &sanitized, relativeTo: element, position: position)
+        let preparedFragmentHTML = Self.ensuringInternalIDs(
+            in: boundaryTrimmedFragmentHTML,
+            used: sanitizedDocument.internalIDSet()
+        )
+        Self.insertRawHTML(preparedFragmentHTML, into: &sanitized, relativeTo: element, position: position)
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
     /// 論理名（日本語）: ノードHTML置換関数
-    /// 処理概要: 一意な `data-og-id` を持つ node 全体を HTML 断片で置換します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つ node 全体を HTML 断片で置換します。
     ///
     /// - Parameters:
     ///   - replacementHTML: 置換後 HTML 断片。
-    ///   - id: 対象ノードの `data-og-id`。
+    ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func replacingNodeHTML(
@@ -356,15 +372,21 @@ struct OpenGraphiteHTMLDocument {
             return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: match.diagnostics)
         }
 
-        sanitized.replaceRange(element.fullRange, with: boundaryTrimmedReplacementHTML)
+        let usedInternalIDs = sanitizedDocument.internalIDSet(excluding: element)
+        let replacementHTML = Self.ensuringInternalIDs(
+            in: boundaryTrimmedReplacementHTML,
+            used: usedInternalIDs,
+            preservingRootInternalID: element.tag.attributeValue(named: "data-og-internal-id")
+        )
+        sanitized.replaceRange(element.fullRange, with: replacementHTML)
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
     /// 論理名（日本語）: ノード削除関数
-    /// 処理概要: 一意な `data-og-id` を持つ node subtree を HTML から削除します。
+    /// 処理概要: 一意な `data-og-internal-id` を持つ node subtree を HTML から削除します。
     ///
     /// - Parameters:
-    ///   - id: 対象ノードの `data-og-id`。
+    ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
     func deletingNode(
@@ -386,8 +408,8 @@ struct OpenGraphiteHTMLDocument {
     /// 処理概要: 一意な source node subtree を target node 基準位置へ移動します。
     ///
     /// - Parameters:
-    ///   - sourceID: 移動元ノードの `data-og-id`。
-    ///   - targetID: 移動先基準ノードの `data-og-id`。
+    ///   - sourceID: 移動元ノードの `data-og-internal-id`。
+    ///   - targetID: 移動先基準ノードの `data-og-internal-id`。
     ///   - position: 移動先位置。
     ///   - contract: 検証に使う OpenGraphite 契約。
     /// - Returns: 更新済み HTML と diagnostics。
@@ -403,7 +425,7 @@ struct OpenGraphiteHTMLDocument {
                 diagnostic: OpenGraphiteDiagnostic(
                     severity: .error,
                     code: "same-source-and-target",
-                    message: "移動元と移動先に同じ data-og-id は指定できません。",
+                    message: "移動元と移動先に同じ data-og-internal-id は指定できません。",
                     path: nil,
                     nodeID: sourceID
                 )
@@ -447,11 +469,11 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: ノード複製関数
-    /// 処理概要: 一意な source node subtree の `data-og-id` に prefix を付けて target node 基準位置へ複製します。
+    /// 処理概要: 一意な source node subtree の表示用 `data-og-id` に prefix を付けて target node 基準位置へ複製します。
     ///
     /// - Parameters:
-    ///   - sourceID: 複製元ノードの `data-og-id`。
-    ///   - targetID: 複製先基準ノードの `data-og-id`。
+    ///   - sourceID: 複製元ノードの `data-og-internal-id`。
+    ///   - targetID: 複製先基準ノードの `data-og-internal-id`。
     ///   - position: 複製先位置。
     ///   - idPrefix: 複製 node の `data-og-id` に付ける prefix。
     ///   - contract: 検証に使う OpenGraphite 契約。
@@ -541,7 +563,8 @@ struct OpenGraphiteHTMLDocument {
     ]
 
     private func uniqueTag(forNodeID id: String) -> (tag: OpenGraphiteHTMLTag?, diagnostics: [OpenGraphiteDiagnostic]) {
-        let matches = parsedTags().filter { $0.attributeValue(named: "data-og-id") == id }
+        let tags = parsedTags()
+        let matches = tags.filter { $0.attributeValue(named: "data-og-internal-id") == id }
         if matches.count == 1 {
             return (matches[0], [])
         }
@@ -551,12 +574,12 @@ struct OpenGraphiteHTMLDocument {
                 nil,
                 [
                     OpenGraphiteDiagnostic(
-                        severity: .error,
-                        code: "missing-node",
-                        message: "data-og-id \"\(id)\" を持つノードが見つかりません。",
-                        path: nil,
-                        nodeID: id
-                    )
+                    severity: .error,
+                    code: "missing-node",
+                    message: "data-og-internal-id \"\(id)\" を持つノードが見つかりません。",
+                    path: nil,
+                    nodeID: id
+                )
                 ]
             )
         }
@@ -566,8 +589,8 @@ struct OpenGraphiteHTMLDocument {
             [
                 OpenGraphiteDiagnostic(
                     severity: .error,
-                    code: "duplicate-data-og-id",
-                    message: "data-og-id \"\(id)\" が \(matches.count) 件あります。",
+                    code: "duplicate-data-og-internal-id",
+                    message: "data-og-internal-id \"\(id)\" が \(matches.count) 件あります。",
                     path: nil,
                     nodeID: id
                 )
@@ -697,6 +720,63 @@ struct OpenGraphiteHTMLDocument {
         html.insert("\n\(fragmentHTML)", atOffset: offset)
     }
 
+    private func internalIDSet(excluding element: OpenGraphiteHTMLElement? = nil) -> Set<String> {
+        Set(parsedTags().compactMap { tag in
+            if let element, element.fullRange.contains(tag.range.lowerBound) {
+                return nil
+            }
+            let internalID = tag.attributeValue(named: "data-og-internal-id") ?? ""
+            return internalID.isEmpty ? nil : internalID
+        })
+    }
+
+    private static func ensuringInternalIDs(
+        in fragmentHTML: String,
+        used existingIDs: Set<String>,
+        preservingRootInternalID: String? = nil
+    ) -> String {
+        var result = fragmentHTML
+        var used = existingIDs
+        let document = OpenGraphiteHTMLDocument(html: fragmentHTML)
+        let tags = document.parsedTags()
+        let rootRange = tags.first { tag in
+            tag.attributeValue(named: "data-og-id") != nil
+        }?.range
+
+        for tag in tags.reversed() {
+            guard tag.attributeValue(named: "data-og-id") != nil else { continue }
+            var attributes = tag.attributes
+            let existingInternalID = tag.attributeValue(named: "data-og-internal-id") ?? ""
+            let preservingRoot = rootRange.map { tag.range == $0 } ?? false
+            let preferredInternalID = preservingRoot ? preservingRootInternalID ?? existingInternalID : existingInternalID
+            let internalID: String
+            if !preferredInternalID.isEmpty, !used.contains(preferredInternalID) {
+                internalID = preferredInternalID
+                used.insert(internalID)
+            } else {
+                internalID = uniqueOpaqueInternalID(
+                    seed: "\(fragmentHTML)|\(tag.range.lowerBound)|\(tag.tagName)",
+                    used: &used
+                )
+            }
+            setAttribute("data-og-internal-id", value: internalID, in: &attributes)
+            result.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        }
+        return result
+    }
+
+    private static func uniqueOpaqueInternalID(seed: String, used: inout Set<String>) -> String {
+        let base = opaqueInternalID(seed: seed)
+        var candidate = base
+        var index = 2
+        while used.contains(candidate) {
+            candidate = "\(base)-\(index)"
+            index += 1
+        }
+        used.insert(candidate)
+        return candidate
+    }
+
     private static func prefixingDataOGIDs(in fragmentHTML: String, prefix: String) -> String {
         var result = fragmentHTML
         let document = OpenGraphiteHTMLDocument(html: fragmentHTML)
@@ -704,9 +784,27 @@ struct OpenGraphiteHTMLDocument {
             guard let id = tag.attributeValue(named: "data-og-id") else { continue }
             var attributes = tag.attributes
             setAttribute("data-og-id", value: "\(prefix)\(id)", in: &attributes)
+            setAttribute(
+                "data-og-internal-id",
+                value: opaqueInternalID(seed: "\(prefix)|\(id)|\(tag.range.lowerBound)"),
+                in: &attributes
+            )
             result.replaceRange(tag.range, with: tag.serialized(with: attributes))
         }
         return result
+    }
+
+    private static func opaqueInternalID(seed: String) -> String {
+        String(stableHash(seed), radix: 36)
+    }
+
+    private static func stableHash(_ value: String) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return hash
     }
 
     private static func escapeText(_ value: String) -> String {

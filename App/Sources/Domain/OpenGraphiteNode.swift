@@ -5,6 +5,7 @@ import Foundation
 ///
 /// プロパティ:
 /// - `id`: `data-og-id` の値。
+/// - `internalID`: `data-og-internal-id` の値。
 /// - `tagName`: HTML タグ名または独自タグ名。
 /// - `type`: `data-og-type` の値。
 /// - `layout`: `data-og-layout` の値。
@@ -15,6 +16,7 @@ import Foundation
 /// - `depth`: DOM ツリー上の階層深度。
 struct OpenGraphiteNode: Identifiable, Hashable {
     var id: String
+    var internalID: String = ""
     var tagName: String
     var type: String
     var layout: String?
@@ -23,6 +25,44 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var isHidden: Bool
     var isLocked: Bool
     var depth: Int
+
+    /// 論理名（日本語）: OpenGraphite編集ノード初期化関数
+    /// 処理概要: HTML ノードの表示 ID、内部 ID、編集メタデータから UI モデルを構成します。
+    ///
+    /// - Parameters:
+    ///   - id: `data-og-id`。
+    ///   - internalID: `data-og-internal-id`。
+    ///   - tagName: HTML tag name。
+    ///   - type: `data-og-type`。
+    ///   - layout: `data-og-layout`。
+    ///   - role: `data-og-role`。
+    ///   - cssVariables: inline style 内の `--og-*`。
+    ///   - isHidden: 非表示状態。
+    ///   - isLocked: ロック状態。
+    ///   - depth: DOM 階層深度。
+    init(
+        id: String,
+        internalID: String = "",
+        tagName: String,
+        type: String,
+        layout: String?,
+        role: String?,
+        cssVariables: [String: String],
+        isHidden: Bool,
+        isLocked: Bool,
+        depth: Int
+    ) {
+        self.id = id
+        self.internalID = internalID
+        self.tagName = tagName
+        self.type = type
+        self.layout = layout
+        self.role = role
+        self.cssVariables = cssVariables
+        self.isHidden = isHidden
+        self.isLocked = isLocked
+        self.depth = depth
+    }
 
     var detailLine: String {
         var parts = [type]

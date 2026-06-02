@@ -493,10 +493,10 @@ struct OgkilnCLI {
     }
 
     /// 論理名（日本語）: 必須ページID取得関数
-    /// 処理概要: `.ogp` 内 page または component を指定する `--page-id` / `--component-id` を取得します。
+    /// 処理概要: `.ogp` 内 page または component を指定する `--page-id` / `--component-id` 参照 ID を取得します。
     ///
     /// - Parameter arguments: CLI 引数。
-    /// - Returns: page または component ID。
+    /// - Returns: page または component の内部参照 ID。
     private func requiredPageID(in arguments: [String]) throws -> String {
         let pageID = try optionalOption("--page-id", in: arguments)
         let componentID = try optionalOption("--component-id", in: arguments)
@@ -509,7 +509,11 @@ struct OgkilnCLI {
         if let componentID {
             return componentID
         }
-        throw OgkilnCLIError(message: "--page-id または --component-id が指定されていません。", exitCode: 2)
+        if let nodeReferenceID = try optionalOption("--id", in: arguments),
+           let pageReferenceID = OpenGraphiteReferenceID.containingPageReferenceString(from: nodeReferenceID) {
+            return pageReferenceID
+        }
+        throw OgkilnCLIError(message: "--page-id / --component-id または page を含む ogref の --id が指定されていません。", exitCode: 2)
     }
 
     /// 論理名（日本語）: 必須コンポーネントID取得関数
@@ -559,22 +563,22 @@ struct OgkilnCLI {
       ogkiln build <project.ogp|current> --output <dir>
       ogkiln screenshot canvas <project.ogp|current> --output <png>
       ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
-      ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
+      ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
       ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json
-      ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --json
-      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --var <--og-var> --value <css-value>
-      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --var <--og-var>
-      ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --name <data-og-attr> --value <value>
-      ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --name <data-og-attr>
-      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --value <text>
-      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --text-file <text-file>
-      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html <fragment-html>
-      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-data-og-id> --position <before|after|prepend|append> --html-file <fragment.html>
-      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --html <replacement-html>
-      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id> --html-file <replacement.html>
-      ogkiln node delete <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <data-og-id>
-      ogkiln node move <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append>
-      ogkiln node copy <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-data-og-id> --target <target-data-og-id> --position <before|after|prepend|append> --id-prefix <prefix>
+      ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --json
+      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <--og-var> --value <css-value>
+      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <--og-var>
+      ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr> --value <value>
+      ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr>
+      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --value <text>
+      ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --text-file <text-file>
+      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --html <fragment-html>
+      ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --html-file <fragment.html>
+      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --html <replacement-html>
+      ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --html-file <replacement.html>
+      ogkiln node delete <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id>
+      ogkiln node move <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-node-id> --target <target-node-id> --position <before|after|prepend|append>
+      ogkiln node copy <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <source-node-id> --target <target-node-id> --position <before|after|prepend|append> --id-prefix <prefix>
     """
 }
 

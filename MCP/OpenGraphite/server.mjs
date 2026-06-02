@@ -352,8 +352,8 @@ function toolsList() {
     },
     {
       name: "screenshot_node",
-      description: "Render one data-og-id node from a project-registered page or component canvas to a cropped PNG file.",
-      inputSchema: targetObjectSchema({
+      description: "Render one data-og-internal-id or ogref node from a project-registered page or component canvas to a cropped PNG file.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -378,8 +378,8 @@ function toolsList() {
     },
     {
       name: "get_node",
-      description: "Return a single node by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Return a single node by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" }
@@ -387,8 +387,8 @@ function toolsList() {
     },
     {
       name: "set_css_variable",
-      description: "Set a --og-* CSS variable on a node selected by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Set a --og-* CSS variable on a node selected by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -398,8 +398,8 @@ function toolsList() {
     },
     {
       name: "remove_css_variable",
-      description: "Remove a --og-* CSS variable from a node selected by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Remove a --og-* CSS variable from a node selected by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -408,8 +408,8 @@ function toolsList() {
     },
     {
       name: "set_node_attribute",
-      description: "Set an editable data-og-* attribute on a node selected by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Set an editable data-og-* attribute on a node selected by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -419,8 +419,8 @@ function toolsList() {
     },
     {
       name: "remove_node_attribute",
-      description: "Remove an editable data-og-* attribute from a node selected by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Remove an editable data-og-* attribute from a node selected by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -430,7 +430,7 @@ function toolsList() {
     {
       name: "set_text_content",
       description: "Replace a node's inner content with escaped plain text.",
-      inputSchema: targetObjectSchema({
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -440,7 +440,7 @@ function toolsList() {
     {
       name: "insert_html",
       description: "Insert an HTML fragment before, after, prepend, or append relative to an anchor node.",
-      inputSchema: targetObjectSchema({
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -451,7 +451,7 @@ function toolsList() {
     {
       name: "replace_node_html",
       description: "Replace a node subtree with an HTML fragment.",
-      inputSchema: targetObjectSchema({
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -460,8 +460,8 @@ function toolsList() {
     },
     {
       name: "delete_node",
-      description: "Delete a node subtree selected by data-og-id.",
-      inputSchema: targetObjectSchema({
+      description: "Delete a node subtree selected by data-og-internal-id or ogref.",
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" }
@@ -470,7 +470,7 @@ function toolsList() {
     {
       name: "move_node",
       description: "Move a node subtree before, after, prepend, or append relative to a target node.",
-      inputSchema: targetObjectSchema({
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -481,7 +481,7 @@ function toolsList() {
     {
       name: "copy_node",
       description: "Copy a node subtree, prefix copied data-og-id values, and insert it relative to a target node.",
-      inputSchema: targetObjectSchema({
+      inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
@@ -510,6 +510,10 @@ function targetObjectSchema(properties, required) {
       { required: ["componentID"] }
     ]
   };
+}
+
+function nodeTargetObjectSchema(properties, required) {
+  return objectSchema(properties, required);
 }
 
 function callTool(name, args) {
@@ -833,8 +837,8 @@ function commandForTool(name, args) {
 
 function pageSelectorProperties() {
   return {
-    pageID: { type: "string", description: "Page ID. Mutually exclusive with componentID." },
-    componentID: { type: "string", description: "Component canvas ID. Mutually exclusive with pageID." }
+    pageID: { type: "string", description: "Page reference ID. Mutually exclusive with componentID." },
+    componentID: { type: "string", description: "Component canvas reference ID. Mutually exclusive with pageID." }
   };
 }
 
@@ -850,7 +854,14 @@ function pageSelectorArgs(args) {
   if (pageID) {
     return ["--page-id", pageID];
   }
+  if (typedNodeReference(args?.id)) {
+    return [];
+  }
   throw new Error("Missing required argument: pageID or componentID");
+}
+
+function typedNodeReference(value) {
+  return typeof value === "string" && /^ogref:(node|component-node):/.test(value);
 }
 
 function optionalFlag(args, key, flag) {

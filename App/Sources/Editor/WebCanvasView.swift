@@ -143,6 +143,46 @@ final class WebScrollStateRegistry {
     }
 }
 
+/// 論理名（日本語）: OpenGraphiteコマンド対応WebView
+/// 概要: `⌘C` と responder chain の `copy:` を OpenGraphite の選択ノードコピーへ接続する WKWebView です。
+///
+/// プロパティ:
+/// - `copyCommandHandler`: OpenGraphite 専用コピーを実行し、処理できた場合に `true` を返す handler。
+private final class OpenGraphiteCommandWebView: WKWebView {
+    var copyCommandHandler: (() -> Bool)?
+
+    /// 論理名（日本語）: キー相当処理関数
+    /// 処理概要: `⌘C` を OpenGraphite 専用コピーへ流し、対象がない場合は標準 WebView 処理へ戻します。
+    ///
+    /// - Parameter event: 入力イベント。
+    /// - Returns: OpenGraphite 側または WebView 側で処理できた場合は `true`。
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if isCopyKeyEquivalent(event), copyCommandHandler?() == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// 論理名（日本語）: コピーアクション関数
+    /// 処理概要: メニューなどから届く `copy:` action を OpenGraphite 専用コピーへ流します。
+    ///
+    /// - Parameter sender: action 送信元。
+    @objc func copy(_ sender: Any?) {
+        _ = copyCommandHandler?()
+    }
+
+    /// 論理名（日本語）: コピーショートカット判定関数
+    /// 処理概要: 入力イベントが `⌘C` のキー相当かを判定します。
+    ///
+    /// - Parameter event: 入力イベント。
+    /// - Returns: `⌘C` であれば `true`。
+    private func isCopyKeyEquivalent(_ event: NSEvent) -> Bool {
+        let relevantModifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        return relevantModifiers == .command
+            && event.charactersIgnoringModifiers?.lowercased() == "c"
+    }
+}
+
 /// 論理名（日本語）: Webキャンバスビュー
 /// 概要: HTML 正本を WKWebView で表示し、DOM 選択、Inspector 変更、コンテキストメニュー操作を SwiftUI へ接続します。
 ///
@@ -189,7 +229,10 @@ struct WebCanvasView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = userContentController
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = OpenGraphiteCommandWebView(frame: .zero, configuration: configuration)
+        webView.copyCommandHandler = { [weak coordinator = context.coordinator] in
+            coordinator?.copySelectionForCommand() ?? false
+        }
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         context.coordinator.webView = webView
@@ -307,6 +350,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
+        private static let nodeReferencePasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.node-reference+json")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
 
         /// 論理名（日本語）: コーディネーター初期化関数
@@ -385,7 +429,7 @@ struct WebCanvasView: NSViewRepresentable {
             renderLocalComponentReferences(in: webView)
             collectStaticFlowLinks()
             guard isInteractive else { return }
-            collectNodes()
+            ensureInternalIDsAndCollectNodes()
             Task { @MainActor in
                 setActiveTool(store.activeTool)
                 selectNode(store.selectedNodeID)
@@ -436,7 +480,7 @@ struct WebCanvasView: NSViewRepresentable {
                     guard let self, (result as? Bool) == true else { return }
                     self.collectStaticFlowLinks()
                     if self.isInteractive {
-                        self.collectNodes()
+                        self.ensureInternalIDsAndCollectNodes()
                     }
                 }
             }
@@ -458,6 +502,30 @@ struct WebCanvasView: NSViewRepresentable {
         /// 処理概要: 表示中 DOM から OpenGraphite node graph を JavaScript bridge 経由で再収集します。
         func collectNodes() {
             webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
+        }
+
+        /// 論理名（日本語）: 内部ID補完後ノード収集関数
+        /// 処理概要: HTML ノード内部 ID を補完し、補完が発生した場合は正本 HTML へ同期してからノード一覧を収集します。
+        private func ensureInternalIDsAndCollectNodes() {
+            guard let webView else { return }
+            webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.ensureInternalIDs();") { [weak self] result, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error {
+                        self.store.reportWebError("内部IDの補完に失敗しました: \(error.localizedDescription)")
+                        self.collectNodes()
+                        return
+                    }
+
+                    if (result as? Bool) == true {
+                        self.serializeAndSyncHTML {
+                            self.collectNodes()
+                        }
+                    } else {
+                        self.collectNodes()
+                    }
+                }
+            }
         }
 
         /// 論理名（日本語）: WebView静的フローリンク収集関数
@@ -713,6 +781,7 @@ struct WebCanvasView: NSViewRepresentable {
             addMenuItem("貼り付けて置換", command: "pasteReplace", to: menu, enabled: canMutateSelection && hasPasteContent, keyEquivalent: "r", modifiers: [.command, .shift])
 
             let copyOptions = NSMenu(title: "コピー/貼り付けオプション")
+            addMenuItem("参照IDをコピー", command: "copyReferenceID", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("HTMLとしてコピー", command: "copyHTML", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("テキストとしてコピー", command: "copyText", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("CSS変数としてコピー", command: "copyCSSVariables", to: copyOptions, enabled: selectedID != nil)
@@ -831,7 +900,9 @@ struct WebCanvasView: NSViewRepresentable {
 
             switch command {
             case "copy", "copyHTML":
-                copySelection(includeHTML: true, includeText: true)
+                copySelection(includeHTML: true, includeText: command == "copyHTML", includeReferenceID: command == "copy")
+            case "copyReferenceID":
+                copySelection(includeHTML: true, includeText: false, includeReferenceID: true)
             case "copyText":
                 copySelection(includeHTML: false, includeText: true)
             case "copyCSSVariables":
@@ -854,14 +925,35 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         @MainActor
+        /// 論理名（日本語）: コマンドコピー処理関数
+        /// 処理概要: `⌘C` や responder chain の `copy:` から通常コピーと同じ参照 ID 付き payload を作ります。
+        /// 選択 node がない場合は選択 HTML カードの参照 ID をコピーします。
+        ///
+        /// - Returns: OpenGraphite の選択対象コピーとして処理できた場合は `true`。
+        func copySelectionForCommand() -> Bool {
+            guard isInteractive else { return false }
+            guard store.selectedNodeID != nil else {
+                return store.copySelectedReferenceIDToPasteboard()
+            }
+            copySelection(includeHTML: true, includeText: false, includeReferenceID: true)
+            return true
+        }
+
+        @MainActor
         /// 論理名（日本語）: 選択内容コピー関数
-        /// 処理概要: 選択中 DOM の HTML、テキスト、CSS 変数を pasteboard へ書き込みます。
+        /// 処理概要: 選択中 DOM の HTML、テキスト、参照 ID、CSS 変数を pasteboard へ書き込みます。
         ///
         /// - Parameters:
         ///   - includeHTML: HTML をコピー対象に含めるか。
         ///   - includeText: テキストをコピー対象に含めるか。
+        ///   - includeReferenceID: テキスト欄貼り付け用に複合参照 ID をコピー対象に含めるか。
         ///   - includeCSSVariables: CSS 変数をコピー対象に含めるか。
-        private func copySelection(includeHTML: Bool, includeText: Bool, includeCSSVariables: Bool = false) {
+        private func copySelection(
+            includeHTML: Bool,
+            includeText: Bool,
+            includeReferenceID: Bool = false,
+            includeCSSVariables: Bool = false
+        ) {
             guard let webView else { return }
 
             webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.copyPayload();") { result, error in
@@ -874,19 +966,37 @@ struct WebCanvasView: NSViewRepresentable {
                     guard let payload = result as? [String: Any] else { return }
                     let html = payload["html"] as? String ?? ""
                     let text = payload["text"] as? String ?? ""
+                    let nodeID = payload["id"] as? String ?? ""
+                    let nodeInternalID = payload["internalID"] as? String ?? ""
                     let cssVariables = (payload["cssVariables"] as? [String: Any] ?? [:])
                         .compactMapValues { $0 as? String }
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
+                    let referenceID = includeReferenceID
+                        ? self.store.nodeReferenceID(forNodeID: nodeID, nodeInternalID: nodeInternalID)
+                        : nil
 
                     if includeHTML, !html.isEmpty {
                         pasteboard.setString(html, forType: Self.htmlPasteboardType)
                     }
 
-                    if includeText, !text.isEmpty {
+                    if let referenceID, !referenceID.isEmpty {
+                        pasteboard.setString(referenceID, forType: .string)
+                    } else if includeText, !text.isEmpty {
                         pasteboard.setString(text, forType: .string)
                     } else if includeHTML, !html.isEmpty {
                         pasteboard.setString(html, forType: .string)
+                    }
+
+                    if includeReferenceID,
+                       let referencePayload = self.store.nodeReferencePasteboardPayload(
+                        forNodeID: nodeID,
+                        nodeInternalID: nodeInternalID,
+                        html: html
+                       ),
+                       let data = try? JSONSerialization.data(withJSONObject: referencePayload),
+                       let json = String(data: data, encoding: .utf8) {
+                        pasteboard.setString(json, forType: Self.nodeReferencePasteboardType)
                     }
 
                     if includeCSSVariables, !cssVariables.isEmpty,
@@ -944,6 +1054,14 @@ struct WebCanvasView: NSViewRepresentable {
         /// - Returns: 貼り付け可能な payload。空の場合は `nil`。
         private func pasteboardPayload() -> [String: String]? {
             let pasteboard = NSPasteboard.general
+            if let json = pasteboard.string(forType: Self.nodeReferencePasteboardType),
+               let data = json.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let html = object["html"] as? String,
+               !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return ["html": html]
+            }
+
             if let html = pasteboard.string(forType: Self.htmlPasteboardType),
                !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return ["html": html]
@@ -1069,6 +1187,36 @@ struct WebCanvasView: NSViewRepresentable {
           return !(element.tagName && element.tagName.toLowerCase() === 'og-instance' && element.hasAttribute('data-og-expanded'));
         });
       }
+
+        function randomInternalID(used) {
+          const bytes = new Uint8Array(6);
+          let candidate = '';
+          do {
+            if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+              window.crypto.getRandomValues(bytes);
+              candidate = Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+            } else {
+              candidate = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
+            }
+          } while (!candidate || used.has(candidate));
+          used.add(candidate);
+          return candidate;
+        }
+
+        function ensureInternalIDs() {
+          const used = new Set();
+          let changed = false;
+          allEditableNodes().forEach((element) => {
+            const current = (element.getAttribute('data-og-internal-id') || '').trim();
+            if (!current || used.has(current)) {
+              element.setAttribute('data-og-internal-id', randomInternalID(used));
+              changed = true;
+            } else {
+              used.add(current);
+            }
+          });
+          return changed;
+        }
 
         function nodeWithID(id) {
           return allEditableNodes().find((element) => element.getAttribute('data-og-id') === id);
@@ -1257,8 +1405,10 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
       function collectNodes() {
+        ensureInternalIDs();
         const nodes = allEditableNodes().map((element) => ({
           id: element.getAttribute('data-og-id') || '',
+          internalID: element.getAttribute('data-og-internal-id') || '',
           tagName: element.tagName.toLowerCase(),
           type: element.getAttribute('data-og-type') || '',
           layout: element.getAttribute('data-og-layout') || '',
@@ -1465,6 +1615,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         function normalizeEditableIDs(fragment) {
           const used = new Set(allEditableNodes().map((element) => element.getAttribute('data-og-id') || ''));
+          const usedInternalIDs = new Set(allEditableNodes().map((element) => element.getAttribute('data-og-internal-id') || ''));
           editableElementsInside(fragment).forEach((element) => {
             if (!element.hasAttribute('data-og-type')) {
               element.setAttribute('data-og-type', 'frame');
@@ -1477,6 +1628,7 @@ struct WebCanvasView: NSViewRepresentable {
               index += 1;
             }
             element.setAttribute('data-og-id', candidate);
+            element.setAttribute('data-og-internal-id', randomInternalID(usedInternalIDs));
             used.add(candidate);
           });
         }
@@ -1484,6 +1636,7 @@ struct WebCanvasView: NSViewRepresentable {
         function textElementFromString(text) {
           const element = document.createElement('TextBlock');
           element.setAttribute('data-og-id', uniqueID('text'));
+          element.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => node.getAttribute('data-og-internal-id') || ''))));
           element.setAttribute('data-og-type', 'text');
           element.textContent = text || '';
           return element;
@@ -1748,11 +1901,14 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function copyPayload() {
+          ensureInternalIDs();
           const element = selectedElement();
           if (!element) {
-            return { html: '', text: '' };
+            return { id: '', internalID: '', html: '', text: '' };
           }
         return {
+          id: element.getAttribute('data-og-id') || '',
+          internalID: element.getAttribute('data-og-internal-id') || '',
           html: element.outerHTML,
           text: (element.textContent || '').trim(),
           cssVariables: cssVariables(element)
@@ -1823,6 +1979,7 @@ struct WebCanvasView: NSViewRepresentable {
             const frame = document.createElement('Frame');
             selectedID = createFrameID();
             frame.setAttribute('data-og-id', selectedID);
+            frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => node.getAttribute('data-og-internal-id') || ''))));
             frame.setAttribute('data-og-type', 'frame');
             frame.setAttribute('data-og-layout', 'vertical');
             frame.style.setProperty('--og-gap', '0');
@@ -1879,6 +2036,7 @@ struct WebCanvasView: NSViewRepresentable {
         window.OpenGraphite = {
           collectNodes: collectNodes,
           collectStaticFlowLinks: collectStaticFlowLinks,
+          ensureInternalIDs: ensureInternalIDs,
           selectNode: selectNode,
           setActiveTool: setActiveTool,
           setCSSVariable: setCSSVariable,

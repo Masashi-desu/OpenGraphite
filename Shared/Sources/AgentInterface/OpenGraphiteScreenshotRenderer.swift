@@ -8,7 +8,7 @@ import WebKit
 /// 定義内容:
 /// - `canvas`: `.ogp` の先頭 Chapter に含まれるページ配置を含むキャンバス全体。
 /// - `page`: 単一ページ。
-/// - `node`: `data-og-id` で指定した単一ノード。
+/// - `node`: `data-og-internal-id` で指定した単一ノード。
 enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
     case canvas
     case page
@@ -43,7 +43,7 @@ struct OpenGraphiteScreenshotPage: Codable, Equatable {
 /// - `height`: 出力 PNG の実ピクセル高さ。
 /// - `pageID`: 対象ページ ID。
 /// - `pageURL`: 対象 HTML URL。
-/// - `nodeID`: 対象 `data-og-id`。
+/// - `nodeID`: 対象 `data-og-internal-id`。
 /// - `pages`: キャンバススクリーンショットに含めたページ一覧。
 /// - `diagnostics`: 補助診断。
 struct OpenGraphiteScreenshotResult: Codable, Equatable {
@@ -90,7 +90,7 @@ struct OpenGraphiteScreenshotRenderer {
     }
 
     /// 論理名（日本語）: ページスクリーンショット関数
-    /// 処理概要: `.ogp` の page ID または HTML ファイルを WebKit でレンダリングし、PNG として保存します。
+    /// 処理概要: `.ogp` の page 内部参照 ID または HTML ファイルを WebKit でレンダリングし、PNG として保存します。
     ///
     /// - Parameters:
     ///   - targetURL: `.ogp` または HTML URL。
@@ -124,11 +124,11 @@ struct OpenGraphiteScreenshotRenderer {
     }
 
     /// 論理名（日本語）: ノードスクリーンショット関数
-    /// 処理概要: HTML 内の `data-og-id` ノードの bounding rect を取得し、その範囲だけを PNG として保存します。
+    /// 処理概要: HTML 内の `data-og-internal-id` ノードの bounding rect を取得し、その範囲だけを PNG として保存します。
     ///
     /// - Parameters:
     ///   - htmlURL: 対象 HTML URL。
-    ///   - nodeID: 対象 `data-og-id`。
+    ///   - nodeID: 対象 `data-og-internal-id`。
     ///   - outputURL: PNG 出力先 URL。
     ///   - readAccessURL: HTML と関連アセットの読み取り許可ルート。
     ///   - width: 初期 viewport 幅。
@@ -144,10 +144,11 @@ struct OpenGraphiteScreenshotRenderer {
         height: Double?,
         padding: Double?
     ) throws -> OpenGraphiteScreenshotResult {
-        try runWebKitSynchronously {
+        let resolvedNodeID = OpenGraphiteReferenceID.nodeInternalID(from: nodeID) ?? nodeID
+        return try runWebKitSynchronously {
             try await captureNodeOnMain(
                 htmlURL: htmlURL,
-                nodeID: nodeID,
+                nodeID: resolvedNodeID,
                 outputURL: outputURL,
                 readAccessURL: readAccessURL,
                 width: width,
@@ -234,7 +235,7 @@ struct OpenGraphiteScreenshotRenderer {
             guard let pageID else {
                 throw OpenGraphiteScreenshotError(message: ".ogp の page screenshot には --id が必要です。")
             }
-            guard let page = loadedProject.project.allPages.first(where: { $0.id == pageID }) else {
+            guard let page = page(in: loadedProject.project, matching: pageID) else {
                 throw OpenGraphiteScreenshotError(message: "page id \"\(pageID)\" が見つかりません。")
             }
             pageURL = loadedProject.htmlURL(for: page)
@@ -315,6 +316,77 @@ struct OpenGraphiteScreenshotRenderer {
             pages: nil,
             diagnostics: []
         )
+    }
+
+    /// 論理名（日本語）: スクリーンショット対象ページ解決関数
+    /// 処理概要: 内部 ID または複合参照 ID で `.ogp` 内 page entry を解決します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` project。
+    ///   - reference: `--page-id` / `--component-id` で指定された値。
+    /// - Returns: 一致した page entry。見つからない場合は `nil`。
+    private func page(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphitePage? {
+        let normalizedReference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let page = typedPage(in: project, matching: normalizedReference) {
+            return page
+        }
+        if let page = compoundPage(in: project, matching: normalizedReference) {
+            return page
+        }
+
+        return project.allPages.first { $0.internalID == normalizedReference }
+    }
+
+    /// 論理名（日本語）: typedスクリーンショットページ解決関数
+    /// 処理概要: `ogref` 参照 ID を `.ogp` 内 page entry へ解決します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` project。
+    ///   - reference: typed agent 参照 ID。
+    /// - Returns: 一致した page entry。見つからない場合は `nil`。
+    private func typedPage(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphitePage? {
+        guard let referenceID = OpenGraphiteReferenceID(parsing: reference) else {
+            return nil
+        }
+
+        switch referenceID.type {
+        case .page, .node:
+            let chapterID = referenceID.parts[0]
+            let pageID = referenceID.parts[1]
+            return project.chapters
+                .first { $0.internalID == chapterID }?
+                .pages
+                .first { $0.internalID == pageID }
+        case .component, .componentNode:
+            let componentID = referenceID.parts[0]
+            return project.components.first { $0.internalID == componentID }
+        case .chapter:
+            return nil
+        }
+    }
+
+    /// 論理名（日本語）: 複合スクリーンショットページ解決関数
+    /// 処理概要: raw `<chapterInternalID>:<pageInternalID>` または `<componentInternalID>:<nodeInternalID>` を page entry へ解決します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` project。
+    ///   - reference: agent 向け page または node 参照 ID。
+    /// - Returns: 一致した page entry。見つからない場合は `nil`。
+    private func compoundPage(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphitePage? {
+        let parts = reference.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+
+        if parts.count >= 2,
+           let chapter = project.chapters.first(where: { $0.internalID == parts[0] }),
+           let page = chapter.pages.first(where: { $0.internalID == parts[1] }) {
+            return page
+        }
+
+        if parts.count >= 2,
+           let page = project.components.first(where: { $0.internalID == parts[0] }) {
+            return page
+        }
+
+        return nil
     }
 
     @MainActor
@@ -571,9 +643,9 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
     }
 
     /// 論理名（日本語）: ノード矩形取得関数
-    /// 処理概要: `data-og-id` に一致する要素の bounding rect を JavaScript で取得します。
+    /// 処理概要: `data-og-internal-id` に一致する要素の bounding rect を JavaScript で取得します。
     ///
-    /// - Parameter id: 対象 `data-og-id`。
+    /// - Parameter id: 対象 node ID。
     /// - Returns: 対象 node の矩形。
     func nodeRect(id: String) async throws -> CGRect {
         let idLiteral = try javaScriptStringLiteral(id)
@@ -581,8 +653,7 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             """
             (() => {
               const id = \(idLiteral);
-              const selector = `[data-og-id="${CSS.escape(id)}"]`;
-              const node = document.querySelector(selector);
+              const node = document.querySelector(`[data-og-internal-id="${CSS.escape(id)}"]`);
               if (!node) { return null; }
               const rect = node.getBoundingClientRect();
               return {

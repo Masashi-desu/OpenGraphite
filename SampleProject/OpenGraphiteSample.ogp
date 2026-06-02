@@ -2,6 +2,7 @@
   "chapters" : [
     {
       "id" : "main",
+      "internalID" : "1gibtxulofmr0",
       "pages" : [
         {
           "canvas" : {
@@ -12,6 +13,7 @@
             "y" : 0
           },
           "id" : "home",
+          "internalID" : "kl1xxsgkiuue",
           "path" : "index.html"
         },
         {
@@ -23,6 +25,7 @@
             "y" : 0
           },
           "id" : "downloads",
+          "internalID" : "2s5pn481hyrao",
           "path" : "downloads.html"
         },
         {
@@ -34,6 +37,7 @@
             "y" : 0
           },
           "id" : "docs",
+          "internalID" : "2opic2blumreb",
           "path" : "docs.html"
         }
       ],
@@ -50,6 +54,7 @@
         "y" : 0
       },
       "id" : "design-system",
+      "internalID" : "3bgx6phkz3jv5",
       "path" : "_components/design-system.html"
     }
   ],

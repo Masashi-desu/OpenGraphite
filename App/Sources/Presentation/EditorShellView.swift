@@ -452,7 +452,7 @@ private struct CanvasPaneView: View {
     private func canvasDocumentID(for project: LoadedOpenGraphiteProject, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
         let pageID = pages
             .map { page in
-                "\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
+                "\(page.internalID):\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
             }
             .joined(separator: "|")
         return "\(project.fileURL.path)#\(segment.rawValue)#\(pageID)"
@@ -496,12 +496,12 @@ private struct CanvasProjectView: View {
                     store.selectPage(id: nil)
                 }
 
-            ForEach(pages) { page in
+            ForEach(pages, id: \.internalID) { page in
                 CanvasDocumentView(
                     store: store,
                     page: page,
                     pageURL: loadedProject.htmlURL(for: page),
-                    isSelected: page.id == store.selectedPage?.id,
+                    isSelected: page.internalID == store.selectedPage?.internalID,
                     reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page))
                 )
                 .offset(
@@ -571,6 +571,21 @@ private struct CanvasDocumentView: View {
                     CanvasMetrics.pageNameCardMinTextWidth
                 )
             )
+            .onTapGesture {
+                store.selectPage(internalID: page.internalID)
+            }
+            .contextMenu {
+                Button("参照IDをコピー") {
+                    store.selectPage(internalID: page.internalID)
+                    store.copyPageReferenceIDToPasteboard(page, segment: store.selectedCanvasSegment)
+                }
+            }
+            .onCopyCommand {
+                guard isSelected, store.selectedNodeID == nil else { return [] }
+                return OpenGraphiteReferenceCopy.itemProviders(
+                    for: store.pageReferenceID(for: page, segment: store.selectedCanvasSegment)
+                )
+            }
             .offset(y: -CanvasMetrics.pageNameCardOutsideOffset)
         }
         .overlay(
@@ -579,7 +594,19 @@ private struct CanvasDocumentView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            store.selectPage(id: page.id)
+            store.selectPage(internalID: page.internalID)
+        }
+        .contextMenu {
+            Button("参照IDをコピー") {
+                store.selectPage(internalID: page.internalID)
+                store.copyPageReferenceIDToPasteboard(page, segment: store.selectedCanvasSegment)
+            }
+        }
+        .onCopyCommand {
+            guard isSelected, store.selectedNodeID == nil else { return [] }
+            return OpenGraphiteReferenceCopy.itemProviders(
+                for: store.pageReferenceID(for: page, segment: store.selectedCanvasSegment)
+            )
         }
     }
 }

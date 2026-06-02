@@ -103,14 +103,21 @@ private struct ChapterListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 3) {
-                ForEach(store.loadedProject?.project.chapters ?? []) { chapter in
+                ForEach(store.loadedProject?.project.chapters ?? [], id: \.internalID) { chapter in
                     ChapterRow(
                         chapter: chapter,
-                        isSelected: chapter.id == store.selectedChapter?.id,
+                        isSelected: chapter.internalID == store.selectedChapter?.internalID,
                         onSelect: {
-                            store.selectChapter(id: chapter.id)
+                            store.selectChapter(internalID: chapter.internalID)
+                        },
+                        onCopyReferenceID: {
+                            store.copyChapterReferenceIDToPasteboard(chapter)
                         }
                     )
+                    .onCopyCommand {
+                        guard chapter.internalID == store.selectedChapter?.internalID else { return [] }
+                        return OpenGraphiteReferenceCopy.itemProviders(for: store.chapterReferenceID(for: chapter))
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -128,10 +135,12 @@ private struct ChapterListView: View {
 /// - `chapter`: 表示する Chapter 定義。
 /// - `isSelected`: 現在選択中の Chapter か。
 /// - `onSelect`: 行選択時に呼び出す処理。
+/// - `onCopyReferenceID`: 参照 ID コピー時に呼び出す処理。
 private struct ChapterRow: View {
     var chapter: OpenGraphiteChapter
     var isSelected: Bool
     var onSelect: () -> Void
+    var onCopyReferenceID: () -> Void
 
     var body: some View {
         Button(action: onSelect) {
@@ -173,6 +182,9 @@ private struct ChapterRow: View {
             .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button("参照IDをコピー", action: onCopyReferenceID)
+        }
         .help(chapter.displayName)
     }
 }
@@ -206,22 +218,42 @@ private struct PageLayerListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 6) {
-                ForEach(pages) { page in
+                ForEach(pages, id: \.internalID) { page in
                     PageLayerCard(
                         page: page,
                         isSelected: isSelected(page),
-                        isExpanded: expansionState.isExpanded(pageID: page.id),
+                        isExpanded: expansionState.isExpanded(pageID: page.internalID),
                         nodes: isSelected(page) ? store.nodes : [],
                         selectedNodeID: $store.selectedNodeID,
                         systemImage: segment == .components ? "shippingbox" : "doc.text",
                         onSelect: {
                             select(page)
-                            expansionState.expand(pageID: page.id)
+                            expansionState.expand(pageID: page.internalID)
                         },
                         onToggle: {
                             toggle(page)
+                        },
+                        onCopyReferenceID: {
+                            select(page)
+                            store.copyPageReferenceIDToPasteboard(page, segment: segment)
+                        },
+                        onCopyNodeReferenceID: { node in
+                            if !isSelected(page) {
+                                select(page)
+                            }
+                            store.selectNode(id: node.id)
+                            store.copyNodeReferenceIDToPasteboard(node)
+                        },
+                        nodeReferenceID: { node in
+                            store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
                         }
                     )
+                    .onCopyCommand {
+                        guard isSelected(page), store.selectedNodeID == nil else { return [] }
+                        return OpenGraphiteReferenceCopy.itemProviders(
+                            for: store.pageReferenceID(for: page, segment: segment)
+                        )
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,9 +287,9 @@ private struct PageLayerListView: View {
     private var selectedPageID: String? {
         switch segment {
         case .pages:
-            return store.selectedCanvasSegment == .pages ? store.selectedPageID : nil
+            return store.selectedCanvasSegment == .pages ? store.selectedPageInternalID : nil
         case .components:
-            return store.selectedCanvasSegment == .components ? store.selectedComponentPageID : nil
+            return store.selectedCanvasSegment == .components ? store.selectedComponentPageInternalID : nil
         }
     }
 
@@ -267,7 +299,7 @@ private struct PageLayerListView: View {
     /// - Parameter page: 判定対象の HTML page。
     /// - Returns: 選択中であれば `true`。
     private func isSelected(_ page: OpenGraphitePage) -> Bool {
-        store.selectedCanvasSegment == segment && selectedPageID == page.id
+        store.selectedCanvasSegment == segment && selectedPageID == page.internalID
     }
 
     /// 論理名（日本語）: HTMLカード選択関数
@@ -280,9 +312,9 @@ private struct PageLayerListView: View {
             if store.selectedCanvasSegment != .pages {
                 store.selectPagesSegment()
             }
-            store.selectPage(id: page.id)
+            store.selectPage(internalID: page.internalID)
         case .components:
-            store.selectComponentPage(id: page.id)
+            store.selectComponentPage(internalID: page.internalID)
         }
     }
 
@@ -306,11 +338,11 @@ private struct PageLayerListView: View {
     ///
     /// - Parameter page: 開閉対象の HTML page。
     private func toggle(_ page: OpenGraphitePage) {
-        if expansionState.isExpanded(pageID: page.id) {
-            expansionState.toggle(pageID: page.id)
+        if expansionState.isExpanded(pageID: page.internalID) {
+            expansionState.toggle(pageID: page.internalID)
         } else {
             select(page)
-            expansionState.expand(pageID: page.id)
+            expansionState.expand(pageID: page.internalID)
         }
     }
 
@@ -319,7 +351,7 @@ private struct PageLayerListView: View {
     private func expandSelectedPage() {
         expansionState.synchronizeSelection(
             selectedPageID: selectedPageID,
-            validPageIDs: Set(pages.map(\.id))
+            validPageIDs: Set(pages.map(\.internalID))
         )
     }
 }
@@ -336,6 +368,9 @@ private struct PageLayerListView: View {
 /// - `systemImage`: 見出しに表示する SF Symbols 名。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onToggle`: 展開切替時に呼び出す処理。
+/// - `onCopyReferenceID`: HTML カード参照 ID コピー時に呼び出す処理。
+/// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
+/// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct PageLayerCard: View {
     var page: OpenGraphitePage
     var isSelected: Bool
@@ -345,6 +380,9 @@ private struct PageLayerCard: View {
     var systemImage: String
     var onSelect: () -> Void
     var onToggle: () -> Void
+    var onCopyReferenceID: () -> Void
+    var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
+    var nodeReferenceID: (OpenGraphiteNode) -> String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -384,6 +422,9 @@ private struct PageLayerCard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button("参照IDをコピー", action: onCopyReferenceID)
+                }
                 .help(page.path)
             }
             .padding(.horizontal, 8)
@@ -397,7 +438,9 @@ private struct PageLayerCard: View {
             if isExpanded {
                 LayerOutlineContentView(
                     nodes: nodes,
-                    selectedNodeID: $selectedNodeID
+                    selectedNodeID: $selectedNodeID,
+                    onCopyNodeReferenceID: onCopyNodeReferenceID,
+                    nodeReferenceID: nodeReferenceID
                 )
                 .padding(.leading, 8)
                 .padding(.trailing, 6)
@@ -413,6 +456,9 @@ private struct PageLayerCard: View {
             RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
                 .stroke(isSelected || isExpanded ? Color(nsColor: .separatorColor).opacity(0.5) : Color.clear, lineWidth: 1)
         )
+        .contextMenu {
+            Button("参照IDをコピー", action: onCopyReferenceID)
+        }
     }
 }
 
@@ -422,10 +468,14 @@ private struct PageLayerCard: View {
 /// プロパティ:
 /// - `nodes`: WebView から抽出されたノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
+/// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
+/// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct LayerOutlineContentView: View {
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
     @State private var expandedNodeIDs: Set<String> = []
+    var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
+    var nodeReferenceID: (OpenGraphiteNode) -> String?
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 2) {
@@ -439,8 +489,16 @@ private struct LayerOutlineContentView: View {
                     },
                     onSelect: {
                         selectedNodeID = row.id
+                    },
+                    onCopyReferenceID: {
+                        selectedNodeID = row.id
+                        onCopyNodeReferenceID(row.node)
                     }
                 )
+                .onCopyCommand {
+                    guard row.id == selectedNodeID else { return [] }
+                    return OpenGraphiteReferenceCopy.itemProviders(for: nodeReferenceID(row.node))
+                }
             }
         }
         .padding(.top, 2)
@@ -647,12 +705,14 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 /// - `isSelected`: 現在選択中の行か。
 /// - `onToggle`: 展開切替処理。
 /// - `onSelect`: 選択処理。
+/// - `onCopyReferenceID`: 参照 ID コピー処理。
 private struct LayerRow: View {
     var row: VisibleLayerRow
     var isCollapsed: Bool
     var isSelected: Bool
     var onToggle: () -> Void
     var onSelect: () -> Void
+    var onCopyReferenceID: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -700,6 +760,9 @@ private struct LayerRow: View {
                 .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
         )
         .onTapGesture(perform: onSelect)
+        .contextMenu {
+            Button("参照IDをコピー", action: onCopyReferenceID)
+        }
         .accessibilityElement(children: .combine)
     }
 

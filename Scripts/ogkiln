@@ -8,6 +8,7 @@ BINARY="$BUILD_DIR/ogkiln"
 sources=(
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteProject.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteNode.swift"
+  "$ROOT_DIR/App/Sources/Domain/OpenGraphiteReferenceID.swift"
   "$ROOT_DIR/App/Sources/Infrastructure/ProjectLoader.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteContract.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCurrentProjectStore.swift"
