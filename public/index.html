@@ -9,12 +9,7 @@
   </head>
   <body>
     <link rel="opengraphite-components" href="./_components/design-system.html">
-<OpenGraphitePage
-  data-og-id="page"
-  data-og-type="page"
-  data-og-layout="vertical"
-  data-og-role="page-preview"
-  style="--og-gap:0; --og-padding:24px 46px 78px; --og-background:#121210; --og-foreground:#f0ebe2;" data-og-internal-id="72222bd6f11e">
+<OpenGraphitePage data-og-id="page" data-og-type="page" data-og-layout="vertical" data-og-role="page-preview" style="--og-gap:0; --og-padding:24px 46px 78px; --og-background:#121210; --og-foreground:#f0ebe2;" data-og-internal-id="72222bd6f11e">
   <og-instance data-og-id="site-header" data-og-type="frame" data-og-component="site-header" data-og-internal-id="046947a13c0e">
     <template slot="nav">
       <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="121eafb2db25">Home</a>
@@ -23,137 +18,81 @@
     </template>
   </og-instance>
 
-  <HomeHero
-  data-og-id="hero"
-  data-og-type="frame"
-  data-og-layout="horizontal"
-  data-og-role="landing-hero"
-  style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-padding:46px 0 54px; --og-gap:64px; --og-align:stretch; border-bottom:1px solid #2d2c28;" data-og-internal-id="3aefceddb042">
-  <HeroCopy
-    data-og-id="hero-copy"
-    data-og-type="frame"
-    data-og-layout="vertical"
-    style="--og-gap:22px; --og-flex:1 1 0; --og-justify:center; --og-padding:24px 0 18px;" data-og-internal-id="3beed7da54fe">
-    <EyebrowText
-      data-og-id="hero-eyebrow"
-      data-og-type="text"
-      data-og-role="eyebrow"
-      style="--og-foreground:#b8b0a3; --og-letter-spacing:0.08em;" data-og-internal-id="89c43ffd6f25">Repository-synced AI canvas</EyebrowText>
-    <MainTitle
-      data-og-id="hero-title"
-      data-og-type="text"
-      style="--og-font-size:64px; --og-font-weight:840; --og-line-height:1.01; --og-letter-spacing:0; --og-max-width:730px; overflow-wrap:anywhere;" data-og-internal-id="eace7f6a5b08">同じHTMLを、AIと編集する。</MainTitle>
-    <LeadText
-      data-og-id="hero-lead"
-      data-og-type="text"
-      data-og-role="muted"
-      style="--og-font-size:20px; --og-line-height:1.68; --og-foreground:#b5ada0; --og-max-width:680px;" data-og-internal-id="fbb1fec18542">OpenGraphiteは、アプリ、CLI、MCP、AI agentが同じHTMLとCSSを見て編集するためのインターフェースです。見えている`.ogp`のpagesだけを扱い、作業対象を曖昧にしません。</LeadText>
-    <ScopeLine
-      data-og-id="hero-scope"
-      data-og-type="text"
-      style="--og-padding:16px 0; --og-font-size:15px; --og-font-weight:760; --og-line-height:1.45; --og-foreground:#e7dfd2; border-top:1px solid #34322e; border-bottom:1px solid #34322e;" data-og-internal-id="6b3824cb49f2">HTML / CSS source -> .ogp pages -> App / ogkiln / MCP</ScopeLine>
-    <ActionRow
-      data-og-id="hero-actions"
-      data-og-type="frame"
-      data-og-layout="horizontal"
-      style="--og-gap:12px; --og-align:center; --og-padding:12px 0 0;" data-og-internal-id="5bff6c969dee">
-      <a href="./downloads.html" data-og-id="hero-downloads" data-og-type="button" style="--og-padding:15px 22px; --og-radius:3px; --og-background:#ece4d8; --og-foreground:#141412; --og-border:1px solid #ece4d8;" data-og-internal-id="e94a0c4914da">Download</a>
-      <a href="./docs.html" data-og-id="hero-docs" data-og-type="button" style="--og-padding:15px 22px; --og-radius:3px; --og-background:#141412; --og-foreground:#ece4d8; --og-border:1px solid #5b554a;" data-og-internal-id="d50c1196554d">Read Docs</a>
-    </ActionRow>
-  </HeroCopy>
-  <GraphiteSurface
-    data-og-id="hero-surface"
-    data-og-type="frame"
-    data-og-layout="vertical"
-    style="--og-width:min(100%,520px); min-height:468px; --og-background:#191917; --og-border:1px solid #36342f; --og-radius:2px; --og-padding:22px; --og-gap:18px; --og-shadow:0 32px 80px rgba(0,0,0,0.36);" data-og-internal-id="7218807fc400">
-    <SurfaceTop
-      data-og-id="hero-surface-top"
-      data-og-type="frame"
-      data-og-layout="horizontal"
-      style="--og-gap:12px; --og-align:center; --og-justify:space-between; --og-padding:0 0 14px; border-bottom:1px solid #2f2d29;" data-og-internal-id="20d411c1dc67">
-      <SurfaceTitle data-og-id="hero-surface-title" data-og-type="text" style="--og-font-size:13px; --og-font-weight:780; --og-foreground:#e7dfd2;" data-og-internal-id="4c0c4f08cb73">OpenGraphite workspace</SurfaceTitle>
-      <SurfaceMode data-og-id="hero-surface-mode" data-og-type="text" style="--og-font-size:12px; --og-font-weight:760; --og-foreground:#8e8679;" data-og-internal-id="c16c401dcfed">current .ogp</SurfaceMode>
-    </SurfaceTop>
-    <EditorPreview
-      data-og-id="hero-surface-preview"
-      data-og-type="image"
-      style="--og-width:100%; --og-height:286px; --og-radius:2px; --og-background:#11110f; --og-border:1px solid #2c2b27;" data-og-internal-id="458248c0fa21">
-      <img src="./assets/editor-preview.svg" alt="OpenGraphite editor preview" style="--og-object-fit:cover;">
-    </EditorPreview>
-    <SurfaceFlow
-      data-og-id="hero-surface-flow"
-      data-og-type="frame"
-      data-og-layout="horizontal"
-      style="--og-gap:0; --og-align:stretch; border-top:1px solid #2f2d29;" data-og-internal-id="598e68a7c5ce">
-      <FlowCell data-og-id="hero-flow-app" data-og-type="text" style="--og-flex:1 1 0; --og-padding:16px 12px 0 0; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3;" data-og-internal-id="8d9cdcd8215b">App</FlowCell>
-      <FlowCell data-og-id="hero-flow-cli" data-og-type="text" style="--og-flex:1 1 0; --og-padding:16px 12px 0; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3; border-left:1px solid #2f2d29;" data-og-internal-id="cf05f36e4aab">CLI</FlowCell>
-      <FlowCell data-og-id="hero-flow-mcp" data-og-type="text" style="--og-flex:1 1 0; --og-padding:16px 0 0 12px; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3; border-left:1px solid #2f2d29;" data-og-internal-id="35d5f375e020">MCP</FlowCell>
-    </SurfaceFlow>
-  </GraphiteSurface>
-</HomeHero>
+  <HomeViewportFrame data-og-id="home-viewport-frame" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-min-height:calc(100vh - 118px); --og-flex:1 1 auto; --og-gap:28px; --og-padding:34px 0 0;" data-og-internal-id="8ac1b0d2e3f4">
+    <HomeHero data-og-id="hero" data-og-type="frame" data-og-layout="horizontal" data-og-role="landing-hero" style="--og-width:100%; --og-padding:42px 0 46px; --og-gap:28px; --og-align:stretch; border-bottom:1px solid #2d2c28;" data-og-internal-id="3aefceddb042">
+      <HeroCopy data-og-id="hero-copy" data-og-type="frame" data-og-layout="vertical" style="--og-gap:22px; --og-width:100%; --og-padding:0;" data-og-internal-id="3beed7da54fe">
+        <EyebrowText data-og-id="hero-eyebrow" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#b8b0a3; --og-letter-spacing:0.08em;" data-og-internal-id="89c43ffd6f25">Repository-synced AI canvas</EyebrowText>
+        <MainTitle data-og-id="hero-title" data-og-type="text" style="--og-font-size:42px; --og-font-weight:840; --og-line-height:1.06; --og-letter-spacing:0; --og-max-width:900px; overflow-wrap:normal;" data-og-internal-id="eace7f6a5b08">同じHTMLを<br>AIと編集する。</MainTitle>
+        <LeadText data-og-id="hero-lead" data-og-type="text" data-og-role="muted" style="--og-font-size:20px; --og-line-height:1.68; --og-foreground:#b5ada0; --og-max-width:700px;" data-og-internal-id="fbb1fec18542">OpenGraphiteは、アプリ、CLI、MCP、AI agentが同じHTMLとCSSを見て編集するためのインターフェースです。見えている`.ogp`のpagesだけを扱い、作業対象を曖昧にしません。</LeadText>
+        <ScopeLine data-og-id="hero-scope" data-og-type="text" style="--og-padding:16px 0; --og-font-size:15px; --og-font-weight:760; --og-line-height:1.45; --og-foreground:#e7dfd2; --og-max-width:700px; border-top:1px solid #34322e; border-bottom:1px solid #34322e;" data-og-internal-id="6b3824cb49f2">HTML / CSS source -> .ogp pages -> App / ogkiln / MCP</ScopeLine>
+        <ActionRow data-og-id="hero-actions" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:10px; --og-align:flex-start; --og-padding:4px 0 0; --og-width:100%;" data-og-internal-id="5bff6c969dee">
+          <a href="./downloads.html" data-og-id="hero-downloads" data-og-type="button" style="--og-width:min(100%,280px); --og-padding:15px 22px; --og-radius:3px; --og-background:#ece4d8; --og-foreground:#141412; --og-border:1px solid #ece4d8;" data-og-internal-id="e94a0c4914da">Download</a>
+          <a href="./docs.html" data-og-id="hero-docs" data-og-type="button" style="--og-width:min(100%,280px); --og-padding:15px 22px; --og-radius:3px; --og-background:#141412; --og-foreground:#ece4d8; --og-border:1px solid #5b554a;" data-og-internal-id="d50c1196554d">Read Docs</a>
+        </ActionRow>
+      </HeroCopy>
+      <GraphiteSurface data-og-id="hero-surface" data-og-type="frame" data-og-layout="vertical" style="--og-width:100%; --og-background:#191917; --og-border:1px solid #36342f; --og-radius:2px; --og-padding:22px; --og-gap:18px; --og-shadow:0 32px 80px rgba(0,0,0,0.36);" data-og-internal-id="7218807fc400">
+        <SurfaceTop data-og-id="hero-surface-top" data-og-type="frame" data-og-layout="vertical" style="--og-gap:8px; --og-align:stretch; --og-padding:0 0 14px; border-bottom:1px solid #2f2d29;" data-og-internal-id="20d411c1dc67">
+          <SurfaceTitle data-og-id="hero-surface-title" data-og-type="text" style="--og-font-size:13px; --og-font-weight:780; --og-foreground:#e7dfd2;" data-og-internal-id="4c0c4f08cb73">OpenGraphite workspace</SurfaceTitle>
+          <SurfaceMode data-og-id="hero-surface-mode" data-og-type="text" style="--og-font-size:12px; --og-font-weight:760; --og-foreground:#8e8679;" data-og-internal-id="c16c401dcfed">current .ogp</SurfaceMode>
+        </SurfaceTop>
+        <EditorPreview data-og-id="hero-surface-preview" data-og-type="image" style="--og-width:100%; --og-height:clamp(260px,34vw,340px); --og-radius:2px; --og-background:#11110f; --og-border:1px solid #2c2b27;" data-og-internal-id="458248c0fa21">
+          <img src="./assets/editor-preview.svg" alt="OpenGraphite editor preview" style="--og-object-fit:cover;">
+        </EditorPreview>
+        <SurfaceFlow data-og-id="hero-surface-flow" data-og-type="frame" data-og-layout="vertical" style="--og-gap:0; --og-align:stretch; border-top:1px solid #2f2d29;" data-og-internal-id="598e68a7c5ce">
+          <FlowCell data-og-id="hero-flow-app" data-og-type="text" style="--og-padding:16px 0 0; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3;" data-og-internal-id="8d9cdcd8215b">App</FlowCell>
+          <FlowCell data-og-id="hero-flow-cli" data-og-type="text" style="--og-padding:14px 0 0; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3;" data-og-internal-id="cf05f36e4aab">CLI</FlowCell>
+          <FlowCell data-og-id="hero-flow-mcp" data-og-type="text" style="--og-padding:14px 0 0; --og-font-size:13px; --og-font-weight:760; --og-foreground:#d8d0c3;" data-og-internal-id="35d5f375e020">MCP</FlowCell>
+        </SurfaceFlow>
+      </GraphiteSurface>
+    </HomeHero>
 
-  <ComponentDemo
-    data-og-id="component-demo"
-    data-og-type="frame"
-    data-og-layout="vertical"
-    style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-padding:38px 0; --og-gap:22px; border-bottom:1px solid #2d2c28;" data-og-internal-id="5592a3b13c94">
-    <og-instance data-og-id="component-demo-heading" data-og-type="frame" data-og-component="section-heading" style="--og-width:100%; --og-margin:0;" data-og-internal-id="514d2ab22594">
-      <span slot="eyebrow">Component reference</span>
-      <span slot="title">ComponentsをCLIで編集し、Pagesは参照だけを持つ。</span>
-    </og-instance>
-    <ComponentCardGrid
-      data-og-id="component-card-grid"
-      data-og-type="frame"
-      data-og-layout="horizontal"
-      style="--og-gap:18px; --og-align:stretch;" data-og-internal-id="b01aee52375f">
-      <og-instance data-og-id="component-runtime-card" data-og-type="frame" data-og-component="feature-card" style="--og-background:#181816; --og-foreground:#efe8dc; --og-border:1px solid #4a4740;" data-og-internal-id="d9778be9a854">
-        <span slot="eyebrow">Runtime source</span>
-        <span slot="title">小規模運用はJS参照で軽く保つ。</span>
-        <span slot="body">OpenGraphite.runtime.js が component master を読み込み、Pages側の source HTML は軽い og-instance のまま保てます。</span>
+    <ComponentDemo data-og-id="component-demo" data-og-type="frame" data-og-layout="vertical" style="--og-width:100%; --og-padding:38px 0; --og-gap:22px; border-bottom:1px solid #2d2c28;" data-og-internal-id="5592a3b13c94">
+      <og-instance data-og-id="component-demo-heading" data-og-type="frame" data-og-component="section-heading" style="--og-width:100%; --og-margin:0;" data-og-internal-id="514d2ab22594">
+        <span slot="eyebrow">Component reference</span>
+        <span slot="title">ComponentsをCLIで編集し、Pagesは参照だけを持つ。</span>
       </og-instance>
-      <og-instance data-og-id="component-build-card" data-og-type="frame" data-og-component="feature-card" style="--og-background:#f0e8da; --og-foreground:#141412; --og-border:1px solid #d7cab8;" data-og-internal-id="0da96bf67932">
-        <span slot="eyebrow">Static build</span>
-        <span slot="title">配布時はogkiln buildで展開する。</span>
-        <span slot="body">同じ component master から静的HTMLを生成できるため、JSに依存しない公開資産として再構築できます。</span>
-      </og-instance>
-    </ComponentCardGrid>
-  </ComponentDemo>
+      <ComponentCardGrid data-og-id="component-card-grid" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:stretch; --og-width:100%;" data-og-internal-id="b01aee52375f">
+        <og-instance data-og-id="component-runtime-card" data-og-type="frame" data-og-component="feature-card" style="--og-width:100%; --og-background:#181816; --og-foreground:#efe8dc; --og-border:1px solid #4a4740;" data-og-internal-id="d9778be9a854">
+          <span slot="eyebrow">Runtime source</span>
+          <span slot="title">小規模運用はJS参照で軽く保つ。</span>
+          <span slot="body">OpenGraphite.runtime.js が component master を読み込み、Pages側の source HTML は軽い og-instance のまま保てます。</span>
+        </og-instance>
+        <og-instance data-og-id="component-build-card" data-og-type="frame" data-og-component="feature-card" style="--og-width:100%; --og-background:#f0e8da; --og-foreground:#141412; --og-border:1px solid #d7cab8;" data-og-internal-id="0da96bf67932">
+          <span slot="eyebrow">Static build</span>
+          <span slot="title">配布時はogkiln buildで展開する。</span>
+          <span slot="body">同じ component master から静的HTMLを生成できるため、JSに依存しない公開資産として再構築できます。</span>
+        </og-instance>
+      </ComponentCardGrid>
+    </ComponentDemo>
 
-  <PrincipleList
-    data-og-id="principle-list"
-    data-og-type="frame"
-    data-og-layout="vertical"
-    style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-gap:0; --og-padding:42px 0 0;" data-og-internal-id="d3386fbce50b">
-    <og-instance data-og-id="principles-heading" data-og-type="frame" data-og-component="section-heading" style="--og-width:100%; --og-margin:0; --og-gap:16px; --og-padding:0 0 18px;" data-og-internal-id="9617db163b8c">
-      <span slot="eyebrow">Visible project scope</span>
-      <span slot="title">見えているファイルだけを、AIと共有する。</span>
-    </og-instance>
-    <og-instance data-og-id="principle-source" data-og-type="frame" data-og-component="principle-item" data-og-internal-id="446ac1ed3a3b">
-      <span slot="number">01 / SOURCE</span>
-      <span slot="title">HTMLが正本</span>
-      <span slot="body">OpenGraphite.appで編集した内容は、exportではなく開いているHTMLそのものへ同期されます。</span>
-    </og-instance>
-    <og-instance data-og-id="principle-agent" data-og-type="frame" data-og-component="principle-item" data-og-internal-id="4299ffe75ca9">
-      <span slot="number">02 / STRUCTURE</span>
-      <span slot="title">AIが対象を誤認しない</span>
-      <span slot="body">`data-og-id`、`data-og-type`、`--og-*` 変数により、AIはノード単位で安全に編集できます。</span>
-    </og-instance>
-    <og-instance data-og-id="principle-runtime" data-og-type="frame" data-og-component="principle-item" style="border-bottom:1px solid #34322e;" data-og-internal-id="37e927f5553b">
-      <span slot="number">03 / OPERATIONS</span>
-      <span slot="title">CLI/MCPで再現可能</span>
-      <span slot="body">`ogkiln` と OpenGraphite MCPが同じ検証経路を使い、人間とAIの作業差分を同じファイルへ集約します。</span>
-    </og-instance>
-    <WorkflowRail
-  data-og-id="workflow-rail"
-  data-og-type="frame"
-  data-og-layout="horizontal"
-  style="--og-gap:0; --og-align:stretch; --og-padding:28px 0 0;" data-og-internal-id="efeaffcc2273">
-  <WorkflowCell data-og-id="workflow-open" data-og-type="text" style="--og-flex:1 1 0; --og-padding:18px 20px 18px 0; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="4f3666023029">Open `.ogp`</WorkflowCell>
-  <WorkflowCell data-og-id="workflow-edit" data-og-type="text" style="--og-flex:1 1 0; --og-padding:18px 20px; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="b90126cba795">Edit page node</WorkflowCell>
-  <WorkflowCell data-og-id="workflow-sync" data-og-type="text" style="--og-flex:1 1 0; --og-padding:18px 20px; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="0a3a8479de41">Sync to disk</WorkflowCell>
-  <WorkflowCell data-og-id="workflow-render" data-og-type="text" style="--og-flex:1 1 0; --og-padding:18px 0 18px 20px; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="352f8bef31b8">Refresh app</WorkflowCell>
-</WorkflowRail>
-  </PrincipleList>
+    <PrincipleList data-og-id="principle-list" data-og-type="frame" data-og-layout="vertical" style="--og-width:100%; --og-gap:0; --og-padding:42px 0 0;" data-og-internal-id="d3386fbce50b">
+      <og-instance data-og-id="principles-heading" data-og-type="frame" data-og-component="section-heading" style="--og-width:100%; --og-margin:0; --og-gap:16px; --og-padding:0 0 18px;" data-og-internal-id="9617db163b8c">
+        <span slot="eyebrow">Visible project scope</span>
+        <span slot="title">見えているファイルだけを、AIと共有する。</span>
+      </og-instance>
+      <og-instance data-og-id="principle-source" data-og-type="frame" data-og-component="principle-item" data-og-internal-id="446ac1ed3a3b">
+        <span slot="number">01 / SOURCE</span>
+        <span slot="title">HTMLが正本</span>
+        <span slot="body">OpenGraphite.appで編集した内容は、exportではなく開いているHTMLそのものへ同期されます。</span>
+      </og-instance>
+      <og-instance data-og-id="principle-agent" data-og-type="frame" data-og-component="principle-item" data-og-internal-id="4299ffe75ca9">
+        <span slot="number">02 / STRUCTURE</span>
+        <span slot="title">AIが対象を誤認しない</span>
+        <span slot="body">`data-og-id`、`data-og-type`、`--og-*` 変数により、AIはノード単位で安全に編集できます。</span>
+      </og-instance>
+      <og-instance data-og-id="principle-runtime" data-og-type="frame" data-og-component="principle-item" style="border-bottom:1px solid #34322e;" data-og-internal-id="37e927f5553b">
+        <span slot="number">03 / OPERATIONS</span>
+        <span slot="title">CLI/MCPで再現可能</span>
+        <span slot="body">`ogkiln` と OpenGraphite MCPが同じ検証経路を使い、人間とAIの作業差分を同じファイルへ集約します。</span>
+      </og-instance>
+      <WorkflowRail data-og-id="workflow-rail" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:0; --og-align:stretch; --og-padding:28px 0 0; --og-justify:center;" data-og-internal-id="efeaffcc2273">
+        <WorkflowCell data-og-id="workflow-open" data-og-type="text" style="--og-padding:18px 0; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="4f3666023029">Open `.ogp`</WorkflowCell>
+        <WorkflowCell data-og-id="workflow-edit" data-og-type="text" style="--og-padding:18px 0; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="b90126cba795">Edit page node</WorkflowCell>
+        <WorkflowCell data-og-id="workflow-sync" data-og-type="text" style="--og-padding:18px 0; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="0a3a8479de41">Sync to disk</WorkflowCell>
+        <WorkflowCell data-og-id="workflow-render" data-og-type="text" style="--og-padding:18px 0; --og-font-size:15px; --og-font-weight:720; --og-foreground:#e7dfd2; border-top:1px solid #34322e;" data-og-internal-id="352f8bef31b8">Refresh app</WorkflowCell>
+      </WorkflowRail>
+    </PrincipleList>
+  </HomeViewportFrame>
 </OpenGraphitePage>
   </body>
 </html>
