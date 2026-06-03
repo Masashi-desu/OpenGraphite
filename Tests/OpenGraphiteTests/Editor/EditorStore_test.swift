@@ -20,6 +20,10 @@ struct EditorStoreTests {
                 "type": "frame",
                 "layout": "horizontal",
                 "role": "landing-hero",
+                "componentID": "site-header",
+                "componentKind": "",
+                "sourceComponentID": "site-header",
+                "sourceInstanceID": "header-instance",
                 "cssVariables": ["--og-gap": "32px"],
                 "hidden": false,
                 "locked": true,
@@ -35,6 +39,9 @@ struct EditorStoreTests {
         #expect(store.nodes[0].id == "hero")
         #expect(store.nodes[0].layout == "horizontal")
         #expect(store.nodes[0].role == "landing-hero")
+        #expect(store.nodes[0].componentID == "site-header")
+        #expect(store.nodes[0].sourceComponentID == "site-header")
+        #expect(store.nodes[0].sourceInstanceID == "header-instance")
         #expect(store.nodes[0].cssVariables["--og-gap"] == "32px")
         #expect(store.nodes[0].isLocked == true)
     }
@@ -725,6 +732,74 @@ struct EditorStoreTests {
         #expect(payload["chapterIndex"] as? Int == 1)
         #expect(payload["pageIndex"] as? Int == 0)
         #expect(payload["html"] as? String == "<Hero></Hero>")
+    }
+
+    /// 論理名（日本語）: コンポーネント継承元解決テスト
+    /// 概要: 選択中 instance の継承元 master を Inspector 用情報へ解決し、component canvas へ移動できることを確認します。
+    @Test("instance選択から継承元componentへ移動できる")
+    func testComponentSourceResolutionAndReveal() throws {
+        // コンディション：component master HTML と、その instance を持つ一時プロジェクトを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components")
+        let componentURL = componentDirectory.appendingPathComponent("design-system.html")
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try """
+        <!doctype html>
+        <html><body>
+        <FeatureCard data-og-id="feature-card-master" data-og-type="frame" data-og-component="feature-card" data-og-component-kind="master"></FeatureCard>
+        </body></html>
+        """.write(to: componentURL, atomically: true, encoding: .utf8)
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(name: "Desktop", x: 1120, y: 0, width: 1180, height: 1900)
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "home-card-title",
+                "tagName": "featurecardtitle",
+                "type": "text",
+                "sourceComponentID": "feature-card",
+                "sourceInstanceID": "home-card",
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: "home-card-title")
+
+        // 検証内容：選択ノードの継承元を解決し、Inspector の移動ボタン相当の処理を実行する
+        let source = try #require(store.selectedComponentSource)
+        store.revealComponentSource(source)
+
+        // 期待値：master の名称と場所が解決され、Components 側の master root が選択される
+        #expect(source.componentID == "feature-card")
+        #expect(source.masterNodeID == "feature-card-master")
+        #expect(source.locationLabel == "Main / design-system")
+        #expect(source.componentPagePath == "_components/design-system.html")
+        #expect(source.canvasLabel == "1120, 0 · 1180 x 1900")
+        #expect(store.selectedCanvasSegment == .components)
+        #expect(store.selectedComponentPageID == "design-system")
+        #expect(store.selectedNodeID == "feature-card-master")
+        #expect(store.statusMessage == "feature-card の component master を表示しています。")
     }
 
     /// 論理名（日本語）: 階層参照ID生成テスト

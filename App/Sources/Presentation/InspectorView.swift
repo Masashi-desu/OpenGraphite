@@ -21,6 +21,12 @@ struct InspectorView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         NodeSummaryPanel(node: node)
 
+                        if let componentSource = store.selectedComponentSource {
+                            ComponentSourceSection(source: componentSource) {
+                                store.revealComponentSource(componentSource)
+                            }
+                        }
+
                         InspectorSection(title: "Context") {
                             InspectorInfoRow(label: "tag", value: node.tagName)
                             InspectorInfoRow(label: "data-og-id", value: node.id)
@@ -266,6 +272,46 @@ struct InspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// 論理名（日本語）: コンポーネント継承元セクション
+/// 概要: 選択中 instance が参照する component master の名称、場所、移動操作を表示します。
+///
+/// プロパティ:
+/// - `source`: 表示する component master 情報。
+/// - `onReveal`: component master canvas へ移動する処理。
+private struct ComponentSourceSection: View {
+    var source: OpenGraphiteComponentSource
+    var onReveal: () -> Void
+
+    var body: some View {
+        InspectorSection(title: "Component") {
+            InspectorInfoRow(label: "name", value: source.componentID)
+            InspectorInfoRow(label: "location", value: source.locationLabel)
+            InspectorInfoRow(label: "path", value: source.componentPagePath)
+            InspectorInfoRow(label: "canvas", value: source.canvasLabel)
+
+            Button(action: onReveal) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.right.square")
+                    Text("Go to Component")
+                    Spacer()
+                }
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Component master を表示")
+        }
     }
 }
 

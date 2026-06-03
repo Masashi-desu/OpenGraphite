@@ -52,4 +52,59 @@ struct OpenGraphiteNodeTests {
         // 期待値：type に続いて hidden と locked が表示される
         #expect(detailLine == "text · hidden · locked")
     }
+
+    /// 論理名（日本語）: コンポーネント継承元ID判定テスト
+    /// 概要: instance 本体と runtime 展開済みノードから継承元 component ID を取得できることを検証します。
+    @Test("instance由来のcomponent IDを判定できる")
+    func testInheritedComponentIDUsesInstanceAndRuntimeAttributes() {
+        // コンディション：instance 本体、runtime 展開ノード、master 本体を用意する
+        let instanceNode = OpenGraphiteNode(
+            id: "home-card",
+            tagName: "og-instance",
+            type: "frame",
+            layout: nil,
+            role: nil,
+            componentID: "feature-card",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 0
+        )
+        let generatedNode = OpenGraphiteNode(
+            id: "home-card-title",
+            tagName: "featurecardtitle",
+            type: "text",
+            layout: nil,
+            role: nil,
+            sourceComponentID: "feature-card",
+            sourceInstanceID: "home-card",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 1
+        )
+        let masterNode = OpenGraphiteNode(
+            id: "feature-card-master",
+            tagName: "featurecard",
+            type: "frame",
+            layout: nil,
+            role: nil,
+            componentID: "feature-card",
+            componentKind: "master",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 0
+        )
+
+        // 検証内容：それぞれの継承元 component ID を取得する
+        let instanceComponentID = instanceNode.inheritedComponentID
+        let generatedComponentID = generatedNode.inheritedComponentID
+        let masterComponentID = masterNode.inheritedComponentID
+
+        // 期待値：instance と生成ノードだけが component ID を返す
+        #expect(instanceComponentID == "feature-card")
+        #expect(generatedComponentID == "feature-card")
+        #expect(masterComponentID == nil)
+    }
 }

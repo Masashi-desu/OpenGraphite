@@ -10,6 +10,10 @@ import Foundation
 /// - `type`: `data-og-type` の値。
 /// - `layout`: `data-og-layout` の値。
 /// - `role`: `data-og-role` の値。
+/// - `componentID`: `data-og-component` の値。
+/// - `componentKind`: `data-og-component-kind` の値。
+/// - `sourceComponentID`: runtime 展開後の `data-og-source-component` の値。
+/// - `sourceInstanceID`: runtime 展開後の `data-og-source-instance` の値。
 /// - `cssVariables`: inline style から抽出した `--og-*` の値。
 /// - `isHidden`: `data-og-hidden` による非表示状態。
 /// - `isLocked`: `data-og-locked` によるロック状態。
@@ -21,6 +25,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var type: String
     var layout: String?
     var role: String?
+    var componentID: String?
+    var componentKind: String?
+    var sourceComponentID: String?
+    var sourceInstanceID: String?
     var cssVariables: [String: String]
     var isHidden: Bool
     var isLocked: Bool
@@ -36,6 +44,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - type: `data-og-type`。
     ///   - layout: `data-og-layout`。
     ///   - role: `data-og-role`。
+    ///   - componentID: `data-og-component`。
+    ///   - componentKind: `data-og-component-kind`。
+    ///   - sourceComponentID: `data-og-source-component`。
+    ///   - sourceInstanceID: `data-og-source-instance`。
     ///   - cssVariables: inline style 内の `--og-*`。
     ///   - isHidden: 非表示状態。
     ///   - isLocked: ロック状態。
@@ -47,6 +59,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         type: String,
         layout: String?,
         role: String?,
+        componentID: String? = nil,
+        componentKind: String? = nil,
+        sourceComponentID: String? = nil,
+        sourceInstanceID: String? = nil,
         cssVariables: [String: String],
         isHidden: Bool,
         isLocked: Bool,
@@ -58,10 +74,24 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         self.type = type
         self.layout = layout
         self.role = role
+        self.componentID = Self.emptyNil(componentID)
+        self.componentKind = Self.emptyNil(componentKind)
+        self.sourceComponentID = Self.emptyNil(sourceComponentID)
+        self.sourceInstanceID = Self.emptyNil(sourceInstanceID)
         self.cssVariables = cssVariables
         self.isHidden = isHidden
         self.isLocked = isLocked
         self.depth = depth
+    }
+
+    var inheritedComponentID: String? {
+        if let sourceComponentID {
+            return sourceComponentID
+        }
+        guard tagName == "og-instance", componentKind != "master" else {
+            return nil
+        }
+        return componentID
     }
 
     var detailLine: String {
@@ -79,6 +109,57 @@ struct OpenGraphiteNode: Identifiable, Hashable {
             parts.append("locked")
         }
         return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    /// 論理名（日本語）: 空文字nil変換関数
+    /// 処理概要: 属性値の前後空白を除去し、空文字を `nil` として保存します。
+    ///
+    /// - Parameter value: 正規化する属性値。
+    /// - Returns: 空でない属性値。空の場合は `nil`。
+    private static func emptyNil(_ value: String?) -> String? {
+        guard let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty
+        else {
+            return nil
+        }
+        return normalized
+    }
+}
+
+/// 論理名（日本語）: OpenGraphiteコンポーネント継承元
+/// 概要: 選択された component instance が参照する master の名称と配置情報を Inspector へ渡す表示モデルです。
+///
+/// プロパティ:
+/// - `componentID`: master の `data-og-component`。
+/// - `masterNodeID`: master root の `data-og-id`。
+/// - `collectionInternalID`: master を含む Collection の内部 ID。
+/// - `collectionName`: Collection の表示名。
+/// - `componentPageID`: master を含む component canvas の ID。
+/// - `componentPageInternalID`: master を含む component canvas の内部 ID。
+/// - `componentPageName`: component canvas の表示名。
+/// - `componentPagePath`: component canvas の HTML path。
+/// - `canvas`: component canvas の配置情報。
+struct OpenGraphiteComponentSource: Equatable, Identifiable {
+    var componentID: String
+    var masterNodeID: String?
+    var collectionInternalID: String
+    var collectionName: String
+    var componentPageID: String
+    var componentPageInternalID: String
+    var componentPageName: String
+    var componentPagePath: String
+    var canvas: OpenGraphiteCanvas
+
+    var id: String {
+        "\(collectionInternalID):\(componentPageInternalID):\(componentID)"
+    }
+
+    var locationLabel: String {
+        "\(collectionName) / \(componentPageName)"
+    }
+
+    var canvasLabel: String {
+        "\(canvas.positionLabel) · \(canvas.resolutionLabel)"
     }
 }
 

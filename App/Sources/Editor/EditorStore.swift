@@ -155,6 +155,11 @@ final class EditorStore: ObservableObject {
         return nodes.first { $0.id == selectedNodeID }
     }
 
+    var selectedComponentSource: OpenGraphiteComponentSource? {
+        guard let selectedNode else { return nil }
+        return componentSource(for: selectedNode)
+    }
+
     /// 論理名（日本語）: Chapter参照ID生成関数
     /// 処理概要: `.ogp` 内で Chapter を一意に指す agent 向け参照 ID を返します。
     ///
@@ -729,6 +734,37 @@ final class EditorStore: ObservableObject {
         selectedNodeID = id
     }
 
+    /// 論理名（日本語）: コンポーネント継承元解決関数
+    /// 処理概要: 選択ノードの `data-og-component` または `data-og-source-component` から project 内の master 配置を解決します。
+    ///
+    /// - Parameter node: 継承元を調べる OpenGraphite ノード。
+    /// - Returns: project 内で見つかった component master の表示情報。未解決の場合は `nil`。
+    func componentSource(for node: OpenGraphiteNode) -> OpenGraphiteComponentSource? {
+        guard let componentID = node.inheritedComponentID,
+              let loadedProject
+        else {
+            return nil
+        }
+        return componentSource(componentID: componentID, in: loadedProject)
+    }
+
+    /// 論理名（日本語）: コンポーネント継承元表示関数
+    /// 処理概要: Inspector から指定された component master の canvas へ表示対象を切り替え、master root を再選択します。
+    ///
+    /// - Parameter source: 移動先 component master の表示情報。
+    func revealComponentSource(_ source: OpenGraphiteComponentSource) {
+        guard loadedProject?.project.collections.contains(where: { collection in
+            collection.internalID == source.collectionInternalID
+                && collection.components.contains { $0.internalID == source.componentPageInternalID }
+        }) == true else {
+            return
+        }
+
+        selectComponentPage(internalID: source.componentPageInternalID)
+        selectedNodeID = source.masterNodeID
+        statusMessage = "\(source.componentID) の component master を表示しています。"
+    }
+
     /// 論理名（日本語）: 選択ページキャンバス配置更新関数
     /// 処理概要: 既存の配置名を保持したまま、選択中ページのキャンバス座標と解像度を `.ogp` へ保存します。
     ///
@@ -1231,6 +1267,44 @@ final class EditorStore: ObservableObject {
         return project.collections.first { !$0.components.isEmpty } ?? project.collections.first
     }
 
+    /// 論理名（日本語）: コンポーネントmaster探索関数
+    /// 処理概要: project の component canvas HTML を走査し、指定 `data-og-component` の master 情報を返します。
+    ///
+    /// - Parameters:
+    ///   - componentID: 探索する `data-og-component`。
+    ///   - loadedProject: 探索対象 project。
+    /// - Returns: component master の表示情報。見つからない場合は `nil`。
+    private func componentSource(
+        componentID: String,
+        in loadedProject: LoadedOpenGraphiteProject
+    ) -> OpenGraphiteComponentSource? {
+        for collection in loadedProject.project.collections {
+            for componentPage in collection.components {
+                let pageURL = loadedProject.htmlURL(for: componentPage)
+                guard let html = readHTMLFromDisk(at: pageURL) else { continue }
+                let masterNode = OpenGraphiteHTMLDocument(html: html).nodes().first { node in
+                    node.attributes["data-og-component"] == componentID
+                        && node.attributes["data-og-component-kind"] == "master"
+                }
+                guard let masterNode else { continue }
+
+                return OpenGraphiteComponentSource(
+                    componentID: componentID,
+                    masterNodeID: masterNode.id,
+                    collectionInternalID: collection.internalID,
+                    collectionName: collection.displayName,
+                    componentPageID: componentPage.id,
+                    componentPageInternalID: componentPage.internalID,
+                    componentPageName: componentPage.displayName,
+                    componentPagePath: componentPage.path,
+                    canvas: componentPage.canvas
+                )
+            }
+        }
+
+        return nil
+    }
+
     /// 論理名（日本語）: プロジェクトmanifest保存関数
     /// 処理概要: 更新済み project manifest を `.ogp` ファイルへ atomic write で保存します。
     ///
@@ -1578,6 +1652,10 @@ final class EditorStore: ObservableObject {
             type: type,
             layout: dictionary["layout"] as? String,
             role: dictionary["role"] as? String,
+            componentID: dictionary["componentID"] as? String,
+            componentKind: dictionary["componentKind"] as? String,
+            sourceComponentID: dictionary["sourceComponentID"] as? String,
+            sourceInstanceID: dictionary["sourceInstanceID"] as? String,
             cssVariables: cssVariables,
             isHidden: dictionary["hidden"] as? Bool ?? false,
             isLocked: dictionary["locked"] as? Bool ?? false,
