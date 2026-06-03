@@ -883,7 +883,7 @@ private struct CanvasOverlayAvoidance: Equatable {
 /// - `range`: 許容ズーム範囲。
 /// - `buttonStep`: HUD ボタンのズーム差分。
 private enum CanvasZoom {
-    static let range: ClosedRange<Double> = 0.25...2.0
+    static let range: ClosedRange<Double> = 0.10...2.0
     static let buttonStep = 0.1
 
     /// 論理名（日本語）: ズーム範囲補正関数
