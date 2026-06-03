@@ -497,6 +497,10 @@ struct WebCanvasView: NSViewRepresentable {
                     self.collectStaticFlowLinks()
                     if self.isInteractive {
                         self.ensureInternalIDsAndCollectNodes()
+                        Task { @MainActor in
+                            self.setActiveTool(self.store.activeTool)
+                            self.selectNode(self.store.selectedNodeID)
+                        }
                     }
                 }
             }
@@ -679,7 +683,7 @@ struct WebCanvasView: NSViewRepresentable {
             );
             """
 
-            webView.evaluateJavaScript(script) { [weak self] result, error in
+            webView.evaluateJavaScript(script) { [weak self, weak webView] result, error in
                 guard let self else { return }
                 Task { @MainActor in
                     if let error {
@@ -688,6 +692,8 @@ struct WebCanvasView: NSViewRepresentable {
                     } else if (result as? Bool) != true {
                         self.store.reportWebError("履歴の WebView 反映に失敗しました。")
                         self.reloadCurrentPageFromDisk()
+                    } else if let webView {
+                        self.renderLocalComponentReferences(in: webView)
                     }
 
                     self.store.markDocumentReplacementApplied(sequence: request.sequence)
@@ -1194,6 +1200,7 @@ struct WebCanvasView: NSViewRepresentable {
         let dragStartThreshold = 3;
         let pointerDragButtons = 1;
         let primaryPointerButton = 0;
+        let selectionRevealPadding = 24;
         let passivePointerOptions = { capture: true, passive: true };
         let activePointerOptions = { capture: true, passive: false };
         var activeTool = 'select';
@@ -1208,6 +1215,8 @@ struct WebCanvasView: NSViewRepresentable {
           const style = document.createElement('style');
           style.id = 'opengraphite-editor-selection-style';
           style.textContent = [
+            'html,body{scroll-padding:24px;}',
+            '[data-og-selected="true"]{scroll-margin:24px;}',
             '[data-og-selected="true"][data-og-component],',
             '[data-og-selected="true"][data-og-component-kind="master"]{outline-color:#8b5cf6!important;}'
           ].join('');
@@ -1289,6 +1298,94 @@ struct WebCanvasView: NSViewRepresentable {
 
         function nodeWithID(id) {
           return allEditableNodes().find((element) => element.getAttribute('data-og-id') === id);
+        }
+
+        function canScrollForSelection(element) {
+          if (!element || typeof window.getComputedStyle !== 'function') { return false; }
+          const style = window.getComputedStyle(element);
+          const scrollableY = /(auto|scroll|overlay)/.test(style.overflowY || '');
+          const scrollableX = /(auto|scroll|overlay)/.test(style.overflowX || '');
+          const epsilon = 1;
+          return (scrollableY && element.scrollHeight - element.clientHeight > epsilon) ||
+            (scrollableX && element.scrollWidth - element.clientWidth > epsilon);
+        }
+
+        function selectionScrollContainers(element) {
+          const containers = [];
+          let current = element.parentElement;
+          while (current && current !== document.documentElement) {
+            if (canScrollForSelection(current)) {
+              containers.push(current);
+            }
+            current = current.parentElement;
+          }
+
+          const root = document.scrollingElement || document.documentElement;
+          if (root) {
+            containers.push(root);
+          }
+
+          return Array.from(new Set(containers));
+        }
+
+        function viewportRectForSelectionContainer(container) {
+          const root = document.scrollingElement || document.documentElement;
+          if (container === root || container === document.documentElement || container === document.body) {
+            return {
+              top: 0,
+              left: 0,
+              right: document.documentElement.clientWidth || window.innerWidth || 0,
+              bottom: document.documentElement.clientHeight || window.innerHeight || 0
+            };
+          }
+          return container.getBoundingClientRect();
+        }
+
+        function revealDeltaForAxis(start, end, viewportStart, viewportEnd) {
+          const paddedStart = viewportStart + selectionRevealPadding;
+          const paddedEnd = viewportEnd - selectionRevealPadding;
+          const available = Math.max(paddedEnd - paddedStart, 0);
+          const size = Math.max(end - start, 0);
+
+          if (size > available) {
+            if (start < paddedStart) {
+              return start - paddedStart;
+            }
+            if (end > paddedEnd && start > paddedStart) {
+              return start - paddedStart;
+            }
+            return 0;
+          }
+
+          if (start < paddedStart) {
+            return start - paddedStart;
+          }
+          if (end > paddedEnd) {
+            return end - paddedEnd;
+          }
+          return 0;
+        }
+
+        function scrollSelectionContainer(container, deltaX, deltaY) {
+          if (deltaX === 0 && deltaY === 0) { return; }
+          const root = document.scrollingElement || document.documentElement;
+          if (container === root || container === document.documentElement || container === document.body) {
+            window.scrollBy(deltaX, deltaY);
+            return;
+          }
+          container.scrollLeft += deltaX;
+          container.scrollTop += deltaY;
+        }
+
+        function revealElementForSelection(element) {
+          if (!element || typeof element.getBoundingClientRect !== 'function') { return; }
+          selectionScrollContainers(element).forEach((container) => {
+            const rect = element.getBoundingClientRect();
+            const viewport = viewportRectForSelectionContainer(container);
+            const deltaX = revealDeltaForAxis(rect.left, rect.right, viewport.left, viewport.right);
+            const deltaY = revealDeltaForAxis(rect.top, rect.bottom, viewport.top, viewport.bottom);
+            scrollSelectionContainer(container, deltaX, deltaY);
+          });
         }
 
         function selectedElement() {
@@ -1513,7 +1610,7 @@ struct WebCanvasView: NSViewRepresentable {
           if (!element) { return false; }
           currentSelectedID = id;
           element.setAttribute('data-og-selected', 'true');
-          element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          revealElementForSelection(element);
           return true;
         }
 
