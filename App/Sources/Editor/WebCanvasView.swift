@@ -1229,6 +1229,14 @@ struct WebCanvasView: NSViewRepresentable {
           return candidate;
         }
 
+        function isRuntimeGeneratedNode(element) {
+          return element && (
+            element.getAttribute('data-og-generated') === 'true' ||
+            element.hasAttribute('data-og-source-component') ||
+            !!element.closest('[data-og-generated="true"]')
+          );
+        }
+
         function ensureInternalIDs() {
           const used = new Set();
           let changed = false;
@@ -1236,7 +1244,9 @@ struct WebCanvasView: NSViewRepresentable {
             const current = (element.getAttribute('data-og-internal-id') || '').trim();
             if (!current || used.has(current)) {
               element.setAttribute('data-og-internal-id', randomInternalID(used));
-              changed = true;
+              if (!isRuntimeGeneratedNode(element)) {
+                changed = true;
+              }
             } else {
               used.add(current);
             }

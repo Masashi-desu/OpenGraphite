@@ -115,6 +115,7 @@ function rewriteGeneratedIDs(root, idPrefix, componentID) {
     const originalID = attributeValue(element, "data-og-id") || `node-${index + 1}`;
     const part = attributeValue(element, "data-og-part");
     const nextID = part === "root" || index === 0 ? idPrefix : `${idPrefix}-${originalID}`;
+    element.setAttribute("data-og-source-id", originalID);
     element.setAttribute("data-og-id", nextID);
     element.setAttribute("data-og-source-component", componentID);
     element.setAttribute("data-og-source-instance", idPrefix);
@@ -155,6 +156,7 @@ function copyGeneratedSlotsBack(instance) {
     const sourceNode = (sourceMap.get(slotName) || [])[0];
     if (!sourceNode) { return; }
     sourceNode.innerHTML = generatedSlot.innerHTML;
+    stripRuntimeAttributes(sourceNode);
   });
 
   const generatedRoot = Array.from(instance.children).find((child) => {
@@ -188,6 +190,20 @@ function restoreInstanceSource(instance) {
   instance.removeAttribute("data-og-expanded");
 }
 
+function elementsIncludingTemplateContent(root) {
+  const elements = [];
+  function visit(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) { return; }
+    elements.push(node);
+    if (node.tagName && node.tagName.toLowerCase() === "template") {
+      Array.from(node.content.childNodes).forEach(visit);
+    }
+    Array.from(node.childNodes).forEach(visit);
+  }
+  visit(root);
+  return elements;
+}
+
 function stripRuntimeAttributes(root) {
   const runtimeAttributeNames = [
     "data-og-selected",
@@ -197,14 +213,23 @@ function stripRuntimeAttributes(root) {
     "data-og-component-error",
     "data-og-host-id",
     "data-og-instance-source",
+    "data-og-source-id",
     "data-og-source-component",
     "data-og-source-instance",
     "data-og-slot-origin",
     "contenteditable",
     "spellcheck"
   ];
-  const elements = [root, ...root.querySelectorAll("*")];
+  const elements = elementsIncludingTemplateContent(root);
   elements.forEach((element) => {
+    const sourceID = attributeValue(element, "data-og-source-id");
+    if (sourceID) {
+      element.setAttribute("data-og-id", sourceID);
+    }
+    if (element.id === "opengraphite-runtime-style") {
+      element.remove();
+      return;
+    }
     runtimeAttributeNames.forEach((name) => element.removeAttribute(name));
     element.style.removeProperty("--og-edit-width");
     element.style.removeProperty("--og-edit-min-height");
