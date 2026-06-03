@@ -54,6 +54,34 @@ struct OpenGraphiteHTMLDocument {
         Self.ensuringInternalIDs(in: html, used: [])
     }
 
+    /// 論理名（日本語）: ノードHTML抽出関数
+    /// 処理概要: 一意な `data-og-internal-id` を持つ node subtree の HTML 断片を返します。
+    ///
+    /// - Parameter id: 対象ノードの `data-og-internal-id`。
+    /// - Returns: 対象 node の HTML。見つからない、または重複している場合は `nil`。
+    func elementHTML(forNodeID id: String) -> String? {
+        guard let element = uniqueElement(forNodeID: id).element else { return nil }
+        return html.substring(element.fullRange)
+    }
+
+    /// 論理名（日本語）: ノードHTMLハッシュ生成関数
+    /// 処理概要: 一意な `data-og-internal-id` を持つ node subtree の安定 hash を返します。
+    ///
+    /// - Parameter id: 対象ノードの `data-og-internal-id`。
+    /// - Returns: 対象 node の HTML hash。見つからない、または重複している場合は `nil`。
+    func elementHTMLHash(forNodeID id: String) -> String? {
+        elementHTML(forNodeID: id).map(Self.contentHash)
+    }
+
+    /// 論理名（日本語）: 内容ハッシュ生成関数
+    /// 処理概要: HTML 断片や文字列の比較用に、プロセスに依存しない短い hash を返します。
+    ///
+    /// - Parameter value: hash 化する文字列。
+    /// - Returns: FNV-1a ベースの安定 hash。
+    static func contentHash(_ value: String) -> String {
+        String(stableHash(value), radix: 36)
+    }
+
     /// 論理名（日本語）: 全開始タグ解析関数
     /// 処理概要: HTML の開始タグを走査し、属性、深度、文字範囲を保持した内部表現へ変換します。
     ///

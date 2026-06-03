@@ -244,12 +244,20 @@ struct EditorStoreTests {
     /// 論理名（日本語）: CSS変数更新テスト
     /// 概要: 選択中ノードの CSS 変数更新と mutation 発行を検証します。
     @Test("CSS変数更新でノードとmutationを更新する")
-    func testUpdateCSSVariableMutatesSelectedNode() {
-        // コンディション：選択中ノードを持つストアを用意する
+    func testUpdateCSSVariableMutatesSelectedNode() throws {
+        // コンディション：内部 ID 付き HTML node を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
         store.ingestNodePayload([
             [
                 "id": "hero",
+                "internalID": "hero-node",
                 "tagName": "herosection",
                 "type": "frame",
                 "cssVariables": ["--og-gap": "16px"],
@@ -266,17 +274,125 @@ struct EditorStoreTests {
         #expect(store.cssMutation?.nodeID == "hero")
         #expect(store.cssMutation?.key == "--og-gap")
         #expect(store.cssMutation?.value == "32px")
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(diskHTML.contains("--og-gap:32px"))
+    }
+
+    /// 論理名（日本語）: 固定HTML同期対象保存テスト
+    /// 概要: 選択ページが切り替わっても、object edit は capture 済み HTML target へ保存されることを検証します。
+    @Test("object editは選択切替後も固定targetへ保存する")
+    func testObjectEditPersistsToCapturedTargetAfterSelectionChanges() throws {
+        // コンディション：home と downloads を持つ一時プロジェクトを開き、home の同期対象を取得する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let downloadsURL = fixture.publicURL.appendingPathComponent("downloads.html")
+        try """
+        <!doctype html>
+        <html><body><Title data-og-id="home-title" data-og-internal-id="home-title-node" data-og-type="text">home</Title></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try """
+        <!doctype html>
+        <html><body><Title data-og-id="downloads-title" data-og-internal-id="downloads-title-node" data-og-type="text">downloads</Title></body></html>
+        """.write(to: downloadsURL, atomically: true, encoding: .utf8)
+        try fixture.writeProject(
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                ),
+                OpenGraphitePage(
+                    id: "downloads",
+                    path: "downloads.html",
+                    canvas: OpenGraphiteCanvas(x: 120, y: 0, width: 100, height: 100)
+                )
+            ]
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let homePage = try #require(store.loadedProject?.project.allPages.first)
+        let homeTarget = try #require(store.htmlSyncTarget(for: homePage, segment: .pages))
+        let downloadsInternalID = try #require(store.loadedProject?.project.allPages.last?.internalID)
+
+        // 検証内容：選択を downloads へ切り替えた後、home target へ text object edit を保存する
+        store.selectPage(internalID: downloadsInternalID)
+        let result = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setTextContent",
+                "nodeInternalID": "home-title-node",
+                "value": "home edited",
+                "previousValue": "home"
+            ],
+            target: homeTarget
+        )
+        let homeHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let downloadsHTML = try String(contentsOf: downloadsURL, encoding: .utf8)
+
+        // 期待値：現在選択中の downloads ではなく、capture 済み home HTML だけが更新される
+        #expect(result.updated == true)
+        #expect(store.selectedPageURL == downloadsURL)
+        #expect(homeHTML.contains("home edited"))
+        #expect(downloadsHTML.contains("downloads"))
+        #expect(!downloadsHTML.contains("home edited"))
+    }
+
+    /// 論理名（日本語）: 同時編集競合拒否テスト
+    /// 概要: agent 相当の同一 node 更新が先に入った場合、Inspector 保存で上書きしないことを検証します。
+    @Test("同一nodeが外部更新済みならobject editで上書きしない")
+    func testObjectEditRejectsConflictingNodeUpdate() throws {
+        // コンディション：Store が把握した CSS 値と、ディスク上の最新 CSS 値がずれている状態を作る
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "hero",
+                "internalID": "hero-node",
+                "tagName": "hero",
+                "type": "frame",
+                "cssVariables": ["--og-gap": "16px"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero")
+        try """
+        <!doctype html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:24px;"></Hero></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：古い Store 状態をもとに CSS 値を更新しようとする
+        store.updateCSSVariable(key: "--og-gap", value: "32px")
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：agent 相当の 24px は上書きされず、再設定を促す簡易エラーが表示される
+        #expect(diskHTML.contains("--og-gap:24px"))
+        #expect(!diskHTML.contains("--og-gap:32px"))
+        #expect(store.cssMutation == nil)
+        #expect(store.lastError == "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。")
     }
 
     /// 論理名（日本語）: CSS変数同値更新抑制テスト
     /// 概要: フォーカスアウト時の再確定で同じ CSS 値の mutation が増えないことを検証します。
     @Test("同じCSS変数値の再適用ではmutationを発行しない")
-    func testUpdateCSSVariableSkipsUnchangedValue() {
+    func testUpdateCSSVariableSkipsUnchangedValue() throws {
         // コンディション：既存 CSS 変数を持つ選択中ノードを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
         store.ingestNodePayload([
             [
                 "id": "hero",
+                "internalID": "hero-node",
                 "tagName": "herosection",
                 "type": "frame",
                 "cssVariables": ["--og-gap": "16px"],
@@ -296,12 +412,20 @@ struct EditorStoreTests {
     /// 論理名（日本語）: ノード属性同値更新抑制テスト
     /// 概要: フォーカスアウト時の再確定で同じ属性値の mutation が増えないことを検証します。
     @Test("同じノード属性値の再適用ではmutationを発行しない")
-    func testUpdateNodeAttributeSkipsUnchangedValue() {
+    func testUpdateNodeAttributeSkipsUnchangedValue() throws {
         // コンディション：role を持つ選択中ノードを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><MainTitle data-og-id="title" data-og-internal-id="title-node" data-og-type="text" data-og-role="title">Title</MainTitle></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
         store.ingestNodePayload([
             [
                 "id": "title",
+                "internalID": "title-node",
                 "tagName": "maintitle",
                 "type": "text",
                 "role": "title",
@@ -321,12 +445,20 @@ struct EditorStoreTests {
     /// 論理名（日本語）: 複合CSS変数更新テスト
     /// 概要: CSS shorthand や関数値を分解せず、HTML 正本へ戻す値としてそのまま保持することを検証します。
     @Test("複合CSS値をStoreで正規化しすぎずmutationへ渡せる")
-    func testUpdateCSSVariablePreservesStructuredCSSValues() {
+    func testUpdateCSSVariablePreservesStructuredCSSValues() throws {
         // コンディション：選択中ノードと、Inspector UI が parse / edit / serialize する CSS 値を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><EditorPreview data-og-id="preview-card" data-og-internal-id="preview-node" data-og-type="frame"></EditorPreview></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
         store.ingestNodePayload([
             [
                 "id": "preview-card",
+                "internalID": "preview-node",
                 "tagName": "editorpreview",
                 "type": "frame",
                 "cssVariables": [String: String](),
@@ -529,11 +661,16 @@ struct EditorStoreTests {
         // コンディション：未適用 CSS mutation を持つストアで外部変更を発生させる
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text" style="--og-gap:8px;">title</Title></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         store.ingestNodePayload([
             [
                 "id": "title",
+                "internalID": "title-node",
                 "tagName": "title",
                 "type": "text",
                 "cssVariables": ["--og-gap": "8px"],

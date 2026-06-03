@@ -189,11 +189,13 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// プロパティ:
 /// - `store`: エディター状態を保持するストア。
 /// - `pageURL`: 表示する HTML ファイル URL。未指定時は選択中ページを使います。
+/// - `syncTarget`: 保存対象 HTML の object identity と固定 URL。
 /// - `isInteractive`: DOM 収集、選択、編集同期を有効にするか。
 /// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
     var pageURL: URL?
+    var syncTarget: HTMLSyncTarget?
     var isInteractive = true
     var reloadToken = 0
 
@@ -250,8 +252,9 @@ struct WebCanvasView: NSViewRepresentable {
         let becameInteractive = !context.coordinator.isInteractive && isInteractive
         context.coordinator.store = store
         context.coordinator.isInteractive = isInteractive
+        context.coordinator.syncTarget = syncTarget
 
-        let targetPageURL = pageURL ?? store.selectedPageURL
+        let targetPageURL = syncTarget?.htmlURL ?? pageURL ?? store.selectedPageURL
         if let targetPageURL {
             let loadedURLChanged = context.coordinator.loadedURL != targetPageURL
             let reloadTokenChanged = context.coordinator.lastReloadToken != reloadToken
@@ -299,11 +302,13 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         if let mutation = store.cssMutation,
+           mutation.pageURL == context.coordinator.loadedURL,
            context.coordinator.lastAppliedMutationSequence != mutation.sequence {
             context.coordinator.applyMutation(mutation)
         }
 
         if let mutation = store.attributeMutation,
+           mutation.pageURL == context.coordinator.loadedURL,
            context.coordinator.lastAppliedAttributeMutationSequence != mutation.sequence {
             context.coordinator.applyAttributeMutation(mutation)
         }
@@ -342,6 +347,7 @@ struct WebCanvasView: NSViewRepresentable {
         @MainActor var store: EditorStore
         weak var webView: WKWebView?
         var isInteractive: Bool
+        var syncTarget: HTMLSyncTarget?
         var loadedURL: URL?
         var lastReloadToken = 0
         var lastSelectedNodeID: String?
@@ -405,9 +411,19 @@ struct WebCanvasView: NSViewRepresentable {
                 }
             }
 
-            if message.name == "openGraphiteDocumentChange" {
+            if message.name == "openGraphiteDocumentChange", let payload = message.body as? [String: Any] {
                 Task { @MainActor in
-                    serializeAndSyncHTML {}
+                    guard let target = syncTarget else { return }
+                    let result = store.applyHTMLObjectEditPayload(payload, target: target)
+                    if result.updated {
+                        if result.requiresReload {
+                            reloadCurrentPageFromDisk()
+                        } else {
+                            collectNodes()
+                        }
+                    } else {
+                        reloadCurrentPageFromDisk()
+                    }
                 }
             }
 
@@ -609,9 +625,7 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if (result as? Bool) == true {
-                        self.serializeAndSyncHTML {
-                            self.store.markMutationApplied(sequence: mutation.sequence)
-                        }
+                        self.store.markMutationApplied(sequence: mutation.sequence)
                     }
                 }
             }
@@ -643,9 +657,7 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if (result as? Bool) == true {
-                        self.serializeAndSyncHTML {
-                            self.store.markAttributeMutationApplied(sequence: mutation.sequence)
-                        }
+                        self.store.markAttributeMutationApplied(sequence: mutation.sequence)
                     }
                 }
             }
@@ -689,7 +701,7 @@ struct WebCanvasView: NSViewRepresentable {
         ///
         /// - Parameter onSuccess: 同期成功後に実行する処理。
         private func serializeAndSyncHTML(onSuccess: @escaping @MainActor () -> Void) {
-            guard let webView else { return }
+            guard let webView, let target = syncTarget else { return }
 
             let script = """
             (function() {
@@ -732,8 +744,11 @@ struct WebCanvasView: NSViewRepresentable {
                     }
 
                     if let html = result as? String {
-                        self.store.syncCurrentHTML(html)
-                        onSuccess()
+                        if self.store.syncHTML(html, target: target) {
+                            onSuccess()
+                        } else {
+                            self.reloadCurrentPageFromDisk()
+                        }
                     }
                 }
             }
@@ -1051,11 +1066,29 @@ struct WebCanvasView: NSViewRepresentable {
                         return
                     }
 
+                    guard let target = self.syncTarget,
+                          let editPayload = response["edit"] as? [String: Any]
+                    else {
+                        self.store.reportWebError("HTMLの保存形式が不正です。ページを再読み込みしてからもう一度設定してください。")
+                        self.reloadCurrentPageFromDisk()
+                        return
+                    }
+
+                    let editResult = self.store.applyHTMLObjectEditPayload(editPayload, target: target)
+                    guard editResult.updated else {
+                        self.reloadCurrentPageFromDisk()
+                        return
+                    }
+
                     if let selectedID = response["selectedID"] as? String, !selectedID.isEmpty {
                         self.store.selectNode(id: selectedID)
                     }
 
-                    self.serializeAndSyncHTML {}
+                    if editResult.requiresReload {
+                        self.reloadCurrentPageFromDisk()
+                    } else {
+                        self.collectNodes()
+                    }
                 }
             }
         }
@@ -1488,10 +1521,32 @@ struct WebCanvasView: NSViewRepresentable {
           window.webkit.messageHandlers.openGraphiteSelection.postMessage(id || '');
         }
 
-        function notifyDocumentChange(selectedID) {
-          window.webkit.messageHandlers.openGraphiteDocumentChange.postMessage({
-            selectedID: selectedID || currentSelectedID || ''
-          });
+        function nodeInternalID(element) {
+          return element ? element.getAttribute('data-og-internal-id') || '' : '';
+        }
+
+        function escapeHTMLText(value) {
+          return (value || '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;');
+        }
+
+        function htmlForNodeList(nodes) {
+          return Array.from(nodes).map((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) { return node.outerHTML; }
+            if (node.nodeType === Node.TEXT_NODE) { return escapeHTMLText(node.textContent || ''); }
+            return '';
+          }).join('');
+        }
+
+        function fragmentHTML(fragment) {
+          return htmlForNodeList(fragment ? fragment.childNodes : []);
+        }
+
+        function notifyDocumentChange(edit) {
+          if (!edit || !edit.operation) { return; }
+          window.webkit.messageHandlers.openGraphiteDocumentChange.postMessage(edit);
         }
 
         function editablePlainText(element) {
@@ -1585,7 +1640,13 @@ struct WebCanvasView: NSViewRepresentable {
 
           if (!cancelled && nextText !== originalText) {
             collectNodes();
-            notifyDocumentChange(selectedID);
+            notifyDocumentChange({
+              operation: 'setTextContent',
+              nodeID: selectedID,
+              nodeInternalID: nodeInternalID(element),
+              value: nextText,
+              previousValue: originalText
+            });
           }
         }
 
@@ -1909,6 +1970,10 @@ struct WebCanvasView: NSViewRepresentable {
             startClientY: pendingDrag.startClientY,
             startX: dragStartValue(element, '--og-x', element.offsetLeft || 0),
             startY: dragStartValue(element, '--og-y', element.offsetTop || 0),
+            previousValues: {
+              '--og-x': element.style.getPropertyValue('--og-x') || '',
+              '--og-y': element.style.getPropertyValue('--og-y') || ''
+            },
             didMove: false
           };
           pendingDrag = null;
@@ -1937,7 +2002,16 @@ struct WebCanvasView: NSViewRepresentable {
           activeDrag = null;
           if (!drag || !drag.didMove || cancelled) { return; }
           collectNodes();
-          notifyDocumentChange(drag.selectedID);
+          notifyDocumentChange({
+            operation: 'setCSSVariables',
+            nodeID: drag.selectedID,
+            nodeInternalID: nodeInternalID(drag.element),
+            values: {
+              '--og-x': drag.element.style.getPropertyValue('--og-x') || '',
+              '--og-y': drag.element.style.getPropertyValue('--og-y') || ''
+            },
+            previousValues: drag.previousValues || {}
+          });
         }
 
         function copyPayload() {
@@ -1983,84 +2057,193 @@ struct WebCanvasView: NSViewRepresentable {
           return true;
         }
 
+        function editableElementChildren(parent) {
+          return Array.from(parent ? parent.children : []).filter((child) => {
+            return child.hasAttribute('data-og-id');
+          });
+        }
+
         function runCommand(command, payload) {
           const element = selectedElement();
           if (!element && command !== 'pasteHere') {
             return { success: false, selectedID: '' };
-        }
+          }
 
-        let selectedID = element ? element.getAttribute('data-og-id') || '' : '';
-        const isLocked = element && element.getAttribute('data-og-locked') === 'true';
-        if (isLocked && command !== 'toggleLocked') {
-          return { success: false, selectedID: selectedID };
-        }
+          let selectedID = element ? element.getAttribute('data-og-id') || '' : '';
+          const selectedInternalID = nodeInternalID(element);
+          let edit = null;
+          const isLocked = element && element.getAttribute('data-og-locked') === 'true';
+          if (isLocked && command !== 'toggleLocked') {
+            return { success: false, selectedID: selectedID };
+          }
 
-        if (command === 'pasteHere') {
-          if (!element) { return { success: false, selectedID: '' }; }
+          if (command === 'pasteHere') {
+            if (!element) { return { success: false, selectedID: '' }; }
             const fragment = fragmentFromPayload(payload || {});
+            const html = fragmentHTML(fragment);
             selectedID = firstEditableID(fragment);
-            if (canReceiveChildren(element)) {
+            const position = canReceiveChildren(element) ? 'append' : 'after';
+            edit = {
+              operation: 'insertHTML',
+              anchorInternalID: selectedInternalID,
+              position: position,
+              html: html
+            };
+            if (position === 'append') {
               element.append(fragment);
             } else {
               element.after(fragment);
             }
           } else if (command === 'pasteReplace') {
             const fragment = fragmentFromPayload(payload || {});
+            const html = fragmentHTML(fragment);
             selectedID = firstEditableID(fragment);
+            edit = {
+              operation: 'replaceNodeHTML',
+              nodeInternalID: selectedInternalID,
+              html: html
+            };
             element.replaceWith(fragment);
           } else if (command === 'delete') {
             const parentEditable = element.parentElement ? element.parentElement.closest('[data-og-id]') : null;
-            selectedID = parentEditable ? parentEditable.getAttribute('data-og-id') || '' : '';
+            selectedID = parentEditable ? elementID(parentEditable) : '';
+            edit = {
+              operation: 'deleteNode',
+              nodeInternalID: selectedInternalID
+            };
             element.remove();
           } else if (command === 'moveFront') {
+            const siblings = editableElementChildren(element.parentElement).filter((child) => child !== element);
+            const target = siblings[siblings.length - 1];
+            if (!target) { return { success: false, selectedID: selectedID }; }
+            edit = {
+              operation: 'moveNode',
+              nodeInternalID: selectedInternalID,
+              targetInternalID: nodeInternalID(target),
+              position: 'after'
+            };
             element.parentElement.appendChild(element);
           } else if (command === 'moveBack') {
+            const siblings = editableElementChildren(element.parentElement).filter((child) => child !== element);
+            const target = siblings[0];
+            if (!target) { return { success: false, selectedID: selectedID }; }
+            edit = {
+              operation: 'moveNode',
+              nodeInternalID: selectedInternalID,
+              targetInternalID: nodeInternalID(target),
+              position: 'before'
+            };
             element.parentElement.insertBefore(element, element.parentElement.firstChild);
           } else if (command === 'wrapFrame') {
             const frame = document.createElement('Frame');
             selectedID = createFrameID();
             frame.setAttribute('data-og-id', selectedID);
-            frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => node.getAttribute('data-og-internal-id') || ''))));
+            frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => nodeInternalID(node)))));
             frame.setAttribute('data-og-type', 'frame');
             frame.setAttribute('data-og-layout', 'vertical');
             frame.style.setProperty('--og-gap', '0');
             frame.style.setProperty('--og-padding', '0');
             element.before(frame);
             frame.append(element);
+            edit = {
+              operation: 'replaceNodeHTML',
+              nodeInternalID: selectedInternalID,
+              html: frame.outerHTML
+            };
           } else if (command === 'ungroup') {
             const children = Array.from(element.childNodes);
             if (children.length === 0) { return { success: false, selectedID: selectedID }; }
+            const html = htmlForNodeList(children);
             const firstChild = children.find((child) => child.nodeType === Node.ELEMENT_NODE && child.hasAttribute('data-og-id'));
-            selectedID = firstChild ? firstChild.getAttribute('data-og-id') || '' : '';
+            selectedID = firstChild ? elementID(firstChild) : '';
+            edit = {
+              operation: 'replaceNodeHTML',
+              nodeInternalID: selectedInternalID,
+              html: html
+            };
             children.forEach((child) => element.parentElement.insertBefore(child, element));
             element.remove();
-        } else if (command === 'setLayout') {
-          selectedID = setLayout((payload && payload.layout) || 'vertical');
-        } else if (command === 'pasteCSSVariables') {
-          Object.entries(payload || {}).forEach(([key, value]) => {
-            if (key.indexOf('--og-') !== 0) { return; }
-            if ((value || '').trim().length === 0) {
-              element.style.removeProperty(key);
+          } else if (command === 'setLayout') {
+            const nextLayout = (payload && payload.layout) || 'vertical';
+            const previousValue = element.getAttribute('data-og-layout') || '';
+            element.setAttribute('data-og-layout', nextLayout);
+            selectedID = elementID(element);
+            edit = {
+              operation: 'setAttribute',
+              nodeInternalID: selectedInternalID,
+              name: 'data-og-layout',
+              value: nextLayout,
+              previousValue: previousValue
+            };
+          } else if (command === 'pasteCSSVariables') {
+            const values = {};
+            const previousValues = {};
+            Object.entries(payload || {}).forEach(([key, value]) => {
+              if (key.indexOf('--og-') !== 0) { return; }
+              previousValues[key] = element.style.getPropertyValue(key) || '';
+              values[key] = value || '';
+              if ((value || '').trim().length === 0) {
+                element.style.removeProperty(key);
+              } else {
+                element.style.setProperty(key, value);
+              }
+            });
+            edit = {
+              operation: 'setCSSVariables',
+              nodeInternalID: selectedInternalID,
+              values: values,
+              previousValues: previousValues
+            };
+          } else if (command === 'toggleHidden') {
+            const previousValue = element.getAttribute('data-og-hidden') || '';
+            const nextValue = previousValue === 'true' ? '' : 'true';
+            if (nextValue) {
+              element.setAttribute('data-og-hidden', nextValue);
             } else {
-              element.style.setProperty(key, value);
+              element.removeAttribute('data-og-hidden');
             }
-          });
-        } else if (command === 'toggleHidden') {
-          if (element.getAttribute('data-og-hidden') === 'true') {
-            element.removeAttribute('data-og-hidden');
-          } else {
-            element.setAttribute('data-og-hidden', 'true');
-          }
-        } else if (command === 'toggleLocked') {
-          if (element.getAttribute('data-og-locked') === 'true') {
-            element.removeAttribute('data-og-locked');
-          } else {
-            element.setAttribute('data-og-locked', 'true');
-          }
-        } else if (command === 'flipHorizontal') {
-          toggleScaleVariable(element, '--og-scale-x');
+            edit = {
+              operation: 'setAttribute',
+              nodeInternalID: selectedInternalID,
+              name: 'data-og-hidden',
+              value: nextValue,
+              previousValue: previousValue
+            };
+          } else if (command === 'toggleLocked') {
+            const previousValue = element.getAttribute('data-og-locked') || '';
+            const nextValue = previousValue === 'true' ? '' : 'true';
+            if (nextValue) {
+              element.setAttribute('data-og-locked', nextValue);
+            } else {
+              element.removeAttribute('data-og-locked');
+            }
+            edit = {
+              operation: 'setAttribute',
+              nodeInternalID: selectedInternalID,
+              name: 'data-og-locked',
+              value: nextValue,
+              previousValue: previousValue
+            };
+          } else if (command === 'flipHorizontal') {
+            const previousValue = element.style.getPropertyValue('--og-scale-x') || '';
+            toggleScaleVariable(element, '--og-scale-x');
+            edit = {
+              operation: 'setCSSVariable',
+              nodeInternalID: selectedInternalID,
+              key: '--og-scale-x',
+              value: element.style.getPropertyValue('--og-scale-x') || '',
+              previousValue: previousValue
+            };
           } else if (command === 'flipVertical') {
+            const previousValue = element.style.getPropertyValue('--og-scale-y') || '';
             toggleScaleVariable(element, '--og-scale-y');
+            edit = {
+              operation: 'setCSSVariable',
+              nodeInternalID: selectedInternalID,
+              key: '--og-scale-y',
+              value: element.style.getPropertyValue('--og-scale-y') || '',
+              previousValue: previousValue
+            };
           } else {
             return { success: false, selectedID: selectedID };
           }
@@ -2071,7 +2254,7 @@ struct WebCanvasView: NSViewRepresentable {
             notifySelection(selectedID);
           }
           collectStaticFlowLinks();
-          return { success: true, selectedID: selectedID };
+          return { success: true, selectedID: selectedID, edit: edit };
         }
 
         window.OpenGraphite = {

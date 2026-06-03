@@ -146,6 +146,52 @@ final class EditorStore: ObservableObject {
         return loadedProject.htmlURL(for: selectedPage)
     }
 
+    /// 論理名（日本語）: HTML同期対象生成関数
+    /// 処理概要: 指定 HTML カードの object identity と現在解決済み URL を保存対象としてまとめます。
+    ///
+    /// - Parameters:
+    ///   - page: 対象 HTML カード。
+    ///   - segment: page が属する Pages / Components セグメント。
+    /// - Returns: 保存先固定 URL を含む同期対象。project 内で解決できない場合は `nil`。
+    func htmlSyncTarget(for page: OpenGraphitePage, segment: OpenGraphiteCanvasSegment) -> HTMLSyncTarget? {
+        guard let loadedProject else { return nil }
+
+        switch segment {
+        case .pages:
+            guard let chapter = loadedProject.project.chapters.first(where: { chapter in
+                chapter.pages.contains { $0.internalID == page.internalID }
+            }) else {
+                return nil
+            }
+            return HTMLSyncTarget(
+                identity: HTMLDocumentIdentity(
+                    projectURL: loadedProject.fileURL,
+                    segment: .pages,
+                    containerInternalID: chapter.internalID,
+                    pageInternalID: page.internalID
+                ),
+                path: page.path,
+                htmlURL: loadedProject.htmlURL(for: page)
+            )
+        case .components:
+            guard let collection = loadedProject.project.collections.first(where: { collection in
+                collection.components.contains { $0.internalID == page.internalID }
+            }) else {
+                return nil
+            }
+            return HTMLSyncTarget(
+                identity: HTMLDocumentIdentity(
+                    projectURL: loadedProject.fileURL,
+                    segment: .components,
+                    containerInternalID: collection.internalID,
+                    pageInternalID: page.internalID
+                ),
+                path: page.path,
+                htmlURL: loadedProject.htmlURL(for: page)
+            )
+        }
+    }
+
     var projectRootURL: URL? {
         loadedProject?.rootURL
     }
@@ -890,13 +936,36 @@ final class EditorStore: ObservableObject {
     ///   - key: 更新する `--og-*` 変数名。
     ///   - value: Inspector から入力された値。前後空白は除去します。
     func updateCSSVariable(key: String, value: String) {
-        guard let selectedNodeID else { return }
+        guard let selectedNodeID,
+              let selectedNode,
+              let target = currentHTMLSyncTarget()
+        else {
+            return
+        }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedOldValue = selectedNode.cssVariables[key] ?? ""
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             let currentValue = nodes[index].cssVariables[key] ?? ""
             guard currentValue != normalizedValue else { return }
+        }
 
+        let edit = HTMLObjectEdit(
+            target: target,
+            operation: .setCSSVariable(
+                nodeInternalID: selectedNode.internalID,
+                key: key,
+                value: normalizedValue,
+                expectedOldValue: expectedOldValue
+            )
+        )
+        guard applyHTMLObjectEdit(edit).updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             if normalizedValue.isEmpty {
                 nodes[index].cssVariables.removeValue(forKey: key)
             } else {
@@ -907,6 +976,7 @@ final class EditorStore: ObservableObject {
         mutationSequence += 1
         cssMutation = CSSVariableMutation(
             sequence: mutationSequence,
+            pageURL: target.htmlURL,
             nodeID: selectedNodeID,
             key: key,
             value: normalizedValue
@@ -921,21 +991,52 @@ final class EditorStore: ObservableObject {
     ///   - name: 更新する属性名。
     ///   - value: Inspector から入力された値。空の場合は属性削除として扱います。
     func updateNodeAttribute(name: String, value: String) {
-        guard let selectedNodeID else { return }
+        guard let selectedNodeID,
+              let selectedNode,
+              let target = currentHTMLSyncTarget()
+        else {
+            return
+        }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedOldValue: String
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
-            let currentValue: String
             switch name {
             case "data-og-layout":
-                currentValue = nodes[index].layout ?? ""
+                expectedOldValue = nodes[index].layout ?? ""
             case "data-og-role":
-                currentValue = nodes[index].role ?? ""
+                expectedOldValue = nodes[index].role ?? ""
             default:
-                currentValue = ""
+                expectedOldValue = ""
             }
-            guard currentValue != normalizedValue else { return }
+            guard expectedOldValue != normalizedValue else { return }
+        } else {
+            switch name {
+            case "data-og-layout":
+                expectedOldValue = selectedNode.layout ?? ""
+            case "data-og-role":
+                expectedOldValue = selectedNode.role ?? ""
+            default:
+                expectedOldValue = ""
+            }
+        }
 
+        let edit = HTMLObjectEdit(
+            target: target,
+            operation: .setAttribute(
+                nodeInternalID: selectedNode.internalID,
+                name: name,
+                value: normalizedValue,
+                expectedOldValue: expectedOldValue
+            )
+        )
+        guard applyHTMLObjectEdit(edit).updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             switch name {
             case "data-og-layout":
                 nodes[index].layout = normalizedValue.isEmpty ? nil : normalizedValue
@@ -949,6 +1050,7 @@ final class EditorStore: ObservableObject {
         attributeMutationSequence += 1
         attributeMutation = NodeAttributeMutation(
             sequence: attributeMutationSequence,
+            pageURL: target.htmlURL,
             nodeID: selectedNodeID,
             name: name,
             value: normalizedValue
@@ -975,23 +1077,57 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 現在HTML同期関数
-    /// 処理概要: WebView からシリアライズされた HTML を現在選択中ページのファイルへ同期し、同期単位で履歴へ記録します。
+    /// 処理概要: 互換用に現在選択中 HTML へ全文同期します。WebView callback では URL 固定の `syncHTML(_:target:)` を使います。
     ///
     /// - Parameter html: 同期する HTML 文字列。
     func syncCurrentHTML(_ html: String) {
-        guard let selectedPageURL else { return }
-        var history = historyForPage(at: selectedPageURL, fallbackHTML: html)
+        guard let target = currentHTMLSyncTarget() else { return }
+        syncHTML(html, target: target)
+    }
+
+    /// 論理名（日本語）: HTML全文同期関数
+    /// 処理概要: 固定済み保存対象へ HTML 全文を同期します。ディスクが別編集で更新済みの場合は上書きしません。
+    ///
+    /// - Parameters:
+    ///   - html: 同期する HTML 文字列。
+    ///   - target: 保存対象 HTML。
+    /// - Returns: 同期できた場合は `true`。
+    @discardableResult
+    func syncHTML(_ html: String, target: HTMLSyncTarget) -> Bool {
+        guard validateHTMLSyncTarget(target) != nil else { return false }
+        guard diskHTMLMatchesKnownBaseline(at: target.htmlURL) else {
+            reportHTMLObjectEditConflict()
+            return false
+        }
+        var history = historyForPage(at: target.htmlURL, fallbackHTML: html)
 
         do {
-            try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
-            lastKnownPageHTMLByURL[selectedPageURL] = html
+            try html.write(to: target.htmlURL, atomically: true, encoding: .utf8)
+            lastKnownPageHTMLByURL[target.htmlURL] = html
             history.recordSync(html: html)
-            syncHistories[selectedPageURL] = history
+            syncHistories[target.htmlURL] = history
             updateHistoryAvailability()
-            statusMessage = "\(selectedPageURL.lastPathComponent) と同期しました。"
+            statusMessage = "\(target.htmlURL.lastPathComponent) と同期しました。"
+            return true
         } catch {
             lastError = "HTMLの同期に失敗しました: \(error.localizedDescription)"
+            return false
         }
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクト編集payload適用関数
+    /// 処理概要: JavaScript 由来の object edit payload を固定済み HTML 対象へ保存します。
+    ///
+    /// - Parameters:
+    ///   - payload: `operation` を含む JavaScript bridge payload。
+    ///   - target: 保存対象 HTML。
+    /// - Returns: 保存結果。
+    func applyHTMLObjectEditPayload(_ payload: [String: Any], target: HTMLSyncTarget) -> HTMLObjectEditResult {
+        guard let edit = htmlObjectEdit(from: payload, target: target) else {
+            lastError = "HTMLの保存形式が不正です。ページを再読み込みしてからもう一度設定してください。"
+            return .failed
+        }
+        return applyHTMLObjectEdit(edit)
     }
 
     /// 論理名（日本語）: ドキュメント変更取り消し関数
@@ -1232,6 +1368,339 @@ final class EditorStore: ObservableObject {
         let history = DocumentSyncHistory(initialHTML: initialHTML)
         syncHistories[pageURL] = history
         return history
+    }
+
+    /// 論理名（日本語）: 現在HTML同期対象取得関数
+    /// 処理概要: 現在選択中の HTML カードを object edit 用同期対象に変換します。
+    private func currentHTMLSyncTarget() -> HTMLSyncTarget? {
+        guard let selectedPage else { return nil }
+        return htmlSyncTarget(for: selectedPage, segment: selectedCanvasSegment)
+    }
+
+    /// 論理名（日本語）: HTML同期対象検証関数
+    /// 処理概要: object identity が現在の `.ogp` に残っており、解決 URL が固定済み URL と一致するか確認します。
+    ///
+    /// - Parameter target: 検証する同期対象。
+    /// - Returns: 現在の project から解決した page。検証できない場合は `nil`。
+    private func validateHTMLSyncTarget(_ target: HTMLSyncTarget) -> OpenGraphitePage? {
+        guard let loadedProject,
+              loadedProject.fileURL == target.identity.projectURL,
+              let page = page(for: target.identity, in: loadedProject)
+        else {
+            reportHTMLObjectEditConflict()
+            return nil
+        }
+
+        let resolvedURL = loadedProject.htmlURL(for: page).standardizedFileURL
+        let fixedURL = target.htmlURL.standardizedFileURL
+        guard resolvedURL == fixedURL, page.path == target.path else {
+            reportHTMLObjectEditConflict()
+            return nil
+        }
+        return page
+    }
+
+    /// 論理名（日本語）: HTMLカード解決関数
+    /// 処理概要: HTML document identity から現在 project 内の page entry を解決します。
+    ///
+    /// - Parameters:
+    ///   - identity: 解決する document identity。
+    ///   - loadedProject: 検索対象 project。
+    /// - Returns: 対応する page entry。見つからない場合は `nil`。
+    private func page(for identity: HTMLDocumentIdentity, in loadedProject: LoadedOpenGraphiteProject) -> OpenGraphitePage? {
+        switch identity.segment {
+        case .pages:
+            return loadedProject.project.chapters
+                .first { $0.internalID == identity.containerInternalID }?
+                .pages
+                .first { $0.internalID == identity.pageInternalID }
+        case .components:
+            return loadedProject.project.collections
+                .first { $0.internalID == identity.containerInternalID }?
+                .components
+                .first { $0.internalID == identity.pageInternalID }
+        }
+    }
+
+    /// 論理名（日本語）: 既知HTML基準一致判定関数
+    /// 処理概要: ディスク上の HTML が最後に把握した内容から変わっていないかを確認します。
+    ///
+    /// - Parameter pageURL: 確認する HTML URL。
+    /// - Returns: 既知基準と一致する場合は `true`。
+    private func diskHTMLMatchesKnownBaseline(at pageURL: URL) -> Bool {
+        guard let baselineHTML = lastKnownPageHTMLByURL[pageURL] else { return true }
+        guard let diskHTML = readHTMLFromDisk(at: pageURL) else { return false }
+        return baselineHTML == diskHTML
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクト編集適用関数
+    /// 処理概要: 最新ディスク HTML に node 単位 mutation を適用し、同一 object の競合があれば上書きせず中止します。
+    ///
+    /// - Parameter edit: 適用する object edit。
+    /// - Returns: 保存結果。
+    @discardableResult
+    private func applyHTMLObjectEdit(_ edit: HTMLObjectEdit) -> HTMLObjectEditResult {
+        guard validateHTMLSyncTarget(edit.target) != nil else { return .failed }
+        guard let diskHTML = readHTMLFromDisk(at: edit.target.htmlURL) else {
+            lastError = "HTMLを読み込めませんでした。ページを再読み込みしてからもう一度設定してください。"
+            return .failed
+        }
+
+        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? edit.target.htmlURL)
+        let document = OpenGraphiteHTMLDocument(html: diskHTML)
+        guard objectEditBaselineMatches(edit.operation, in: document) else {
+            reportHTMLObjectEditConflict()
+            return .failed
+        }
+
+        let mutation = mutationResult(for: edit.operation, html: diskHTML, contract: contract)
+        guard mutation.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            lastError = "HTMLの保存に失敗しました。ページを再読み込みしてからもう一度設定してください。"
+            return .failed
+        }
+        if mutation.html == diskHTML {
+            return .noChange
+        }
+
+        do {
+            try mutation.html.write(to: edit.target.htmlURL, atomically: true, encoding: .utf8)
+            lastKnownPageHTMLByURL[edit.target.htmlURL] = mutation.html
+            var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
+            history.recordSync(html: mutation.html)
+            syncHistories[edit.target.htmlURL] = history
+            updateHistoryAvailability()
+            statusMessage = "\(edit.target.htmlURL.lastPathComponent) と同期しました。"
+            return HTMLObjectEditResult(updated: true, requiresReload: edit.operation.requiresWebViewReload)
+        } catch {
+            lastError = "HTMLの同期に失敗しました: \(error.localizedDescription)"
+            return .failed
+        }
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクト編集payload変換関数
+    /// 処理概要: JavaScript bridge payload を Swift の object edit へ変換します。
+    ///
+    /// - Parameters:
+    ///   - payload: JavaScript から届いた辞書。
+    ///   - target: 保存対象 HTML。
+    /// - Returns: 変換済み object edit。形式不正の場合は `nil`。
+    private func htmlObjectEdit(from payload: [String: Any], target: HTMLSyncTarget) -> HTMLObjectEdit? {
+        guard let operation = payload["operation"] as? String else { return nil }
+
+        switch operation {
+        case "setCSSVariable":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String,
+                  let key = payload["key"] as? String
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .setCSSVariable(
+                    nodeInternalID: nodeInternalID,
+                    key: key,
+                    value: payload["value"] as? String ?? "",
+                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                )
+            )
+        case "setCSSVariables":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String,
+                  let values = payload["values"] as? [String: String]
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .setCSSVariables(
+                    nodeInternalID: nodeInternalID,
+                    values: values,
+                    expectedOldValues: payload["previousValues"] as? [String: String] ?? [:]
+                )
+            )
+        case "setAttribute":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String,
+                  let name = payload["name"] as? String
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .setAttribute(
+                    nodeInternalID: nodeInternalID,
+                    name: name,
+                    value: payload["value"] as? String ?? "",
+                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                )
+            )
+        case "setTextContent":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String else { return nil }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .setTextContent(
+                    nodeInternalID: nodeInternalID,
+                    text: payload["value"] as? String ?? "",
+                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                )
+            )
+        case "insertHTML":
+            guard let anchorInternalID = payload["anchorInternalID"] as? String,
+                  let positionValue = payload["position"] as? String,
+                  let position = OpenGraphiteHTMLInsertionPosition(rawValue: positionValue),
+                  let html = payload["html"] as? String
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .insertHTML(
+                    anchorInternalID: anchorInternalID,
+                    position: position,
+                    html: html,
+                    baselineNodeHash: baselineNodeHash(for: target, nodeInternalID: anchorInternalID)
+                )
+            )
+        case "replaceNodeHTML":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String,
+                  let html = payload["html"] as? String
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .replaceNodeHTML(
+                    nodeInternalID: nodeInternalID,
+                    html: html,
+                    baselineNodeHash: baselineNodeHash(for: target, nodeInternalID: nodeInternalID)
+                )
+            )
+        case "deleteNode":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String else { return nil }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .deleteNode(
+                    nodeInternalID: nodeInternalID,
+                    baselineNodeHash: baselineNodeHash(for: target, nodeInternalID: nodeInternalID)
+                )
+            )
+        case "moveNode":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String,
+                  let targetInternalID = payload["targetInternalID"] as? String,
+                  let positionValue = payload["position"] as? String,
+                  let position = OpenGraphiteHTMLInsertionPosition(rawValue: positionValue)
+            else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .moveNode(
+                    nodeInternalID: nodeInternalID,
+                    targetInternalID: targetInternalID,
+                    position: position,
+                    baselineNodeHash: baselineNodeHash(for: target, nodeInternalID: nodeInternalID)
+                )
+            )
+        default:
+            return nil
+        }
+    }
+
+    /// 論理名（日本語）: オブジェクト編集基準一致判定関数
+    /// 処理概要: 対象 node の旧値または subtree hash が最新ディスク HTML と一致するか確認します。
+    ///
+    /// - Parameters:
+    ///   - operation: 検証する編集操作。
+    ///   - document: 最新ディスク HTML document。
+    /// - Returns: 競合がない場合は `true`。
+    private func objectEditBaselineMatches(_ operation: HTMLObjectEditOperation, in document: OpenGraphiteHTMLDocument) -> Bool {
+        switch operation {
+        case let .setCSSVariable(nodeInternalID, key, _, expectedOldValue):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return (node.cssVariables[key] ?? "") == expectedOldValue
+        case let .setCSSVariables(nodeInternalID, _, expectedOldValues):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return expectedOldValues.allSatisfy { key, value in
+                (node.cssVariables[key] ?? "") == value
+            }
+        case let .setAttribute(nodeInternalID, name, _, expectedOldValue):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return (node.attributes[name] ?? "") == expectedOldValue
+        case let .setTextContent(nodeInternalID, _, expectedOldValue):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return (node.textContent ?? "") == expectedOldValue
+        case let .insertHTML(anchorInternalID, _, _, baselineNodeHash):
+            return nodeHashMatches(baselineNodeHash, nodeInternalID: anchorInternalID, in: document)
+        case let .replaceNodeHTML(nodeInternalID, _, baselineNodeHash):
+            return nodeHashMatches(baselineNodeHash, nodeInternalID: nodeInternalID, in: document)
+        case let .deleteNode(nodeInternalID, baselineNodeHash):
+            return nodeHashMatches(baselineNodeHash, nodeInternalID: nodeInternalID, in: document)
+        case let .moveNode(nodeInternalID, targetInternalID, _, baselineNodeHash):
+            guard document.elementHTMLHash(forNodeID: targetInternalID) != nil else { return false }
+            return nodeHashMatches(baselineNodeHash, nodeInternalID: nodeInternalID, in: document)
+        }
+    }
+
+    /// 論理名（日本語）: ノードhash一致判定関数
+    /// 処理概要: baseline がある場合に最新ディスク HTML の node subtree hash と比較します。
+    private func nodeHashMatches(_ baselineNodeHash: String?, nodeInternalID: String, in document: OpenGraphiteHTMLDocument) -> Bool {
+        guard let currentHash = document.elementHTMLHash(forNodeID: nodeInternalID) else { return false }
+        guard let baselineNodeHash else { return true }
+        return currentHash == baselineNodeHash
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクトmutation生成関数
+    /// 処理概要: object edit operation を既存の HTML document mutation API へ変換します。
+    private func mutationResult(
+        for operation: HTMLObjectEditOperation,
+        html: String,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        switch operation {
+        case let .setCSSVariable(nodeInternalID, key, value, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .settingCSSVariable(key, value: value, forNodeID: nodeInternalID, contract: contract)
+        case let .setCSSVariables(nodeInternalID, values, _):
+            var currentHTML = html
+            for key in values.keys.sorted() {
+                let mutation = OpenGraphiteHTMLDocument(html: currentHTML)
+                    .settingCSSVariable(key, value: values[key] ?? "", forNodeID: nodeInternalID, contract: contract)
+                guard mutation.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+                    return mutation
+                }
+                currentHTML = mutation.html
+            }
+            return OpenGraphiteHTMLMutationResult(html: currentHTML, diagnostics: [])
+        case let .setAttribute(nodeInternalID, name, value, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .settingAttribute(name: name, value: value, forNodeID: nodeInternalID, contract: contract)
+        case let .setTextContent(nodeInternalID, text, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .settingTextContent(text, forNodeID: nodeInternalID, contract: contract)
+        case let .insertHTML(anchorInternalID, position, fragmentHTML, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .insertingHTML(fragmentHTML, relativeToNodeID: anchorInternalID, position: position, contract: contract)
+        case let .replaceNodeHTML(nodeInternalID, replacementHTML, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .replacingNodeHTML(replacementHTML, nodeID: nodeInternalID, contract: contract)
+        case let .deleteNode(nodeInternalID, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .deletingNode(nodeID: nodeInternalID, contract: contract)
+        case let .moveNode(nodeInternalID, targetInternalID, position, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .movingNode(nodeID: nodeInternalID, relativeToNodeID: targetInternalID, position: position, contract: contract)
+        }
+    }
+
+    /// 論理名（日本語）: baselineノードhash取得関数
+    /// 処理概要: 最後に把握した HTML から対象 node subtree の hash を取得します。
+    private func baselineNodeHash(for target: HTMLSyncTarget, nodeInternalID: String) -> String? {
+        guard let baselineHTML = lastKnownPageHTMLByURL[target.htmlURL] else { return nil }
+        return OpenGraphiteHTMLDocument(html: baselineHTML).elementHTMLHash(forNodeID: nodeInternalID)
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクト編集競合報告関数
+    /// 処理概要: 同時編集や path 変更を検出したときに、上書きせず再設定を促す簡易エラーを表示します。
+    private func reportHTMLObjectEditConflict() {
+        lastError = "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。"
     }
 
     /// 論理名（日本語）: HTMLディスク読み込み関数

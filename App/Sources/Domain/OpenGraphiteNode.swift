@@ -168,11 +168,13 @@ struct OpenGraphiteComponentSource: Equatable, Identifiable {
 ///
 /// プロパティ:
 /// - `sequence`: mutation の順序番号。
+/// - `pageURL`: mutation を適用する HTML ファイル URL。
 /// - `nodeID`: 対象ノードの `data-og-id`。
 /// - `key`: CSS 変数名。
 /// - `value`: 反映する CSS 変数値。
 struct CSSVariableMutation: Equatable {
     var sequence: Int
+    var pageURL: URL
     var nodeID: String
     var key: String
     var value: String
@@ -183,11 +185,13 @@ struct CSSVariableMutation: Equatable {
 ///
 /// プロパティ:
 /// - `sequence`: mutation の順序番号。
+/// - `pageURL`: mutation を適用する HTML ファイル URL。
 /// - `nodeID`: 対象ノードの `data-og-id`。
 /// - `name`: 更新する属性名。
 /// - `value`: 反映する属性値。
 struct NodeAttributeMutation: Equatable {
     var sequence: Int
+    var pageURL: URL
     var nodeID: String
     var name: String
     var value: String

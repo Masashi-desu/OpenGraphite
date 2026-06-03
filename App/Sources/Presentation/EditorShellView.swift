@@ -563,7 +563,13 @@ private struct CanvasDocumentView: View {
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
                 .frame(width: width, height: height)
 
-            WebCanvasView(store: store, pageURL: pageURL, isInteractive: isSelected, reloadToken: reloadToken)
+            WebCanvasView(
+                store: store,
+                pageURL: pageURL,
+                syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
+                isInteractive: isSelected,
+                reloadToken: reloadToken
+            )
                 .frame(width: width, height: height)
                 .allowsHitTesting(isSelected)
         }
