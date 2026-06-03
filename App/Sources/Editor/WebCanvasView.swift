@@ -693,10 +693,22 @@ struct WebCanvasView: NSViewRepresentable {
 
             let script = """
             (function() {
+              const editorStyleSelector = '#opengraphite-editor-selection-style';
+              function removeEditorStyles(root) {
+                if (!root || typeof root.querySelectorAll !== 'function') { return; }
+                root.querySelectorAll(editorStyleSelector).forEach((element) => {
+                  element.remove();
+                });
+              }
               if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.serializeDocument === 'function') {
-                return window.OpenGraphiteRuntime.serializeDocument();
+                const html = window.OpenGraphiteRuntime.serializeDocument();
+                const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
+                removeEditorStyles(parsedDocument);
+                if (!parsedDocument.documentElement) { return html; }
+                return '<!doctype html>\\n' + parsedDocument.documentElement.outerHTML;
               }
               const clone = document.documentElement.cloneNode(true);
+              removeEditorStyles(clone);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
                 element.removeAttribute('data-og-selected');
               });
@@ -1138,6 +1150,9 @@ struct WebCanvasView: NSViewRepresentable {
     private static let bridgeScript = """
     (function() {
         if (window.OpenGraphite) {
+          if (typeof window.OpenGraphite.installEditorSelectionStyle === 'function') {
+            window.OpenGraphite.installEditorSelectionStyle();
+          }
           window.OpenGraphite.collectNodes();
           return;
         }
@@ -1154,6 +1169,17 @@ struct WebCanvasView: NSViewRepresentable {
         var editingTextElement = null;
         var editingOriginalText = '';
         var suppressNextClick = false;
+
+        function installEditorSelectionStyle() {
+          if (document.getElementById('opengraphite-editor-selection-style')) { return; }
+          const style = document.createElement('style');
+          style.id = 'opengraphite-editor-selection-style';
+          style.textContent = [
+            '[data-og-selected="true"][data-og-component],',
+            '[data-og-selected="true"][data-og-component-kind="master"]{outline-color:#8b5cf6!important;}'
+          ].join('');
+          (document.head || document.documentElement).appendChild(style);
+        }
 
       function cssVariables(element) {
         const style = element.getAttribute('style') || '';
@@ -1928,6 +1954,7 @@ struct WebCanvasView: NSViewRepresentable {
           const nextRoot = document.importNode(parsedDocument.documentElement, true);
           document.documentElement.replaceWith(nextRoot);
           currentSelectedID = '';
+          installEditorSelectionStyle();
           collectNodes();
 
           if (selectedID && nodeWithID(selectedID)) {
@@ -2037,6 +2064,7 @@ struct WebCanvasView: NSViewRepresentable {
           collectNodes: collectNodes,
           collectStaticFlowLinks: collectStaticFlowLinks,
           ensureInternalIDs: ensureInternalIDs,
+          installEditorSelectionStyle: installEditorSelectionStyle,
           selectNode: selectNode,
           setActiveTool: setActiveTool,
           setCSSVariable: setCSSVariable,
@@ -2218,6 +2246,8 @@ struct WebCanvasView: NSViewRepresentable {
             selectNode(currentSelectedID);
           }
         });
+
+      installEditorSelectionStyle();
 
       setTimeout(function() {
         collectNodes();
