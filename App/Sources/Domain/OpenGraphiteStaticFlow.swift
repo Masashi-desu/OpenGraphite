@@ -77,6 +77,19 @@ struct OpenGraphiteStaticFlowLink: Identifiable, Equatable {
     }
 }
 
+/// 論理名（日本語）: 静的フロー元ホバー
+/// 概要: HTML プレビュー内でホバー中の遷移元リンク要素を SwiftUI のフロー線強調へ渡す状態です。
+///
+/// プロパティ:
+/// - `pageURL`: ホバー元リンクを含む HTML page の標準化済み URL。
+/// - `linkID`: `OpenGraphiteStaticFlowLink.id` と一致するリンク ID。
+/// - `sourceNodeID`: 遷移元要素の `data-og-id`。
+struct OpenGraphiteStaticFlowSourceHover: Equatable {
+    var pageURL: URL
+    var linkID: String
+    var sourceNodeID: String
+}
+
 /// 論理名（日本語）: 静的フロー水平接続側
 /// 概要: フロー線を page preview の左右どちらの端へ接続するかを表します。
 enum OpenGraphiteStaticFlowHorizontalSide: Equatable {
@@ -91,6 +104,7 @@ enum OpenGraphiteStaticFlowHorizontalSide: Equatable {
 /// - `id`: 接続線の安定 ID。
 /// - `sourcePageID`: 遷移元 page ID。
 /// - `targetPageID`: 遷移先 page ID。
+/// - `sourcePageURL`: 遷移元 HTML page の標準化済み URL。
 /// - `sourcePoint`: 遷移元ボタン接続端のキャンバス座標。
 /// - `sourceSide`: 遷移元ボタンの接続側。
 /// - `targetPoint`: 遷移先プレビュー上部の接続点キャンバス座標。
@@ -100,6 +114,7 @@ struct OpenGraphiteStaticFlowConnection: Identifiable, Equatable {
     var id: String
     var sourcePageID: String
     var targetPageID: String
+    var sourcePageURL: URL
     var sourcePoint: CGPoint
     var sourceSide: OpenGraphiteStaticFlowHorizontalSide
     var targetPoint: CGPoint
@@ -175,6 +190,7 @@ enum OpenGraphiteStaticFlowResolver {
                     id: "\(sourcePage.id):\(link.id):\(targetPage.id)",
                     sourcePageID: sourcePage.id,
                     targetPageID: targetPage.id,
+                    sourcePageURL: sourceURL,
                     sourcePoint: sourcePoint,
                     sourceSide: sourceSide,
                     targetPoint: targetPoint,

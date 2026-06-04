@@ -20,6 +20,7 @@ import Foundation
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
+/// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
 /// - `cssMutation`: WebView へ反映待ちの CSS 変数変更。
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
@@ -42,6 +43,7 @@ final class EditorStore: ObservableObject {
     @Published var lastError: String?
     @Published var activeTool: CanvasTool = .select
     @Published var previewDisplayMode: OpenGraphitePreviewDisplayMode = .normal
+    @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
     @Published private(set) var cssMutation: CSSVariableMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
@@ -529,6 +531,7 @@ final class EditorStore: ObservableObject {
             lastKnownPageHTMLByURL = [:]
             pageReloadTokensByURL = [:]
             staticFlowLinksByPageURL = [:]
+            hoveredStaticFlowSource = nil
             do {
                 try currentProjectStore?.write(projectURL: project.fileURL)
             } catch {
@@ -915,6 +918,41 @@ final class EditorStore: ObservableObject {
     func ingestStaticFlowLinkPayload(_ payload: [[String: Any]], pageURL: URL) {
         let links = payload.compactMap(OpenGraphiteStaticFlowLink.init(payload:))
         staticFlowLinksByPageURL[pageURL.standardizedFileURL] = links
+    }
+
+    /// 論理名（日本語）: 静的フロー元ホバーpayload取り込み関数
+    /// 処理概要: WebView から届いたホバー中リンク ID を保持し、フロー線の強調表示入力へ変換します。
+    ///
+    /// - Parameters:
+    ///   - payload: JavaScript から受け取った hover 対象リンク辞書。
+    ///   - pageURL: payload を収集した HTML page URL。
+    func ingestStaticFlowSourceHoverPayload(_ payload: [String: Any], pageURL: URL) {
+        let linkID = (payload["id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !linkID.isEmpty else {
+            clearStaticFlowSourceHover(pageURL: pageURL)
+            return
+        }
+
+        hoveredStaticFlowSource = OpenGraphiteStaticFlowSourceHover(
+            pageURL: pageURL.standardizedFileURL,
+            linkID: linkID,
+            sourceNodeID: payload["sourceNodeID"] as? String ?? ""
+        )
+    }
+
+    /// 論理名（日本語）: 静的フロー元ホバー解除関数
+    /// 処理概要: 指定 page または現在保持中の静的フロー遷移元 hover 状態を解除します。
+    ///
+    /// - Parameter pageURL: 解除対象を限定する HTML page URL。`nil` の場合は無条件で解除します。
+    func clearStaticFlowSourceHover(pageURL: URL? = nil) {
+        guard let pageURL else {
+            hoveredStaticFlowSource = nil
+            return
+        }
+
+        if hoveredStaticFlowSource?.pageURL == pageURL.standardizedFileURL {
+            hoveredStaticFlowSource = nil
+        }
     }
 
     /// 論理名（日本語）: ノードpayload取り込み関数

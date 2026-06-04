@@ -492,10 +492,17 @@ private struct CanvasProjectView: View {
     var loadedProject: LoadedOpenGraphiteProject
     var pages: [OpenGraphitePage]
     var zoom: Double
+    @State private var hoveredFlowTargetPageID: String?
 
     var body: some View {
         let bounds = CanvasProjectBounds(pages: pages)
         let scale = CGFloat(zoom)
+        let isFlowHoverEnabled = store.previewDisplayMode == .flow && store.selectedCanvasSegment == .pages
+        let flowConnections = isFlowHoverEnabled ? OpenGraphiteStaticFlowResolver.connections(
+            pages: pages,
+            loadedProject: loadedProject,
+            linksByPageURL: store.staticFlowLinksByPageURL
+        ) : []
 
         ZStack(alignment: .topLeading) {
             Rectangle()
@@ -511,7 +518,9 @@ private struct CanvasProjectView: View {
                     page: page,
                     pageURL: loadedProject.htmlURL(for: page),
                     isSelected: page.internalID == store.selectedPage?.internalID,
-                    reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page))
+                    reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page)),
+                    isFlowHoverEnabled: isFlowHoverEnabled,
+                    onFlowTargetPageHover: handleFlowTargetPageHover
                 )
                 .offset(
                     x: CGFloat(page.canvas.x) - bounds.minX,
@@ -521,19 +530,138 @@ private struct CanvasProjectView: View {
 
             if store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages {
                 CanvasStaticFlowOverlay(
-                    connections: OpenGraphiteStaticFlowResolver.connections(
-                        pages: pages,
-                        loadedProject: loadedProject,
-                        linksByPageURL: store.staticFlowLinksByPageURL
-                    )
+                    connections: flowConnections,
+                    hoveredSource: store.hoveredStaticFlowSource,
+                    hoveredTargetPageID: hoveredFlowTargetPageID,
+                    selectedSourcePageURL: store.selectedCanvasSegment == .pages ? store.selectedPageURL?.standardizedFileURL : nil,
+                    selectedSourceNodeID: store.selectedCanvasSegment == .pages ? store.selectedNodeID : nil,
+                    selectedTargetPageID: store.selectedCanvasSegment == .pages && store.selectedNodeID == nil ? store.selectedPage?.id : nil
                 )
                 .allowsHitTesting(false)
             }
         }
         .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+        .coordinateSpace(name: CanvasMetrics.projectCoordinateSpaceName)
+        .onContinuousHover(coordinateSpace: .named(CanvasMetrics.projectCoordinateSpaceName)) { phase in
+            switch phase {
+            case .active(let location):
+                updateFlowHover(location: location, connections: flowConnections, pages: pages, bounds: bounds)
+            case .ended:
+                clearFlowHoverState()
+            }
+        }
         .scaleEffect(scale, anchor: .topLeading)
         .frame(width: bounds.width * scale, height: bounds.height * scale, alignment: .topLeading)
         .padding(CanvasMetrics.documentPadding)
+        .onChange(of: store.previewDisplayMode) { _, mode in
+            if mode != .flow {
+                clearFlowHoverState()
+            }
+        }
+        .onChange(of: store.selectedCanvasSegment) { _, segment in
+            if segment != .pages {
+                clearFlowHoverState()
+            }
+        }
+    }
+
+    /// 論理名（日本語）: フローhover座標更新関数
+    /// 処理概要: キャンバス上のポインタ座標から遷移元ボタンまたは受け側 page の hover 対象を解決します。
+    ///
+    /// - Parameters:
+    ///   - location: キャンバス座標系のポインタ位置。
+    ///   - connections: 表示中の静的フロー接続一覧。
+    ///   - pages: 表示対象 page 一覧。
+    ///   - bounds: page 配置から計算したキャンバス境界。
+    private func updateFlowHover(
+        location: CGPoint,
+        connections: [OpenGraphiteStaticFlowConnection],
+        pages: [OpenGraphitePage],
+        bounds: CanvasProjectBounds
+    ) {
+        guard store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages else {
+            clearFlowHoverState()
+            return
+        }
+
+        if let sourceConnection = connections.first(where: { connection in
+            sourceHoverRect(for: connection).insetBy(dx: -6, dy: -6).contains(location)
+        }) {
+            hoveredFlowTargetPageID = nil
+            store.ingestStaticFlowSourceHoverPayload(
+                [
+                    "id": sourceConnection.link.id,
+                    "sourceNodeID": sourceConnection.link.sourceNodeID
+                ],
+                pageURL: sourceConnection.sourcePageURL
+            )
+            return
+        }
+
+        store.clearStaticFlowSourceHover()
+        hoveredFlowTargetPageID = pages.first { page in
+            pageRect(for: page, in: bounds).contains(location)
+        }?.id
+    }
+
+    /// 論理名（日本語）: フロー遷移先ページホバー処理関数
+    /// 処理概要: ページプレビュー上の hover 状態を保持し、受け側 page に入る接続線の強調対象を更新します。
+    ///
+    /// - Parameters:
+    ///   - pageID: hover 状態が変化した page ID。
+    ///   - isHovering: ポインタが page 上にある場合は `true`。
+    private func handleFlowTargetPageHover(pageID: String, isHovering: Bool) {
+        guard store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages else {
+            clearFlowHoverState()
+            return
+        }
+
+        if isHovering {
+            hoveredFlowTargetPageID = pageID
+        } else if hoveredFlowTargetPageID == pageID {
+            hoveredFlowTargetPageID = nil
+        }
+    }
+
+    /// 論理名（日本語）: フローhover状態解除関数
+    /// 処理概要: フロー表示から離れたときに source/target の hover 強調状態をまとめて解除します。
+    private func clearFlowHoverState() {
+        hoveredFlowTargetPageID = nil
+        store.clearStaticFlowSourceHover()
+    }
+
+    /// 論理名（日本語）: フロー元ボタンhover矩形生成関数
+    /// 処理概要: 接続情報の sourcePoint と元リンク矩形からキャンバス上の hover 判定矩形を復元します。
+    ///
+    /// - Parameter connection: 判定矩形を作る静的フロー接続。
+    /// - Returns: キャンバス座標上の元リンク矩形。
+    private func sourceHoverRect(for connection: OpenGraphiteStaticFlowConnection) -> CGRect {
+        let sourceRect = connection.link.sourceRect
+        let x = connection.sourceSide == .right
+            ? connection.sourcePoint.x - sourceRect.width
+            : connection.sourcePoint.x
+        return CGRect(
+            x: x,
+            y: connection.sourcePoint.y - sourceRect.height / 2,
+            width: sourceRect.width,
+            height: sourceRect.height
+        )
+    }
+
+    /// 論理名（日本語）: キャンバスページ矩形生成関数
+    /// 処理概要: `.ogp` の page canvas 配置を表示中キャンバス座標系の矩形へ変換します。
+    ///
+    /// - Parameters:
+    ///   - page: 矩形化する page。
+    ///   - bounds: page 配置から計算したキャンバス境界。
+    /// - Returns: キャンバス座標上の page 矩形。
+    private func pageRect(for page: OpenGraphitePage, in bounds: CanvasProjectBounds) -> CGRect {
+        CGRect(
+            x: CGFloat(page.canvas.x) - bounds.minX,
+            y: CGFloat(page.canvas.y) - bounds.minY,
+            width: CGFloat(page.canvas.width),
+            height: CGFloat(page.canvas.height)
+        )
     }
 }
 
@@ -546,12 +674,16 @@ private struct CanvasProjectView: View {
 /// - `pageURL`: 表示対象 HTML URL。
 /// - `isSelected`: 現在の編集対象ページか。
 /// - `reloadToken`: 外部変更時に WebView を再読み込みするためのトークン。
+/// - `isFlowHoverEnabled`: フロー表示用の受け側 page hover を通知するか。
+/// - `onFlowTargetPageHover`: page hover 状態が変わったときに呼ぶ処理。
 private struct CanvasDocumentView: View {
     @ObservedObject var store: EditorStore
     var page: OpenGraphitePage
     var pageURL: URL
     var isSelected: Bool
     var reloadToken: Int
+    var isFlowHoverEnabled: Bool
+    var onFlowTargetPageHover: (String, Bool) -> Void
 
     var body: some View {
         let width = max(CGFloat(page.canvas.width), 1)
@@ -623,6 +755,10 @@ private struct CanvasDocumentView: View {
                 for: store.pageReferenceID(for: page, segment: store.selectedCanvasSegment)
             )
         }
+        .onHover { isHovering in
+            guard isFlowHoverEnabled else { return }
+            onFlowTargetPageHover(page.id, isHovering)
+        }
     }
 }
 
@@ -677,15 +813,37 @@ private struct CanvasPreviewModePicker: View {
 ///
 /// プロパティ:
 /// - `connections`: 描画対象の静的フロー接続一覧。
+/// - `hoveredSource`: ホバー中の遷移元リンク。該当接続を不透明にします。
+/// - `hoveredTargetPageID`: ホバー中の遷移先 page ID。該当 page への接続を不透明にします。
+/// - `selectedSourcePageURL`: 選択中ノードを含む HTML page の URL。
+/// - `selectedSourceNodeID`: 選択中ノード ID。遷移元リンクと一致する接続を不透明にします。
+/// - `selectedTargetPageID`: 選択中 page ID。受け側 page と一致する接続を不透明にします。
 private struct CanvasStaticFlowOverlay: View {
     var connections: [OpenGraphiteStaticFlowConnection]
+    var hoveredSource: OpenGraphiteStaticFlowSourceHover?
+    var hoveredTargetPageID: String?
+    var selectedSourcePageURL: URL?
+    var selectedSourceNodeID: String?
+    var selectedTargetPageID: String?
 
     var body: some View {
         Canvas { context, _ in
             for connection in connections {
-                draw(connection, in: context)
+                if !isConnectionHighlighted(connection) {
+                    draw(connection, isHighlighted: false, in: context)
+                }
+            }
+            for connection in connections {
+                if isConnectionHighlighted(connection) {
+                    draw(connection, isHighlighted: true, in: context)
+                }
             }
         }
+        .animation(.easeOut(duration: 0.12), value: hoveredSource)
+        .animation(.easeOut(duration: 0.12), value: hoveredTargetPageID)
+        .animation(.easeOut(duration: 0.12), value: selectedSourcePageURL)
+        .animation(.easeOut(duration: 0.12), value: selectedSourceNodeID)
+        .animation(.easeOut(duration: 0.12), value: selectedTargetPageID)
     }
 
     /// 論理名（日本語）: フロー接続描画関数
@@ -693,8 +851,9 @@ private struct CanvasStaticFlowOverlay: View {
     ///
     /// - Parameters:
     ///   - connection: 描画対象の静的フロー接続。
+    ///   - isHighlighted: hover 対象として不透明表示する場合は `true`。
     ///   - context: SwiftUI Canvas の描画 context。
-    private func draw(_ connection: OpenGraphiteStaticFlowConnection, in context: GraphicsContext) {
+    private func draw(_ connection: OpenGraphiteStaticFlowConnection, isHighlighted: Bool, in context: GraphicsContext) {
         let source = connection.sourcePoint
         let target = connection.targetPoint
         let controlOffset = max(abs(target.x - source.x) * 0.35, 96)
@@ -702,7 +861,7 @@ private struct CanvasStaticFlowOverlay: View {
         let firstControl = CGPoint(x: source.x + controlOffset * sourceControlDirection, y: source.y)
         let targetControlDirection: CGFloat = connection.targetSide == .right ? 1 : -1
         let secondControl = CGPoint(x: target.x + controlOffset * targetControlDirection, y: target.y)
-        let color = Color.accentColor.opacity(0.82)
+        let color = Color.accentColor.opacity(isHighlighted ? 1.0 : 0.28)
 
         var path = Path()
         path.move(to: source)
@@ -716,6 +875,36 @@ private struct CanvasStaticFlowOverlay: View {
         let sourceDotRect = CGRect(x: source.x - 4, y: source.y - 4, width: 8, height: 8)
         context.fill(Path(ellipseIn: sourceDotRect), with: .color(color))
         context.fill(arrowHead(at: target, from: secondControl), with: .color(color))
+    }
+
+    /// 論理名（日本語）: フロー接続強調判定関数
+    /// 処理概要: hover 中または選択中の遷移元リンク、受け側 page に該当する接続かを判定します。
+    ///
+    /// - Parameter connection: 判定対象の静的フロー接続。
+    /// - Returns: 不透明で描画する接続の場合は `true`。
+    private func isConnectionHighlighted(_ connection: OpenGraphiteStaticFlowConnection) -> Bool {
+        if let hoveredSource,
+           connection.sourcePageURL == hoveredSource.pageURL,
+           connection.link.id == hoveredSource.linkID {
+            return true
+        }
+
+        if let hoveredTargetPageID, connection.targetPageID == hoveredTargetPageID {
+            return true
+        }
+
+        if let selectedSourcePageURL,
+           let selectedSourceNodeID,
+           connection.sourcePageURL == selectedSourcePageURL,
+           connection.link.sourceNodeID == selectedSourceNodeID {
+            return true
+        }
+
+        if let selectedTargetPageID, connection.targetPageID == selectedTargetPageID {
+            return true
+        }
+
+        return false
     }
 
     /// 論理名（日本語）: 矢印ヘッド生成関数
@@ -855,6 +1044,7 @@ private struct CanvasProjectBounds {
 /// - `pageNameCardOutsideOffset`: ページ名カードをページ枠外へ出す垂直オフセット。
 private enum CanvasMetrics {
     static let documentPadding: CGFloat = 72
+    static let projectCoordinateSpaceName = "OpenGraphiteCanvasProject"
     static let pageNameCardHeight: CGFloat = 44
     static let pageNameCardGap: CGFloat = 8
     static let pageNameCardHorizontalInset: CGFloat = 10

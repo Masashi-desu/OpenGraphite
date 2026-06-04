@@ -220,6 +220,7 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteScrollState")
         userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowLinks")
+        userContentController.add(context.coordinator, name: "openGraphiteStaticFlowHover")
         userContentController.addUserScript(
             WKUserScript(
                 source: Self.bridgeScript,
@@ -333,6 +334,7 @@ struct WebCanvasView: NSViewRepresentable {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteScrollState")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteDocumentChange")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteStaticFlowLinks")
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteStaticFlowHover")
         WebScrollStateRegistry.shared.remove(for: nsView)
     }
 
@@ -380,6 +382,7 @@ struct WebCanvasView: NSViewRepresentable {
             guard isInteractive
                     || message.name == "openGraphiteScrollState"
                     || message.name == "openGraphiteStaticFlowLinks"
+                    || message.name == "openGraphiteStaticFlowHover"
             else {
                 return
             }
@@ -431,6 +434,13 @@ struct WebCanvasView: NSViewRepresentable {
                 Task { @MainActor in
                     guard let loadedURL else { return }
                     store.ingestStaticFlowLinkPayload(payload, pageURL: loadedURL)
+                }
+            }
+
+            if message.name == "openGraphiteStaticFlowHover", let payload = message.body as? [String: Any] {
+                Task { @MainActor in
+                    guard let loadedURL else { return }
+                    store.ingestStaticFlowSourceHoverPayload(payload, pageURL: loadedURL)
                 }
             }
         }
@@ -1492,6 +1502,21 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         var staticFlowCollectionFrame = null;
+        var currentStaticFlowHoverID = '';
+
+        function staticFlowSelector() {
+          return [
+            'a[href]',
+            '[data-og-type="button"][href]',
+            '[data-og-type="button"][data-og-target]',
+            '[data-og-type="button"][data-og-href]',
+            '[data-og-type="button"][data-og-link]'
+          ].join(',');
+        }
+
+        function staticFlowElements() {
+          return Array.from(new Set(Array.from(document.querySelectorAll(staticFlowSelector()))));
+        }
 
         function staticFlowTargetFor(element) {
           const rawTarget = [
@@ -1525,16 +1550,8 @@ struct WebCanvasView: NSViewRepresentable {
           return fallback || '';
         }
 
-        function collectStaticFlowLinks() {
-          const selector = [
-            'a[href]',
-            '[data-og-type="button"][href]',
-            '[data-og-type="button"][data-og-target]',
-            '[data-og-type="button"][data-og-href]',
-            '[data-og-type="button"][data-og-link]'
-          ].join(',');
-          const elements = Array.from(new Set(Array.from(document.querySelectorAll(selector))));
-          const links = elements.flatMap((element, index) => {
+        function staticFlowPayloadItems() {
+          return staticFlowElements().flatMap((element, index) => {
             const target = staticFlowTargetFor(element);
             if (!target) { return []; }
 
@@ -1547,17 +1564,27 @@ struct WebCanvasView: NSViewRepresentable {
             const fallbackID = 'static-flow-' + index + '-' + target.raw;
             const id = (sourceNodeID || fallbackID) + ':' + target.raw;
             return [{
-              id: id,
-              sourceNodeID: sourceNodeID,
-              sourceLabel: sourceLabelForStaticFlow(element, sourceNodeID),
-              targetHref: target.raw,
-              targetURL: target.resolved,
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height
+              element: element,
+              payload: {
+                id: id,
+                sourceNodeID: sourceNodeID,
+                sourceLabel: sourceLabelForStaticFlow(element, sourceNodeID),
+                targetHref: target.raw,
+                targetURL: target.resolved,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height
+              }
             }];
           });
+        }
+
+        function collectStaticFlowLinks() {
+          const links = staticFlowPayloadItems().map((item) => item.payload);
+          if (currentStaticFlowHoverID && !links.some((link) => link.id === currentStaticFlowHoverID)) {
+            postStaticFlowHover(null);
+          }
           window.webkit.messageHandlers.openGraphiteStaticFlowLinks.postMessage(links);
           return links;
         }
@@ -1568,6 +1595,35 @@ struct WebCanvasView: NSViewRepresentable {
             staticFlowCollectionFrame = null;
             collectStaticFlowLinks();
           });
+        }
+
+        function staticFlowElementFromTarget(target) {
+          let element = target;
+          while (element && element.nodeType !== Node.ELEMENT_NODE) {
+            element = element.parentElement;
+          }
+          return element ? element.closest(staticFlowSelector()) : null;
+        }
+
+        function staticFlowPayloadForElement(element) {
+          if (!element) { return null; }
+          const item = staticFlowPayloadItems().find((candidate) => candidate.element === element);
+          return item ? item.payload : null;
+        }
+
+        function postStaticFlowHover(payload) {
+          const id = payload ? payload.id || '' : '';
+          if (id === currentStaticFlowHoverID) { return; }
+          currentStaticFlowHoverID = id;
+          window.webkit.messageHandlers.openGraphiteStaticFlowHover.postMessage(payload || {
+            id: '',
+            sourceNodeID: ''
+          });
+        }
+
+        function updateStaticFlowHoverFromTarget(target) {
+          const payload = staticFlowPayloadForElement(staticFlowElementFromTarget(target));
+          postStaticFlowHover(payload);
         }
 
       function collectNodes() {
@@ -2377,11 +2433,20 @@ struct WebCanvasView: NSViewRepresentable {
         }, activePointerOptions);
 
         document.addEventListener('pointermove', function(event) {
+          updateStaticFlowHoverFromTarget(event.target);
           updateScrollStateAt(event.clientX, event.clientY);
           if (!editingTextElement && (activeDrag || startActiveDragIfNeeded(event))) {
             updateActiveDrag(event);
           }
         }, activePointerOptions);
+
+        document.addEventListener('pointerover', function(event) {
+          updateStaticFlowHoverFromTarget(event.target);
+        }, passivePointerOptions);
+
+        document.addEventListener('pointerout', function(event) {
+          updateStaticFlowHoverFromTarget(event.relatedTarget);
+        }, passivePointerOptions);
 
         document.addEventListener('pointerup', function(event) {
           if (activeDrag && activeDrag.pointerID === event.pointerId) {
@@ -2460,7 +2525,10 @@ struct WebCanvasView: NSViewRepresentable {
           updateScrollStateAt(event.clientX, event.clientY);
         }, passivePointerOptions);
 
-        document.addEventListener('mouseleave', markPointerOutside, { capture: true });
+        document.addEventListener('mouseleave', function() {
+          markPointerOutside();
+          postStaticFlowHover(null);
+        }, { capture: true });
 
         document.addEventListener('scroll', function() {
           updateLastPointerScrollState();

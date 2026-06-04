@@ -939,6 +939,33 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "feature-card の component master を表示しています。")
     }
 
+    /// 論理名（日本語）: 静的フロー元ホバー取り込みテスト
+    /// 概要: WebView から届く hover 対象リンク ID が Store に保持され、空 ID で解除されることを検証します。
+    @Test("静的フロー元hover payloadを保持して解除できる")
+    func testIngestStaticFlowSourceHoverPayloadStoresAndClears() {
+        // コンディション：静的フロー元リンクの hover payload と page URL を用意する（Given）
+        let store = EditorStore()
+        let pageURL = URL(fileURLWithPath: "/tmp/OpenGraphiteFlow/index.html")
+
+        // 検証内容：hover payload を取り込み、別 page の解除要求と同一 page の解除要求を順に処理する（When）
+        store.ingestStaticFlowSourceHoverPayload(
+            [
+                "id": "docs-button:./docs.html",
+                "sourceNodeID": "docs-button"
+            ],
+            pageURL: pageURL
+        )
+        store.clearStaticFlowSourceHover(pageURL: URL(fileURLWithPath: "/tmp/OpenGraphiteFlow/docs.html"))
+        let retainedHover = store.hoveredStaticFlowSource
+        store.ingestStaticFlowSourceHoverPayload(["id": ""], pageURL: pageURL)
+
+        // 期待値：同一 page の空 ID だけが hover 状態を解除する（Then）
+        #expect(retainedHover?.pageURL == pageURL.standardizedFileURL)
+        #expect(retainedHover?.linkID == "docs-button:./docs.html")
+        #expect(retainedHover?.sourceNodeID == "docs-button")
+        #expect(store.hoveredStaticFlowSource == nil)
+    }
+
     /// 論理名（日本語）: 階層参照ID生成テスト
     /// 概要: Chapter、page、component canvas が各階層で agent 向けの一意な参照 ID を生成できることを確認します。
     @Test("Chapter/Page/Componentの参照IDを階層ごとに生成する")
