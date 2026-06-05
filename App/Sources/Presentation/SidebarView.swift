@@ -314,32 +314,18 @@ private struct PageLayerListView: View {
     var segment: OpenGraphiteCanvasSegment
 
     var body: some View {
-        VSplitView {
-            SidebarSplitSection(
-                title: groupSectionTitle,
-                count: groups.count,
-                isCollapsed: groupSectionCollapsedBinding
-            ) {
-                groupSectionContent
-            }
-            .frame(
-                minHeight: groupSectionMinHeight,
-                idealHeight: groupSectionIdealHeight,
-                maxHeight: groupSectionMaxHeight
-            )
+        Group {
+            if areBothSectionsCollapsed {
+                VStack(alignment: .leading, spacing: 0) {
+                    sidebarSplitSections
 
-            SidebarSplitSection(
-                title: contentSectionTitle,
-                count: visiblePages.count,
-                isCollapsed: contentSectionCollapsedBinding
-            ) {
-                contentSectionContent
+                    Spacer(minLength: 0)
+                }
+            } else {
+                VSplitView {
+                    sidebarSplitSections
+                }
             }
-            .frame(
-                minHeight: contentSectionMinHeight,
-                idealHeight: contentSectionIdealHeight,
-                maxHeight: contentSectionMaxHeight
-            )
         }
         .padding(.horizontal, EditorColumnStyle.outerPadding)
         .padding(.vertical, 10)
@@ -359,6 +345,35 @@ private struct PageLayerListView: View {
         .onChange(of: selectedPageID) { _, _ in
             expandSelectedPage()
         }
+    }
+
+    @ViewBuilder
+    private var sidebarSplitSections: some View {
+        SidebarSplitSection(
+            title: groupSectionTitle,
+            count: groups.count,
+            isCollapsed: groupSectionCollapsedBinding
+        ) {
+            groupSectionContent
+        }
+        .frame(
+            minHeight: groupSectionMinHeight,
+            idealHeight: groupSectionIdealHeight,
+            maxHeight: groupSectionMaxHeight
+        )
+
+        SidebarSplitSection(
+            title: contentSectionTitle,
+            count: visiblePages.count,
+            isCollapsed: contentSectionCollapsedBinding
+        ) {
+            contentSectionContent
+        }
+        .frame(
+            minHeight: contentSectionMinHeight,
+            idealHeight: contentSectionIdealHeight,
+            maxHeight: contentSectionMaxHeight
+        )
     }
 
     @ViewBuilder
@@ -491,6 +506,10 @@ private struct PageLayerListView: View {
         case .components:
             return isComponentsContentSectionCollapsed
         }
+    }
+
+    private var areBothSectionsCollapsed: Bool {
+        isGroupSectionCollapsed && isContentSectionCollapsed
     }
 
     private var groupSectionCollapsedBinding: Binding<Bool> {
