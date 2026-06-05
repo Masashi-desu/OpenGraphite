@@ -75,4 +75,73 @@ struct OpenGraphiteIconTests {
         #expect(iconNames == ["code", "file-code", "component", "blocks"])
         #expect(frameIcon.fallbackSystemName == "chevron.left.forwardslash.chevron.right")
     }
+
+    /// 論理名（日本語）: componentとinstanceのレイヤーアイコン判定テスト
+    /// 概要: component master と component instance が Lucide の専用アイコンを優先することを検証します。
+    @Test("componentとinstanceは専用アイコンを優先する")
+    func testLayerNodeUsesComponentAndInstanceIcons() {
+        // コンディション：component master、instance本体、runtime生成root、runtime生成子要素を用意する（Given）
+        let masterNode = OpenGraphiteNode(
+            id: "feature-card-master",
+            tagName: "featurecard",
+            type: "frame",
+            layout: nil,
+            role: nil,
+            componentID: "feature-card",
+            componentKind: "master",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 0
+        )
+        let instanceNode = OpenGraphiteNode(
+            id: "home-card",
+            tagName: "og-instance",
+            type: "frame",
+            layout: nil,
+            role: nil,
+            componentID: "feature-card",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 0
+        )
+        let generatedRootNode = OpenGraphiteNode(
+            id: "home-card",
+            tagName: "featurecard",
+            type: "frame",
+            layout: nil,
+            role: nil,
+            sourceComponentID: "feature-card",
+            sourceInstanceID: "home-card",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 0
+        )
+        let generatedChildNode = OpenGraphiteNode(
+            id: "home-card-title",
+            tagName: "featuretitle",
+            type: "text",
+            layout: nil,
+            role: nil,
+            sourceComponentID: "feature-card",
+            sourceInstanceID: "home-card",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 1
+        )
+
+        // 検証内容：レイヤー行用アイコン名を取得する（When）
+        let iconNames = [
+            OpenGraphiteIcon.layerNode(masterNode).name,
+            OpenGraphiteIcon.layerNode(instanceNode).name,
+            OpenGraphiteIcon.layerNode(generatedRootNode).name,
+            OpenGraphiteIcon.layerNode(generatedChildNode).name
+        ]
+
+        // 期待値：master は component、instance root は copy、子要素は本来の text アイコンになる（Then）
+        #expect(iconNames == ["component", "copy", "copy", "type"])
+    }
 }

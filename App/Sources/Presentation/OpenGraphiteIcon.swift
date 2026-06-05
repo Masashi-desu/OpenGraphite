@@ -156,6 +156,7 @@ extension OpenGraphiteIcon {
     static let collectionGroup = OpenGraphiteIcon.lucide("blocks", fallbackSystemName: "square.grid.2x2")
     static let pageDocument = OpenGraphiteIcon.lucide("file-code", fallbackSystemName: "doc.text")
     static let componentDocument = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
+    static let componentInstance = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
     static let alignHorizontalStart = OpenGraphiteIcon.lucide("align-horizontal-justify-start", fallbackSystemName: "align.horizontal.left")
     static let alignHorizontalCenter = OpenGraphiteIcon.lucide("align-horizontal-justify-center", fallbackSystemName: "align.horizontal.center")
     static let alignHorizontalEnd = OpenGraphiteIcon.lucide("align-horizontal-justify-end", fallbackSystemName: "align.horizontal.right")
@@ -217,5 +218,20 @@ extension OpenGraphiteIcon {
         default:
             return .lucide("code-xml", fallbackSystemName: "curlybraces")
         }
+    }
+
+    /// 論理名（日本語）: レイヤーノードアイコン生成関数
+    /// 処理概要: component master と component instance を優先し、それ以外は `data-og-type` からアイコンを決定します。
+    ///
+    /// - Parameter node: 左カラムの Layers に表示する OpenGraphite ノード。
+    /// - Returns: ノードの意味を表すアイコン記述子。
+    static func layerNode(_ node: OpenGraphiteNode) -> OpenGraphiteIcon {
+        if node.componentKind == "master" {
+            return .componentDocument
+        }
+        if node.tagName == "og-instance" || node.id == node.sourceInstanceID {
+            return .componentInstance
+        }
+        return .layerType(node.type)
     }
 }

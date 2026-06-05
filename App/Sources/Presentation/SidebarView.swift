@@ -1131,7 +1131,7 @@ private struct LayerRow: View {
                 }
             }
 
-            OpenGraphiteIconView(icon: .layerType(row.node.type), size: 14)
+            OpenGraphiteIconView(icon: .layerNode(row.node), size: 14)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                 .frame(width: 16)
 
