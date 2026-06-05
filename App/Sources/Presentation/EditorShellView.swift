@@ -121,7 +121,7 @@ private struct EditorTopChromeView: View {
         HStack(spacing: 0) {
             HStack(spacing: 0) {
                 EditorChromeIconButton(
-                    systemImage: "sidebar.left",
+                    icon: .sidebarLeft,
                     isActive: isSidebarVisible,
                     help: isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
                     action: onToggleSidebar
@@ -145,7 +145,7 @@ private struct EditorTopChromeView: View {
                 Spacer(minLength: 0)
 
                 EditorChromeIconButton(
-                    systemImage: "sidebar.right",
+                    icon: .sidebarRight,
                     isActive: isInspectorVisible,
                     help: isInspectorVisible ? "Hide Inspector" : "Show Inspector",
                     action: onToggleInspector
@@ -183,20 +183,19 @@ private struct EditorTopChromeView: View {
 /// 概要: 上部クロームで使う薄型のアイコンボタンです。
 ///
 /// プロパティ:
-/// - `systemImage`: SF Symbols 名。
+/// - `icon`: 表示するアイコン。
 /// - `isActive`: 有効状態として背景を出すか。
 /// - `help`: ヘルプとアクセシビリティラベル。
 /// - `action`: 押下時に実行する処理。
 private struct EditorChromeIconButton: View {
-    var systemImage: String
+    var icon: OpenGraphiteIcon
     var isActive = false
     var help: String
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .medium))
+            OpenGraphiteIconView(icon: icon, size: 16)
                 .frame(width: 28, height: 28)
                 .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
         }
@@ -779,8 +778,7 @@ private struct CanvasPreviewModePicker: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: option.systemImage)
-                            .font(.system(size: 12, weight: .semibold))
+                        OpenGraphiteIconView(icon: .previewDisplayMode(option), size: 13, weight: .semibold)
                         Text(option.title)
                             .font(.caption.weight(.semibold))
                     }
@@ -2346,8 +2344,7 @@ private struct CanvasToolPalette: View {
                 Button {
                     activeTool = tool
                 } label: {
-                    Image(systemName: tool.systemImage)
-                        .font(.system(size: 15, weight: .medium))
+                    OpenGraphiteIconView(icon: .canvasTool(tool), size: 16)
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }

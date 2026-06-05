@@ -12,6 +12,10 @@ settings:
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
     STRING_CATALOG_GENERATE_SYMBOLS: YES
     SWIFT_EMIT_LOC_STRINGS: YES
+packages:
+  LucideIcons:
+    url: https://github.com/JakubMazur/lucide-icons-swift.git
+    from: "1.17.0"
 targets:
   OpenGraphite:
     type: application
@@ -46,6 +50,7 @@ targets:
         buildPhase: resources
     dependencies:
       - sdk: WebKit.framework
+      - package: LucideIcons
     settings:
       base:
         PRODUCT_NAME: OpenGraphite

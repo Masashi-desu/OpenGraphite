@@ -45,9 +45,9 @@ struct InspectorView: View {
                                 title: "Align",
                                 value: node.cssVariables["--og-align"] ?? "",
                                 options: [
-                                    InspectorButtonOption(label: "L", systemImage: "align.horizontal.left", value: "flex-start"),
-                                    InspectorButtonOption(label: "C", systemImage: "align.horizontal.center", value: "center"),
-                                    InspectorButtonOption(label: "R", systemImage: "align.horizontal.right", value: "flex-end")
+                                    InspectorButtonOption(label: "L", icon: .alignHorizontalStart, value: "flex-start"),
+                                    InspectorButtonOption(label: "C", icon: .alignHorizontalCenter, value: "center"),
+                                    InspectorButtonOption(label: "R", icon: .alignHorizontalEnd, value: "flex-end")
                                 ]
                             ) { value in
                                 store.updateCSSVariable(key: "--og-align", value: value)
@@ -57,9 +57,9 @@ struct InspectorView: View {
                                 title: "Justify",
                                 value: node.cssVariables["--og-justify"] ?? "",
                                 options: [
-                                    InspectorButtonOption(label: "T", systemImage: "align.vertical.top", value: "flex-start"),
-                                    InspectorButtonOption(label: "M", systemImage: "align.vertical.center", value: "center"),
-                                    InspectorButtonOption(label: "B", systemImage: "align.vertical.bottom", value: "flex-end")
+                                    InspectorButtonOption(label: "T", icon: .alignVerticalStart, value: "flex-start"),
+                                    InspectorButtonOption(label: "M", icon: .alignVerticalCenter, value: "center"),
+                                    InspectorButtonOption(label: "B", icon: .alignVerticalEnd, value: "flex-end")
                                 ]
                             ) { value in
                                 store.updateCSSVariable(key: "--og-justify", value: value)
@@ -1191,11 +1191,11 @@ private struct CSSColorSwatch: View {
 ///
 /// プロパティ:
 /// - `label`: tooltip 用の短いラベル。
-/// - `systemImage`: SF Symbols 名。
+/// - `icon`: 表示するアイコン。
 /// - `value`: 適用する CSS 変数値。
 private struct InspectorButtonOption: Identifiable {
     var label: String
-    var systemImage: String
+    var icon: OpenGraphiteIcon
     var value: String
 
     var id: String { value }
@@ -1227,8 +1227,7 @@ private struct InspectorButtonStrip: View {
                     Button {
                         onChange(option.value)
                     } label: {
-                        Image(systemName: option.systemImage)
-                            .font(.caption)
+                        OpenGraphiteIconView(icon: option.icon, size: 13)
                             .frame(width: 28, height: 24)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)

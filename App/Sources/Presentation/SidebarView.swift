@@ -66,9 +66,11 @@ private struct SidebarPanelSwitcher: View {
                 Button {
                     selectedPanel = panel.rawValue
                 } label: {
-                    Label(panel.title, systemImage: panel.systemImage)
+                    HStack(spacing: 6) {
+                        OpenGraphiteIconView(icon: panel.icon, size: 13)
+                        Text(panel.title)
+                    }
                         .font(.system(size: 12, weight: .semibold))
-                        .labelStyle(.titleAndIcon)
                         .lineLimit(1)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 6)
@@ -100,7 +102,7 @@ private struct SidebarPanelSwitcher: View {
 /// - `title`: 表示名。
 /// - `detail`: 補助表示する ID。
 /// - `count`: グループ内 HTML 数。
-/// - `systemImage`: グループ種別アイコン。
+/// - `icon`: グループ種別アイコン。
 /// - `isSelected`: 現在選択中のグループか。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onCopyReferenceID`: 参照 ID コピー時に呼び出す処理。
@@ -108,7 +110,7 @@ private struct SidebarGroupRow: View {
     var title: String
     var detail: String
     var count: Int
-    var systemImage: String
+    var icon: OpenGraphiteIcon
     var isSelected: Bool
     var onSelect: () -> Void
     var onCopyReferenceID: () -> Void
@@ -116,8 +118,7 @@ private struct SidebarGroupRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .medium))
+                OpenGraphiteIconView(icon: icon, size: 14)
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                     .frame(width: 18, height: 18)
 
@@ -286,13 +287,13 @@ private struct ComponentPageListView: View {
 /// - `internalID`: `.ogp` 内のグループ内部 ID。
 /// - `title`: グループ表示名。
 /// - `detail`: 補助表示する ID。
-/// - `systemImage`: グループ種別アイコン。
+/// - `icon`: グループ種別アイコン。
 /// - `pages`: グループ配下の HTML 定義。
 private struct SidebarPageGroup: Identifiable {
     var internalID: String
     var title: String
     var detail: String
-    var systemImage: String
+    var icon: OpenGraphiteIcon
     var pages: [OpenGraphitePage]
 
     var id: String { internalID }
@@ -372,7 +373,7 @@ private struct PageLayerListView: View {
                             title: group.title,
                             detail: group.detail,
                             count: group.pages.count,
-                            systemImage: group.systemImage,
+                            icon: group.icon,
                             isSelected: isGroupSelected(group),
                             onSelect: {
                                 select(group)
@@ -408,7 +409,7 @@ private struct PageLayerListView: View {
                                 isExpanded: expansionState.isExpanded(pageID: page.internalID),
                                 nodes: isSelected(page, in: group) ? store.nodes : [],
                                 selectedNodeID: $store.selectedNodeID,
-                                systemImage: segment == .components ? "shippingbox" : "doc.text",
+                                icon: segment == .components ? .componentDocument : .pageDocument,
                                 onSelect: {
                                     select(page, in: group)
                                     expansionState.expand(pageID: page.internalID)
@@ -457,7 +458,7 @@ private struct PageLayerListView: View {
                     internalID: chapter.internalID,
                     title: chapter.displayName,
                     detail: chapter.id,
-                    systemImage: "book.closed",
+                    icon: .chapterGroup,
                     pages: chapter.pages
                 )
             }
@@ -467,7 +468,7 @@ private struct PageLayerListView: View {
                     internalID: collection.internalID,
                     title: collection.displayName,
                     detail: collection.id,
-                    systemImage: "square.grid.2x2",
+                    icon: .collectionGroup,
                     pages: collection.components
                 )
             }
@@ -751,7 +752,7 @@ private struct PageLayerListView: View {
 /// - `isExpanded`: レイヤー階層を展開中か。
 /// - `nodes`: 選択中 HTML から収集された DOM ノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
-/// - `systemImage`: 見出しに表示する SF Symbols 名。
+/// - `icon`: 見出しに表示するアイコン。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onToggle`: 展開切替時に呼び出す処理。
 /// - `onCopyReferenceID`: HTML カード参照 ID コピー時に呼び出す処理。
@@ -763,7 +764,7 @@ private struct PageLayerCard: View {
     var isExpanded: Bool
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
-    var systemImage: String
+    var icon: OpenGraphiteIcon
     var onSelect: () -> Void
     var onToggle: () -> Void
     var onCopyReferenceID: () -> Void
@@ -784,8 +785,7 @@ private struct PageLayerCard: View {
 
                 Button(action: onSelect) {
                     HStack(spacing: 9) {
-                        Image(systemName: systemImage)
-                            .font(.system(size: 12, weight: .medium))
+                        OpenGraphiteIconView(icon: icon, size: 14)
                             .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                             .frame(width: 18, height: 18)
 
@@ -1066,12 +1066,12 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
         }
     }
 
-    var systemImage: String {
+    var icon: OpenGraphiteIcon {
         switch self {
         case .pages:
-            return "rectangle.stack"
+            return .pagesPanel
         case .components:
-            return "shippingbox"
+            return .componentsPanel
         }
     }
 }
@@ -1112,8 +1112,7 @@ private struct LayerRow: View {
                 }
             }
 
-            Image(systemName: iconName)
-                .font(.system(size: 12, weight: .medium))
+            OpenGraphiteIconView(icon: .layerType(row.node.type), size: 14)
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                 .frame(width: 16)
 
@@ -1146,16 +1145,4 @@ private struct LayerRow: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var iconName: String {
-        switch row.node.type {
-        case "text":
-            return "textformat"
-        case "button":
-            return "button.programmable"
-        case "image":
-            return "photo"
-        default:
-            return "rectangle.3.group"
-        }
-    }
 }
