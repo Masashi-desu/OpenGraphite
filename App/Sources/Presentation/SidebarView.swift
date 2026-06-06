@@ -288,39 +288,34 @@ private struct SidebarSplitSection<Content: View>: View {
 }
 
 /// 論理名（日本語）: Project依存性一覧ビュー
-/// 概要: `.ogp` が参照する実装資源を Project セグメント内の選択可能な依存性として表示します。
+/// 概要: `.ogp` 全体を Project カードとして表示し、依存性と i18n 資源を内包した階層として選択可能にします。
 private struct ProjectDependencyListView: View {
     @EnvironmentObject private var store: EditorStore
+    @SceneStorage("sidebar.projectCardCollapsed") private var isProjectCardCollapsed = false
+    @SceneStorage("sidebar.projectDependenciesCollapsed") private var isProjectDependenciesCollapsed = false
+    @SceneStorage("sidebar.projectI18nCollapsed") private var isProjectI18nCollapsed = false
+    @SceneStorage("sidebar.projectLocaleResourcesCollapsed") private var isProjectLocaleResourcesCollapsed = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                ProjectDependencySection(title: "Dependencies", count: dependencyItems.count) {
-                    ForEach(dependencyItems) { item in
-                        ProjectDependencyRow(
-                            item: item,
-                            isSelected: item.selection == selectedResource,
-                            onSelect: {
-                                store.selectProjectResource(item.selection)
-                            }
-                        )
-                    }
-                }
-
-                ProjectDependencySection(title: "Locale Resources", count: localeItems.count) {
-                    if localeItems.isEmpty {
-                        SidebarEmptyStateRow(text: "No locale resources")
-                    } else {
-                        ForEach(localeItems) { item in
-                            ProjectDependencyRow(
-                                item: item,
-                                isSelected: item.selection == selectedResource,
-                                onSelect: {
-                                    store.selectProjectResource(item.selection)
-                                }
-                            )
+            VStack(alignment: .leading, spacing: 10) {
+                if let projectItem, let i18nItem {
+                    ProjectDependencyCard(
+                        projectItem: projectItem,
+                        dependencyItems: dependencyItems,
+                        i18nItem: i18nItem,
+                        localeItems: localeItems,
+                        selectedResource: selectedResource,
+                        isProjectCollapsed: $isProjectCardCollapsed,
+                        isDependenciesCollapsed: $isProjectDependenciesCollapsed,
+                        isI18nCollapsed: $isProjectI18nCollapsed,
+                        isLocaleResourcesCollapsed: $isProjectLocaleResourcesCollapsed,
+                        onSelect: { selection in
+                            store.selectProjectResource(selection)
                         }
-                    }
+                    )
+                } else {
+                    SidebarEmptyStateRow(text: "No project")
                 }
             }
             .padding(.horizontal, EditorColumnStyle.outerPadding)
@@ -338,17 +333,22 @@ private struct ProjectDependencyListView: View {
         store.selectedProjectResource
     }
 
+    private var projectItem: ProjectDependencyItem? {
+        guard let loadedProject = store.loadedProject else { return nil }
+        let project = loadedProject.project
+        return ProjectDependencyItem(
+            title: "Project",
+            detail: loadedProject.fileURL.lastPathComponent,
+            status: project.name,
+            icon: .projectPanel,
+            selection: .overview
+        )
+    }
+
     private var dependencyItems: [ProjectDependencyItem] {
         guard let loadedProject = store.loadedProject else { return [] }
         let project = loadedProject.project
         var items: [ProjectDependencyItem] = [
-            ProjectDependencyItem(
-                title: "Project",
-                detail: loadedProject.fileURL.lastPathComponent,
-                status: project.name,
-                icon: .projectPanel,
-                selection: .overview
-            ),
             ProjectDependencyItem(
                 title: "HTML Root",
                 detail: project.htmlRoot,
@@ -376,18 +376,19 @@ private struct ProjectDependencyListView: View {
                 selection: .runtime(path: runtimePath)
             )
         )
-
-        let i18nInspection = store.projectI18nRuntimeInspection
-        items.append(
-            ProjectDependencyItem(
-                title: "I18n Runtime",
-                detail: shortPath(i18nInspection?.configSource) ?? "not detected",
-                status: adapterStatus(i18nInspection?.adapter),
-                icon: .i18nResource,
-                selection: .i18nRuntime
-            )
-        )
         return items
+    }
+
+    private var i18nItem: ProjectDependencyItem? {
+        guard store.loadedProject != nil else { return nil }
+        let i18nInspection = store.projectI18nRuntimeInspection
+        return ProjectDependencyItem(
+            title: "Runtime",
+            detail: shortPath(i18nInspection?.configSource) ?? "not detected",
+            status: adapterStatus(i18nInspection?.adapter),
+            icon: .i18nResource,
+            selection: .i18nRuntime
+        )
     }
 
     private var localeItems: [ProjectDependencyItem] {
@@ -440,36 +441,218 @@ private struct ProjectDependencyListView: View {
     }
 }
 
-/// 論理名（日本語）: Project依存性セクションビュー
-/// 概要: Project セグメント内の依存性行を見出し付きでまとめます。
+/// 論理名（日本語）: Project依存性カードビュー
+/// 概要: Project セグメントで `.ogp` 全体を最上位カードとして表示し、依存性と i18n 資源を階層化します。
 ///
 /// プロパティ:
-/// - `title`: セクション名。
-/// - `count`: セクション内項目数。
-/// - `content`: 依存性行。
-private struct ProjectDependencySection<Content: View>: View {
-    var title: String
-    var count: Int
-    @ViewBuilder var content: Content
+/// - `projectItem`: 最上位 Project 行。
+/// - `dependencyItems`: HTML root、CSS、runtime など Dependencies 直下の依存性。
+/// - `i18nItem`: Dependencies 配下の i18n runtime 行。
+/// - `localeItems`: i18n 配下の locale JSON。
+/// - `selectedResource`: 現在選択中の Project 資源。
+/// - `isProjectCollapsed`: Project カード本文の折りたたみ状態。
+/// - `isDependenciesCollapsed`: Dependencies 配下の折りたたみ状態。
+/// - `isI18nCollapsed`: I18n 配下の折りたたみ状態。
+/// - `isLocaleResourcesCollapsed`: Locale Resources 配下の折りたたみ状態。
+/// - `onSelect`: 資源選択時に呼び出す処理。
+private struct ProjectDependencyCard: View {
+    var projectItem: ProjectDependencyItem
+    var dependencyItems: [ProjectDependencyItem]
+    var i18nItem: ProjectDependencyItem
+    var localeItems: [ProjectDependencyItem]
+    var selectedResource: OpenGraphiteProjectResourceSelection?
+    @Binding var isProjectCollapsed: Bool
+    @Binding var isDependenciesCollapsed: Bool
+    @Binding var isI18nCollapsed: Bool
+    @Binding var isLocaleResourcesCollapsed: Bool
+    var onSelect: (OpenGraphiteProjectResourceSelection) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
+            ProjectDependencyRow(
+                item: projectItem,
+                isSelected: projectItem.selection == selectedResource,
+                depth: 0,
+                isCollapsed: isProjectCollapsed,
+                onToggle: {
+                    toggle($isProjectCollapsed)
+                },
+                onSelect: {
+                    onSelect(projectItem.selection)
+                }
+            )
+
+            if !isProjectCollapsed {
+                VStack(alignment: .leading, spacing: 5) {
+                    ProjectDependencyHierarchyHeader(
+                        title: "Dependencies",
+                        count: dependencyGroupCount,
+                        depth: 0,
+                        isCollapsed: isDependenciesCollapsed,
+                        onToggle: {
+                            toggle($isDependenciesCollapsed)
+                        }
+                    )
+
+                    if !isDependenciesCollapsed {
+                        ForEach(dependencyItems) { item in
+                            ProjectDependencyRow(
+                                item: item,
+                                isSelected: item.selection == selectedResource,
+                                depth: 1,
+                                onSelect: {
+                                    onSelect(item.selection)
+                                }
+                            )
+                        }
+
+                        ProjectDependencyHierarchyHeader(
+                            title: "I18n",
+                            count: i18nGroupCount,
+                            depth: 1,
+                            isCollapsed: isI18nCollapsed,
+                            onToggle: {
+                                toggle($isI18nCollapsed)
+                            }
+                        )
+                        .padding(.top, 4)
+
+                        if !isI18nCollapsed {
+                            ProjectDependencyRow(
+                                item: i18nItem,
+                                isSelected: i18nItem.selection == selectedResource,
+                                depth: 2,
+                                onSelect: {
+                                    onSelect(i18nItem.selection)
+                                }
+                            )
+
+                            ProjectDependencyHierarchyHeader(
+                                title: "Locale Resources",
+                                count: localeItems.count,
+                                depth: 2,
+                                isCollapsed: isLocaleResourcesCollapsed,
+                                onToggle: {
+                                    toggle($isLocaleResourcesCollapsed)
+                                }
+                            )
+
+                            if !isLocaleResourcesCollapsed {
+                                if localeItems.isEmpty {
+                                    SidebarEmptyStateRow(text: "No locale resources")
+                                        .padding(.leading, ProjectDependencyHierarchyMetrics.indent(for: 3))
+                                } else {
+                                    ForEach(localeItems) { item in
+                                        ProjectDependencyRow(
+                                            item: item,
+                                            isSelected: item.selection == selectedResource,
+                                            depth: 3,
+                                            onSelect: {
+                                                onSelect(item.selection)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 3)
+                .padding(.bottom, 7)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .fill(EditorColumnStyle.rowFill.opacity(0.92))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+    }
+
+    private var dependencyGroupCount: Int {
+        dependencyItems.count + 1
+    }
+
+    private var i18nGroupCount: Int {
+        2
+    }
+
+    /// 論理名（日本語）: Project依存性折りたたみ切替関数
+    /// 処理概要: Project カード内の指定階層を短いアニメーション付きで開閉します。
+    ///
+    /// - Parameter isCollapsed: 切り替える折りたたみ状態。
+    private func toggle(_ isCollapsed: Binding<Bool>) {
+        withAnimation(.easeInOut(duration: 0.14)) {
+            isCollapsed.wrappedValue.toggle()
+        }
+    }
+}
+
+/// 論理名（日本語）: Project依存性階層ヘッダービュー
+/// 概要: Project カード内の Dependencies、I18n、Locale Resources の階層見出しを表示します。
+///
+/// プロパティ:
+/// - `title`: 見出し名。
+/// - `count`: 見出し配下の項目数。
+/// - `depth`: Project カード内の階層深度。
+/// - `isCollapsed`: 見出し配下の折りたたみ状態。
+/// - `onToggle`: 折りたたみ切替時に呼び出す処理。
+private struct ProjectDependencyHierarchyHeader: View {
+    var title: String
+    var count: Int
+    var depth: Int
+    var isCollapsed: Bool
+    var onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 6) {
+                Spacer()
+                    .frame(width: ProjectDependencyHierarchyMetrics.indent(for: depth))
+
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: ProjectDependencyHierarchyMetrics.disclosureWidth, height: 16)
+
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
                 Spacer(minLength: 0)
+
                 Text("\(count)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 8)
-
-            VStack(alignment: .leading, spacing: 5) {
-                content
-            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+        .help(isCollapsed ? "Expand" : "Collapse")
+    }
+}
+
+/// 論理名（日本語）: Project依存性階層寸法
+/// 概要: Project カード内で親子関係を示すインデント量を定義します。
+private enum ProjectDependencyHierarchyMetrics {
+    static let depthIndent: CGFloat = 16
+    static let disclosureWidth: CGFloat = 16
+
+    /// 論理名（日本語）: Project依存性インデント計算関数
+    /// 処理概要: 指定階層の左インデント幅を返します。
+    ///
+    /// - Parameter depth: Project カード内の階層深度。
+    /// - Returns: 左インデント幅。
+    static func indent(for depth: Int) -> CGFloat {
+        CGFloat(max(depth, 0)) * depthIndent
     }
 }
 
@@ -501,48 +684,77 @@ private struct ProjectDependencyItem: Identifiable {
 /// プロパティ:
 /// - `item`: 表示する依存性。
 /// - `isSelected`: 現在選択中か。
+/// - `depth`: Project カード内の階層深度。
+/// - `isCollapsed`: 行配下の折りたたみ状態。
+/// - `onToggle`: 折りたたみ切替時に呼び出す処理。
 /// - `onSelect`: 行選択時に呼び出す処理。
 private struct ProjectDependencyRow: View {
     var item: ProjectDependencyItem
     var isSelected: Bool
+    var depth: Int = 0
+    var isCollapsed: Bool?
+    var onToggle: (() -> Void)?
     var onSelect: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 9) {
-                OpenGraphiteIconView(icon: item.icon, size: 14)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .frame(width: 18, height: 18)
+        HStack(spacing: 0) {
+            Spacer()
+                .frame(width: ProjectDependencyHierarchyMetrics.indent(for: depth))
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                    Text(item.detail)
-                        .font(.caption2)
+            if let isCollapsed, let onToggle {
+                Button(action: onToggle) {
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: ProjectDependencyHierarchyMetrics.disclosureWidth, height: 20)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(isCollapsed ? "Expand" : "Collapse")
+            } else {
+                Spacer()
+                    .frame(width: ProjectDependencyHierarchyMetrics.disclosureWidth)
+            }
+
+            Button(action: onSelect) {
+                HStack(spacing: 9) {
+                    OpenGraphiteIconView(icon: item.icon, size: 14)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 18, height: 18)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(item.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(item.detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Text(item.status)
+                        .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .frame(maxWidth: 96, alignment: .trailing)
                 }
-
-                Spacer(minLength: 0)
-
-                Text(item.status)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                    .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
         .help(item.detail)
     }
 }

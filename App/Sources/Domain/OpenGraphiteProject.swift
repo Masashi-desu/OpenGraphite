@@ -820,7 +820,7 @@ enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
     var detail: String {
         switch self {
         case .overview:
-            return "Dependencies"
+            return "All resources"
         case .htmlRoot:
             return "public root"
         case .cssLibrary:
