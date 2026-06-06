@@ -51,13 +51,15 @@ enum HTMLObjectEditOperation: Equatable {
     case moveNode(nodeInternalID: String, targetInternalID: String, position: OpenGraphiteHTMLInsertionPosition, baselineNodeHash: String?)
 
     /// 論理名（日本語）: WebView再読み込み要否
-    /// 処理概要: DOM 構造や内部 ID が変わりうる操作かどうかを返します。
+    /// 処理概要: WebView 側の DOM だけでは保存後の表示を継続できない操作かどうかを返します。
     var requiresWebViewReload: Bool {
         switch self {
         case .setCSSVariable, .setCSSVariables, .setAttribute, .setTextContent:
             return false
-        case .insertHTML, .replaceNodeHTML, .deleteNode, .moveNode:
+        case .insertHTML, .replaceNodeHTML, .deleteNode:
             return true
+        case .moveNode:
+            return false
         }
     }
 }

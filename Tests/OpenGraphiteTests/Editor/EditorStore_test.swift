@@ -373,9 +373,9 @@ struct EditorStoreTests {
         let thirdRange = try #require(diskHTML.range(of: "data-og-id=\"third\""))
         let secondRange = try #require(diskHTML.range(of: "data-og-id=\"second\""))
 
-        // 期待値：HTML の sibling order が first, third, second になり、WebView reload 対象の構造変更として扱われる（Then）
+        // 期待値：HTML の sibling order が first, third, second になり、WebView reload なしで継続できる移動として扱われる（Then）
         #expect(result.updated == true)
-        #expect(result.requiresReload == true)
+        #expect(result.requiresReload == false)
         #expect(firstRange.lowerBound < thirdRange.lowerBound)
         #expect(thirdRange.lowerBound < secondRange.lowerBound)
     }
