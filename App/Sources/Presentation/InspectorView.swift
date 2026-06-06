@@ -1226,7 +1226,7 @@ private struct CSSColorVariableField: View {
                         .frame(minWidth: 0, maxWidth: .infinity)
                 }
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: value)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

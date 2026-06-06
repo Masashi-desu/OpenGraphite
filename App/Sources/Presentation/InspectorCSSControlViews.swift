@@ -37,7 +37,7 @@ struct CSSBoxVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: boxValue.cssString)
+            CSSControlHeader(key: key)
 
             if boxValue.isSupported {
                 InspectorLinkedParameterGroup(isActive: isLinked) {
@@ -85,7 +85,7 @@ struct CSSBoxVariableField: View {
                     }
                 }
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: boxValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,14 +169,14 @@ struct CSSPairVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: pairValue.cssString)
+            CSSControlHeader(key: key)
             if pairValue.isSupported {
                 HStack(spacing: 6) {
                     CSSSmallTextField(label: firstLabel, text: $pairValue.first, onCommit: commitIfChanged)
                     CSSSmallTextField(label: secondLabel, text: $pairValue.second, onCommit: commitIfChanged)
                 }
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: pairValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,7 +230,7 @@ struct CSSNumericUnitVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: numericValue.cssString)
+            CSSControlHeader(key: key)
             if isEditable {
                 HStack(spacing: 6) {
                     TextField("", text: numberBinding)
@@ -254,7 +254,7 @@ struct CSSNumericUnitVariableField: View {
                     .frame(width: 82)
                 }
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: numericValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,10 +412,10 @@ struct CSSDimensionVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: dimensionValue.cssString)
+            CSSControlHeader(key: key)
 
             if dimensionValue.kind == .unsupported {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: dimensionValue.cssString)
             } else {
                 Picker("", selection: kindBinding) {
                     Text("unset").tag(CSSDimensionKind.empty)
@@ -460,7 +460,7 @@ struct CSSDimensionVariableField: View {
                         functionArgumentFields
                     }
                 case .unsupported:
-                    CSSUnsupportedValueNotice()
+                    CSSUnsupportedValueNotice(value: dimensionValue.cssString)
                 }
             }
         }
@@ -633,7 +633,7 @@ struct CSSBorderVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: borderValue.cssString)
+            CSSControlHeader(key: key)
 
             if borderValue.isSupported {
                 HStack(spacing: 6) {
@@ -655,7 +655,7 @@ struct CSSBorderVariableField: View {
                     onCommit: commitIfChanged
                 )
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: borderValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -719,10 +719,10 @@ struct CSSBackgroundVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: backgroundValue.cssString)
+            CSSControlHeader(key: key)
 
             if backgroundValue.kind == .unsupported {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: backgroundValue.cssString)
             } else {
                 Picker("", selection: kindBinding) {
                     Text("unset").tag(CSSBackgroundKind.empty)
@@ -774,7 +774,7 @@ struct CSSBackgroundVariableField: View {
                     .buttonStyle(.plain)
                     .help("Stop を追加")
                 case .unsupported:
-                    CSSUnsupportedValueNotice()
+                    CSSUnsupportedValueNotice(value: backgroundValue.cssString)
                 }
             }
         }
@@ -857,7 +857,7 @@ struct CSSShadowVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: shadowValue.cssString)
+            CSSControlHeader(key: key)
 
             if shadowValue.isSupported {
                 HStack(spacing: 6) {
@@ -879,7 +879,7 @@ struct CSSShadowVariableField: View {
                     .font(.caption2)
                     .toggleStyle(.checkbox)
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: shadowValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -940,7 +940,7 @@ struct CSSFlexVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key, valuePreview: flexValue.cssString)
+            CSSControlHeader(key: key)
             if flexValue.isSupported {
                 HStack(spacing: 6) {
                     CSSSmallTextField(label: "Grow", text: $flexValue.grow, onCommit: commitIfChanged)
@@ -948,7 +948,7 @@ struct CSSFlexVariableField: View {
                 }
                 CSSSmallTextField(label: "Basis", text: $flexValue.basis, onCommit: commitIfChanged)
             } else {
-                CSSUnsupportedValueNotice()
+                CSSUnsupportedValueNotice(value: flexValue.cssString)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1024,8 +1024,8 @@ struct CSSEnumVariableField: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                CSSControlHeader(key: key, valuePreview: value)
-                CSSUnsupportedValueNotice()
+                CSSControlHeader(key: key)
+                CSSUnsupportedValueNotice(value: value)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1048,31 +1048,20 @@ struct CSSEnumVariableField: View {
 }
 
 /// 論理名（日本語）: CSSコントロールヘッダー
-/// 概要: CSS 変数名と現在の serialize preview を表示します。
+/// 概要: CSS 変数名を表示します。
 ///
 /// プロパティ:
 /// - `key`: CSS 変数名。
-/// - `valuePreview`: serialize preview。
 private struct CSSControlHeader: View {
     var key: String
-    var valuePreview: String
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(key)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Spacer()
-            Text(valuePreview.isEmpty ? "unset" : valuePreview)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: 130, alignment: .trailing)
-        }
-        .frame(maxWidth: .infinity)
+        Text(key)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -1287,19 +1276,43 @@ private struct CSSSmallTextField: View {
 
 /// 論理名（日本語）: CSS編集対象外値表示
 /// 概要: Inspector 通常 UI の編集対象外 CSS 値であることを読み取り専用で示します。
+///
+/// プロパティ:
+/// - `value`: 編集対象外として保持している元の CSS 値。
 struct CSSUnsupportedValueNotice: View {
+    var value: String = ""
+
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "lock")
                 .font(.caption2.weight(.semibold))
             Text("External CSS")
                 .font(.caption2.weight(.semibold))
+
+            if !normalizedValue.isEmpty {
+                Text(normalizedValue)
+                    .font(.caption2.monospaced())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            }
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-        .help("Inspector の編集対象外です")
+        .help(helpText)
+    }
+
+    private var normalizedValue: String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var helpText: String {
+        guard !normalizedValue.isEmpty else {
+            return "Inspector の編集対象外です"
+        }
+        return "Inspector の編集対象外です: \(normalizedValue)"
     }
 }
 
