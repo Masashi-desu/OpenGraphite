@@ -151,6 +151,26 @@ final class WebScrollStateRegistry {
 private final class OpenGraphiteCommandWebView: WKWebView {
     var copyCommandHandler: (() -> Bool)?
 
+    /// 論理名（日本語）: WebView不透明判定
+    /// 概要: WebKit の未描画期間に親キャンバス背景を透過表示するため、常に非不透明 view として扱います。
+    override var isOpaque: Bool {
+        false
+    }
+
+    /// 論理名（日本語）: レイアウト更新関数
+    /// 処理概要: WebKit が内部 scroll view を再構成した場合でも、読み込み中背景の透明化を維持します。
+    override func layout() {
+        super.layout()
+        applyTransparentPreviewBackground()
+    }
+
+    /// 論理名（日本語）: ウィンドウ所属更新関数
+    /// 処理概要: WebView が window 階層へ入ったタイミングで、読み込み前の背景を親キャンバスへ透過させます。
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyTransparentPreviewBackground()
+    }
+
     /// 論理名（日本語）: キー相当処理関数
     /// 処理概要: `⌘C` を OpenGraphite 専用コピーへ流し、対象がない場合は標準 WebView 処理へ戻します。
     ///
@@ -169,6 +189,47 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     /// - Parameter sender: action 送信元。
     @objc func copy(_ sender: Any?) {
         _ = copyCommandHandler?()
+    }
+
+    /// 論理名（日本語）: プレビュー背景透明化関数
+    /// 処理概要: WKWebView と WebKit 内部の scroll / clip view 背景を透明にし、navigation 中の白背景露出を防ぎます。
+    func applyTransparentPreviewBackground() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+        underPageBackgroundColor = .clear
+        makeScrollContainersTransparent(in: self)
+    }
+
+    /// 論理名（日本語）: プレビュー内容非表示関数
+    /// 処理概要: CSS 未適用の provisional document が白く描画される期間、WebKit content を親キャンバスへ透過させます。
+    func hidePreviewContentUntilStyled() {
+        alphaValue = 0
+    }
+
+    /// 論理名（日本語）: プレビュー内容表示関数
+    /// 処理概要: OpenGraphite CSS 適用後の document だけをユーザーへ表示します。
+    func revealStyledPreviewContent() {
+        alphaValue = 1
+    }
+
+    /// 論理名（日本語）: スクロールコンテナ透明化関数
+    /// 処理概要: macOS 版 WKWebView の非公開 view 階層を型だけでたどり、公開 AppKit API で背景描画を無効化します。
+    ///
+    /// - Parameter root: 透明化対象の探索を開始する view。
+    private func makeScrollContainersTransparent(in root: NSView) {
+        if let scrollView = root as? NSScrollView {
+            scrollView.drawsBackground = false
+            scrollView.backgroundColor = .clear
+        }
+
+        if let clipView = root as? NSClipView {
+            clipView.drawsBackground = false
+            clipView.backgroundColor = .clear
+        }
+
+        root.subviews.forEach { subview in
+            makeScrollContainersTransparent(in: subview)
+        }
     }
 
     /// 論理名（日本語）: コピーショートカット判定関数
@@ -233,6 +294,8 @@ struct WebCanvasView: NSViewRepresentable {
         configuration.userContentController = userContentController
 
         let webView = OpenGraphiteCommandWebView(frame: .zero, configuration: configuration)
+        webView.applyTransparentPreviewBackground()
+        webView.hidePreviewContentUntilStyled()
         webView.copyCommandHandler = { [weak coordinator = context.coordinator] in
             coordinator?.copySelectionForCommand() ?? false
         }
@@ -263,6 +326,7 @@ struct WebCanvasView: NSViewRepresentable {
                 context.coordinator.loadedURL = targetPageURL
                 context.coordinator.lastReloadToken = reloadToken
                 context.coordinator.lastSelectedNodeID = nil
+                context.coordinator.hidePreviewUntilStyled()
                 if loadedURLChanged || webView.url == nil {
                     let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
                     webView.loadFileURL(targetPageURL, allowingReadAccessTo: readAccessURL)
@@ -357,6 +421,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
+        private var previewReadinessGeneration = 0
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
         private static let nodeReferencePasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.node-reference+json")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
@@ -370,6 +435,13 @@ struct WebCanvasView: NSViewRepresentable {
         init(store: EditorStore, isInteractive: Bool) {
             self.store = store
             self.isInteractive = isInteractive
+        }
+
+        /// 論理名（日本語）: 暫定プレビュー非表示関数
+        /// 処理概要: navigation または document 全体置換の開始時に WebKit content を隠し、古い readiness 判定を無効化します。
+        func hidePreviewUntilStyled() {
+            previewReadinessGeneration += 1
+            (webView as? OpenGraphiteCommandWebView)?.hidePreviewContentUntilStyled()
         }
 
         /// 論理名（日本語）: Script Message受信関数
@@ -453,6 +525,7 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - navigation: 完了した navigation。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             renderLocalComponentReferences(in: webView)
+            revealPreviewWhenDocumentIsStyled(in: webView)
             collectStaticFlowLinks()
             guard isInteractive else { return }
             ensureInternalIDsAndCollectNodes()
@@ -504,6 +577,7 @@ struct WebCanvasView: NSViewRepresentable {
 
                 webView.evaluateJavaScript(renderScript) { [weak self] result, _ in
                     guard let self, (result as? Bool) == true else { return }
+                    self.revealPreviewWhenDocumentIsStyled(in: webView)
                     self.collectStaticFlowLinks()
                     if self.isInteractive {
                         self.ensureInternalIDsAndCollectNodes()
@@ -564,6 +638,26 @@ struct WebCanvasView: NSViewRepresentable {
             webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectStaticFlowLinks();")
         }
 
+        /// 論理名（日本語）: WebView暫定読み込み開始関数
+        /// 処理概要: WebKit が provisional document を描画する前に content を隠し、白背景の露出を抑止します。
+        ///
+        /// - Parameters:
+        ///   - webView: 読み込み開始対象の WebView。
+        ///   - navigation: 開始した provisional navigation。
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            hidePreviewUntilStyled()
+        }
+
+        /// 論理名（日本語）: WebViewコミット開始関数
+        /// 処理概要: レスポンスが main frame に反映される境界でも content を隠した状態を維持します。
+        ///
+        /// - Parameters:
+        ///   - webView: 読み込み中の WebView。
+        ///   - navigation: コミットされた navigation。
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            (webView as? OpenGraphiteCommandWebView)?.hidePreviewContentUntilStyled()
+        }
+
         /// 論理名（日本語）: WebView読み込み失敗関数
         /// 処理概要: 確定後 navigation の失敗をエディターのエラー表示へ転送します。
         ///
@@ -587,6 +681,40 @@ struct WebCanvasView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             Task { @MainActor in
                 store.reportWebError("HTMLの読み込みに失敗しました: \(error.localizedDescription)")
+            }
+        }
+
+        /// 論理名（日本語）: スタイル適用後プレビュー表示関数
+        /// 処理概要: OpenGraphite CSS が page root へ適用されたことを確認してから WebKit content を表示します。
+        ///
+        /// - Parameters:
+        ///   - webView: 表示判定対象の WebView。
+        ///   - generation: 判定開始時点の readiness 世代。省略時は現在世代を使います。
+        ///   - attempt: 再試行回数。
+        private func revealPreviewWhenDocumentIsStyled(
+            in webView: WKWebView,
+            generation: Int? = nil,
+            attempt: Int = 0
+        ) {
+            let generation = generation ?? previewReadinessGeneration
+            webView.evaluateJavaScript(Self.previewReadinessScript) { [weak self, weak webView] result, _ in
+                guard let self, let webView else { return }
+                let isReady = (result as? Bool) == true
+                DispatchQueue.main.async {
+                    guard self.previewReadinessGeneration == generation else { return }
+                    if isReady {
+                        (webView as? OpenGraphiteCommandWebView)?.revealStyledPreviewContent()
+                    } else if attempt < Self.previewReadinessMaximumAttempts {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.previewReadinessRetryInterval) { [weak self, weak webView] in
+                            guard let self, let webView else { return }
+                            self.revealPreviewWhenDocumentIsStyled(
+                                in: webView,
+                                generation: generation,
+                                attempt: attempt + 1
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -685,6 +813,7 @@ struct WebCanvasView: NSViewRepresentable {
         func applyDocumentReplacement(_ request: DocumentReplacementRequest) {
             guard let webView else { return }
             lastAppliedDocumentReplacementSequence = request.sequence
+            hidePreviewUntilStyled()
 
             let script = """
             window.OpenGraphite && window.OpenGraphite.replaceDocumentHTML(
@@ -704,6 +833,7 @@ struct WebCanvasView: NSViewRepresentable {
                         self.reloadCurrentPageFromDisk()
                     } else if let webView {
                         self.renderLocalComponentReferences(in: webView)
+                        self.revealPreviewWhenDocumentIsStyled(in: webView)
                     }
 
                     self.store.markDocumentReplacementApplied(sequence: request.sequence)
@@ -776,6 +906,7 @@ struct WebCanvasView: NSViewRepresentable {
         private func reloadCurrentPageFromDisk() {
             guard let webView, let loadedURL else { return }
             let readAccessURL = store.projectRootURL ?? loadedURL.deletingLastPathComponent()
+            hidePreviewUntilStyled()
             webView.loadFileURL(loadedURL, allowingReadAccessTo: readAccessURL)
         }
 
@@ -788,6 +919,30 @@ struct WebCanvasView: NSViewRepresentable {
             let data = (try? JSONEncoder().encode(string)) ?? Data("\"\"".utf8)
             return String(data: data, encoding: .utf8) ?? "\"\""
         }
+
+        private static let previewReadinessMaximumAttempts = 120
+        private static let previewReadinessRetryInterval: TimeInterval = 1.0 / 60.0
+        private static let previewReadinessScript = """
+        (function() {
+          const page = document.querySelector('[data-og-role="page-preview"], [data-og-type="page"]');
+          if (!document.body || !page) { return false; }
+          const bodyStyle = window.getComputedStyle(document.body);
+          const pageStyle = window.getComputedStyle(page);
+          const rect = page.getBoundingClientRect();
+          const viewportWidth = document.documentElement.clientWidth || window.innerWidth || 0;
+          const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
+          const hasResetBodyMargin =
+            bodyStyle.marginTop === '0px' &&
+            bodyStyle.marginRight === '0px' &&
+            bodyStyle.marginBottom === '0px' &&
+            bodyStyle.marginLeft === '0px';
+          const hasStyledPageDisplay = pageStyle.display !== 'inline';
+          const fillsViewport =
+            rect.width >= Math.max(1, viewportWidth - 1) &&
+            rect.height >= Math.max(1, viewportHeight - 1);
+          return hasResetBodyMargin && hasStyledPageDisplay && fillsViewport;
+        })();
+        """
 
         @MainActor
         /// 論理名（日本語）: スクロール状態更新関数

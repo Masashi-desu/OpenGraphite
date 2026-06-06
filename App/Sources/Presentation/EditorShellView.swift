@@ -690,7 +690,7 @@ private struct CanvasDocumentView: View {
 
         ZStack(alignment: .topLeading) {
             Rectangle()
-                .fill(Color(nsColor: .windowBackgroundColor))
+                .fill(Color(nsColor: .textBackgroundColor))
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
                 .frame(width: width, height: height)
 
