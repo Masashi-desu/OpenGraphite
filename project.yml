@@ -51,6 +51,8 @@ targets:
     dependencies:
       - sdk: WebKit.framework
       - package: LucideIcons
+    configFiles:
+      Debug: Configs/OpenGraphiteDebug.xcconfig
     settings:
       base:
         PRODUCT_NAME: OpenGraphite

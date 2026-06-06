@@ -23,6 +23,8 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   build
 
+"$ROOT_DIR/Scripts/sign_local_app.sh" "$APP_BUNDLE"
+
 open_app() {
   /usr/bin/open -n \
     --env "OPENGRAPHITE_SAMPLE_PROJECT_PATH=$SAMPLE_PROJECT_PATH" \

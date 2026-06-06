@@ -9,6 +9,7 @@ dist/
 
 ## User settings
 xcuserdata/
+Configs/OpenGraphite.local.xcconfig
 
 ## Obj-C/Swift specific
 *.hmap
