@@ -157,6 +157,8 @@ extension OpenGraphiteIcon {
     static let pageDocument = OpenGraphiteIcon.lucide("file-code", fallbackSystemName: "doc.text")
     static let componentDocument = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
     static let componentInstance = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
+    static let parameterLink = OpenGraphiteIcon.lucide("link", fallbackSystemName: "link")
+    static let parameterUnlink = OpenGraphiteIcon.lucide("unlink", fallbackSystemName: "link.slash")
     static let alignHorizontalStart = OpenGraphiteIcon.lucide("align-horizontal-justify-start", fallbackSystemName: "align.horizontal.left")
     static let alignHorizontalCenter = OpenGraphiteIcon.lucide("align-horizontal-justify-center", fallbackSystemName: "align.horizontal.center")
     static let alignHorizontalEnd = OpenGraphiteIcon.lucide("align-horizontal-justify-end", fallbackSystemName: "align.horizontal.right")

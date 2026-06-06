@@ -53,6 +53,23 @@ struct OpenGraphiteIconTests {
         #expect(icon.fallbackSystemName == "shippingbox")
     }
 
+    /// 論理名（日本語）: パラメータ連動アイコン割り当てテスト
+    /// 概要: Inspector の連動切替がリンク/解除のアイコンで表現されることを検証します。
+    @Test("連動切替アイコンをリンクと解除にする")
+    func testParameterLinkIconsUseLinkMetaphor() {
+        // コンディション：連動切替用のアイコン記述子を取得する（Given）
+        let linkIcon = OpenGraphiteIcon.parameterLink
+        let unlinkIcon = OpenGraphiteIcon.parameterUnlink
+
+        // 検証内容：Lucide ID と fallback を確認する（When）
+        let iconNames = [linkIcon.name, unlinkIcon.name]
+        let fallbackNames = [linkIcon.fallbackSystemName, unlinkIcon.fallbackSystemName]
+
+        // 期待値：リンク状態と解除状態がそれぞれ明示的なアイコンを持つ（Then）
+        #expect(iconNames == ["link", "unlink"])
+        #expect(fallbackNames == ["link", "link.slash"])
+    }
+
     /// 論理名（日本語）: 左カラムアイコン割り当てテスト
     /// 概要: Layers と HTML カードのアイコンが OpenGraphite の source-of-truth 思想に沿うことを検証します。
     @Test("左カラムのアイコンを実装とデザインの工程に沿わせる")

@@ -421,6 +421,17 @@ private struct PageCanvasInput: Equatable {
     }
 }
 
+/// 論理名（日本語）: ページキャンバス寸法軸
+/// 概要: アスペクト比ロック時に編集された寸法の軸を表します。
+///
+/// 定義内容:
+/// - `width`: 幅を編集した状態。
+/// - `height`: 高さを編集した状態。
+private enum PageCanvasDimension {
+    case width
+    case height
+}
+
 /// 論理名（日本語）: ページインスペクタービュー
 /// 概要: 選択ページの HTML 相対パス、解像度、キャンバス配置を表示・編集します。
 ///
@@ -436,6 +447,8 @@ private struct PageInspectorView: View {
     @State private var yDraft: String
     @State private var widthDraft: String
     @State private var heightDraft: String
+    @State private var isAspectRatioLocked: Bool
+    @State private var lockedAspectRatio: PageCanvasAspectRatio?
 
     /// 論理名（日本語）: ページインスペクター初期化関数
     /// 処理概要: 選択ページの現在キャンバス値を入力欄の初期値として保持します。
@@ -451,6 +464,8 @@ private struct PageInspectorView: View {
         _yDraft = State(initialValue: Self.draftText(for: page.canvas.y))
         _widthDraft = State(initialValue: Self.draftText(for: page.canvas.width))
         _heightDraft = State(initialValue: Self.draftText(for: page.canvas.height))
+        _isAspectRatioLocked = State(initialValue: false)
+        _lockedAspectRatio = State(initialValue: PageCanvasAspectRatio(width: page.canvas.width, height: page.canvas.height))
     }
 
     var body: some View {
@@ -486,20 +501,35 @@ private struct PageInspectorView: View {
                             isInvalid: isInvalidDraft(yDraft),
                             onSubmit: commitIfValid
                         )
+                    }
 
-                        RequiredCanvasNumberField(
-                            label: "Width",
-                            text: $widthDraft,
-                            isInvalid: isInvalidDraft(widthDraft, requiresPositive: true),
-                            onSubmit: commitIfValid
-                        )
+                    InspectorLinkedParameterGroup(isActive: isAspectRatioLocked) {
+                        HStack(alignment: .bottom, spacing: 8) {
+                            RequiredCanvasNumberField(
+                                label: "W",
+                                text: widthBinding,
+                                isInvalid: isInvalidDraft(widthDraft, requiresPositive: true),
+                                showsRelationship: isAspectRatioLocked,
+                                onSubmit: commitIfValid
+                            )
 
-                        RequiredCanvasNumberField(
-                            label: "Height",
-                            text: $heightDraft,
-                            isInvalid: isInvalidDraft(heightDraft, requiresPositive: true),
-                            onSubmit: commitIfValid
-                        )
+                            InspectorLinkedParameterButton(
+                                isOn: isAspectRatioLocked,
+                                label: "Canvas のアスペクト比ロック",
+                                activeHelp: "アスペクト比ロックを解除",
+                                inactiveHelp: "アスペクト比をロック",
+                                action: toggleAspectRatioLock
+                            )
+                            .padding(.bottom, 1)
+
+                            RequiredCanvasNumberField(
+                                label: "H",
+                                text: heightBinding,
+                                isInvalid: isInvalidDraft(heightDraft, requiresPositive: true),
+                                showsRelationship: isAspectRatioLocked,
+                                onSubmit: commitIfValid
+                            )
+                        }
                     }
 
                     if let validationMessage {
@@ -535,6 +565,24 @@ private struct PageInspectorView: View {
         .onChange(of: page.canvas) { _, nextCanvas in
             resetDrafts(with: nextCanvas)
         }
+    }
+
+    private var widthBinding: Binding<String> {
+        Binding(
+            get: { widthDraft },
+            set: { newValue in
+                applyDimensionDraft(newValue, editedDimension: .width)
+            }
+        )
+    }
+
+    private var heightBinding: Binding<String> {
+        Binding(
+            get: { heightDraft },
+            set: { newValue in
+                applyDimensionDraft(newValue, editedDimension: .height)
+            }
+        )
     }
 
     private var normalizedDrafts: [String] {
@@ -589,6 +637,58 @@ private struct PageInspectorView: View {
         return parsedInput != PageCanvasInput(canvas: page.canvas)
     }
 
+    private var currentDraftAspectRatio: PageCanvasAspectRatio? {
+        let widthValue = widthDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heightValue = heightDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let width = Double(widthValue),
+              let height = Double(heightValue)
+        else {
+            return nil
+        }
+        return PageCanvasAspectRatio(width: width, height: height)
+    }
+
+    /// 論理名（日本語）: ページキャンバス寸法入力反映関数
+    /// 処理概要: W/H の一方が編集されたとき、アスペクト比ロック中なら他方を同じ比率で更新します。
+    ///
+    /// - Parameters:
+    ///   - newValue: 編集された入力文字列。
+    ///   - editedDimension: 編集元の寸法軸。
+    private func applyDimensionDraft(_ newValue: String, editedDimension: PageCanvasDimension) {
+        switch editedDimension {
+        case .width:
+            widthDraft = newValue
+        case .height:
+            heightDraft = newValue
+        }
+
+        guard isAspectRatioLocked,
+              let ratio = lockedAspectRatio ?? currentDraftAspectRatio,
+              let editedValue = Double(newValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              editedValue.isFinite,
+              editedValue > 0
+        else {
+            return
+        }
+
+        switch editedDimension {
+        case .width:
+            guard let height = ratio.height(forWidth: editedValue) else { return }
+            heightDraft = Self.draftText(for: height)
+        case .height:
+            guard let width = ratio.width(forHeight: editedValue) else { return }
+            widthDraft = Self.draftText(for: width)
+        }
+    }
+
+    /// 論理名（日本語）: ページキャンバスアスペクト比ロック切替関数
+    /// 処理概要: W/H の連動状態を切り替え、有効化時は現在の入力値から固定比率を取得します。
+    private func toggleAspectRatioLock() {
+        isAspectRatioLocked.toggle()
+        guard isAspectRatioLocked else { return }
+        lockedAspectRatio = currentDraftAspectRatio ?? PageCanvasAspectRatio(width: page.canvas.width, height: page.canvas.height)
+    }
+
     /// 論理名（日本語）: ページキャンバス入力確定関数
     /// 処理概要: 必須入力と数値条件を満たす場合だけキャンバス配置を適用します。
     private func commitIfValid() {
@@ -606,6 +706,9 @@ private struct PageInspectorView: View {
         yDraft = Self.draftText(for: canvas.y)
         widthDraft = Self.draftText(for: canvas.width)
         heightDraft = Self.draftText(for: canvas.height)
+        if isAspectRatioLocked {
+            lockedAspectRatio = PageCanvasAspectRatio(width: canvas.width, height: canvas.height)
+        }
     }
 
     /// 論理名（日本語）: ページキャンバスdraft検証関数
@@ -725,11 +828,13 @@ private struct OptionalCanvasNameField: View {
 /// - `label`: 入力欄ラベル。
 /// - `text`: 入力文字列 binding。
 /// - `isInvalid`: 入力欄を invalid 表示にするか。
+/// - `showsRelationship`: 他入力欄と連動していることを示す枠線を表示するか。
 /// - `onSubmit`: Enter 確定時に実行する処理。
 private struct RequiredCanvasNumberField: View {
     var label: String
     @Binding var text: String
     var isInvalid: Bool
+    var showsRelationship: Bool = false
     var onSubmit: () -> Void
 
     var body: some View {
@@ -755,12 +860,22 @@ private struct RequiredCanvasNumberField: View {
                 .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
                 .overlay(
                     RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                        .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
+                        .stroke(fieldStrokeColor, lineWidth: 1)
                 )
                 .onSubmit(onSubmit)
                 .frame(minWidth: 0, maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var fieldStrokeColor: Color {
+        if isInvalid {
+            return Color.red.opacity(0.65)
+        }
+        if showsRelationship {
+            return Color.accentColor.opacity(0.54)
+        }
+        return Color.clear
     }
 }
 

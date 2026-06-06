@@ -40,19 +40,50 @@ struct CSSBoxVariableField: View {
             CSSControlHeader(key: key, valuePreview: boxValue.cssString)
 
             if boxValue.isSupported {
-                HStack(spacing: 6) {
-                    CSSSmallTextField(label: labels[safe: 0] ?? "T", text: binding(\.top), onCommit: commitIfChanged)
-                    CSSSmallTextField(label: labels[safe: 1] ?? "R", text: binding(\.right), onCommit: commitIfChanged)
-                }
+                InspectorLinkedParameterGroup(isActive: isLinked) {
+                    HStack(alignment: .center, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                CSSSmallTextField(
+                                    label: labels[safe: 0] ?? "T",
+                                    text: binding(\.top),
+                                    showsRelationship: isLinked,
+                                    onCommit: commitIfChanged
+                                )
+                                CSSSmallTextField(
+                                    label: labels[safe: 1] ?? "R",
+                                    text: binding(\.right),
+                                    showsRelationship: isLinked,
+                                    onCommit: commitIfChanged
+                                )
+                            }
 
-                HStack(spacing: 6) {
-                    CSSSmallTextField(label: labels[safe: 2] ?? "B", text: binding(\.bottom), onCommit: commitIfChanged)
-                    CSSSmallTextField(label: labels[safe: 3] ?? "L", text: binding(\.left), onCommit: commitIfChanged)
-                }
+                            HStack(spacing: 6) {
+                                CSSSmallTextField(
+                                    label: labels[safe: 2] ?? "B",
+                                    text: binding(\.bottom),
+                                    showsRelationship: isLinked,
+                                    onCommit: commitIfChanged
+                                )
+                                CSSSmallTextField(
+                                    label: labels[safe: 3] ?? "L",
+                                    text: binding(\.left),
+                                    showsRelationship: isLinked,
+                                    onCommit: commitIfChanged
+                                )
+                            }
+                        }
 
-                Toggle("連動", isOn: $isLinked)
-                    .font(.caption2)
-                    .toggleStyle(.checkbox)
+                        InspectorLinkedParameterButton(
+                            isOn: isLinked,
+                            label: "\(key) の四辺連動",
+                            activeHelp: "四辺の連動を解除",
+                            inactiveHelp: "四辺を同じ値で連動",
+                            action: toggleLinkedValues
+                        )
+                        .padding(.top, 15)
+                    }
+                }
             } else {
                 CSSUnsupportedValueNotice()
             }
@@ -77,6 +108,17 @@ struct CSSBoxVariableField: View {
                 }
             }
         )
+    }
+
+    /// 論理名（日本語）: CSS四辺連動切替関数
+    /// 処理概要: 四辺値の連動状態を切り替え、有効化時は代表値で四辺をそろえます。
+    private func toggleLinkedValues() {
+        isLinked.toggle()
+        guard isLinked else { return }
+        let linkedValue = [boxValue.top, boxValue.right, boxValue.bottom, boxValue.left]
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+        boxValue = CSSBoxValue(top: linkedValue, right: linkedValue, bottom: linkedValue, left: linkedValue)
+        commitIfChanged()
     }
 
     /// 論理名（日本語）: CSS四辺値変更時適用関数
@@ -1042,12 +1084,14 @@ private struct CSSControlHeader: View {
 /// - `text`: 入力値 binding。
 /// - `unit`: 値と単位を別 state で持つ場合の単位 binding。
 /// - `unitOptions`: TextField の外側 Picker に出す単位候補。
+/// - `showsRelationship`: 他入力欄と連動していることを示す枠線を表示するか。
 /// - `onCommit`: Enter またはフォーカスアウト時の確定処理。
 private struct CSSSmallTextField: View {
     var label: String
     @Binding var text: String
     var unit: Binding<String>?
     var unitOptions: [String]
+    var showsRelationship: Bool
     var onCommit: () -> Void = {}
 
     @FocusState private var isFocused: Bool
@@ -1060,18 +1104,21 @@ private struct CSSSmallTextField: View {
     ///   - text: 入力値 binding。
     ///   - unit: 値と単位を別 state で持つ場合の単位 binding。
     ///   - unitOptions: TextField 外側の単位候補。
+    ///   - showsRelationship: 他入力欄と連動していることを示す枠線を表示するか。
     ///   - onCommit: 確定時の処理。
     init(
         label: String,
         text: Binding<String>,
         unit: Binding<String>? = nil,
         unitOptions: [String] = ["px", "%", "rem", "em", "vw", "vh"],
+        showsRelationship: Bool = false,
         onCommit: @escaping () -> Void = {}
     ) {
         self.label = label
         _text = text
         self.unit = unit
         self.unitOptions = unitOptions
+        self.showsRelationship = showsRelationship
         self.onCommit = onCommit
     }
 
@@ -1089,6 +1136,10 @@ private struct CSSSmallTextField: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .stroke(showsRelationship ? Color.accentColor.opacity(0.54) : Color.clear, lineWidth: 1)
+                    )
                     .focused($isFocused)
                     .onSubmit(commitText)
                     .frame(minWidth: 0, maxWidth: .infinity)
