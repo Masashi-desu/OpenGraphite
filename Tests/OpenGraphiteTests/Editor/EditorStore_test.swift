@@ -336,6 +336,50 @@ struct EditorStoreTests {
         #expect(!downloadsHTML.contains("home edited"))
     }
 
+    /// 論理名（日本語）: オートレイアウト順序保存テスト
+    /// 概要: drag reorder 相当の `moveNode` payload で同じ auto layout 内の sibling order が HTML に保存されることを検証します。
+    @Test("moveNode payloadでauto layout内の順序を保存する")
+    func testObjectEditMoveNodePayloadPersistsAutoLayoutOrder() throws {
+        // コンディション：縦方向 auto layout に 3 つの sibling node を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Stack data-og-id="stack" data-og-internal-id="stack-node" data-og-type="frame" data-og-layout="vertical">
+            <First data-og-id="first" data-og-internal-id="first-node" data-og-type="frame">First</First>
+            <Second data-og-id="second" data-og-internal-id="second-node" data-og-type="frame">Second</Second>
+            <Third data-og-id="third" data-og-internal-id="third-node" data-og-type="frame">Third</Third>
+          </Stack>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try #require(store.loadedProject?.project.allPages.first)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+
+        // 検証内容：drag drop 後の bridge と同じ形式で second を third の後ろへ移動する（When）
+        let result = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "moveNode",
+                "nodeInternalID": "second-node",
+                "targetInternalID": "third-node",
+                "position": "after"
+            ],
+            target: target
+        )
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let firstRange = try #require(diskHTML.range(of: "data-og-id=\"first\""))
+        let thirdRange = try #require(diskHTML.range(of: "data-og-id=\"third\""))
+        let secondRange = try #require(diskHTML.range(of: "data-og-id=\"second\""))
+
+        // 期待値：HTML の sibling order が first, third, second になり、WebView reload 対象の構造変更として扱われる（Then）
+        #expect(result.updated == true)
+        #expect(result.requiresReload == true)
+        #expect(firstRange.lowerBound < thirdRange.lowerBound)
+        #expect(thirdRange.lowerBound < secondRange.lowerBound)
+    }
+
     /// 論理名（日本語）: 同時編集競合拒否テスト
     /// 概要: agent 相当の同一 node 更新が先に入った場合、Inspector 保存で上書きしないことを検証します。
     @Test("同一nodeが外部更新済みならobject editで上書きしない")

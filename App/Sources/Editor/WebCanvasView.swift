@@ -1216,6 +1216,7 @@ struct WebCanvasView: NSViewRepresentable {
         var activeTool = 'select';
         var pendingDrag = null;
         var activeDrag = null;
+        var reorderAnimationToken = 0;
         var editingTextElement = null;
         var editingOriginalText = '';
         var suppressNextClick = false;
@@ -1228,7 +1229,11 @@ struct WebCanvasView: NSViewRepresentable {
             'html,body{scroll-padding:24px;}',
             '[data-og-selected="true"]{scroll-margin:24px;}',
             '[data-og-selected="true"][data-og-component],',
-            '[data-og-selected="true"][data-og-component-kind="master"]{outline-color:#8b5cf6!important;}'
+            '[data-og-selected="true"][data-og-component-kind="master"]{outline-color:#8b5cf6!important;}',
+            '[data-og-dragging="true"]{cursor:grabbing!important;filter:drop-shadow(0 14px 24px rgba(0,0,0,.28));position:relative;z-index:2147483647;}',
+            '[data-og-reorder-dragging="true"]{pointer-events:none;transform:translate3d(var(--og-drag-x,0),var(--og-drag-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:none!important;will-change:transform;}',
+            '[data-og-reorder-animating="true"]{transform:translate3d(var(--og-reorder-x,0),var(--og-reorder-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:transform 160ms cubic-bezier(.2,0,.2,1)!important;will-change:transform;}',
+            '[data-og-reorder-preparing="true"]{transition:none!important;}'
           ].join('');
           (document.head || document.documentElement).appendChild(style);
         }
@@ -1410,12 +1415,15 @@ struct WebCanvasView: NSViewRepresentable {
           if (editingTextElement) {
             finishTextEditing(false);
           }
+          if (activeDrag) {
+            finishActiveDrag(true);
+          }
           activeTool = tool || 'select';
           pendingDrag = null;
         }
 
         function elementID(element) {
-          return element ? element.getAttribute('data-og-id') || '' : '';
+          return element ? element.getAttribute('data-og-id') || element.getAttribute('data-og-host-id') || '' : '';
         }
 
         function editableElementFromTarget(target) {
@@ -1475,7 +1483,7 @@ struct WebCanvasView: NSViewRepresentable {
         function canDragElement(element) {
           if (!element) { return false; }
           const type = element.getAttribute('data-og-type') || '';
-          return type !== 'page' && !hasLockedAncestor(element);
+          return type !== 'page' && !isRuntimeGeneratedNode(element) && !hasLockedAncestor(element);
         }
 
         function isTextElement(element) {
@@ -1486,6 +1494,10 @@ struct WebCanvasView: NSViewRepresentable {
           const selected = elementInChain(chain, currentSelectedID);
           if (canDragElement(selected)) {
             return selected;
+          }
+          const reorderCandidate = reorderCandidateForChain(chain);
+          if (reorderCandidate) {
+            return reorderCandidate;
           }
           return chain.find(canDragElement) || null;
         }
@@ -2077,6 +2089,199 @@ struct WebCanvasView: NSViewRepresentable {
           return normalized + 'px';
         }
 
+        function autoLayoutMode(parent) {
+          const layout = parent ? parent.getAttribute('data-og-layout') || '' : '';
+          return layout === 'vertical' || layout === 'horizontal' ? layout : '';
+        }
+
+        function canReorderElement(element) {
+          const parent = element ? element.parentElement : null;
+          return canDragElement(element) &&
+            !!autoLayoutMode(parent) &&
+            editableElementChildren(parent).length > 1;
+        }
+
+        function runtimeHostForGeneratedElement(element) {
+          const generated = element && element.closest ?
+            element.closest('[data-og-generated="true"][data-og-source-instance]') :
+            null;
+          if (!generated) { return null; }
+
+          const host = generated.closest('og-instance[data-og-expanded]');
+          if (!host) { return null; }
+
+          const sourceInstanceID = generated.getAttribute('data-og-source-instance') || '';
+          const hostID = elementID(host);
+          return !sourceInstanceID || sourceInstanceID === hostID ? host : null;
+        }
+
+        function visualElementForDragElement(element) {
+          if (!element) { return null; }
+          if (element.matches && element.matches('og-instance[data-og-expanded]')) {
+            return Array.from(element.children).find((child) => {
+              return child.getAttribute('data-og-generated') === 'true';
+            }) || element;
+          }
+          return element;
+        }
+
+        function reorderElementForChainElement(element) {
+          if (canReorderElement(element)) { return element; }
+          const runtimeHost = runtimeHostForGeneratedElement(element);
+          return canReorderElement(runtimeHost) ? runtimeHost : null;
+        }
+
+        function reorderCandidateForChain(chain) {
+          for (const candidate of chain.slice().reverse()) {
+            const reorderElement = reorderElementForChainElement(candidate);
+            if (reorderElement) { return reorderElement; }
+          }
+          return null;
+        }
+
+        function reorderAxisForLayout(layout) {
+          return layout === 'horizontal' ? 'x' : 'y';
+        }
+
+        function reorderAxisValue(axis, rect) {
+          return axis === 'x' ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
+        }
+
+        function reorderPositionAlreadyApplied(drag, target, position) {
+          const siblings = editableElementChildren(drag.parent);
+          const sourceIndex = siblings.indexOf(drag.element);
+          const targetIndex = siblings.indexOf(target);
+          if (sourceIndex < 0 || targetIndex < 0) { return true; }
+          if (position === 'before') {
+            return sourceIndex === targetIndex - 1;
+          }
+          return sourceIndex === targetIndex + 1;
+        }
+
+        function cleanupReorderAnimationStyles(element) {
+          if (!element) { return; }
+          element.removeAttribute('data-og-reorder-animating');
+          element.removeAttribute('data-og-reorder-preparing');
+          element.removeAttribute('data-og-reorder-animation');
+          element.style.removeProperty('--og-reorder-x');
+          element.style.removeProperty('--og-reorder-y');
+        }
+
+        function animateReorderSiblings(parent, draggedElement, mutate) {
+          const siblings = editableElementChildren(parent).filter((child) => child !== draggedElement);
+          const previousRects = new Map();
+          siblings.forEach((child) => {
+            const visualChild = visualElementForDragElement(child);
+            previousRects.set(child, visualChild.getBoundingClientRect());
+          });
+
+          mutate();
+
+          const token = String(++reorderAnimationToken);
+          const animated = [];
+          siblings.forEach((child) => {
+            const previousRect = previousRects.get(child);
+            if (!previousRect) { return; }
+            const visualChild = visualElementForDragElement(child);
+            const nextRect = visualChild.getBoundingClientRect();
+            const deltaX = previousRect.left - nextRect.left;
+            const deltaY = previousRect.top - nextRect.top;
+            if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) { return; }
+
+            visualChild.setAttribute('data-og-reorder-animation', token);
+            visualChild.setAttribute('data-og-reorder-preparing', 'true');
+            visualChild.setAttribute('data-og-reorder-animating', 'true');
+            visualChild.style.setProperty('--og-reorder-x', pixelString(deltaX));
+            visualChild.style.setProperty('--og-reorder-y', pixelString(deltaY));
+            animated.push(visualChild);
+          });
+
+          if (animated.length === 0) { return; }
+
+          window.requestAnimationFrame(function() {
+            animated.forEach((child) => {
+              if (child.getAttribute('data-og-reorder-animation') !== token) { return; }
+              child.removeAttribute('data-og-reorder-preparing');
+              child.style.setProperty('--og-reorder-x', '0px');
+              child.style.setProperty('--og-reorder-y', '0px');
+            });
+          });
+
+          window.setTimeout(function() {
+            animated.forEach((child) => {
+              if (child.getAttribute('data-og-reorder-animation') === token) {
+                cleanupReorderAnimationStyles(child);
+              }
+            });
+          }, 190);
+        }
+
+        function reorderPlacementForDrag(drag) {
+          const siblings = editableElementChildren(drag.parent).filter((child) => child !== drag.element);
+          if (siblings.length === 0) { return null; }
+
+          const dragRect = drag.visualElement.getBoundingClientRect();
+          const dragCenter = reorderAxisValue(drag.axis, dragRect);
+          for (const sibling of siblings) {
+            const rect = visualElementForDragElement(sibling).getBoundingClientRect();
+            const siblingCenter = reorderAxisValue(drag.axis, rect);
+            if (dragCenter < siblingCenter) {
+              return { target: sibling, position: 'before' };
+            }
+          }
+
+          return { target: siblings[siblings.length - 1], position: 'after' };
+        }
+
+        function applyReorderPlacement(drag, placement) {
+          if (!placement || !placement.target || placement.target === drag.element) { return; }
+          if (reorderPositionAlreadyApplied(drag, placement.target, placement.position)) { return; }
+
+          animateReorderSiblings(drag.parent, drag.element, function() {
+            if (placement.position === 'before') {
+              placement.target.before(drag.element);
+            } else {
+              placement.target.after(drag.element);
+            }
+          });
+          drag.didReorder = true;
+        }
+
+        function draggedBaseRect(drag) {
+          const element = drag.visualElement || drag.element;
+          const previousX = element.style.getPropertyValue('--og-drag-x') || '';
+          const previousY = element.style.getPropertyValue('--og-drag-y') || '';
+          element.style.setProperty('--og-drag-x', '0px');
+          element.style.setProperty('--og-drag-y', '0px');
+          const rect = element.getBoundingClientRect();
+          if (previousX) {
+            element.style.setProperty('--og-drag-x', previousX);
+          } else {
+            element.style.removeProperty('--og-drag-x');
+          }
+          if (previousY) {
+            element.style.setProperty('--og-drag-y', previousY);
+          } else {
+            element.style.removeProperty('--og-drag-y');
+          }
+          return rect;
+        }
+
+        function updateReorderDraggedElementPosition(drag, event) {
+          const baseRect = draggedBaseRect(drag);
+          const nextX = event.clientX - drag.pointerOffsetX - baseRect.left;
+          const nextY = event.clientY - drag.pointerOffsetY - baseRect.top;
+          drag.visualElement.style.setProperty('--og-drag-x', pixelString(nextX));
+          drag.visualElement.style.setProperty('--og-drag-y', pixelString(nextY));
+          drag.didMove = true;
+        }
+
+        function updateReorderDrag(drag, event) {
+          updateReorderDraggedElementPosition(drag, event);
+          applyReorderPlacement(drag, reorderPlacementForDrag(drag));
+          updateReorderDraggedElementPosition(drag, event);
+        }
+
         function updateDraggedElementPosition(drag, event) {
           const deltaX = event.clientX - drag.startClientX;
           const deltaY = event.clientY - drag.startClientY;
@@ -2085,6 +2290,57 @@ struct WebCanvasView: NSViewRepresentable {
           drag.element.style.setProperty('--og-x', pixelString(nextX));
           drag.element.style.setProperty('--og-y', pixelString(nextY));
           drag.didMove = true;
+        }
+
+        function cleanupActiveDragStyles(drag) {
+          if (!drag || !drag.element) { return; }
+          Array.from(new Set([drag.element, drag.visualElement].filter(Boolean))).forEach((element) => {
+            element.removeAttribute('data-og-dragging');
+            element.removeAttribute('data-og-reorder-dragging');
+            element.style.removeProperty('--og-drag-x');
+            element.style.removeProperty('--og-drag-y');
+          });
+        }
+
+        function restoreReorderOrigin(drag) {
+          if (!drag || !drag.parent || drag.element.parentElement !== drag.parent) { return; }
+          animateReorderSiblings(drag.parent, drag.element, function() {
+            if (drag.originalNextSibling &&
+                drag.originalNextSibling.parentNode === drag.parent &&
+                drag.originalNextSibling !== drag.element) {
+              drag.parent.insertBefore(drag.element, drag.originalNextSibling);
+            } else {
+              drag.parent.appendChild(drag.element);
+            }
+          });
+        }
+
+        function reorderEditPayload(drag) {
+          const siblings = editableElementChildren(drag.parent);
+          const finalIndex = siblings.indexOf(drag.element);
+          if (finalIndex < 0 || finalIndex === drag.startIndex) { return null; }
+
+          const previousSibling = finalIndex > 0 ? siblings[finalIndex - 1] : null;
+          const nextSibling = finalIndex < siblings.length - 1 ? siblings[finalIndex + 1] : null;
+          if (previousSibling) {
+            return {
+              operation: 'moveNode',
+              nodeID: drag.selectedID,
+              nodeInternalID: nodeInternalID(drag.element),
+              targetInternalID: nodeInternalID(previousSibling),
+              position: 'after'
+            };
+          }
+          if (nextSibling) {
+            return {
+              operation: 'moveNode',
+              nodeID: drag.selectedID,
+              nodeInternalID: nodeInternalID(drag.element),
+              targetInternalID: nodeInternalID(nextSibling),
+              position: 'before'
+            };
+          }
+          return null;
         }
 
         function beginPendingDrag(event) {
@@ -2115,20 +2371,48 @@ struct WebCanvasView: NSViewRepresentable {
 
           const element = pendingDrag.element;
           const selectedID = pendingDrag.selectedID;
-          activeDrag = {
-            pointerID: pendingDrag.pointerID,
-            element: element,
-            selectedID: selectedID,
-            startClientX: pendingDrag.startClientX,
-            startClientY: pendingDrag.startClientY,
-            startX: dragStartValue(element, '--og-x', element.offsetLeft || 0),
-            startY: dragStartValue(element, '--og-y', element.offsetTop || 0),
-            previousValues: {
-              '--og-x': element.style.getPropertyValue('--og-x') || '',
-              '--og-y': element.style.getPropertyValue('--og-y') || ''
-            },
-            didMove: false
-          };
+          const visualElement = visualElementForDragElement(element);
+          const startRect = visualElement.getBoundingClientRect();
+          const layout = autoLayoutMode(element.parentElement);
+          if (canReorderElement(element)) {
+            activeDrag = {
+              mode: 'reorder',
+              pointerID: pendingDrag.pointerID,
+              element: element,
+              visualElement: visualElement,
+              parent: element.parentElement,
+              selectedID: selectedID,
+              startClientX: pendingDrag.startClientX,
+              startClientY: pendingDrag.startClientY,
+              pointerOffsetX: pendingDrag.startClientX - startRect.left,
+              pointerOffsetY: pendingDrag.startClientY - startRect.top,
+              axis: reorderAxisForLayout(layout),
+              originalNextSibling: element.nextSibling,
+              startIndex: editableElementChildren(element.parentElement).indexOf(element),
+              didMove: false,
+              didReorder: false
+            };
+            visualElement.setAttribute('data-og-reorder-dragging', 'true');
+            visualElement.style.setProperty('--og-drag-x', '0px');
+            visualElement.style.setProperty('--og-drag-y', '0px');
+          } else {
+            activeDrag = {
+              mode: 'position',
+              pointerID: pendingDrag.pointerID,
+              element: element,
+              selectedID: selectedID,
+              startClientX: pendingDrag.startClientX,
+              startClientY: pendingDrag.startClientY,
+              startX: dragStartValue(element, '--og-x', element.offsetLeft || 0),
+              startY: dragStartValue(element, '--og-y', element.offsetTop || 0),
+              previousValues: {
+                '--og-x': element.style.getPropertyValue('--og-x') || '',
+                '--og-y': element.style.getPropertyValue('--og-y') || ''
+              },
+              didMove: false
+            };
+          }
+          (activeDrag.visualElement || element).setAttribute('data-og-dragging', 'true');
           pendingDrag = null;
           suppressNextClick = true;
           selectNode(selectedID);
@@ -2143,17 +2427,60 @@ struct WebCanvasView: NSViewRepresentable {
             return false;
           }
 
-          updateDraggedElementPosition(activeDrag, event);
+          if (activeDrag.mode === 'reorder') {
+            updateReorderDrag(activeDrag, event);
+          } else {
+            updateDraggedElementPosition(activeDrag, event);
+          }
           event.preventDefault();
           event.stopPropagation();
           return true;
+        }
+
+        function restorePositionDragValues(drag) {
+          Object.entries(drag.previousValues || {}).forEach(([key, value]) => {
+            if ((value || '').trim().length === 0) {
+              drag.element.style.removeProperty(key);
+            } else {
+              drag.element.style.setProperty(key, value);
+            }
+          });
+        }
+
+        function finishReorderDrag(drag, cancelled) {
+          let edit = null;
+          if (cancelled) {
+            restoreReorderOrigin(drag);
+          } else if (drag.didMove && drag.didReorder) {
+            edit = reorderEditPayload(drag);
+          }
+
+          cleanupActiveDragStyles(drag);
+          if (!edit) {
+            collectNodes();
+            return;
+          }
+
+          collectNodes();
+          notifyDocumentChange(edit);
         }
 
         function finishActiveDrag(cancelled) {
           pendingDrag = null;
           const drag = activeDrag;
           activeDrag = null;
-          if (!drag || !drag.didMove || cancelled) { return; }
+          if (!drag) { return; }
+          if (drag.mode === 'reorder') {
+            finishReorderDrag(drag, cancelled);
+            return;
+          }
+          cleanupActiveDragStyles(drag);
+          if (cancelled) {
+            restorePositionDragValues(drag);
+            collectNodes();
+            return;
+          }
+          if (!drag.didMove) { return; }
           collectNodes();
           notifyDocumentChange({
             operation: 'setCSSVariables',
@@ -2212,7 +2539,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         function editableElementChildren(parent) {
           return Array.from(parent ? parent.children : []).filter((child) => {
-            return child.hasAttribute('data-og-id');
+            return child.hasAttribute('data-og-id') || child.hasAttribute('data-og-host-id');
           });
         }
 

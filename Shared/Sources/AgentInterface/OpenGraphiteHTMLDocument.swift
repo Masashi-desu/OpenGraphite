@@ -485,14 +485,15 @@ struct OpenGraphiteHTMLDocument {
         }
 
         let movedHTML = sanitized.substring(sourceElement.fullRange)
-        sanitized.replaceRange(sourceElement.fullRange, with: "")
+        let removalRange = Self.lineRemovalRange(for: sourceElement, in: sanitized)
+        sanitized.replaceRange(removalRange, with: "")
         var withoutSource = sanitized
         let targetAfterRemoval = OpenGraphiteHTMLDocument(html: withoutSource).uniqueElement(forNodeID: targetID)
         guard let updatedTargetElement = targetAfterRemoval.element else {
             return OpenGraphiteHTMLMutationResult(html: withoutSource, diagnostics: targetAfterRemoval.diagnostics)
         }
 
-        Self.insertRawHTML(movedHTML, into: &withoutSource, relativeTo: updatedTargetElement, position: position)
+        Self.insertMovedHTML(movedHTML, into: &withoutSource, relativeTo: updatedTargetElement, position: position)
         return OpenGraphiteHTMLMutationResult(html: withoutSource, diagnostics: [])
     }
 
@@ -746,6 +747,60 @@ struct OpenGraphiteHTMLDocument {
             offset = element.contentRange.upperBound
         }
         html.insert("\n\(fragmentHTML)", atOffset: offset)
+    }
+
+    /// 論理名（日本語）: 移動HTML挿入関数
+    /// 処理概要: sibling 移動時に target 行の indentation を保った位置へ HTML 断片を挿入します。
+    private static func insertMovedHTML(
+        _ fragmentHTML: String,
+        into html: inout String,
+        relativeTo element: OpenGraphiteHTMLElement,
+        position: OpenGraphiteHTMLInsertionPosition
+    ) {
+        guard position == .before || position == .after else {
+            insertRawHTML(fragmentHTML, into: &html, relativeTo: element, position: position)
+            return
+        }
+
+        let context = lineIndentContext(before: element.fullRange.lowerBound, in: html)
+        let offset = position == .before ? context.lineBreakOffset ?? element.fullRange.lowerBound : element.fullRange.upperBound
+        html.insert("\n\(context.indentation)\(fragmentHTML)", atOffset: offset)
+    }
+
+    /// 論理名（日本語）: 移動元行削除範囲計算関数
+    /// 処理概要: node 移動時に source 要素だけでなく、その行頭 indentation も同時に除去します。
+    private static func lineRemovalRange(for element: OpenGraphiteHTMLElement, in html: String) -> Range<Int> {
+        let context = lineIndentContext(before: element.fullRange.lowerBound, in: html)
+        guard let lineBreakOffset = context.lineBreakOffset else { return element.fullRange }
+        return lineBreakOffset..<element.fullRange.upperBound
+    }
+
+    /// 論理名（日本語）: 行indentation文脈取得関数
+    /// 処理概要: 指定 offset の直前が行頭空白だけで構成されている場合、その改行位置と indentation を返します。
+    private static func lineIndentContext(before offset: Int, in html: String) -> (lineBreakOffset: Int?, indentation: String) {
+        let targetIndex = html.index(html.startIndex, offsetBy: offset)
+        var index = targetIndex
+        while index > html.startIndex {
+            let previous = html.index(before: index)
+            if html[previous] == "\n" {
+                let indentationStart = html.index(after: previous)
+                let indentation = String(html[indentationStart..<targetIndex])
+                guard isLineIndentation(indentation) else { return (nil, "") }
+                return (html.distance(from: html.startIndex, to: previous), indentation)
+            }
+            index = previous
+        }
+
+        let indentation = String(html[html.startIndex..<targetIndex])
+        return isLineIndentation(indentation) ? (nil, indentation) : (nil, "")
+    }
+
+    /// 論理名（日本語）: 行indentation判定関数
+    /// 処理概要: 文字列がスペースまたはタブのみで構成されるかを返します。
+    private static func isLineIndentation(_ value: String) -> Bool {
+        value.allSatisfy { character in
+            character == " " || character == "\t"
+        }
     }
 
     private func internalIDSet(excluding element: OpenGraphiteHTMLElement? = nil) -> Set<String> {

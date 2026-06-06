@@ -327,6 +327,35 @@ struct OpenGraphiteAgentCoreTests {
         #expect(graph.diagnostics.isEmpty)
     }
 
+    /// 論理名（日本語）: ノード移動整形保持テスト
+    /// 概要: sibling node を移動して元に戻しても、行頭空白だけの差分が残らないことを確認します。
+    @Test("node subtreeを移動して元に戻してもHTML整形を保持する")
+    func testMoveNodeRoundTripPreservesWhitespace() throws {
+        // コンディション：改行と indentation を持つ sibling node の HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = AgentInterfaceFixture.htmlWithInternalIDs(
+            """
+            <!doctype html>
+            <html><body>
+              <Stack data-og-id="stack" data-og-type="frame" data-og-layout="vertical">
+                <First data-og-id="first" data-og-type="frame">First</First>
+                <Second data-og-id="second" data-og-type="frame">Second</Second>
+              </Stack>
+            </body></html>
+            """
+        )
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：second を first の前へ移動し、その後 first の後ろへ戻す（When）
+        _ = try fixture.core.moveNode(nodeID: "second", targetNodeID: "first", position: .before, htmlURL: fixture.htmlURL)
+        _ = try fixture.core.moveNode(nodeID: "second", targetNodeID: "first", position: .after, htmlURL: fixture.htmlURL)
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：意味的な順序だけでなく、不要な空行や trailing whitespace も残らず元の HTML と一致する（Then）
+        #expect(html == originalHTML)
+    }
+
     /// 論理名（日本語）: ページ作成テスト
     /// 概要: body HTML から standalone OpenGraphite page を作成して検証できることを確認します。
     @Test("body HTMLからOpenGraphiteページを作成できる")
