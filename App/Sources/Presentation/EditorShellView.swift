@@ -1093,6 +1093,116 @@ private enum CanvasZoom {
     }
 }
 
+/// 論理名（日本語）: キャンバスズーム基準点スナップショット
+/// 概要: ズーム前に画面上の基準点と対応するキャンバス内容座標を保存します。
+///
+/// プロパティ:
+/// - `viewportPoint`: viewport 左上から見た画面上の基準点。
+/// - `unscaledContentPoint`: ズームを除いたキャンバス内容上の基準点。
+struct CanvasZoomAnchorSnapshot: Equatable {
+    var viewportPoint: CGPoint
+    var unscaledContentPoint: CGPoint
+}
+
+/// 論理名（日本語）: キャンバスズーム基準点解決器
+/// 概要: ズーム前の基準点を保存し、ズーム後に必要な scroll origin を計算します。
+///
+/// 定義内容:
+/// - `snapshot(...)`: ズーム前の基準点を保存する。
+/// - `documentOrigin(...)`: ズーム後の scroll origin を算出する。
+/// - `clampedDocumentOrigin(...)`: scroll origin を documentView 内へ制限する。
+enum CanvasZoomAnchorResolver {
+    /// 論理名（日本語）: ズーム基準点保存関数
+    /// 処理概要: viewport 上の点を、現在の表示倍率を除いたキャンバス内容座標へ変換します。
+    ///
+    /// - Parameters:
+    ///   - viewportPoint: viewport 左上から見た画面上の基準点。
+    ///   - visibleOrigin: 現在の clip view 表示原点。
+    ///   - hostingOrigin: documentView 内の hosting view 原点。
+    ///   - renderedZoom: 現在描画されているキャンバス倍率。
+    ///   - contentPadding: hosting view 内でキャンバス周囲に置かれる固定余白。
+    /// - Returns: ズーム後の scroll origin 計算に使う基準点。倍率が無効な場合は `nil`。
+    static func snapshot(
+        viewportPoint: CGPoint,
+        visibleOrigin: CGPoint,
+        hostingOrigin: CGPoint,
+        renderedZoom: Double,
+        contentPadding: CGFloat
+    ) -> CanvasZoomAnchorSnapshot? {
+        guard renderedZoom.isFinite, renderedZoom > 0 else { return nil }
+
+        let anchorDocumentPoint = CGPoint(
+            x: visibleOrigin.x + viewportPoint.x,
+            y: visibleOrigin.y + viewportPoint.y
+        )
+        let scaledContentPoint = CGPoint(
+            x: anchorDocumentPoint.x - hostingOrigin.x - contentPadding,
+            y: anchorDocumentPoint.y - hostingOrigin.y - contentPadding
+        )
+        return CanvasZoomAnchorSnapshot(
+            viewportPoint: viewportPoint,
+            unscaledContentPoint: CGPoint(
+                x: scaledContentPoint.x / CGFloat(renderedZoom),
+                y: scaledContentPoint.y / CGFloat(renderedZoom)
+            )
+        )
+    }
+
+    /// 論理名（日本語）: ズーム後ドキュメント原点計算関数
+    /// 処理概要: 保存した基準点がズーム後も同じ viewport 位置へ来るように clip origin を計算します。
+    ///
+    /// - Parameters:
+    ///   - snapshot: ズーム前に保存した基準点。
+    ///   - hostingOrigin: documentView 内の hosting view 原点。
+    ///   - targetZoom: ズーム後のキャンバス倍率。
+    ///   - contentPadding: hosting view 内でキャンバス周囲に置かれる固定余白。
+    ///   - documentSize: documentView の現在サイズ。
+    ///   - viewportSize: clip view の表示サイズ。
+    /// - Returns: documentView 内に収まるよう補正した clip origin。倍率が無効な場合は `nil`。
+    static func documentOrigin(
+        for snapshot: CanvasZoomAnchorSnapshot,
+        hostingOrigin: CGPoint,
+        targetZoom: Double,
+        contentPadding: CGFloat,
+        documentSize: CGSize,
+        viewportSize: CGSize
+    ) -> CGPoint? {
+        guard targetZoom.isFinite, targetZoom > 0 else { return nil }
+
+        let anchorDocumentPoint = CGPoint(
+            x: hostingOrigin.x + contentPadding + snapshot.unscaledContentPoint.x * CGFloat(targetZoom),
+            y: hostingOrigin.y + contentPadding + snapshot.unscaledContentPoint.y * CGFloat(targetZoom)
+        )
+        return clampedDocumentOrigin(
+            CGPoint(
+                x: anchorDocumentPoint.x - snapshot.viewportPoint.x,
+                y: anchorDocumentPoint.y - snapshot.viewportPoint.y
+            ),
+            documentSize: documentSize,
+            viewportSize: viewportSize
+        )
+    }
+
+    /// 論理名（日本語）: ドキュメント原点補正関数
+    /// 処理概要: clip origin を documentView のスクロール可能範囲内へ丸めます。
+    ///
+    /// - Parameters:
+    ///   - origin: 補正前の clip origin。
+    ///   - documentSize: documentView の現在サイズ。
+    ///   - viewportSize: clip view の表示サイズ。
+    /// - Returns: スクロール可能範囲内へ補正した clip origin。
+    static func clampedDocumentOrigin(
+        _ origin: CGPoint,
+        documentSize: CGSize,
+        viewportSize: CGSize
+    ) -> CGPoint {
+        CGPoint(
+            x: min(max(origin.x, 0), max(documentSize.width - viewportSize.width, 0)),
+            y: min(max(origin.y, 0), max(documentSize.height - viewportSize.height, 0))
+        )
+    }
+}
+
 /// 論理名（日本語）: キャンバスズームHUD
 /// 概要: キャンバス右下に現在倍率とズームイン/アウトボタンを表示します。
 ///
@@ -1261,6 +1371,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - `onEmptyCanvasClick`: ページ群の外側がクリックされたときの処理。
     /// - `hostingView`: NSScrollView に載せる hosting view。
     /// - `documentView`: 無限キャンバス用の documentView。
+    /// - `pendingZoomAnchor`: 次のズーム反映時に使う基準点。
     final class Coordinator: NSObject {
         var zoom: Binding<Double>
         var content: () -> Content
@@ -1273,6 +1384,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         private var renderedDocumentID: String
         private var lastViewportSize: NSSize = .zero
         private var lastZoom: Double
+        private var pendingZoomAnchor: CanvasZoomAnchorSnapshot?
 
         /// 論理名（日本語）: キャンバススクロールコーディネーター初期化関数
         /// 処理概要: ズームバインディング、ドキュメント ID、初期 content を hosting view に保持します。
@@ -1329,7 +1441,14 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             self.content = content
             let currentZoom = CanvasZoom.clamped(zoom.wrappedValue)
             let didChangeDocument = renderedDocumentID != documentID
-            guard didChangeDocument || abs(lastZoom - currentZoom) > 0.0005 else { return }
+            let previousRenderedZoom = lastZoom
+            let didChangeZoom = abs(lastZoom - currentZoom) > 0.0005
+            guard didChangeDocument || didChangeZoom else { return }
+
+            let zoomAnchor = didChangeZoom && !didChangeDocument
+                ? pendingZoomAnchor ?? centeredZoomAnchor(renderedZoom: previousRenderedZoom)
+                : nil
+            pendingZoomAnchor = nil
 
             renderedDocumentID = documentID
             lastZoom = currentZoom
@@ -1338,6 +1457,9 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
                 resetDocumentViewPosition()
             }
             refreshDocumentSize(force: true)
+            if let zoomAnchor {
+                applyZoomAnchor(zoomAnchor, targetZoom: currentZoom)
+            }
         }
 
         /// 論理名（日本語）: ドキュメントサイズ更新関数
@@ -1432,6 +1554,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             let newZoom = CanvasZoom.clamped(oldZoom * scale)
             guard newZoom.isFinite, newZoom != oldZoom else { return true }
 
+            pendingZoomAnchor = pointerZoomAnchor(for: event, renderedZoom: lastZoom)
             zoom.wrappedValue = newZoom
             return true
         }
@@ -1442,7 +1565,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         /// - Parameter event: magnify イベント。
         /// - Returns: ズーム操作として消費した場合は `true`。
         private func handleMagnify(_ event: NSEvent) -> Bool {
-            applyMagnification(event.magnification)
+            applyMagnification(event.magnification, event: event)
         }
 
         /// 論理名（日本語）: gestureイベント処理関数
@@ -1459,23 +1582,123 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
                 return false
             }
 
-            return applyMagnification(CGFloat(cgEvent.getDoubleValueField(magnificationField)))
+            return applyMagnification(CGFloat(cgEvent.getDoubleValueField(magnificationField)), event: event)
         }
 
         /// 論理名（日本語）: magnification適用関数
         /// 処理概要: 入力された magnification を倍率へ掛け合わせ、許容範囲内へ補正します。
         ///
-        /// - Parameter magnification: AppKit または CGEvent 由来の拡大率差分。
+        /// - Parameters:
+        ///   - magnification: AppKit または CGEvent 由来の拡大率差分。
+        ///   - event: 基準点の算出に使う入力イベント。
         /// - Returns: OpenGraphite 側で処理した場合は `true`。
-        private func applyMagnification(_ magnification: CGFloat) -> Bool {
+        private func applyMagnification(_ magnification: CGFloat, event: NSEvent) -> Bool {
             guard magnification != 0 else { return true }
 
             let oldZoom = CanvasZoom.clamped(zoom.wrappedValue)
             let newZoom = CanvasZoom.clamped(oldZoom * (1 + Double(magnification)))
             guard newZoom.isFinite, newZoom != oldZoom else { return true }
 
+            pendingZoomAnchor = pointerZoomAnchor(for: event, renderedZoom: lastZoom)
             zoom.wrappedValue = newZoom
             return true
+        }
+
+        /// 論理名（日本語）: ポインタズーム基準点生成関数
+        /// 処理概要: 入力イベントの位置を viewport 基準の点へ変換し、ズーム前のキャンバス内容座標として保存します。
+        ///
+        /// - Parameters:
+        ///   - event: 基準点に使う入力イベント。
+        ///   - renderedZoom: 現在描画されているキャンバス倍率。
+        /// - Returns: ズーム後の scroll origin 補正に使う基準点。
+        private func pointerZoomAnchor(for event: NSEvent, renderedZoom: Double) -> CanvasZoomAnchorSnapshot? {
+            guard let scrollView else { return nil }
+
+            return zoomAnchor(
+                at: viewportPoint(for: event, in: scrollView),
+                renderedZoom: renderedZoom,
+                in: scrollView
+            )
+        }
+
+        /// 論理名（日本語）: 中央ズーム基準点生成関数
+        /// 処理概要: HUD ボタンなどイベント位置を持たないズーム操作用に viewport 中央を基準点として保存します。
+        ///
+        /// - Parameter renderedZoom: 現在描画されているキャンバス倍率。
+        /// - Returns: ズーム後の scroll origin 補正に使う基準点。
+        private func centeredZoomAnchor(renderedZoom: Double) -> CanvasZoomAnchorSnapshot? {
+            guard let scrollView else { return nil }
+
+            let visibleRect = scrollView.contentView.bounds
+            return zoomAnchor(
+                at: CGPoint(x: visibleRect.width / 2, y: visibleRect.height / 2),
+                renderedZoom: renderedZoom,
+                in: scrollView
+            )
+        }
+
+        /// 論理名（日本語）: ズーム基準点生成関数
+        /// 処理概要: viewport 上の点を `CanvasZoomAnchorResolver` へ渡して保存可能な基準点へ変換します。
+        ///
+        /// - Parameters:
+        ///   - viewportPoint: viewport 左上から見た基準点。
+        ///   - renderedZoom: 現在描画されているキャンバス倍率。
+        ///   - scrollView: 対象のキャンバス scroll view。
+        /// - Returns: ズーム後の scroll origin 補正に使う基準点。
+        private func zoomAnchor(
+            at viewportPoint: CGPoint,
+            renderedZoom: Double,
+            in scrollView: NSScrollView
+        ) -> CanvasZoomAnchorSnapshot? {
+            CanvasZoomAnchorResolver.snapshot(
+                viewportPoint: viewportPoint,
+                visibleOrigin: scrollView.contentView.bounds.origin,
+                hostingOrigin: documentView.hostingView.frame.origin,
+                renderedZoom: renderedZoom,
+                contentPadding: CanvasMetrics.documentPadding
+            )
+        }
+
+        /// 論理名（日本語）: イベントviewport座標変換関数
+        /// 処理概要: window 座標のイベント位置を clip view の表示領域左上からの相対座標へ変換します。
+        ///
+        /// - Parameters:
+        ///   - event: 変換対象の入力イベント。
+        ///   - scrollView: 対象のキャンバス scroll view。
+        /// - Returns: viewport 左上から見たイベント位置。
+        private func viewportPoint(for event: NSEvent, in scrollView: NSScrollView) -> CGPoint {
+            let point = scrollView.contentView.convert(event.locationInWindow, from: nil)
+            let visibleRect = scrollView.contentView.bounds
+            return CGPoint(
+                x: min(max(point.x - visibleRect.minX, 0), visibleRect.width),
+                y: min(max(point.y - visibleRect.minY, 0), visibleRect.height)
+            )
+        }
+
+        /// 論理名（日本語）: ズーム基準点復元関数
+        /// 処理概要: ズーム後の documentView サイズをもとに、保存した基準点が元の viewport 位置へ来るようにスクロールします。
+        ///
+        /// - Parameters:
+        ///   - anchor: ズーム前に保存した基準点。
+        ///   - targetZoom: ズーム後のキャンバス倍率。
+        private func applyZoomAnchor(_ anchor: CanvasZoomAnchorSnapshot, targetZoom: Double) {
+            guard let scrollView,
+                  let documentSize = scrollView.documentView?.frame.size,
+                  let origin = CanvasZoomAnchorResolver.documentOrigin(
+                    for: anchor,
+                    hostingOrigin: documentView.hostingView.frame.origin,
+                    targetZoom: targetZoom,
+                    contentPadding: CanvasMetrics.documentPadding,
+                    documentSize: documentSize,
+                    viewportSize: scrollView.contentView.bounds.size
+                  )
+            else {
+                return
+            }
+
+            scrollView.contentView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            (scrollView as? CanvasOverlayScrollView)?.refreshScrollIndicators()
         }
 
         /// 論理名（日本語）: キャンバススクロールルーティング関数
