@@ -324,6 +324,21 @@ private struct OpenGraphiteProjectPageLocation: Equatable {
     var pageIndex: Int
 }
 
+/// 論理名（日本語）: i18n検出用script source
+/// 概要: HTML inline script と解決済み外部 script を同じ形で検査するための内部値です。
+///
+/// プロパティ:
+/// - `url`: 外部 script の file URL。inline script の場合は HTML URL。
+/// - `displayPath`: Inspector / CLI に表示する path。
+/// - `source`: script 本文。
+/// - `isInline`: HTML inline script か。
+private struct OpenGraphiteI18nScriptSource {
+    var url: URL
+    var displayPath: String
+    var source: String
+    var isInline: Bool
+}
+
 /// 論理名（日本語）: HTML変更応答
 /// 概要: node 単位編集の結果 HTML と diagnostics を保持します。
 ///
@@ -365,6 +380,163 @@ struct OpenGraphiteEditResult: Codable, Equatable {
     var insertedNodes: [OpenGraphiteAgentNode]?
 }
 
+/// 論理名（日本語）: HTML Document Context編集応答
+/// 概要: `<html>` の document attribute と binding metadata の更新結果を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `updated`: HTML ファイルを書き換えた場合は `true`。
+/// - `path`: 対象 HTML パス。
+/// - `context`: 保存後の HTML document context。
+/// - `diagnostics`: 検証結果。
+struct OpenGraphiteHTMLDocumentContextResult: Codable, Equatable {
+    var schemaVersion: String
+    var updated: Bool
+    var path: String
+    var context: OpenGraphiteHTMLDocumentContext
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: i18n adapter種別
+/// 概要: HTML 実装 runtime から検出した i18n adapter の種類を表します。
+///
+/// 定義内容:
+/// - `i18next`: `i18n.init({...})` 形式の i18next 系設定。
+/// - `unknown`: 自動検出できない、または未対応の設定。
+enum OpenGraphiteI18nAdapter: String, Codable, Equatable {
+    case i18next
+    case unknown
+}
+
+/// 論理名（日本語）: i18n設定値source
+/// 概要: i18n 設定値が literal として編集可能か、外部式として readonly かを表します。
+///
+/// 定義内容:
+/// - `literal`: 文字列 literal として検出でき、OpenGraphite から正本へ書き戻せる可能性がある値。
+/// - `external`: env 参照、関数式、識別子など、OpenGraphite が勝手に書き換えない値。
+/// - `missing`: 設定が見つからない値。
+enum OpenGraphiteI18nConfigSource: String, Codable, Equatable {
+    case literal
+    case external
+    case missing
+}
+
+/// 論理名（日本語）: i18n設定プロパティ
+/// 概要: `lng`、`fallbackLng`、`backend.loadPath` など検出対象の値と編集可否を表します。
+///
+/// プロパティ:
+/// - `source`: literal / external / missing。
+/// - `value`: literal の値。
+/// - `expression`: external と判定した式の短い表示値。
+/// - `editable`: OpenGraphite から書き戻せるか。
+struct OpenGraphiteI18nConfigProperty: Codable, Equatable {
+    var source: OpenGraphiteI18nConfigSource
+    var value: String?
+    var expression: String?
+    var editable: Bool
+}
+
+/// 論理名（日本語）: i18n locale resource状態
+/// 概要: locale JSON の解決先、存在有無、編集可否を Inspector / CLI へ返します。
+///
+/// プロパティ:
+/// - `locale`: locale 名。
+/// - `path`: 解決済みファイル path。
+/// - `exists`: ファイルが存在するか。
+/// - `editable`: literal loadPath または推奨 path として OpenGraphite が書き戻せるか。
+struct OpenGraphiteI18nResourceStatus: Codable, Equatable {
+    var locale: String
+    var path: String
+    var exists: Bool
+    var editable: Bool
+}
+
+/// 論理名（日本語）: i18n runtime検査結果
+/// 概要: HTML 実装資源から検出した i18n runtime 設定と locale JSON 状態を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `pageURL`: 検査対象 HTML。
+/// - `adapter`: 検出した i18n adapter。
+/// - `configSource`: 設定を検出した HTML / JS / TS ファイル path。
+/// - `lng`: `lng` 設定値。
+/// - `fallbackLng`: `fallbackLng` 設定値。
+/// - `loadPath`: `backend.loadPath` 設定値。
+/// - `localeField`: preview mock として注入できる言語 field 名。
+/// - `resources`: locale JSON の状態。
+/// - `diagnostics`: 検出時の補助診断。
+struct OpenGraphiteI18nRuntimeInspection: Codable, Equatable {
+    var schemaVersion: String
+    var pageURL: String
+    var adapter: OpenGraphiteI18nAdapter
+    var configSource: String?
+    var lng: OpenGraphiteI18nConfigProperty
+    var fallbackLng: OpenGraphiteI18nConfigProperty
+    var loadPath: OpenGraphiteI18nConfigProperty
+    var localeField: String?
+    var resources: [OpenGraphiteI18nResourceStatus]
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: i18n推奨設定適用結果
+/// 概要: 推奨 runtime script と locale JSON を実装資源へ作成・更新した結果を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `updated`: 実装ファイルを書き換えたか。
+/// - `pageURL`: 対象 HTML。
+/// - `configPath`: 作成または検出した i18n 設定ファイル。
+/// - `loadPath`: 推奨 loadPath。
+/// - `resources`: locale JSON の状態。
+/// - `diagnostics`: 適用時の診断。
+struct OpenGraphiteI18nRecommendResult: Codable, Equatable {
+    var schemaVersion: String
+    var updated: Bool
+    var pageURL: String
+    var configPath: String?
+    var loadPath: String
+    var resources: [OpenGraphiteI18nResourceStatus]
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: i18n resource編集結果
+/// 概要: locale JSON の flat key に値を書き戻した結果を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `updated`: JSON ファイルを書き換えたか。
+/// - `path`: 対象 locale JSON path。
+/// - `locale`: 更新 locale。
+/// - `key`: 更新 key。
+/// - `value`: 保存値。
+/// - `diagnostics`: 編集時の診断。
+struct OpenGraphiteI18nResourceEditResult: Codable, Equatable {
+    var schemaVersion: String
+    var updated: Bool
+    var path: String
+    var locale: String
+    var key: String
+    var value: String
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: i18n runtime編集結果
+/// 概要: 実装側 i18n 設定ファイルの literal 値を更新した結果を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `updated`: 実装ファイルを書き換えたか。
+/// - `configPath`: 更新対象 i18n 設定ファイル。
+/// - `inspection`: 更新後の i18n runtime 検査結果。
+/// - `diagnostics`: 編集時の診断。
+struct OpenGraphiteI18nRuntimeEditResult: Codable, Equatable {
+    var schemaVersion: String
+    var updated: Bool
+    var configPath: String?
+    var inspection: OpenGraphiteI18nRuntimeInspection
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
 /// 論理名（日本語）: HTML挿入位置
 /// 概要: HTML 断片または既存 node をどこへ配置するかを表します。
 ///
@@ -385,14 +557,16 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 ///
 /// メソッド:
 /// - `inspectProject(at:)`: `.ogp` を解決して要約する。
-/// - `addProjectPage(projectURL:id:path:canvas:)`: `.ogp` に page entry を追加する。
+/// - `addProjectPage(projectURL:id:path:canvas:allowDuplicatePath:)`: `.ogp` に page entry を追加する。
 /// - `addProjectComponent(projectURL:collectionID:id:path:canvas:)`: `.ogp` に component entry を追加する。
 /// - `removeProjectComponent(projectURL:id:deleteFile:)`: `.ogp` から component entry を削除する。
 /// - `createProjectPage(projectURL:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と page entry 登録を一体で行う。
 /// - `createProjectComponent(projectURL:collectionID:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
 /// - `projectPageReference(projectURL:pageID:)`: ``.ogp` の page 参照 ID から HTML を解決する。
-/// - `placeProjectPage(projectURL:id:name:x:y:width:height:)`: 既存 page entry の canvas 配置を更新する。
-/// - `placeProjectComponent(projectURL:id:name:x:y:width:height:)`: 既存 component entry の canvas 配置を更新する。
+/// - `placeProjectPage(projectURL:id:name:x:y:width:height:previewFieldMocks:)`: 既存 page entry の canvas 配置と preview mock state を更新する。
+/// - `placeProjectComponent(projectURL:id:name:x:y:width:height:previewFieldMocks:)`: 既存 component entry の canvas 配置と preview mock state を更新する。
+/// - `setProjectPageHTMLDocumentContext(projectURL:id:context:)`: page HTML 正本の document attribute を更新する。
+/// - `setProjectComponentHTMLDocumentContext(projectURL:id:context:)`: component HTML 正本の document attribute を更新する。
 /// - `createPage(at:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML page file を作成する。
 /// - `pageGraph(at:)`: HTML から node graph を抽出する。
 /// - `validateHTML(at:)`: HTML を契約に対して検証する。
@@ -544,12 +718,39 @@ struct OpenGraphiteAgentCore {
     ///   - id: 追加する page ID。
     ///   - path: `htmlRoot` から見た HTML path。
     ///   - canvas: キャンバス配置。
+    ///   - allowDuplicatePath: 同じ HTML path を別 preview canvas として再登録するか。
     /// - Returns: 更新後 project summary。
     func addProjectPage(
         projectURL: URL,
         id: String,
         path: String,
         canvas: OpenGraphiteCanvas
+    ) throws -> OpenGraphiteProjectSummary {
+        try addProjectPage(
+            projectURL: projectURL,
+            id: id,
+            path: path,
+            canvas: canvas,
+            allowDuplicatePath: false
+        )
+    }
+
+    /// 論理名（日本語）: プロジェクトページ追加関数
+    /// 処理概要: `.ogp` の既定 Chapter pages に新しい HTML ページ定義を追加し、必要な場合は同じ HTML path の再登録を許可します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 追加する page ID。
+    ///   - path: `htmlRoot` から見た HTML path。
+    ///   - canvas: キャンバス配置。
+    ///   - allowDuplicatePath: 同じ HTML path を別 preview canvas として再登録するか。
+    /// - Returns: 更新後 project summary。
+    func addProjectPage(
+        projectURL: URL,
+        id: String,
+        path: String,
+        canvas: OpenGraphiteCanvas,
+        allowDuplicatePath: Bool
     ) throws -> OpenGraphiteProjectSummary {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         try validateProjectPagePath(path)
@@ -558,7 +759,7 @@ struct OpenGraphiteAgentCore {
         if project.allPages.contains(where: { $0.id == id }) {
             throw OpenGraphiteAgentCoreError(message: "page id \"\(id)\" は既に存在します。")
         }
-        if project.allPages.contains(where: { $0.path == path }) {
+        if !allowDuplicatePath, project.allPages.contains(where: { $0.path == path }) {
             throw OpenGraphiteAgentCoreError(message: "page path \"\(path)\" は既に存在します。")
         }
         let htmlURL = loadedProject.rootURL.appendingPathComponent(project.htmlRoot).appendingPathComponent(path)
@@ -820,7 +1021,7 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトページ配置関数
-    /// 処理概要: `.ogp` の既存 page entry に対して canvas 座標とサイズを部分更新し、更新後 summary を返します。
+    /// 処理概要: `.ogp` の既存 page entry に対して canvas 座標、サイズ、preview mock state を部分更新し、更新後 summary を返します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
@@ -830,6 +1031,7 @@ struct OpenGraphiteAgentCore {
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
     ///   - height: 更新後プレビュー高さ。`nil` の場合は既存値を維持します。
+    ///   - previewFieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
     /// - Returns: 更新後 project summary。
     func placeProjectPage(
         projectURL: URL,
@@ -838,7 +1040,8 @@ struct OpenGraphiteAgentCore {
         x: Double?,
         y: Double?,
         width: Double?,
-        height: Double?
+        height: Double?,
+        previewFieldMocks: [String: String]? = nil
     ) throws -> OpenGraphiteProjectSummary {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
@@ -859,7 +1062,11 @@ struct OpenGraphiteAgentCore {
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
                 width: width ?? currentCanvas.width,
-                height: height ?? currentCanvas.height
+                height: height ?? currentCanvas.height,
+                previewContext: try updatedPreviewContext(
+                    currentCanvas.previewContext,
+                    fieldMocks: previewFieldMocks
+                )
             )
         } else {
             let currentCanvas = project.chapters[pageLocation.groupIndex].pages[pageLocation.pageIndex].canvas
@@ -868,7 +1075,11 @@ struct OpenGraphiteAgentCore {
                 x: x ?? currentCanvas.x,
                 y: y ?? currentCanvas.y,
                 width: width ?? currentCanvas.width,
-                height: height ?? currentCanvas.height
+                height: height ?? currentCanvas.height,
+                previewContext: try updatedPreviewContext(
+                    currentCanvas.previewContext,
+                    fieldMocks: previewFieldMocks
+                )
             )
         }
         try writeProject(project, to: projectURL)
@@ -876,7 +1087,7 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: プロジェクトコンポーネント配置関数
-    /// 処理概要: `.ogp` の既存 component entry に対して canvas 座標とサイズを部分更新し、更新後 summary を返します。
+    /// 処理概要: `.ogp` の既存 component entry に対して canvas 座標、サイズ、preview mock state を部分更新し、更新後 summary を返します。
     ///
     /// - Parameters:
     ///   - projectURL: `.ogp` ファイル URL。
@@ -886,6 +1097,7 @@ struct OpenGraphiteAgentCore {
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
     ///   - height: 更新後プレビュー高さ。`nil` の場合は既存値を維持します。
+    ///   - previewFieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
     /// - Returns: 更新後 project summary。
     func placeProjectComponent(
         projectURL: URL,
@@ -894,7 +1106,8 @@ struct OpenGraphiteAgentCore {
         x: Double?,
         y: Double?,
         width: Double?,
-        height: Double?
+        height: Double?,
+        previewFieldMocks: [String: String]? = nil
     ) throws -> OpenGraphiteProjectSummary {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
@@ -916,7 +1129,11 @@ struct OpenGraphiteAgentCore {
             x: x ?? currentCanvas.x,
             y: y ?? currentCanvas.y,
             width: width ?? currentCanvas.width,
-            height: height ?? currentCanvas.height
+            height: height ?? currentCanvas.height,
+            previewContext: try updatedPreviewContext(
+                currentCanvas.previewContext,
+                fieldMocks: previewFieldMocks
+            )
         )
         try writeProject(project, to: projectURL)
         return try inspectProject(at: projectURL)
@@ -1065,6 +1282,379 @@ struct OpenGraphiteAgentCore {
             schemaVersion: Self.schemaVersion,
             valid: !graph.diagnostics.contains { $0.severity == .error },
             diagnostics: graph.diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: HTML Document Contextファイル更新関数
+    /// 処理概要: HTML 正本の `<html>` attribute と OpenGraphite binding metadata を更新します。
+    ///
+    /// - Parameters:
+    ///   - context: 保存する HTML document context。
+    ///   - htmlURL: 対象 HTML ファイル URL。
+    /// - Returns: 更新結果。
+    func setHTMLDocumentContext(
+        _ context: OpenGraphiteHTMLDocumentContext,
+        htmlURL: URL
+    ) throws -> OpenGraphiteHTMLDocumentContextResult {
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let mutation = OpenGraphiteHTMLDocument(html: html).settingHTMLDocumentContext(context, contract: contract)
+        return try persistHTMLDocumentContextMutation(
+            mutation,
+            htmlURL: htmlURL,
+            didChange: mutation.html != html
+        )
+    }
+
+    /// 論理名（日本語）: プロジェクトページHTML Document Context更新関数
+    /// 処理概要: `.ogp` の page 参照 ID から HTML 正本を解決し、document attribute を更新します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 更新対象 page ID。
+    ///   - context: 保存する HTML document context。
+    /// - Returns: 更新結果。
+    func setProjectPageHTMLDocumentContext(
+        projectURL: URL,
+        id: String,
+        context: OpenGraphiteHTMLDocumentContext
+    ) throws -> OpenGraphiteHTMLDocumentContextResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: id)
+        guard target.segment == OpenGraphiteCanvasSegment.pages.rawValue else {
+            throw OpenGraphiteAgentCoreError(message: "page id \"\(id)\" は Pages ではありません。component は project component document を使ってください。")
+        }
+        return try setHTMLDocumentContext(context, htmlURL: target.htmlURL)
+    }
+
+    /// 論理名（日本語）: プロジェクトComponent HTML Document Context更新関数
+    /// 処理概要: `.ogp` の component ID から HTML 正本を解決し、document attribute を更新します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - id: 更新対象 component ID。
+    ///   - context: 保存する HTML document context。
+    /// - Returns: 更新結果。
+    func setProjectComponentHTMLDocumentContext(
+        projectURL: URL,
+        id: String,
+        context: OpenGraphiteHTMLDocumentContext
+    ) throws -> OpenGraphiteHTMLDocumentContextResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: id)
+        guard target.segment == OpenGraphiteCanvasSegment.components.rawValue else {
+            throw OpenGraphiteAgentCoreError(message: "component id \"\(id)\" は Components ではありません。page は project page document を使ってください。")
+        }
+        return try setHTMLDocumentContext(context, htmlURL: target.htmlURL)
+    }
+
+    /// 論理名（日本語）: i18n runtime検査関数
+    /// 処理概要: `.ogp` の page 参照から HTML 実装資源を辿り、i18next 系 `i18n.init` と locale JSON 状態を検出します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内 page / component 参照 ID。
+    ///   - locales: 状態を確認する locale。未指定時は `ja` と `eng`。
+    /// - Returns: i18n runtime 検査結果。
+    func inspectI18n(
+        projectURL: URL,
+        pageID: String,
+        locales: [String] = ["ja", "eng"]
+    ) throws -> OpenGraphiteI18nRuntimeInspection {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        return try inspectI18n(target: target, locales: locales)
+    }
+
+    /// 論理名（日本語）: i18n推奨設定適用関数
+    /// 処理概要: 自動検出できないページへ推奨 runtime を追加し、`public/locales/<locale>.json` を実装資源として作成・更新します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内 page / component 参照 ID。
+    ///   - locales: 作成・更新する locale 一覧。
+    /// - Returns: 推奨設定適用結果。
+    func recommendI18n(
+        projectURL: URL,
+        pageID: String,
+        locales: [String]
+    ) throws -> OpenGraphiteI18nRecommendResult {
+        let normalizedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        let htmlRootURL = target.loadedProject.rootURL
+            .appendingPathComponent(target.loadedProject.project.htmlRoot)
+            .standardizedFileURL
+        let beforeInspection = try inspectI18n(target: target, locales: normalizedLocales)
+        let html = try String(contentsOf: target.htmlURL, encoding: .utf8)
+        var nextHTML = html
+        var updated = false
+        var configURL: URL?
+
+        if beforeInspection.adapter == .unknown {
+            let i18nURL = htmlRootURL.appendingPathComponent("i18n.js").standardizedFileURL
+            configURL = i18nURL
+            if !FileManager.default.fileExists(atPath: i18nURL.path) {
+                try FileManager.default.createDirectory(at: i18nURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Self.recommendedI18nRuntimeSource.write(to: i18nURL, atomically: true, encoding: .utf8)
+                updated = true
+            }
+            let scriptPath = Self.relativePath(from: target.htmlURL.deletingLastPathComponent(), to: i18nURL)
+            nextHTML = Self.insertingRecommendedI18nScriptIfNeeded(in: nextHTML, scriptPath: scriptPath)
+            if nextHTML != html {
+                try nextHTML.write(to: target.htmlURL, atomically: true, encoding: .utf8)
+                updated = true
+            }
+        } else if let configSource = beforeInspection.configSource {
+            configURL = URL(fileURLWithPath: configSource)
+        }
+
+        let resourceLoadPath = beforeInspection.loadPath.source == .literal
+            ? beforeInspection.loadPath.value ?? Self.recommendedI18nLoadPath
+            : Self.recommendedI18nLoadPath
+        let textBindings = OpenGraphiteHTMLDocument(html: nextHTML).textBindingResources()
+        var resourceStatuses: [OpenGraphiteI18nResourceStatus] = []
+        for locale in normalizedLocales {
+            let resourceURL = localeResourceURL(
+                loadPath: resourceLoadPath,
+                locale: locale,
+                htmlRootURL: htmlRootURL,
+                pageURL: target.htmlURL,
+                configURL: configURL
+            )
+            let didUpdateResource = try mergeLocaleResource(
+                at: resourceURL,
+                locale: locale,
+                bindings: textBindings,
+                fallbackLocale: fallbackLocale(from: beforeInspection) ?? "ja"
+            )
+            updated = updated || didUpdateResource
+            resourceStatuses.append(
+                OpenGraphiteI18nResourceStatus(
+                    locale: locale,
+                    path: resourceURL.path,
+                    exists: FileManager.default.fileExists(atPath: resourceURL.path),
+                    editable: true
+                )
+            )
+        }
+
+        return OpenGraphiteI18nRecommendResult(
+            schemaVersion: Self.schemaVersion,
+            updated: updated,
+            pageURL: target.htmlURL.path,
+            configPath: configURL?.path,
+            loadPath: resourceLoadPath,
+            resources: resourceStatuses,
+            diagnostics: []
+        )
+    }
+
+    /// 論理名（日本語）: i18n runtime literal更新関数
+    /// 処理概要: 実装側 `i18n.init({...})` の literal 設定だけを正本 JS/TS ファイルへ書き戻します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内 page / component 参照 ID。
+    ///   - loadPath: 更新する `backend.loadPath`。`nil` の場合は更新しません。
+    ///   - fallbackLocale: 更新する `fallbackLng`。`nil` の場合は更新しません。
+    /// - Returns: 更新後の i18n runtime 検査結果を含む編集結果。
+    func updateI18nRuntimeLiterals(
+        projectURL: URL,
+        pageID: String,
+        loadPath: String?,
+        fallbackLocale: String?
+    ) throws -> OpenGraphiteI18nRuntimeEditResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        let inspection = try inspectI18n(target: target, locales: ["ja", "eng"])
+        var diagnostics: [OpenGraphiteDiagnostic] = []
+
+        guard inspection.adapter != .unknown else {
+            diagnostics.append(
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-i18n-runtime",
+                    message: "i18n.init({...}) を検出できないため runtime 設定を編集できません。",
+                    path: target.htmlURL.path,
+                    nodeID: nil
+                )
+            )
+            return OpenGraphiteI18nRuntimeEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                configPath: inspection.configSource,
+                inspection: inspection,
+                diagnostics: diagnostics
+            )
+        }
+
+        guard let configSource = inspection.configSource,
+              !configSource.contains("#inline-script")
+        else {
+            diagnostics.append(
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "inline-i18n-config",
+                    message: "inline script の i18n 設定は Project Dependencies から直接編集できません。",
+                    path: inspection.configSource,
+                    nodeID: nil
+                )
+            )
+            return OpenGraphiteI18nRuntimeEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                configPath: inspection.configSource,
+                inspection: inspection,
+                diagnostics: diagnostics
+            )
+        }
+
+        let configURL = URL(fileURLWithPath: configSource)
+        guard FileManager.default.fileExists(atPath: configURL.path) else {
+            diagnostics.append(
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-i18n-config-file",
+                    message: "i18n 設定ファイルが見つかりません: \(configURL.path)",
+                    path: configURL.path,
+                    nodeID: nil
+                )
+            )
+            return OpenGraphiteI18nRuntimeEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                configPath: configURL.path,
+                inspection: inspection,
+                diagnostics: diagnostics
+            )
+        }
+
+        var source = try String(contentsOf: configURL, encoding: .utf8)
+        let before = source
+
+        if let loadPath {
+            if inspection.loadPath.source == .literal {
+                source = Self.replacingI18nLiteralProperty(named: "loadPath", value: loadPath, in: source) ?? source
+            } else {
+                diagnostics.append(
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "external-i18n-load-path",
+                        message: "backend.loadPath は external / readonly のため Project Dependencies から編集できません。",
+                        path: configURL.path,
+                        nodeID: nil
+                    )
+                )
+            }
+        }
+
+        if let fallbackLocale {
+            if inspection.fallbackLng.source == .literal {
+                source = Self.replacingI18nLiteralProperty(named: "fallbackLng", value: fallbackLocale, in: source) ?? source
+            } else {
+                diagnostics.append(
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "external-i18n-fallback",
+                        message: "fallbackLng は external / readonly のため Project Dependencies から編集できません。",
+                        path: configURL.path,
+                        nodeID: nil
+                    )
+                )
+            }
+        }
+
+        guard diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            return OpenGraphiteI18nRuntimeEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                configPath: configURL.path,
+                inspection: inspection,
+                diagnostics: diagnostics
+            )
+        }
+
+        let updated = source != before
+        if updated {
+            try source.write(to: configURL, atomically: true, encoding: .utf8)
+        }
+        let nextInspection = try inspectI18n(target: target, locales: ["ja", "eng"])
+        return OpenGraphiteI18nRuntimeEditResult(
+            schemaVersion: Self.schemaVersion,
+            updated: updated,
+            configPath: configURL.path,
+            inspection: nextInspection,
+            diagnostics: diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: i18n resource値設定関数
+    /// 処理概要: 検出済みまたは推奨 loadPath から locale JSON を解決し、flat key の値を正本 JSON へ保存します。
+    ///
+    /// - Parameters:
+    ///   - value: 保存する HTML/text 値。空文字も有効です。
+    ///   - locale: 更新 locale。
+    ///   - key: 更新する flat i18n key。
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内 page / component 参照 ID。
+    /// - Returns: resource 編集結果。
+    func setI18nResourceValue(
+        _ value: String,
+        locale: String,
+        key: String,
+        projectURL: URL,
+        pageID: String
+    ) throws -> OpenGraphiteI18nResourceEditResult {
+        let normalizedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedLocale.isEmpty else {
+            throw OpenGraphiteAgentCoreError(message: "locale は空にできません。")
+        }
+        guard !normalizedKey.isEmpty else {
+            throw OpenGraphiteAgentCoreError(message: "i18n resource key は空にできません。")
+        }
+
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        let inspection = try inspectI18n(target: target, locales: [normalizedLocale])
+        guard inspection.loadPath.source != .external else {
+            return OpenGraphiteI18nResourceEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: "",
+                locale: normalizedLocale,
+                key: normalizedKey,
+                value: value,
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "external-i18n-load-path",
+                        message: "backend.loadPath は external / readonly のため、対象 resource path を自動更新できません。",
+                        path: inspection.configSource,
+                        nodeID: nil
+                    )
+                ]
+            )
+        }
+
+        let htmlRootURL = target.loadedProject.rootURL
+            .appendingPathComponent(target.loadedProject.project.htmlRoot)
+            .standardizedFileURL
+        let resourceURL = localeResourceURL(
+            loadPath: inspection.loadPath.value ?? Self.recommendedI18nLoadPath,
+            locale: normalizedLocale,
+            htmlRootURL: htmlRootURL,
+            pageURL: target.htmlURL,
+            configURL: inspection.configSource.map { URL(fileURLWithPath: $0) }
+        )
+        var resource = try readLocaleResource(at: resourceURL)
+        let didChange = resource[normalizedKey] as? String != value
+        resource[normalizedKey] = value
+        if didChange {
+            try writeLocaleResource(resource, to: resourceURL)
+        }
+        return OpenGraphiteI18nResourceEditResult(
+            schemaVersion: Self.schemaVersion,
+            updated: didChange,
+            path: resourceURL.path,
+            locale: normalizedLocale,
+            key: normalizedKey,
+            value: value,
+            diagnostics: []
         )
     }
 
@@ -1259,6 +1849,47 @@ struct OpenGraphiteAgentCore {
     ) throws -> OpenGraphiteEditResult {
         let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
         return try setTextContent(text, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
+    }
+
+    /// 論理名（日本語）: テキストvariantファイル更新関数
+    /// 処理概要: HTML ファイル内の `data-i18n-key` に一致する text binding へ locale variant を保存します。
+    ///
+    /// - Parameters:
+    ///   - text: 保存する variant HTML。空文字も有効な値として保持されます。
+    ///   - locale: variant の locale 名。
+    ///   - i18nKey: 対象 `data-i18n-key`。
+    ///   - htmlURL: HTML ファイル URL。
+    /// - Returns: 編集結果。
+    func setTextVariant(_ text: String, locale: String, i18nKey: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let mutation = OpenGraphiteHTMLDocument(html: html).settingTextVariant(
+            text,
+            locale: locale,
+            i18nKey: i18nKey,
+            contract: contract
+        )
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: "")
+    }
+
+    /// 論理名（日本語）: プロジェクトページテキストvariant更新関数
+    /// 処理概要: `.ogp` の page 参照 ID で明示された HTML 内の text binding variant を更新します。
+    ///
+    /// - Parameters:
+    ///   - text: 保存する variant HTML。空文字も有効な値として保持されます。
+    ///   - locale: variant の locale 名。
+    ///   - i18nKey: 対象 `data-i18n-key`。
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内の page 参照 ID。
+    /// - Returns: 編集結果。
+    func setTextVariant(
+        _ text: String,
+        locale: String,
+        i18nKey: String,
+        projectURL: URL,
+        pageID: String
+    ) throws -> OpenGraphiteEditResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
+        return try setTextVariant(text, locale: locale, i18nKey: i18nKey, htmlURL: target.htmlURL)
     }
 
     /// 論理名（日本語）: HTML断片挿入ファイル更新関数
@@ -1536,6 +2167,777 @@ struct OpenGraphiteAgentCore {
         )
     }
 
+    /// 論理名（日本語）: i18n runtime内部検査関数
+    /// 処理概要: 解決済み page target から HTML と script / module import を読み、i18n 設定と resource 状態を構成します。
+    private func inspectI18n(
+        target: OpenGraphiteProjectPageTarget,
+        locales: [String]
+    ) throws -> OpenGraphiteI18nRuntimeInspection {
+        let normalizedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
+        let html = try String(contentsOf: target.htmlURL, encoding: .utf8)
+        let htmlDocument = OpenGraphiteHTMLDocument(html: html)
+        let htmlRootURL = target.loadedProject.rootURL
+            .appendingPathComponent(target.loadedProject.project.htmlRoot)
+            .standardizedFileURL
+        let scriptSources = try i18nScriptSources(
+            htmlDocument: htmlDocument,
+            pageURL: target.htmlURL,
+            htmlRootURL: htmlRootURL
+        )
+        let detected = detectedI18nConfig(in: scriptSources)
+        let localeField = detected.localeField
+            ?? htmlDocument.htmlDocumentContext().langField.nonEmptyTrimmed
+            ?? target.page.canvas.previewContext.fieldMocks.keys.sorted().first(where: { $0 == "selectedLanguage" })
+        let resourceLoadPath = detected.loadPath.value ?? Self.recommendedI18nLoadPath
+        let configURL = detected.configSource.map { URL(fileURLWithPath: $0) }
+        let resourceEditable = detected.loadPath.source != .external
+        let resources = normalizedLocales.map { locale in
+            let resourceURL = localeResourceURL(
+                loadPath: resourceLoadPath,
+                locale: locale,
+                htmlRootURL: htmlRootURL,
+                pageURL: target.htmlURL,
+                configURL: configURL
+            )
+            return OpenGraphiteI18nResourceStatus(
+                locale: locale,
+                path: resourceURL.path,
+                exists: FileManager.default.fileExists(atPath: resourceURL.path),
+                editable: resourceEditable
+            )
+        }
+
+        let diagnostics: [OpenGraphiteDiagnostic]
+        if detected.adapter == .unknown {
+            diagnostics = [
+                OpenGraphiteDiagnostic(
+                    severity: .info,
+                    code: "missing-i18n-runtime",
+                    message: "i18n.init({...}) を検出できませんでした。推奨設定を作成できます。",
+                    path: target.htmlURL.path,
+                    nodeID: nil
+                )
+            ]
+        } else if detected.loadPath.source == .external {
+            diagnostics = [
+                OpenGraphiteDiagnostic(
+                    severity: .info,
+                    code: "external-i18n-load-path",
+                    message: "backend.loadPath は external / readonly です。OpenGraphite は動的式を自動で書き換えません。",
+                    path: detected.configSource,
+                    nodeID: nil
+                )
+            ]
+        } else {
+            diagnostics = []
+        }
+
+        return OpenGraphiteI18nRuntimeInspection(
+            schemaVersion: Self.schemaVersion,
+            pageURL: target.htmlURL.path,
+            adapter: detected.adapter,
+            configSource: detected.configSource,
+            lng: detected.lng,
+            fallbackLng: detected.fallbackLng,
+            loadPath: detected.loadPath,
+            localeField: localeField,
+            resources: resources,
+            diagnostics: diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: i18n script source収集関数
+    /// 処理概要: HTML script と辿れる module import を読み、i18n 設定検出の入力へ変換します。
+    private func i18nScriptSources(
+        htmlDocument: OpenGraphiteHTMLDocument,
+        pageURL: URL,
+        htmlRootURL: URL
+    ) throws -> [OpenGraphiteI18nScriptSource] {
+        var sources: [OpenGraphiteI18nScriptSource] = []
+        var visited = Set<String>()
+
+        func appendExternalScript(_ url: URL, depth: Int) throws {
+            guard depth <= 12 else { return }
+            let standardized = url.standardizedFileURL
+            let key = standardized.path
+            guard !visited.contains(key) else { return }
+            visited.insert(key)
+            guard FileManager.default.fileExists(atPath: standardized.path) else { return }
+            let source = try String(contentsOf: standardized, encoding: .utf8)
+            sources.append(
+                OpenGraphiteI18nScriptSource(
+                    url: standardized,
+                    displayPath: standardized.path,
+                    source: source,
+                    isInline: false
+                )
+            )
+            for specifier in Self.importSpecifiers(in: source) {
+                guard let importURL = Self.resolvedImplementationURL(
+                    specifier,
+                    relativeTo: standardized,
+                    htmlRootURL: htmlRootURL
+                ) else {
+                    continue
+                }
+                try appendExternalScript(importURL, depth: depth + 1)
+            }
+        }
+
+        for script in htmlDocument.scriptReferences() {
+            if let src = script.src,
+               let scriptURL = Self.resolvedImplementationURL(src, relativeTo: pageURL, htmlRootURL: htmlRootURL) {
+                try appendExternalScript(scriptURL, depth: 0)
+            } else if !script.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                sources.append(
+                    OpenGraphiteI18nScriptSource(
+                        url: pageURL,
+                        displayPath: "\(pageURL.path)#inline-script",
+                        source: script.content,
+                        isInline: true
+                    )
+                )
+            }
+        }
+
+        return sources
+    }
+
+    /// 論理名（日本語）: i18n config検出関数
+    /// 処理概要: script source 内の `i18n.init({...})` から検出対象 literal / external 値を抽出します。
+    private func detectedI18nConfig(
+        in sources: [OpenGraphiteI18nScriptSource]
+    ) -> (
+        adapter: OpenGraphiteI18nAdapter,
+        configSource: String?,
+        lng: OpenGraphiteI18nConfigProperty,
+        fallbackLng: OpenGraphiteI18nConfigProperty,
+        loadPath: OpenGraphiteI18nConfigProperty,
+        localeField: String?
+    ) {
+        for source in sources {
+            guard let objectSource = Self.i18nInitObjectSource(in: source.source) else { continue }
+            let lngExpression = Self.objectPropertyExpression(named: "lng", in: objectSource)
+            let fallbackExpression = Self.objectPropertyExpression(named: "fallbackLng", in: objectSource)
+            let loadPathExpression = Self.objectPropertyExpression(named: "loadPath", in: objectSource)
+            return (
+                adapter: .i18next,
+                configSource: source.displayPath,
+                lng: Self.configProperty(from: lngExpression),
+                fallbackLng: Self.configProperty(from: fallbackExpression),
+                loadPath: Self.configProperty(from: loadPathExpression),
+                localeField: Self.localeFieldName(from: lngExpression)
+            )
+        }
+
+        return (
+            adapter: .unknown,
+            configSource: nil,
+            lng: Self.missingI18nConfigProperty(),
+            fallbackLng: Self.missingI18nConfigProperty(),
+            loadPath: Self.missingI18nConfigProperty(),
+            localeField: nil
+        )
+    }
+
+    /// 論理名（日本語）: locale resource URL解決関数
+    /// 処理概要: literal loadPath または推奨 loadPath から locale JSON の file URL を求めます。
+    private func localeResourceURL(
+        loadPath: String,
+        locale: String,
+        htmlRootURL: URL,
+        pageURL: URL,
+        configURL: URL?
+    ) -> URL {
+        var path = loadPath
+            .replacingOccurrences(of: "{{lng}}", with: locale)
+            .replacingOccurrences(of: "{{locale}}", with: locale)
+        if let queryIndex = path.firstIndex(of: "?") {
+            path = String(path[..<queryIndex])
+        }
+        if path.hasPrefix("/") {
+            return htmlRootURL
+                .appendingPathComponent(String(path.dropFirst()))
+                .standardizedFileURL
+        }
+        let baseURL = configURL?.deletingLastPathComponent() ?? pageURL.deletingLastPathComponent()
+        return baseURL.appendingPathComponent(path).standardizedFileURL
+    }
+
+    /// 論理名（日本語）: locale resource merge関数
+    /// 処理概要: HTML fallback と同梱 variant から flat key JSON を作成・追記します。
+    private func mergeLocaleResource(
+        at url: URL,
+        locale: String,
+        bindings: [OpenGraphiteHTMLTextBindingResource],
+        fallbackLocale: String
+    ) throws -> Bool {
+        var resource = try readLocaleResource(at: url)
+        let before = resource
+        for binding in bindings {
+            if resource[binding.key] != nil {
+                continue
+            }
+            if locale == fallbackLocale {
+                resource[binding.key] = binding.fallbackHTML
+            } else if let variant = Self.variantValue(for: locale, in: binding.variants) {
+                resource[binding.key] = variant
+            } else {
+                resource[binding.key] = binding.fallbackHTML
+            }
+        }
+        guard resource as NSDictionary != before as NSDictionary else {
+            return false
+        }
+        try writeLocaleResource(resource, to: url)
+        return true
+    }
+
+    /// 論理名（日本語）: locale resource読込関数
+    /// 処理概要: flat key JSON を辞書として読み、存在しない場合は空辞書を返します。
+    private func readLocaleResource(at url: URL) throws -> [String: Any] {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return [:]
+        }
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else { return [:] }
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let dictionary = object as? [String: Any] else {
+            throw OpenGraphiteAgentCoreError(message: "locale JSON は object である必要があります: \(url.path)")
+        }
+        return dictionary
+    }
+
+    /// 論理名（日本語）: locale resource保存関数
+    /// 処理概要: flat key JSON を pretty / sorted 形式で実装資源へ保存します。
+    private func writeLocaleResource(_ resource: [String: Any], to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONSerialization.data(withJSONObject: resource, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+        var output = data
+        output.append(0x0A)
+        try output.write(to: url, options: .atomic)
+    }
+
+    private func fallbackLocale(from inspection: OpenGraphiteI18nRuntimeInspection) -> String? {
+        inspection.fallbackLng.value?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmptyTrimmed
+    }
+
+    private func normalizedLocales(_ locales: [String]) -> [String] {
+        var result: [String] = []
+        for locale in locales {
+            let normalizedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalizedLocale.isEmpty, !result.contains(normalizedLocale) else { continue }
+            result.append(normalizedLocale)
+        }
+        return result
+    }
+
+    private static let recommendedI18nLoadPath = "/locales/{{lng}}.json"
+
+    private static let recommendedI18nRuntimeSource = """
+    const fallbackLocale = "ja";
+
+    function previewField(name) {
+      const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
+      const fields = context.fields || {};
+      if (!Object.prototype.hasOwnProperty.call(fields, name)) {
+        return { found: false, value: "" };
+      }
+      return { found: true, value: String(fields[name]) };
+    }
+
+    function selectedLanguage() {
+      const mock = previewField("selectedLanguage");
+      if (mock.found) { return mock.value; }
+      return document.documentElement.lang || fallbackLocale;
+    }
+
+    const i18n = window.i18n || {
+      init(config) {
+        window.__OPENGRAPHITE_I18N_CONFIG__ = config;
+        return config;
+      }
+    };
+
+    const runtimeConfig = i18n.init({
+      lng: selectedLanguage(),
+      fallbackLng: "ja",
+      backend: {
+        loadPath: "/locales/{{lng}}.json"
+      }
+    });
+
+    function resolvedLoadPath(language) {
+      return runtimeConfig.backend.loadPath.replace("{{lng}}", language);
+    }
+
+    function resolvedLocaleURL(language) {
+      const path = resolvedLoadPath(language);
+      if (document.location.protocol === "file:" && path.startsWith("/")) {
+        return new URL(`.${path}`, document.baseURI);
+      }
+      return new URL(path, document.baseURI);
+    }
+
+    async function loadLocale(language) {
+      const url = resolvedLocaleURL(language);
+      try {
+        const response = await fetch(url.href);
+        if (response.ok) { return await response.json(); }
+      } catch (_) {}
+      return await new Promise((resolve) => {
+        const request = new XMLHttpRequest();
+        request.open("GET", url.href, true);
+        request.onload = () => {
+          if ((request.status >= 200 && request.status < 300) || request.status === 0) {
+            try { resolve(JSON.parse(request.responseText)); } catch (_) { resolve({}); }
+          } else {
+            resolve({});
+          }
+        };
+        request.onerror = () => resolve({});
+        request.send();
+      });
+    }
+
+    function elementsIncludingTemplateContent(root) {
+      const elements = [];
+      function visit(node) {
+        if (!node) { return; }
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          elements.push(node);
+          if (node.tagName && node.tagName.toLowerCase() === "template") {
+            Array.from(node.content.childNodes).forEach(visit);
+          }
+        }
+        Array.from(node.childNodes || []).forEach(visit);
+      }
+      visit(root);
+      return elements;
+    }
+
+    function textVariantAttributeForLocale(locale) {
+      const normalizedLocale = String(locale || "").trim().toLowerCase().replace(/_/g, "-");
+      if (!/^[a-z0-9-]+$/.test(normalizedLocale)) {
+        return "";
+      }
+      if (normalizedLocale.split("-")[0] === "en") {
+        return "data-og-text-variant-eng";
+      }
+      return `data-og-text-variant-${normalizedLocale}`;
+    }
+
+    async function applyI18n() {
+      const language = selectedLanguage();
+      const resources = await loadLocale(language);
+      const variantAttribute = textVariantAttributeForLocale(language);
+      document.documentElement.lang = language || fallbackLocale;
+      elementsIncludingTemplateContent(document.documentElement).forEach((element) => {
+        const key = element.getAttribute("data-i18n-key");
+        if (!key) { return; }
+        if (!element.hasAttribute("data-og-runtime-fallback-html")) {
+          element.setAttribute("data-og-runtime-fallback-html", element.innerHTML);
+        }
+        const fallbackHTML = element.getAttribute("data-og-runtime-fallback-html") || "";
+        const variantHTML = variantAttribute ? element.getAttribute(variantAttribute) : null;
+        const value = Object.prototype.hasOwnProperty.call(resources, key) ? resources[key] : variantHTML !== null ? variantHTML : fallbackHTML;
+        element.innerHTML = typeof value === "string" ? value : fallbackHTML;
+      });
+    }
+
+    window.OpenGraphiteI18n = { apply: applyI18n };
+
+    document.addEventListener("DOMContentLoaded", () => { applyI18n(); });
+    document.addEventListener("opengraphite:components-ready", () => { applyI18n(); });
+    document.addEventListener("opengraphite:serialize-complete", () => { applyI18n(); });
+    """
+
+    private static func insertingRecommendedI18nScriptIfNeeded(in html: String, scriptPath: String) -> String {
+        let document = OpenGraphiteHTMLDocument(html: html)
+        let normalizedScriptPath = normalizedScriptReference(scriptPath)
+        if document.scriptReferences().contains(where: { reference in
+            guard let src = reference.src else { return false }
+            return normalizedScriptReference(src) == normalizedScriptPath
+        }) {
+            return html
+        }
+        let source = normalizedScriptPath.hasPrefix(".") || normalizedScriptPath.hasPrefix("/")
+            ? normalizedScriptPath
+            : "./\(normalizedScriptPath)"
+        let script = "    <script src=\"\(escapeAttribute(source))\" defer></script>\n"
+        if let range = html.range(of: "</head>", options: .caseInsensitive) {
+            var result = html
+            result.insert(contentsOf: script, at: range.lowerBound)
+            return result
+        }
+        if let range = html.range(of: "<body", options: .caseInsensitive) {
+            var result = html
+            result.insert(contentsOf: script, at: range.lowerBound)
+            return result
+        }
+        return "\(script)\(html)"
+    }
+
+    private static func resolvedImplementationURL(
+        _ specifier: String,
+        relativeTo sourceURL: URL,
+        htmlRootURL: URL
+    ) -> URL? {
+        let trimmed = specifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !trimmed.hasPrefix("http://"),
+              !trimmed.hasPrefix("https://"),
+              !trimmed.hasPrefix("data:"),
+              !trimmed.hasPrefix("node:")
+        else {
+            return nil
+        }
+
+        let candidate: URL
+        if trimmed.hasPrefix("/") {
+            candidate = htmlRootURL.appendingPathComponent(String(trimmed.dropFirst()))
+        } else if trimmed.hasPrefix("./") || trimmed.hasPrefix("../") {
+            candidate = sourceURL.deletingLastPathComponent().appendingPathComponent(trimmed)
+        } else {
+            return nil
+        }
+
+        let standardized = candidate.standardizedFileURL
+        if FileManager.default.fileExists(atPath: standardized.path) {
+            return standardized
+        }
+        if standardized.pathExtension.isEmpty {
+            for ext in ["js", "mjs", "ts"] {
+                let withExtension = standardized.appendingPathExtension(ext)
+                if FileManager.default.fileExists(atPath: withExtension.path) {
+                    return withExtension.standardizedFileURL
+                }
+            }
+        }
+        return standardized
+    }
+
+    private static func importSpecifiers(in source: String) -> [String] {
+        var specifiers: [String] = []
+        var searchIndex = source.startIndex
+        while let range = source.range(of: "import", range: searchIndex..<source.endIndex) {
+            let before = range.lowerBound > source.startIndex ? source[source.index(before: range.lowerBound)] : " "
+            let after = range.upperBound < source.endIndex ? source[range.upperBound] : " "
+            guard !isIdentifierCharacter(before), !isIdentifierCharacter(after) else {
+                searchIndex = range.upperBound
+                continue
+            }
+            let statementEnd = source[range.upperBound...].firstIndex(of: ";") ?? source.endIndex
+            let statement = String(source[range.upperBound..<statementEnd])
+            if let direct = firstQuotedString(in: statement) {
+                specifiers.append(direct)
+            } else if let fromRange = statement.range(of: "from"),
+                      let imported = firstQuotedString(in: String(statement[fromRange.upperBound...])) {
+                specifiers.append(imported)
+            }
+            searchIndex = statementEnd
+        }
+        return specifiers
+    }
+
+    private static func i18nInitObjectSource(in source: String) -> String? {
+        guard let range = i18nInitObjectRange(in: source) else { return nil }
+        return String(source[range])
+    }
+
+    private static func i18nInitObjectRange(in source: String) -> Range<String.Index>? {
+        guard let initRange = source.range(of: "i18n.init") else { return nil }
+        guard let parenIndex = source[initRange.upperBound...].firstIndex(of: "(") else { return nil }
+        guard let objectStart = source[parenIndex...].firstIndex(of: "{") else { return nil }
+        guard let objectEnd = matchingDelimiterEnd(in: source, start: objectStart, open: "{", close: "}") else {
+            return nil
+        }
+        return objectStart..<source.index(after: objectEnd)
+    }
+
+    private static func objectPropertyExpression(named name: String, in source: String) -> String? {
+        guard let range = objectPropertyValueRange(named: name, in: source) else { return nil }
+        return String(source[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func objectPropertyValueRange(named name: String, in source: String) -> Range<String.Index>? {
+        var index = source.startIndex
+        var quote: Character?
+        var isEscaped = false
+        while index < source.endIndex {
+            let character = source[index]
+            if let activeQuote = quote {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == activeQuote {
+                    quote = nil
+                }
+                index = source.index(after: index)
+                continue
+            }
+            if character == "\"" || character == "'" || character == "`" {
+                quote = character
+                index = source.index(after: index)
+                continue
+            }
+            if isIdentifierStart(character) {
+                let nameStart = index
+                while index < source.endIndex, isIdentifierCharacter(source[index]) {
+                    index = source.index(after: index)
+                }
+                let identifier = String(source[nameStart..<index])
+                guard identifier == name else { continue }
+                var cursor = index
+                while cursor < source.endIndex, source[cursor].isWhitespace {
+                    cursor = source.index(after: cursor)
+                }
+                guard cursor < source.endIndex, source[cursor] == ":" else { continue }
+                cursor = source.index(after: cursor)
+                while cursor < source.endIndex, source[cursor].isWhitespace {
+                    cursor = source.index(after: cursor)
+                }
+                let valueStart = cursor
+                let valueEnd = expressionEnd(in: source, start: valueStart)
+                return valueStart..<valueEnd
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
+
+    private static func replacingI18nLiteralProperty(named name: String, value: String, in source: String) -> String? {
+        guard let objectRange = i18nInitObjectRange(in: source) else { return nil }
+        let objectSource = String(source[objectRange])
+        guard let valueRange = objectPropertyValueRange(named: name, in: objectSource) else { return nil }
+        let objectOffset = source.distance(from: source.startIndex, to: objectRange.lowerBound)
+        let valueStartOffset = objectSource.distance(from: objectSource.startIndex, to: valueRange.lowerBound)
+        let valueEndOffset = objectSource.distance(from: objectSource.startIndex, to: valueRange.upperBound)
+        let fullStart = source.index(source.startIndex, offsetBy: objectOffset + valueStartOffset)
+        let fullEnd = source.index(source.startIndex, offsetBy: objectOffset + valueEndOffset)
+        var updated = source
+        updated.replaceSubrange(fullStart..<fullEnd, with: javaScriptStringLiteral(value))
+        return updated
+    }
+
+    private static func expressionEnd(in source: String, start: String.Index) -> String.Index {
+        var index = start
+        var quote: Character?
+        var isEscaped = false
+        var depth = 0
+        while index < source.endIndex {
+            let character = source[index]
+            if let activeQuote = quote {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == activeQuote {
+                    quote = nil
+                }
+                index = source.index(after: index)
+                continue
+            }
+            if character == "\"" || character == "'" || character == "`" {
+                quote = character
+            } else if character == "{" || character == "[" || character == "(" {
+                depth += 1
+            } else if character == "}" || character == "]" || character == ")" {
+                if depth == 0 {
+                    return index
+                }
+                depth -= 1
+            } else if character == ",", depth == 0 {
+                return index
+            }
+            index = source.index(after: index)
+        }
+        return index
+    }
+
+    private static func matchingDelimiterEnd(
+        in source: String,
+        start: String.Index,
+        open: Character,
+        close: Character
+    ) -> String.Index? {
+        var index = start
+        var quote: Character?
+        var isEscaped = false
+        var depth = 0
+        while index < source.endIndex {
+            let character = source[index]
+            if let activeQuote = quote {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == activeQuote {
+                    quote = nil
+                }
+                index = source.index(after: index)
+                continue
+            }
+            if character == "\"" || character == "'" || character == "`" {
+                quote = character
+            } else if character == open {
+                depth += 1
+            } else if character == close {
+                depth -= 1
+                if depth == 0 {
+                    return index
+                }
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
+
+    private static func configProperty(from expression: String?) -> OpenGraphiteI18nConfigProperty {
+        guard let expression, !expression.isEmpty else {
+            return missingI18nConfigProperty()
+        }
+        if let literal = literalStringValue(from: expression) {
+            return OpenGraphiteI18nConfigProperty(
+                source: .literal,
+                value: literal,
+                expression: nil,
+                editable: true
+            )
+        }
+        return OpenGraphiteI18nConfigProperty(
+            source: .external,
+            value: nil,
+            expression: truncatedExpression(expression),
+            editable: false
+        )
+    }
+
+    private static func missingI18nConfigProperty() -> OpenGraphiteI18nConfigProperty {
+        OpenGraphiteI18nConfigProperty(source: .missing, value: nil, expression: nil, editable: false)
+    }
+
+    private static func literalStringValue(from expression: String) -> String? {
+        let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let quote = trimmed.first, quote == "\"" || quote == "'" else {
+            return nil
+        }
+        var index = trimmed.index(after: trimmed.startIndex)
+        var result = ""
+        var isEscaped = false
+        while index < trimmed.endIndex {
+            let character = trimmed[index]
+            if isEscaped {
+                result.append(character)
+                isEscaped = false
+            } else if character == "\\" {
+                isEscaped = true
+            } else if character == quote {
+                let afterQuote = trimmed.index(after: index)
+                let rest = trimmed[afterQuote...].trimmingCharacters(in: .whitespacesAndNewlines)
+                return rest.isEmpty ? result : nil
+            } else {
+                result.append(character)
+            }
+            index = trimmed.index(after: index)
+        }
+        return nil
+    }
+
+    private static func localeFieldName(from expression: String?) -> String? {
+        guard let expression else { return nil }
+        for name in ["selectedLanguage", "locale", "language"] {
+            if containsIdentifier(name, in: expression) {
+                return name
+            }
+        }
+        return nil
+    }
+
+    private static func containsIdentifier(_ name: String, in source: String) -> Bool {
+        guard let range = source.range(of: name) else { return false }
+        let before = range.lowerBound > source.startIndex ? source[source.index(before: range.lowerBound)] : " "
+        let after = range.upperBound < source.endIndex ? source[range.upperBound] : " "
+        return !isIdentifierCharacter(before) && !isIdentifierCharacter(after)
+    }
+
+    private static func firstQuotedString(in source: String) -> String? {
+        var index = source.startIndex
+        while index < source.endIndex {
+            let quote = source[index]
+            guard quote == "\"" || quote == "'" else {
+                index = source.index(after: index)
+                continue
+            }
+            var cursor = source.index(after: index)
+            var result = ""
+            var isEscaped = false
+            while cursor < source.endIndex {
+                let character = source[cursor]
+                if isEscaped {
+                    result.append(character)
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == quote {
+                    return result
+                } else {
+                    result.append(character)
+                }
+                cursor = source.index(after: cursor)
+            }
+            return nil
+        }
+        return nil
+    }
+
+    private static func javaScriptStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
+        return "\"\(escaped)\""
+    }
+
+    private static func normalizedScriptReference(_ value: String) -> String {
+        var result = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while result.hasPrefix("./") {
+            result = String(result.dropFirst(2))
+        }
+        return result
+    }
+
+    private static func variantValue(for locale: String, in variants: [String: String]) -> String? {
+        let normalizedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let value = variants[normalizedLocale] {
+            return value
+        }
+        if normalizedLocale == "en", let value = variants["eng"] {
+            return value
+        }
+        if normalizedLocale == "eng", let value = variants["en"] {
+            return value
+        }
+        return nil
+    }
+
+    private static func truncatedExpression(_ expression: String) -> String {
+        let trimmed = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 160 else { return trimmed }
+        return "\(trimmed.prefix(157))..."
+    }
+
+    private static func isIdentifierStart(_ character: Character) -> Bool {
+        character == "_" || character == "$" || character.isLetter
+    }
+
+    private static func isIdentifierCharacter(_ character: Character) -> Bool {
+        isIdentifierStart(character) || character.isNumber
+    }
+
     /// 論理名（日本語）: プロジェクトページターゲット解決関数
     /// 処理概要: `.ogp` を読み込み、page ID が指す HTML URL を検証して返します。
     ///
@@ -1718,11 +3120,11 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: ページ位置検索関数
-    /// 処理概要: Chapter / Collection 配列を横断し、指定 HTML 内部 ID または複合参照 ID の位置を返します。
+    /// 処理概要: Chapter / Collection 配列を横断し、指定 page ID、内部 ID、または複合参照 ID の位置を返します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` プロジェクト。
-    ///   - pageID: 検索する page 内部 ID または複合参照 ID。
+    ///   - pageID: 検索する page ID、内部 ID、または複合参照 ID。
     /// - Returns: 見つかった page の位置。存在しない場合は `nil`。
     private func pageLocation(in project: OpenGraphiteProject, pageID: String) -> OpenGraphiteProjectPageLocation? {
         let normalizedPageID = pageID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1734,12 +3136,16 @@ struct OpenGraphiteAgentCore {
         }
 
         for chapterIndex in project.chapters.indices {
-            if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == normalizedPageID }) {
+            if let pageIndex = project.chapters[chapterIndex].pages.firstIndex(where: {
+                $0.id == normalizedPageID || $0.internalID == normalizedPageID
+            }) {
                 return OpenGraphiteProjectPageLocation(segment: .pages, groupIndex: chapterIndex, pageIndex: pageIndex)
             }
         }
         for collectionIndex in project.collections.indices {
-            if let componentIndex = project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == normalizedPageID }) {
+            if let componentIndex = project.collections[collectionIndex].components.firstIndex(where: {
+                $0.id == normalizedPageID || $0.internalID == normalizedPageID
+            }) {
                 return OpenGraphiteProjectPageLocation(segment: .components, groupIndex: collectionIndex, pageIndex: componentIndex)
             }
         }
@@ -1883,6 +3289,29 @@ struct OpenGraphiteAgentCore {
         name?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 論理名（日本語）: Preview Context更新関数
+    /// 処理概要: CLI / MCP から指定された runtime mock state の部分更新を既存値へ反映します。
+    ///
+    /// - Parameters:
+    ///   - current: 既存 preview Mock State。
+    ///   - fieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
+    /// - Returns: 更新後 preview Mock State。
+    private func updatedPreviewContext(
+        _ current: OpenGraphitePreviewContext,
+        fieldMocks: [String: String]?
+    ) throws -> OpenGraphitePreviewContext {
+        var nextFieldMocks = current.fieldMocks
+        if let fieldMocks {
+            for (key, value) in fieldMocks {
+                let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalizedKey.isEmpty else { continue }
+                nextFieldMocks[normalizedKey] = value
+            }
+        }
+
+        return OpenGraphitePreviewContext(fieldMocks: nextFieldMocks)
+    }
+
     /// 論理名（日本語）: プロジェクトページパス検証関数
     /// 処理概要: `chapters[].pages[].path` が `htmlRoot` 相対の明示的な HTML path として安全かを検証します。
     ///
@@ -1935,6 +3364,60 @@ struct OpenGraphiteAgentCore {
         let downward = Array(targetComponents.dropFirst(sharedCount))
         let components = upward + downward
         return components.isEmpty ? "." : components.joined(separator: "/")
+    }
+
+    /// 論理名（日本語）: HTML Document Context変更保存関数
+    /// 処理概要: `<html>` attribute 更新結果を検証し、成功時に HTML ファイルへ書き戻します。
+    ///
+    /// - Parameters:
+    ///   - mutation: HTML document context 変更結果。
+    ///   - htmlURL: 対象 HTML ファイル URL。
+    ///   - didChange: 元 HTML から差分があるか。
+    /// - Returns: 保存結果。
+    private func persistHTMLDocumentContextMutation(
+        _ mutation: OpenGraphiteHTMLMutationResult,
+        htmlURL: URL,
+        didChange: Bool
+    ) throws -> OpenGraphiteHTMLDocumentContextResult {
+        let context = OpenGraphiteHTMLDocument(html: mutation.html).htmlDocumentContext()
+        let blockingDiagnostics = mutation.diagnostics.filter { $0.severity == .error }
+        guard blockingDiagnostics.isEmpty else {
+            return OpenGraphiteHTMLDocumentContextResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                context: context,
+                diagnostics: mutation.diagnostics.map { withPath($0, path: htmlURL.path) }
+            )
+        }
+
+        let candidateDocument = OpenGraphiteHTMLDocument(html: mutation.html)
+        let candidateDiagnostics = validate(
+            nodes: candidateDocument.nodes(),
+            tags: candidateDocument.parsedTags(),
+            path: htmlURL.path
+        )
+        let allDiagnostics = mutation.diagnostics.map { withPath($0, path: htmlURL.path) } + candidateDiagnostics
+        guard !candidateDiagnostics.contains(where: { $0.severity == .error }) else {
+            return OpenGraphiteHTMLDocumentContextResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                context: context,
+                diagnostics: allDiagnostics
+            )
+        }
+
+        if didChange {
+            try mutation.html.write(to: htmlURL, atomically: true, encoding: .utf8)
+        }
+        return OpenGraphiteHTMLDocumentContextResult(
+            schemaVersion: Self.schemaVersion,
+            updated: didChange,
+            path: htmlURL.path,
+            context: context,
+            diagnostics: allDiagnostics
+        )
     }
 
     private func persistMutation(
@@ -2196,5 +3679,14 @@ struct OpenGraphiteAgentCoreError: LocalizedError {
 
     var errorDescription: String? {
         message
+    }
+}
+
+private extension String {
+    /// 論理名（日本語）: 空文字nil化済みtrim文字列
+    /// 概要: 前後空白を除去し、空文字なら `nil` として返します。
+    var nonEmptyTrimmed: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

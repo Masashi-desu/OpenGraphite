@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-og-lang-source="binding" data-og-lang-field="selectedLanguage" dir="ltr" data-og-dir-source="auto">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenGraphite Downloads</title>
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <script src="./i18n.js" defer></script>
   </head>
   <body>
     <link rel="opengraphite-components" href="./_components/design-system.html">
@@ -15,40 +16,47 @@
   data-og-role="page-preview"
   style="--og-gap:0; --og-padding:30px 52px 76px; --og-background:#151514; --og-foreground:#ece7de;" data-og-internal-id="a40992e00b6c">
   <og-instance data-og-id="site-header" data-og-type="frame" data-og-component="site-header" data-og-internal-id="a4c5c6e43d11">
-    <template slot="nav">
-      <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="60447086753d">Home</a>
-      <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="f6d325d312e5">Downloads</a>
-      <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="b991bf4b9a72">Docs</a>
+  <template slot="nav">
+    <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="60447086753d">
+      <NavLabel data-og-id="nav-home-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.home" style="--og-line-height:1;" data-og-internal-id="downloadsnavhomelabel" data-og-text-variant-eng="Home">ホーム</NavLabel>
+    </a>
+    <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="f6d325d312e5">
+      <NavLabel data-og-id="nav-downloads-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.downloads" style="--og-line-height:1;" data-og-internal-id="downloadsnavdownloadslabel" data-og-text-variant-eng="Downloads">ダウンロード</NavLabel>
+    </a>
+    <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="b991bf4b9a72">
+      <NavLabel data-og-id="nav-docs-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.docs" style="--og-line-height:1;" data-og-internal-id="downloadsnavdocslabel" data-og-text-variant-eng="Docs">ドキュメント</NavLabel>
+    </a>
+  </template>
+</og-instance>
+  <DownloadsViewportFrame data-og-id="downloads-viewport-frame" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-min-height:calc(100vh - 118px); --og-flex:1 1 auto; --og-gap:28px; --og-padding:34px 0 0;" data-og-internal-id="c6d8b2e4a119">
+  <DownloadIntro data-og-id="downloads-hero" data-og-type="frame" data-og-layout="vertical" data-og-role="landing-hero" style="--og-width:100%; --og-margin:0; --og-gap:24px; --og-padding:42px 0 52px; border-bottom:1px solid #34322e;" data-og-internal-id="407e00b97947">
+    <EyebrowText data-og-id="downloads-eyebrow" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="downloads.hero.eyebrow" style="--og-foreground:#b8b0a3;" data-og-internal-id="f3e07d64565c" data-og-text-variant-eng="Downloads">ダウンロード</EyebrowText>
+    <PageTitle data-og-id="downloads-title" data-og-type="text" data-og-text-source="binding" data-i18n-key="downloads.hero.title" style="--og-font-size:56px; --og-font-weight:820; --og-line-height:1.04; --og-letter-spacing:0; --og-max-width:760px; overflow-wrap:anywhere;" data-og-internal-id="5a88d2410af2" data-og-text-variant-eng="Start from source.">ソースから始める。</PageTitle>
+    <LeadText data-og-id="downloads-lead" data-og-type="text" data-og-role="muted" data-og-text-source="binding" data-i18n-key="downloads.hero.lead" style="--og-font-size:20px; --og-line-height:1.72; --og-foreground:#aaa49a; --og-max-width:760px;" data-og-internal-id="539c456bb9d2" data-og-text-variant-eng="OpenGraphite evolves around the HTML, CSS, and Swift code in the repository. The latest CLI, MCP, and OpenGraphite.css are available from the GitHub repository.">OpenGraphiteはリポジトリ上のHTML/CSS/Swiftコードを中心に進化しています。最新のCLI、MCP、OpenGraphite.cssはGitHubリポジトリから確認できます。</LeadText>
+  </DownloadIntro>
+
+  <og-instance data-og-id="repository-section" data-og-type="frame" data-og-component="content-section" data-og-internal-id="f5006a99d3f7" style="--og-width:100%; --og-margin:0;">
+    <span slot="title" data-og-text-source="binding" data-i18n-key="downloads.repository.title" data-og-text-variant-eng="Repository">リポジトリ</span>
+    <span slot="body" data-og-text-source="binding" data-i18n-key="downloads.repository.body" data-og-text-variant-eng="The repository contains OpenGraphite.app, OpenGraphite.css, ogkiln, and the MCP server source. The HTML used for AI collaboration lives in the same repo.">OpenGraphite.app、OpenGraphite.css、ogkiln、MCP serverのソースがまとまっています。AIとの協業対象になるHTMLも同じリポジトリに置かれます。</span>
+    <template slot="aside">
+      <a href="https://github.com/Masashi-desu/OpenGraphite" target="_blank" rel="noreferrer" data-og-id="repo-link" data-og-type="button" style="--og-padding:15px 20px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="bee1b606d51a">
+        <ButtonLabel data-og-id="repo-link-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="downloads.repository.open" style="--og-line-height:1;" data-og-internal-id="downloadsrepolinklabel" data-og-text-variant-eng="Open Repository">リポジトリを開く</ButtonLabel>
+      </a>
+      <a href="./docs.html" data-og-id="docs-link" data-og-type="button" style="--og-padding:15px 20px; --og-radius:4px; --og-background:#151514; --og-foreground:#e7dfd2; --og-border:1px solid #565247;" data-og-internal-id="d59ac15a9936">
+        <ButtonLabel data-og-id="docs-link-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="downloads.repository.docs" style="--og-line-height:1;" data-og-internal-id="downloadsdocslinklabel" data-og-text-variant-eng="Read Setup Guide">セットアップ手順を読む</ButtonLabel>
+      </a>
     </template>
   </og-instance>
-  <DownloadsViewportFrame data-og-id="downloads-viewport-frame" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-min-height:calc(100vh - 118px); --og-flex:1 1 auto; --og-gap:28px; --og-padding:34px 0 0;" data-og-internal-id="c6d8b2e4a119">
-    <DownloadIntro data-og-id="downloads-hero" data-og-type="frame" data-og-layout="vertical" data-og-role="landing-hero" style="--og-width:100%; --og-margin:0; --og-gap:24px; --og-padding:42px 0 52px; border-bottom:1px solid #34322e;" data-og-internal-id="407e00b97947">
-      <EyebrowText data-og-id="downloads-eyebrow" data-og-type="text" data-og-role="eyebrow" style="--og-foreground:#b8b0a3;" data-og-internal-id="f3e07d64565c">Downloads</EyebrowText>
-      <PageTitle data-og-id="downloads-title" data-og-type="text" style="--og-font-size:56px; --og-font-weight:820; --og-line-height:1.04; --og-letter-spacing:0; --og-max-width:760px; overflow-wrap:anywhere;" data-og-internal-id="5a88d2410af2">ソースから始める。</PageTitle>
-      <LeadText data-og-id="downloads-lead" data-og-type="text" data-og-role="muted" style="--og-font-size:20px; --og-line-height:1.72; --og-foreground:#aaa49a; --og-max-width:760px;" data-og-internal-id="539c456bb9d2">OpenGraphiteはリポジトリ上のHTML/CSS/Swiftコードを中心に進化しています。最新のCLI、MCP、OpenGraphite.cssはGitHubリポジトリから確認できます。</LeadText>
-    </DownloadIntro>
-
-    <og-instance data-og-id="repository-section" data-og-type="frame" data-og-component="content-section" data-og-internal-id="f5006a99d3f7" style="--og-width:100%; --og-margin:0;">
-      <span slot="title">Repository</span>
-      <span slot="body">OpenGraphite.app、OpenGraphite.css、ogkiln、MCP serverのソースがまとまっています。AIとの協業対象になるHTMLも同じリポジトリに置かれます。</span>
-      <template slot="aside">
-        <a href="https://github.com/Masashi-desu/OpenGraphite" target="_blank" rel="noreferrer" data-og-id="repo-link" data-og-type="button" style="--og-padding:15px 20px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="bee1b606d51a">Open Repository</a>
-        <a href="./docs.html" data-og-id="docs-link" data-og-type="button" style="--og-padding:15px 20px; --og-radius:4px; --og-background:#151514; --og-foreground:#e7dfd2; --og-border:1px solid #565247;" data-og-internal-id="d59ac15a9936">Read setup notes</a>
-      </template>
-    </og-instance>
-    <og-instance data-og-id="build-section" data-og-type="frame" data-og-component="content-section" data-og-internal-id="5f12745d7a10" style="--og-width:100%; --og-margin:0;">
-      <span slot="title">Build locally</span>
-      <span slot="body">ローカルでビルドすると、OpenGraphite.appとCLIを同じワークツリーに対して動かせます。</span>
-      <template slot="aside">
-        <CommandBlock
-          data-og-id="download-build-code"
-          data-og-type="text"
-          style="--og-width:min(100%,500px); --og-font-size:15px; --og-line-height:1.75; --og-foreground:#d9d3c8; --og-background:#1f1f1d; --og-padding:20px; --og-radius:4px; --og-border:1px solid #3e3b35; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere;" data-og-internal-id="82a86f279000">git clone https://github.com/Masashi-desu/OpenGraphite.git
+  <og-instance data-og-id="build-section" data-og-type="frame" data-og-component="content-section" data-og-internal-id="5f12745d7a10" style="--og-width:100%; --og-margin:0;">
+    <span slot="title" data-og-text-source="binding" data-i18n-key="downloads.build.title" data-og-text-variant-eng="Build locally">ローカルでビルドする</span>
+    <span slot="body" data-og-text-source="binding" data-i18n-key="downloads.build.body" data-og-text-variant-eng="A local build lets OpenGraphite.app and the CLI operate against the same worktree.">ローカルでビルドすると、OpenGraphite.appとCLIを同じワークツリーに対して動かせます。</span>
+    <template slot="aside">
+      <CommandBlock data-og-id="download-build-code" data-og-type="text" style="--og-width:min(100%,500px); --og-font-size:15px; --og-line-height:1.75; --og-foreground:#d9d3c8; --og-background:#1f1f1d; --og-padding:20px; --og-radius:4px; --og-border:1px solid #3e3b35; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre-wrap; overflow-wrap:anywhere;" data-og-internal-id="82a86f279000">git clone https://github.com/Masashi-desu/OpenGraphite.git
 cd OpenGraphite
 ./Scripts/build.sh</CommandBlock>
-      </template>
-    </og-instance>
-  </DownloadsViewportFrame>
+    </template>
+  </og-instance>
+</DownloadsViewportFrame>
 </OpenGraphitePage>
 <script src="./OpenGraphite.runtime.js" defer></script>
   </body>

@@ -270,7 +270,22 @@ function toolsList() {
         x: { type: "number" },
         y: { type: "number" },
         width: { type: "number" },
-        height: { type: "number" }
+        height: { type: "number" },
+        previewMocks: { type: "object", additionalProperties: { type: "string" } }
+      }, ["projectPath", "pageID"])
+    },
+    {
+      name: "set_project_page_document_context",
+      description: "Update persistent <html> lang/dir attributes and OpenGraphite binding metadata for a project page HTML document.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        pageID: { type: "string" },
+        langSource: { type: "string", enum: ["literal", "binding"] },
+        lang: { type: "string", description: "Literal or fallback lang attribute value." },
+        langField: { type: "string", description: "Runtime field used when langSource is binding." },
+        dirSource: { type: "string", enum: ["literal", "auto", "binding"] },
+        dir: { type: "string", enum: ["ltr", "rtl", "auto", ""] },
+        dirField: { type: "string", description: "Runtime field used when dirSource is binding." }
       }, ["projectPath", "pageID"])
     },
     {
@@ -312,7 +327,22 @@ function toolsList() {
         x: { type: "number" },
         y: { type: "number" },
         width: { type: "number" },
-        height: { type: "number" }
+        height: { type: "number" },
+        previewMocks: { type: "object", additionalProperties: { type: "string" } }
+      }, ["projectPath", "componentID"])
+    },
+    {
+      name: "set_project_component_document_context",
+      description: "Update persistent <html> lang/dir attributes and OpenGraphite binding metadata for a component HTML document.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        componentID: { type: "string" },
+        langSource: { type: "string", enum: ["literal", "binding"] },
+        lang: { type: "string", description: "Literal or fallback lang attribute value." },
+        langField: { type: "string", description: "Runtime field used when langSource is binding." },
+        dirSource: { type: "string", enum: ["literal", "auto", "binding"] },
+        dir: { type: "string", enum: ["ltr", "rtl", "auto", ""] },
+        dirField: { type: "string", description: "Runtime field used when dirSource is binding." }
       }, ["projectPath", "componentID"])
     },
     {
@@ -586,7 +616,24 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "x", "--x"),
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
-        ...optionalValueFlag(args, "height", "--height")
+        ...optionalValueFlag(args, "height", "--height"),
+        ...optionalPreviewMockFlags(args)
+      ];
+    case "set_project_page_document_context":
+      return [
+        "project",
+        "page",
+        "document",
+        requiredArg(args, "projectPath"),
+        "--page-id",
+        requiredArg(args, "pageID"),
+        ...optionalFlag(args, "langSource", "--lang-source"),
+        ...optionalNullableStringFlag(args, "lang", "--lang"),
+        ...optionalNullableStringFlag(args, "langField", "--lang-field"),
+        ...optionalFlag(args, "dirSource", "--dir-source"),
+        ...optionalNullableStringFlag(args, "dir", "--dir"),
+        ...optionalNullableStringFlag(args, "dirField", "--dir-field"),
+        "--json"
       ];
     case "add_project_component":
       return [
@@ -603,6 +650,22 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
         ...optionalValueFlag(args, "height", "--height")
+      ];
+    case "set_project_component_document_context":
+      return [
+        "project",
+        "component",
+        "document",
+        requiredArg(args, "projectPath"),
+        "--component-id",
+        requiredArg(args, "componentID"),
+        ...optionalFlag(args, "langSource", "--lang-source"),
+        ...optionalNullableStringFlag(args, "lang", "--lang"),
+        ...optionalNullableStringFlag(args, "langField", "--lang-field"),
+        ...optionalFlag(args, "dirSource", "--dir-source"),
+        ...optionalNullableStringFlag(args, "dir", "--dir"),
+        ...optionalNullableStringFlag(args, "dirField", "--dir-field"),
+        "--json"
       ];
     case "create_project_component":
       return [
@@ -636,7 +699,8 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "x", "--x"),
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
-        ...optionalValueFlag(args, "height", "--height")
+        ...optionalValueFlag(args, "height", "--height"),
+        ...optionalPreviewMockFlags(args)
       ];
     case "remove_project_component":
       return [
@@ -890,6 +954,14 @@ function optionalValueFlag(args, key, flag) {
     return [];
   }
   return [flag, String(value)];
+}
+
+function optionalPreviewMockFlags(args) {
+  const mocks = args?.previewMocks;
+  if (!mocks || typeof mocks !== "object" || Array.isArray(mocks)) {
+    return [];
+  }
+  return Object.entries(mocks).flatMap(([key, value]) => ["--preview-mock", `${key}=${String(value)}`]);
 }
 
 function optionalStringArg(args, key) {

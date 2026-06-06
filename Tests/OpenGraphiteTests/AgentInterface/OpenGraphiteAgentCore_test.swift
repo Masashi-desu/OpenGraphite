@@ -167,6 +167,167 @@ struct OpenGraphiteAgentCoreTests {
         #expect(result.node?.textContent == "Open <Graphite> & AI")
     }
 
+    /// 論理名（日本語）: テキストvariant編集テスト
+    /// 概要: `data-i18n-key` を指定して、node ID を持たない slot text にも locale variant を保存できることを確認します。
+    @Test("data-i18n-keyでtext variantを更新できる")
+    func testSetTextVariantByI18nKey() throws {
+        // コンディション：通常 text node と slot 用 text binding を持つ HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語タイトル</Title>
+              <span slot="title" data-og-text-source="binding" data-i18n-key="home.slot.title">スロット</span>
+            </body></html>
+            """
+        )
+
+        // 検証内容：i18n key を指定して英語 variant を保存する
+        let titleResult = try fixture.core.setTextVariant(
+            "English title",
+            locale: "eng",
+            i18nKey: "home.title",
+            htmlURL: fixture.htmlURL
+        )
+        let slotResult = try fixture.core.setTextVariant(
+            "Slot <br> English",
+            locale: "eng",
+            i18nKey: "home.slot.title",
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：node id の有無に関わらず variant 属性へ保存される
+        #expect(titleResult.updated == true)
+        #expect(slotResult.updated == true)
+        #expect(html.contains("data-i18n-key=\"home.title\""))
+        #expect(html.contains("data-og-text-variant-eng=\"English title\""))
+        #expect(html.contains("data-i18n-key=\"home.slot.title\""))
+        #expect(html.contains("data-og-text-variant-eng=\"Slot &lt;br> English\""))
+    }
+
+    /// 論理名（日本語）: i18n literal loadPath検出テスト
+    /// 概要: module import 先の `i18n.init` から literal loadPath を検出し、editable として扱うことを確認します。
+    @Test("i18n inspectはmodule import先のliteral loadPathをeditableとして検出する")
+    func testI18nInspectDetectsLiteralLoadPathThroughModuleImport() throws {
+        // コンディション：module script から import される i18n 設定ファイルを用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><head><script type="module" src="./app.js"></script></head><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語</Title>
+            </body></html>
+            """
+        )
+        try """
+        import "./i18n-config.js";
+        """.write(to: fixture.rootURL.appendingPathComponent("app.js"), atomically: true, encoding: .utf8)
+        try """
+        i18n.init({
+          lng: selectedLanguage(),
+          fallbackLng: "ja",
+          backend: { loadPath: "/locales/{{lng}}.json" }
+        });
+        """.write(to: fixture.rootURL.appendingPathComponent("i18n-config.js"), atomically: true, encoding: .utf8)
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：i18n runtime を検査する（When）
+        let result = try fixture.core.inspectI18n(projectURL: projectURL, pageID: "home")
+
+        // 期待値：i18next adapter と literal loadPath が編集可能として検出される（Then）
+        #expect(result.adapter == .i18next)
+        #expect(result.configSource?.hasSuffix("i18n-config.js") == true)
+        #expect(result.loadPath.source == .literal)
+        #expect(result.loadPath.value == "/locales/{{lng}}.json")
+        #expect(result.loadPath.editable == true)
+        #expect(result.localeField == "selectedLanguage")
+    }
+
+    /// 論理名（日本語）: i18n external loadPath検出テスト
+    /// 概要: env 参照などの動的 loadPath を external readonly として扱うことを確認します。
+    @Test("i18n inspectはenv参照loadPathをexternal readonlyとして検出する")
+    func testI18nInspectMarksEnvLoadPathExternalReadOnly() throws {
+        // コンディション：env 参照の loadPath を持つ i18n 設定を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><head><script type="module" src="./i18n.js"></script></head><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語</Title>
+            </body></html>
+            """
+        )
+        try """
+        i18n.init({
+          lng: "ja",
+          fallbackLng: "ja",
+          backend: { loadPath: import.meta.env.VITE_I18N_LOAD_PATH }
+        });
+        """.write(to: fixture.rootURL.appendingPathComponent("i18n.js"), atomically: true, encoding: .utf8)
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：i18n runtime を検査する（When）
+        let result = try fixture.core.inspectI18n(projectURL: projectURL, pageID: "home")
+
+        // 期待値：dynamic loadPath は external / readonly として表示される（Then）
+        #expect(result.adapter == .i18next)
+        #expect(result.loadPath.source == .external)
+        #expect(result.loadPath.editable == false)
+        #expect(result.loadPath.expression?.contains("import.meta.env.VITE_I18N_LOAD_PATH") == true)
+        #expect(result.resources.allSatisfy { $0.editable == false })
+        #expect(result.diagnostics.contains { $0.code == "external-i18n-load-path" })
+    }
+
+    /// 論理名（日本語）: i18n runtime literal更新テスト
+    /// 概要: Project Dependencies から編集する想定で、literal の loadPath と fallbackLng だけを実装設定へ書き戻せることを確認します。
+    @Test("i18n runtime literal設定を書き戻せる")
+    func testUpdateI18nRuntimeLiteralsUpdatesConfigFile() throws {
+        // コンディション：literal loadPath / fallbackLng と external lng を持つ i18n 設定を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><head><script src="./i18n.js" defer></script></head><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語</Title>
+            </body></html>
+            """
+        )
+        try """
+        i18n.init({
+          lng: selectedLanguage(),
+          fallbackLng: "ja",
+          backend: { loadPath: "/locales/{{lng}}.json" }
+        });
+        """.write(to: fixture.rootURL.appendingPathComponent("i18n.js"), atomically: true, encoding: .utf8)
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：literal 設定だけを更新する（When）
+        let result = try fixture.core.updateI18nRuntimeLiterals(
+            projectURL: projectURL,
+            pageID: fixture.homePageInternalID,
+            loadPath: "/assets/i18n/{{lng}}.json",
+            fallbackLocale: "eng"
+        )
+        let source = try String(contentsOf: fixture.rootURL.appendingPathComponent("i18n.js"), encoding: .utf8)
+
+        // 期待値：loadPath / fallbackLng は更新され、lng の実装式は保持される（Then）
+        #expect(result.updated == true)
+        #expect(result.inspection.loadPath.value == "/assets/i18n/{{lng}}.json")
+        #expect(result.inspection.fallbackLng.value == "eng")
+        #expect(source.contains("lng: selectedLanguage()"))
+        #expect(source.contains(#"fallbackLng: "eng""#))
+        #expect(source.contains(#"loadPath: "/assets/i18n/{{lng}}.json""#))
+    }
+
     /// 論理名（日本語）: 子HTML先頭挿入テスト
     /// 概要: `data-og-id` で指定した親ノードの先頭へ子 HTML を挿入できることを確認します。
     @Test("指定ノードの先頭へ子HTMLを挿入できる")
@@ -420,6 +581,32 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages[1].canvas.x == 1480)
     }
 
+    /// 論理名（日本語）: プロジェクトページ同一path追加テスト
+    /// 概要: 明示許可した場合だけ、同じ HTML path を別 preview canvas として追加できることを確認します。
+    @Test("project page addは明示許可時だけ同一pathを追加できる")
+    func testAddProjectPageAllowsDuplicatePathWhenExplicit() throws {
+        // コンディション：単一 page を持つ project manifest を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：同じ path を別 ID で preview canvas として追加する
+        let summary = try fixture.core.addProjectPage(
+            projectURL: projectURL,
+            id: "home-eng",
+            path: "index.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 1280, width: 1440, height: 1200),
+            allowDuplicatePath: true
+        )
+
+        // 期待値：同じ HTML path を参照する page entry が追加される
+        #expect(summary.pages.map(\.id) == ["home", "home-eng"])
+        #expect(summary.pages.map(\.path) == ["index.html", "index.html"])
+        #expect(summary.pages[1].canvas.y == 1280)
+    }
+
     /// 論理名（日本語）: プロジェクトページ配置テスト
     /// 概要: `.ogp` 内の既存 page entry の canvas 配置を部分更新できることを確認します。
     @Test("project page placeで既存ページの配置を更新できる")
@@ -431,10 +618,10 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
         try fixture.writeProject(to: projectURL)
 
-        // 検証内容：既存 home page の x/y だけを更新する
+        // 検証内容：既存 home page の x/y だけを外部 page ID 指定で更新する
         let summary = try fixture.core.placeProjectPage(
             projectURL: projectURL,
-            id: fixture.homePageInternalID,
+            id: "home",
             name: " Desktop ",
             x: 1520,
             y: 80,
@@ -947,6 +1134,209 @@ struct OpenGraphiteAgentCoreTests {
         #expect(loadedProject.project.allPages[0].canvas.name == "Desktop")
     }
 
+    /// 論理名（日本語）: CLIページMock State更新テスト
+    /// 概要: `ogkiln project page place` が page canvas の preview Mock State を更新できることを確認します。
+    @Test("CLIはproject page placeでMock Stateを更新できる")
+    func testCLIPlaceProjectPageUpdatesPreviewContext() throws {
+        // コンディション：単一 page を持つ project manifest と CLI 出力受け取り先を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で home page の preview Mock State を更新する（When）
+        let code = cli.run(
+            arguments: [
+                "project", "page", "place", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--preview-mock", "selectedLanguage=ja",
+                "--preview-mock", "emptyState="
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        let previewContext = loadedProject.project.allPages[0].canvas.previewContext
+
+        // 期待値：CLI は成功し、Mock State が JSON と manifest の両方へ反映される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"selectedLanguage\" : \"ja\""))
+        #expect(previewContext.locale.isEmpty)
+        #expect(previewContext.direction.isEmpty)
+        #expect(previewContext.fieldMocks["selectedLanguage"] == "ja")
+        #expect(previewContext.fieldMocks["emptyState"] == "")
+    }
+
+    /// 論理名（日本語）: CLIページHTML Document Context更新テスト
+    /// 概要: `ogkiln project page document` が HTML 正本の document attribute と binding metadata を更新できることを確認します。
+    @Test("CLIはproject page documentでHTML document contextを更新できる")
+    func testCLIProjectPageDocumentUpdatesHTMLDocumentContext() throws {
+        // コンディション：単一 page を持つ project manifest と HTML 正本を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html lang=\"en\" dir=\"ltr\"><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で home page の HTML document context を更新する（When）
+        let code = cli.run(
+            arguments: [
+                "project", "page", "document", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--lang-source", "binding",
+                "--lang", "ja",
+                "--lang-field", "selectedLanguage",
+                "--dir-source", "auto",
+                "--dir", "ltr"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let context = OpenGraphiteHTMLDocument(html: html).htmlDocumentContext()
+
+        // 期待値：CLI は成功し、変数名は HTML 属性ではなく metadata として保存される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"langField\" : \"selectedLanguage\""))
+        #expect(context.langSource == .binding)
+        #expect(context.langValue == "ja")
+        #expect(context.langField == "selectedLanguage")
+        #expect(context.dirSource == .auto)
+        #expect(context.dirValue == "ltr")
+        #expect(!html.contains("lang=\"selectedLanguage\""))
+        #expect(html.contains("data-og-lang-source=\"binding\""))
+        #expect(html.contains("data-og-lang-field=\"selectedLanguage\""))
+        #expect(html.contains("data-og-dir-source=\"auto\""))
+    }
+
+    /// 論理名（日本語）: CLIテキストvariant更新テスト
+    /// 概要: `ogkiln text variant set` が `data-i18n-key` 指定で text binding variant を更新できることを確認します。
+    @Test("CLIはdata-i18n-keyでtext variantを更新できる")
+    func testCLITextVariantSetUpdatesI18nKeyTarget() throws {
+        // コンディション：単一 page を持つ project manifest と slot text binding を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <span slot="title" data-og-text-source="binding" data-i18n-key="home.slot.title">スロット</span>
+            </body></html>
+            """
+        )
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で英語 variant を保存する（When）
+        let code = cli.run(
+            arguments: [
+                "text", "variant", "set", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--key", "home.slot.title",
+                "--locale", "eng",
+                "--value", "Slot English"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：CLI は成功し、node id がない text binding へ variant 属性が保存される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"updated\" : true"))
+        #expect(html.contains("data-og-text-variant-eng=\"Slot English\""))
+    }
+
+    /// 論理名（日本語）: CLI i18n推奨設定テスト
+    /// 概要: `ogkiln i18n inspect / recommend / resource set` が実装資源の JS と locale JSON を扱えることを確認します。
+    @Test("CLIはi18n runtimeを検査し推奨locale JSONへ書き戻せる")
+    func testCLII18nInspectRecommendAndResourceSet() throws {
+        // コンディション：i18n key と HTML 同梱英語 fallback を持つ page を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><head><title>Fixture</title></head><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title" data-og-text-variant-eng="English title">日本語タイトル</Title>
+            </body></html>
+            """
+        )
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：検査、推奨設定適用、resource set を順番に実行する（When）
+        let inspectCode = cli.run(
+            arguments: ["i18n", "inspect", "Sample.ogp", "--page-id", fixture.homePageInternalID, "--json"],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        #expect(inspectCode == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"adapter\" : \"unknown\""))
+
+        stdout = ""
+        stderr = ""
+        let recommendCode = cli.run(
+            arguments: ["i18n", "recommend", "Sample.ogp", "--page-id", fixture.homePageInternalID, "--locales", "ja,eng"],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let jaURL = fixture.rootURL.appendingPathComponent("locales/ja.json")
+        let engURL = fixture.rootURL.appendingPathComponent("locales/eng.json")
+        let jaResource = try Self.localeJSON(at: jaURL)
+        let engResource = try Self.localeJSON(at: engURL)
+
+        stdout = ""
+        stderr = ""
+        let resourceCode = cli.run(
+            arguments: [
+                "i18n", "resource", "set", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--locale", "eng",
+                "--key", "home.title",
+                "--value", "Edited English"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let updatedEngResource = try Self.localeJSON(at: engURL)
+
+        // 期待値：設定と JSON は .ogp ではなく実装資源へ保存される（Then）
+        #expect(recommendCode == 0)
+        #expect(resourceCode == 0)
+        #expect(stderr.isEmpty)
+        #expect(html.contains("src=\"./i18n.js\" defer"))
+        #expect(FileManager.default.fileExists(atPath: fixture.rootURL.appendingPathComponent("i18n.js").path))
+        #expect(jaResource["home.title"] as? String == "日本語タイトル")
+        #expect(engResource["home.title"] as? String == "English title")
+        #expect(updatedEngResource["home.title"] as? String == "Edited English")
+        #expect(stdout.contains("\"updated\" : true"))
+    }
+
     /// 論理名（日本語）: CLIコンポーネント編集テスト
     /// 概要: `ogkiln` が `--component-id` 経由で Components セグメントの HTML を編集できることを確認します。
     @Test("CLIはcomponent ID経由でComponents HTMLを編集できる")
@@ -1172,6 +1562,16 @@ struct OpenGraphiteAgentCoreTests {
         #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("assets/preview.svg").path))
         #expect(FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("OpenGraphite.css").path))
         #expect(FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("assets/preview.svg").path))
+    }
+
+    /// 論理名（日本語）: locale JSON読込ヘルパー
+    /// 概要: テスト用 locale JSON を辞書として読み込みます。
+    ///
+    /// - Parameter url: JSON ファイル URL。
+    /// - Returns: JSON object 辞書。
+    private static func localeJSON(at url: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: url)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 }
 

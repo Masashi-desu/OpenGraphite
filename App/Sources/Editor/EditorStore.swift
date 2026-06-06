@@ -36,6 +36,7 @@ final class EditorStore: ObservableObject {
     @Published var selectedCollectionInternalID: String?
     @Published var selectedComponentPageID: String?
     @Published var selectedComponentPageInternalID: String?
+    @Published var selectedProjectResource: OpenGraphiteProjectResourceSelection?
     @Published private(set) var nodes: [OpenGraphiteNode] = []
     @Published var selectedNodeID: String?
     @Published var zoom: Double = 0.72
@@ -146,6 +147,37 @@ final class EditorStore: ObservableObject {
     var selectedPageURL: URL? {
         guard let loadedProject, let selectedPage else { return nil }
         return loadedProject.htmlURL(for: selectedPage)
+    }
+
+    var selectedHTMLDocumentContext: OpenGraphiteHTMLDocumentContext {
+        guard let selectedPageURL,
+              let html = readHTMLFromDisk(at: selectedPageURL)
+        else {
+            return .empty
+        }
+        return OpenGraphiteHTMLDocument(html: html).htmlDocumentContext()
+    }
+
+    var selectedI18nRuntimeInspection: OpenGraphiteI18nRuntimeInspection? {
+        guard let loadedProject,
+              let pageID = selectedPageReferenceID()
+        else {
+            return nil
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        return try? core.inspectI18n(projectURL: loadedProject.fileURL, pageID: pageID)
+    }
+
+    var projectI18nRuntimeInspection: OpenGraphiteI18nRuntimeInspection? {
+        guard let loadedProject,
+              let pageID = projectI18nReferencePageID()
+        else {
+            return nil
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        return try? core.inspectI18n(projectURL: loadedProject.fileURL, pageID: pageID)
     }
 
     /// 論理名（日本語）: HTML同期対象生成関数
@@ -278,6 +310,22 @@ final class EditorStore: ObservableObject {
         return pageReferenceID(for: selectedPage, segment: selectedCanvasSegment)
     }
 
+    /// 論理名（日本語）: Project i18n代表ページ参照ID生成関数
+    /// 処理概要: Project 依存性として共有 i18n runtime を検出・編集する入口になる代表 page 参照 ID を返します。
+    ///
+    /// - Returns: 先頭 Pages HTML の参照 ID。Pages がない場合は先頭 Component HTML を返します。
+    func projectI18nReferencePageID() -> String? {
+        guard let loadedProject else { return nil }
+        if let page = loadedProject.project.chapters.flatMap(\.pages).first,
+           let referenceID = pageReferenceID(for: page, segment: .pages) {
+            return referenceID
+        }
+        if let component = loadedProject.project.components.first {
+            return pageReferenceID(for: component, segment: .components)
+        }
+        return nil
+    }
+
     /// 論理名（日本語）: 参照ID pasteboardコピー関数
     /// 処理概要: agent 向け参照 ID をテキストとして pasteboard に保存し、ステータスを更新します。
     ///
@@ -357,6 +405,20 @@ final class EditorStore: ObservableObject {
             return true
         }
         return false
+    }
+
+    /// 論理名（日本語）: Project資源選択関数
+    /// 処理概要: Pages / Components の HTML 選択を維持したまま、Inspector 表示対象を Project 依存性へ切り替えます。
+    ///
+    /// - Parameter resource: 選択する Project 資源。`nil` の場合は Project 資源選択を解除します。
+    func selectProjectResource(_ resource: OpenGraphiteProjectResourceSelection?) {
+        selectedProjectResource = resource
+        selectedNodeID = nil
+        if let resource {
+            statusMessage = "\(resource.title) を表示しています。"
+        } else {
+            statusMessage = "Project 資源選択を解除しました。"
+        }
     }
 
     /// 論理名（日本語）: ノード複合参照ID生成関数
@@ -522,6 +584,7 @@ final class EditorStore: ObservableObject {
             selectedCollectionInternalID = initialCollection?.internalID
             selectedComponentPageID = initialCollection?.components.first?.id
             selectedComponentPageInternalID = initialCollection?.components.first?.internalID
+            selectedProjectResource = nil
             selectedNodeID = nil
             nodes = []
             cssMutation = nil
@@ -572,6 +635,7 @@ final class EditorStore: ObservableObject {
     private func selectPage(matching predicate: (OpenGraphitePage) -> Bool) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         switch selectedCanvasSegment {
         case .pages:
             let page = selectedChapterPages.first(where: predicate)
@@ -622,6 +686,7 @@ final class EditorStore: ObservableObject {
     private func selectChapter(_ chapter: OpenGraphiteChapter?) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         selectedCanvasSegment = .pages
         selectedChapterID = chapter?.id
         selectedChapterInternalID = chapter?.internalID
@@ -665,6 +730,7 @@ final class EditorStore: ObservableObject {
     private func selectCollection(_ collection: OpenGraphiteComponentCollection?) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         selectedCanvasSegment = .components
         selectedCollectionID = collection?.id
         selectedCollectionInternalID = collection?.internalID
@@ -686,6 +752,7 @@ final class EditorStore: ObservableObject {
     func selectPagesSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         selectedCanvasSegment = .pages
         if selectedPageInternalID == nil || !selectedChapterPages.contains(where: { $0.internalID == selectedPageInternalID }) {
             selectedPageID = selectedChapterPages.first?.id
@@ -704,6 +771,7 @@ final class EditorStore: ObservableObject {
     func selectComponentsSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         selectedCanvasSegment = .components
         if selectedCollectionInternalID == nil
             || loadedProject?.project.collections.contains(where: { $0.internalID == selectedCollectionInternalID }) != true {
@@ -747,6 +815,7 @@ final class EditorStore: ObservableObject {
     private func selectComponentPage(matching predicate: (OpenGraphitePage) -> Bool) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        selectedProjectResource = nil
         var collection = selectedComponentCollection
         var page = collection?.components.first(where: predicate)
         if page == nil, let loadedProject {
@@ -780,6 +849,9 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter id: 選択するノード ID。選択解除時は `nil`。
     func selectNode(id: String?) {
+        if id != nil {
+            selectedProjectResource = nil
+        }
         selectedNodeID = id
     }
 
@@ -828,12 +900,13 @@ final class EditorStore: ObservableObject {
             y: y,
             width: width,
             height: height,
-            name: selectedPage?.canvas.name ?? ""
+            name: selectedPage?.canvas.name ?? "",
+            previewContext: selectedPage?.canvas.previewContext ?? .empty
         )
     }
 
     /// 論理名（日本語）: 選択ページキャンバス配置更新関数
-    /// 処理概要: 選択中ページのキャンバス配置名、座標、解像度を `.ogp` へ保存し、表示中 project state へ反映します。
+    /// 処理概要: 選択中ページのキャンバス配置名、座標、解像度、preview Mock State を `.ogp` へ保存し、表示中 project state へ反映します。
     ///
     /// - Parameters:
     ///   - x: キャンバス上の X 座標。
@@ -841,7 +914,15 @@ final class EditorStore: ObservableObject {
     ///   - width: ページプレビュー幅。0 より大きい値が必要です。
     ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
     ///   - name: フロー解決で利用する配置名。空白のみの場合は空文字として保存します。
-    func updateSelectedPageCanvas(x: Double, y: Double, width: Double, height: Double, name: String) {
+    ///   - previewContext: エディター内 preview へ注入する runtime Mock State。
+    func updateSelectedPageCanvas(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        name: String,
+        previewContext: OpenGraphitePreviewContext
+    ) {
         guard x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0 else {
             lastError = "キャンバス配置の入力が不正です。"
             return
@@ -849,7 +930,14 @@ final class EditorStore: ObservableObject {
         guard var loadedProject else { return }
 
         let normalizedName = Self.normalizedCanvasName(name)
-        let nextCanvas = OpenGraphiteCanvas(name: normalizedName, x: x, y: y, width: width, height: height)
+        let nextCanvas = OpenGraphiteCanvas(
+            name: normalizedName,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            previewContext: previewContext
+        )
         let updatedPage: OpenGraphitePage
         switch selectedCanvasSegment {
         case .pages:
@@ -902,10 +990,156 @@ final class EditorStore: ObservableObject {
             try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
             self.loadedProject = loadedProject
             lastError = nil
-            statusMessage = "\(updatedPage.path) のキャンバス配置を更新しました。"
+            statusMessage = "\(updatedPage.path) のキャンバス配置を更新しました。Mock State も保存しました。"
             restartExternalProjectMonitoring(force: true)
         } catch {
             lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: 選択ページキャンバス配置更新関数
+    /// 処理概要: 既存 preview Mock State を維持し、キャンバス配置だけを `.ogp` へ保存します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: ページプレビュー幅。0 より大きい値が必要です。
+    ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
+    ///   - name: フロー解決で利用する配置名。空白のみの場合は空文字として保存します。
+    func updateSelectedPageCanvas(x: Double, y: Double, width: Double, height: Double, name: String) {
+        updateSelectedPageCanvas(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            name: name,
+            previewContext: selectedPage?.canvas.previewContext ?? .empty
+        )
+    }
+
+    /// 論理名（日本語）: HTML Document Context更新関数
+    /// 処理概要: 選択中 HTML の `<html>` document attribute と binding metadata を正本 HTML へ保存します。
+    ///
+    /// - Parameter context: 保存する HTML document context。
+    func updateSelectedHTMLDocumentContext(_ context: OpenGraphiteHTMLDocumentContext) {
+        guard let target = currentHTMLSyncTarget() else { return }
+        guard let diskHTML = readHTMLFromDisk(at: target.htmlURL) else {
+            lastError = "HTMLを読み込めませんでした。ページを再読み込みしてからもう一度設定してください。"
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
+        let mutation = OpenGraphiteHTMLDocument(html: diskHTML)
+            .settingHTMLDocumentContext(context, contract: contract)
+        guard mutation.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            lastError = mutation.diagnostics.first(where: { $0.severity == .error })?.message
+                ?? "HTML document attributes の保存に失敗しました。"
+            return
+        }
+        guard mutation.html != diskHTML else { return }
+        guard syncHTML(mutation.html, target: target) else { return }
+        incrementReloadToken(for: target.htmlURL)
+        lastError = nil
+        statusMessage = "\(target.htmlURL.lastPathComponent) の HTML document attributes を更新しました。"
+    }
+
+    /// 論理名（日本語）: 選択ページi18n推奨設定適用関数
+    /// 処理概要: 選択中 HTML の実装資源へ推奨 i18n runtime と locale JSON を作成・更新します。
+    func recommendI18nForSelectedPage() {
+        guard let loadedProject,
+              let pageID = selectedPageReferenceID()
+        else {
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.recommendI18n(
+                projectURL: loadedProject.fileURL,
+                pageID: pageID,
+                locales: ["ja", "eng"]
+            )
+            if let selectedPageURL {
+                incrementReloadToken(for: selectedPageURL)
+                refreshPageFromDiskIfChanged(at: selectedPageURL)
+            }
+            lastError = nil
+            statusMessage = result.updated
+                ? "i18n runtime と locale JSON を実装資源へ更新しました。"
+                : "i18n runtime と locale JSON は既に推奨設定です。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = "i18n 推奨設定の適用に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Project i18n推奨設定適用関数
+    /// 処理概要: Project 内の Pages HTML へ推奨 i18n runtime 参照を用意し、共有 locale JSON を実装資源へ作成・更新します。
+    func recommendI18nForProject() {
+        guard let loadedProject else { return }
+        let pages = loadedProject.project.chapters.flatMap(\.pages)
+        let targetPages = pages.isEmpty ? loadedProject.project.components : pages
+        guard !targetPages.isEmpty else { return }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        var updated = false
+
+        do {
+            for page in targetPages {
+                let segment: OpenGraphiteCanvasSegment = pages.isEmpty ? .components : .pages
+                guard let pageID = pageReferenceID(for: page, segment: segment) else { continue }
+                let result = try core.recommendI18n(
+                    projectURL: loadedProject.fileURL,
+                    pageID: pageID,
+                    locales: ["ja", "eng"]
+                )
+                updated = updated || result.updated
+            }
+            refreshProjectDependenciesFromDisk()
+            for page in targetPages {
+                refreshPageFromDiskIfChanged(at: loadedProject.htmlURL(for: page))
+            }
+            lastError = nil
+            statusMessage = updated
+                ? "Project の i18n runtime と locale JSON を実装資源へ更新しました。"
+                : "Project の i18n runtime と locale JSON は既に推奨設定です。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = "Project i18n 推奨設定の適用に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Project i18n runtime literal更新関数
+    /// 処理概要: Project 依存性で選択された共有 i18n 設定ファイルへ literal の loadPath / fallbackLng を保存します。
+    ///
+    /// - Parameters:
+    ///   - loadPath: 更新する `backend.loadPath`。`nil` の場合は更新しません。
+    ///   - fallbackLocale: 更新する `fallbackLng`。`nil` の場合は更新しません。
+    func updateProjectI18nRuntime(loadPath: String?, fallbackLocale: String?) {
+        guard let loadedProject,
+              let pageID = projectI18nReferencePageID()
+        else {
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.updateI18nRuntimeLiterals(
+                projectURL: loadedProject.fileURL,
+                pageID: pageID,
+                loadPath: loadPath,
+                fallbackLocale: fallbackLocale
+            )
+            if let error = result.diagnostics.first(where: { $0.severity == .error }) {
+                lastError = error.message
+                return
+            }
+            refreshProjectDependenciesFromDisk()
+            lastError = nil
+            statusMessage = result.updated
+                ? "Project の i18n runtime 設定を更新しました。"
+                : "Project の i18n runtime 設定は変更されていません。"
+        } catch {
+            lastError = "Project i18n runtime 設定の更新に失敗しました: \(error.localizedDescription)"
         }
     }
 
@@ -960,7 +1194,11 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter payload: DOM から収集されたノード辞書の配列。
     func ingestNodePayload(_ payload: [[String: Any]]) {
-        nodes = payload.compactMap(Self.node(from:))
+        let sourceNodes = sourceNodesByInternalIDForCurrentTarget()
+        nodes = payload.compactMap { dictionary in
+            let internalID = dictionary["internalID"] as? String ?? ""
+            return Self.node(from: dictionary, sourceNode: sourceNodes[internalID])
+        }
 
         if let selectedNodeID, !nodes.contains(where: { $0.id == selectedNodeID }) {
             self.selectedNodeID = nil
@@ -2141,7 +2379,7 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter dictionary: DOM ノードから収集した辞書。
     /// - Returns: 必須値がそろっている場合はノード、欠けている場合は `nil`。
-    private static func node(from dictionary: [String: Any]) -> OpenGraphiteNode? {
+    private static func node(from dictionary: [String: Any], sourceNode: OpenGraphiteAgentNode? = nil) -> OpenGraphiteNode? {
         guard
             let id = dictionary["id"] as? String,
             !id.isEmpty,
@@ -2163,10 +2401,32 @@ final class EditorStore: ObservableObject {
             componentKind: dictionary["componentKind"] as? String,
             sourceComponentID: dictionary["sourceComponentID"] as? String,
             sourceInstanceID: dictionary["sourceInstanceID"] as? String,
+            textContent: dictionary["textContent"] as? String,
+            fallbackTextContent: sourceNode?.textContent ?? dictionary["fallbackTextContent"] as? String,
+            textSource: sourceNode?.attributes["data-og-text-source"] ?? dictionary["textSource"] as? String,
+            i18nKey: sourceNode?.attributes["data-i18n-key"] ?? dictionary["i18nKey"] as? String,
             cssVariables: cssVariables,
             isHidden: dictionary["hidden"] as? Bool ?? false,
             isLocked: dictionary["locked"] as? Bool ?? false,
             depth: dictionary["depth"] as? Int ?? 0
         )
+    }
+
+    /// 論理名（日本語）: 現在HTML正本ノード索引生成関数
+    /// 処理概要: Inspector の fallback text 表示に使うため、表示中 HTML 正本を `data-og-internal-id` で引ける辞書へ変換します。
+    ///
+    /// - Returns: 現在の HTML 正本に含まれるノードの内部 ID 索引。
+    private func sourceNodesByInternalIDForCurrentTarget() -> [String: OpenGraphiteAgentNode] {
+        guard let target = currentHTMLSyncTarget(),
+              let html = readHTMLFromDisk(at: target.htmlURL)
+        else {
+            return [:]
+        }
+        return OpenGraphiteHTMLDocument(html: html)
+            .nodes()
+            .reduce(into: [:]) { result, node in
+                guard !node.internalID.isEmpty else { return }
+                result[node.internalID] = node
+            }
     }
 }

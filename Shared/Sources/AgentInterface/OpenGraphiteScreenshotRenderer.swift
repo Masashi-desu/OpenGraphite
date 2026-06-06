@@ -134,6 +134,7 @@ struct OpenGraphiteScreenshotRenderer {
     ///   - width: 初期 viewport 幅。
     ///   - height: 初期 viewport 高さ。
     ///   - padding: 切り抜き範囲へ加える余白。
+    ///   - previewContext: エディター preview と同じ条件で注入する runtime Mock State。
     /// - Returns: スクリーンショット結果。
     func captureNode(
         htmlURL: URL,
@@ -142,7 +143,8 @@ struct OpenGraphiteScreenshotRenderer {
         readAccessURL: URL,
         width: Double?,
         height: Double?,
-        padding: Double?
+        padding: Double?,
+        previewContext: OpenGraphitePreviewContext = .empty
     ) throws -> OpenGraphiteScreenshotResult {
         let resolvedNodeID = OpenGraphiteReferenceID.nodeInternalID(from: nodeID) ?? nodeID
         return try runWebKitSynchronously {
@@ -153,7 +155,8 @@ struct OpenGraphiteScreenshotRenderer {
                 readAccessURL: readAccessURL,
                 width: width,
                 height: height,
-                padding: padding
+                padding: padding,
+                previewContext: previewContext
             )
         }
     }
@@ -180,7 +183,8 @@ struct OpenGraphiteScreenshotRenderer {
                 htmlURL: loadedProject.htmlURL(for: page),
                 readAccessURL: loadedProject.rootURL,
                 viewport: CGSize(width: page.canvas.width, height: page.canvas.height),
-                fullPage: false
+                fullPage: false,
+                previewContext: page.canvas.previewContext
             )
             return (page: page, image: image)
         }
@@ -229,6 +233,7 @@ struct OpenGraphiteScreenshotRenderer {
         let accessURL: URL
         let viewport: CGSize
         let resolvedPageID: String?
+        let previewContext: OpenGraphitePreviewContext
 
         if targetURL.pathExtension == "ogp" {
             let loadedProject = try ProjectLoader().loadProject(at: targetURL)
@@ -245,6 +250,7 @@ struct OpenGraphiteScreenshotRenderer {
                 height: try positiveSize(height, fallback: page.canvas.height, label: "--height")
             )
             resolvedPageID = page.id
+            previewContext = page.canvas.previewContext
         } else {
             pageURL = targetURL
             accessURL = readAccessURL
@@ -253,13 +259,15 @@ struct OpenGraphiteScreenshotRenderer {
                 height: try positiveSize(height, fallback: Self.defaultViewportHeight, label: "--height")
             )
             resolvedPageID = nil
+            previewContext = .empty
         }
 
         let image = try await capturePageImage(
             htmlURL: pageURL,
             readAccessURL: accessURL,
             viewport: viewport,
-            fullPage: fullPage
+            fullPage: fullPage,
+            previewContext: previewContext
         )
         let pngSize = try writePNG(image, to: outputURL)
         return OpenGraphiteScreenshotResult(
@@ -284,15 +292,17 @@ struct OpenGraphiteScreenshotRenderer {
         readAccessURL: URL,
         width: Double?,
         height: Double?,
-        padding: Double?
+        padding: Double?,
+        previewContext: OpenGraphitePreviewContext
     ) async throws -> OpenGraphiteScreenshotResult {
         let viewport = CGSize(
             width: try positiveSize(width, fallback: Self.defaultViewportWidth, label: "--width"),
             height: try positiveSize(height, fallback: Self.defaultViewportHeight, label: "--height")
         )
-        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
+        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport, previewContext: previewContext)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
         try await snapshotter.renderLocalComponentReferences()
+        try await snapshotter.applyImplementationI18nRuntimeIfAvailable()
         let documentSize = try await snapshotter.documentSize()
         snapshotter.resize(to: documentSize)
         try await snapshotter.waitForLayout()
@@ -399,11 +409,13 @@ struct OpenGraphiteScreenshotRenderer {
         htmlURL: URL,
         readAccessURL: URL,
         viewport: CGSize,
-        fullPage: Bool
+        fullPage: Bool,
+        previewContext: OpenGraphitePreviewContext = .empty
     ) async throws -> NSImage {
-        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport)
+        let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport, previewContext: previewContext)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
         try await snapshotter.renderLocalComponentReferences()
+        try await snapshotter.applyImplementationI18nRuntimeIfAvailable()
         if fullPage {
             let documentSize = try await snapshotter.documentSize()
             snapshotter.resize(to: documentSize)
@@ -527,10 +539,19 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
     /// 論理名（日本語）: ページスナップショット補助初期化関数
     /// 処理概要: 指定 viewport の offscreen WKWebView を作成します。
     ///
-    /// - Parameter viewport: 初期 viewport サイズ。
-    init(viewport: CGSize) {
+    /// - Parameters:
+    ///   - viewport: 初期 viewport サイズ。
+    ///   - previewContext: ページ読み込み前に注入する runtime Mock State。
+    init(viewport: CGSize, previewContext: OpenGraphitePreviewContext = .empty) {
         let configuration = WKWebViewConfiguration()
         configuration.suppressesIncrementalRendering = true
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: Self.previewContextScript(for: previewContext),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
         webView = WKWebView(frame: CGRect(origin: .zero, size: viewport), configuration: configuration)
         super.init()
         webView.navigationDelegate = self
@@ -584,6 +605,25 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         _ = try await evaluateJavaScript(renderScript)
     }
 
+    /// 論理名（日本語）: 実装i18n runtime適用関数
+    /// 処理概要: ページ側 runtime が `window.OpenGraphiteI18n.apply` を公開している場合だけ、その runtime に locale 適用を再実行させます。
+    func applyImplementationI18nRuntimeIfAvailable() async throws {
+        _ = try await evaluateJavaScript(
+            """
+            (function() {
+              const runtime = window.OpenGraphiteI18n;
+              if (!runtime || typeof runtime.apply !== 'function') {
+                return false;
+              }
+              Promise.resolve(runtime.apply())
+                .catch(() => {});
+              return true;
+            })()
+            """
+        )
+        try await Task.sleep(nanoseconds: 220_000_000)
+    }
+
     /// 論理名（日本語）: ローカルtext文書読み込み関数
     /// 処理概要: JavaScript から得た href のうち `file://` URL だけを UTF-8 text として読み込みます。
     ///
@@ -594,6 +634,102 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             guard let url = URL(string: href), url.isFileURL else { return nil }
             return try? String(contentsOf: url, encoding: .utf8)
         }
+    }
+
+    /// 論理名（日本語）: プレビューContext注入スクリプト生成関数
+    /// 処理概要: screenshot 用 WebView に HTML document metadata と mock state を注入する JavaScript を生成します。
+    ///
+    /// - Parameter previewContext: 注入する runtime Mock State。
+    /// - Returns: document start で実行する JavaScript。
+    private static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
+        let payload: [String: Any] = [
+            "fields": previewContext.fieldMocks
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+        let literal = String(data: data, encoding: .utf8) ?? "{}"
+        return """
+        (function() {
+          const payload = \(literal);
+          const rawFields = payload && typeof payload.fields === 'object' && payload.fields ? payload.fields : {};
+          const fields = {};
+          Object.keys(rawFields).forEach((key) => {
+            fields[key] = rawFields[key];
+          });
+          Object.freeze(fields);
+          const root = document.documentElement;
+          function fieldOverride(name) {
+            if (!name || !Object.prototype.hasOwnProperty.call(fields, name)) {
+              return { found: false, value: '' };
+            }
+            return { found: true, value: String(fields[name]) };
+          }
+          function primaryLanguageSubtag(lang) {
+            return String(lang || '').trim().split(/[-_]/)[0].toLowerCase();
+          }
+          function directionForLanguage(lang) {
+            const rtlLanguages = new Set(['ar', 'arc', 'dv', 'fa', 'ha', 'he', 'khw', 'ks', 'ku', 'ps', 'ur', 'yi']);
+            return rtlLanguages.has(primaryLanguageSubtag(lang)) ? 'rtl' : 'ltr';
+          }
+          const fallbackLang = root.getAttribute('lang') || '';
+          const langSource = root.getAttribute('data-og-lang-source') || 'literal';
+          const langField = root.getAttribute('data-og-lang-field') || '';
+          let resolvedLang = fallbackLang;
+          if (langSource === 'binding') {
+            const binding = fieldOverride(langField);
+            if (binding.found) {
+              resolvedLang = binding.value;
+            }
+          }
+          const fallbackDir = root.getAttribute('dir') || '';
+          const dirSource = root.getAttribute('data-og-dir-source') || 'literal';
+          const dirField = root.getAttribute('data-og-dir-field') || '';
+          let resolvedDir = fallbackDir;
+          if (dirSource === 'binding') {
+            const binding = fieldOverride(dirField);
+            if (binding.found) {
+              resolvedDir = binding.value;
+            }
+          } else if (dirSource === 'auto') {
+            resolvedDir = resolvedLang ? directionForLanguage(resolvedLang) : fallbackDir;
+          }
+          const documentContext = Object.freeze({
+            lang: resolvedLang,
+            locale: resolvedLang,
+            langSource: langSource,
+            langField: langField,
+            langFallback: fallbackLang,
+            dir: resolvedDir,
+            dirSource: dirSource,
+            dirField: dirField,
+            dirFallback: fallbackDir
+          });
+          const context = {
+            document: documentContext,
+            fields: fields
+          };
+          const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
+          Object.keys(fields).forEach((key) => {
+            if (/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(key) && !blockedKeys.has(key) && !(key in context)) {
+              context[key] = fields[key];
+            }
+          });
+          if (documentContext.lang) {
+            document.documentElement.lang = documentContext.lang;
+            document.documentElement.dataset.ogPreviewLocale = documentContext.lang;
+          } else {
+            document.documentElement.removeAttribute('lang');
+            delete document.documentElement.dataset.ogPreviewLocale;
+          }
+          if (documentContext.dir) {
+            document.documentElement.dir = documentContext.dir;
+            document.documentElement.dataset.ogPreviewDir = documentContext.dir;
+          } else {
+            document.documentElement.removeAttribute('dir');
+            delete document.documentElement.dataset.ogPreviewDir;
+          }
+          window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = Object.freeze(context);
+        })();
+        """
     }
 
     /// 論理名（日本語）: WebViewリサイズ関数

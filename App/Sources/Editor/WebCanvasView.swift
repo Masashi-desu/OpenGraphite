@@ -253,12 +253,14 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// - `syncTarget`: 保存対象 HTML の object identity と固定 URL。
 /// - `isInteractive`: DOM 収集、選択、編集同期を有効にするか。
 /// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
+/// - `previewContext`: エディター内 preview に注入する runtime Mock State。
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
     var pageURL: URL?
     var syncTarget: HTMLSyncTarget?
     var isInteractive = true
     var reloadToken = 0
+    var previewContext: OpenGraphitePreviewContext = .empty
 
     /// 論理名（日本語）: コーディネーター生成関数
     /// 処理概要: WKWebView の navigation、script message、context menu を処理するコーディネーターを生成します。
@@ -282,13 +284,7 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowLinks")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowHover")
-        userContentController.addUserScript(
-            WKUserScript(
-                source: Self.bridgeScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
-            )
-        )
+        Self.installUserScripts(on: userContentController, previewContext: previewContext)
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = userContentController
@@ -302,6 +298,7 @@ struct WebCanvasView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         context.coordinator.webView = webView
+        context.coordinator.lastPreviewContext = previewContext
         WebScrollStateRegistry.shared.update(.outside, for: webView)
         return webView
     }
@@ -318,11 +315,17 @@ struct WebCanvasView: NSViewRepresentable {
         context.coordinator.isInteractive = isInteractive
         context.coordinator.syncTarget = syncTarget
 
+        let previewContextChanged = context.coordinator.lastPreviewContext != previewContext
+        if previewContextChanged {
+            Self.installUserScripts(on: webView.configuration.userContentController, previewContext: previewContext)
+            context.coordinator.lastPreviewContext = previewContext
+        }
+
         let targetPageURL = syncTarget?.htmlURL ?? pageURL ?? store.selectedPageURL
         if let targetPageURL {
             let loadedURLChanged = context.coordinator.loadedURL != targetPageURL
             let reloadTokenChanged = context.coordinator.lastReloadToken != reloadToken
-            if loadedURLChanged || reloadTokenChanged {
+            if loadedURLChanged || reloadTokenChanged || previewContextChanged {
                 context.coordinator.loadedURL = targetPageURL
                 context.coordinator.lastReloadToken = reloadToken
                 context.coordinator.lastSelectedNodeID = nil
@@ -402,6 +405,141 @@ struct WebCanvasView: NSViewRepresentable {
         WebScrollStateRegistry.shared.remove(for: nsView)
     }
 
+    /// 論理名（日本語）: WebViewユーザースクリプト設定関数
+    /// 処理概要: preview Mock State 注入 script と編集 bridge script を読み込み順に登録します。
+    ///
+    /// - Parameters:
+    ///   - userContentController: script を保持する WKUserContentController。
+    ///   - previewContext: preview に注入する runtime Mock State。
+    private static func installUserScripts(
+        on userContentController: WKUserContentController,
+        previewContext: OpenGraphitePreviewContext
+    ) {
+        userContentController.removeAllUserScripts()
+        userContentController.addUserScript(
+            WKUserScript(
+                source: previewContextScript(for: previewContext),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        userContentController.addUserScript(
+            WKUserScript(
+                source: bridgeScript,
+                injectionTime: .atDocumentEnd,
+                forMainFrameOnly: true
+            )
+        )
+    }
+
+    /// 論理名（日本語）: プレビューContext注入スクリプト生成関数
+    /// 処理概要: HTML document metadata と `.ogp` の Mock State を preview 用 JS と HTML 属性へ反映します。
+    ///
+    /// - Parameter previewContext: preview に注入する runtime Mock State。
+    /// - Returns: document start で実行する JavaScript。
+    private static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
+        let payload: [String: Any] = [
+            "fields": previewContext.fieldMocks
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+        let literal = String(data: data, encoding: .utf8) ?? "{}"
+        return """
+        (function() {
+          const payload = \(literal);
+          const rawFields = payload && typeof payload.fields === 'object' && payload.fields ? payload.fields : {};
+          const fields = {};
+          Object.keys(rawFields).forEach((key) => {
+            fields[key] = rawFields[key];
+          });
+          Object.freeze(fields);
+          const root = document.documentElement;
+          function fieldOverride(name) {
+            if (!name || !Object.prototype.hasOwnProperty.call(fields, name)) {
+              return { found: false, value: '' };
+            }
+            return { found: true, value: String(fields[name]) };
+          }
+          function primaryLanguageSubtag(lang) {
+            return String(lang || '').trim().split(/[-_]/)[0].toLowerCase();
+          }
+          function directionForLanguage(lang) {
+            const rtlLanguages = new Set(['ar', 'arc', 'dv', 'fa', 'ha', 'he', 'khw', 'ks', 'ku', 'ps', 'ur', 'yi']);
+            return rtlLanguages.has(primaryLanguageSubtag(lang)) ? 'rtl' : 'ltr';
+          }
+          const fallbackLang = root.getAttribute('lang') || '';
+          const langSource = root.getAttribute('data-og-lang-source') || 'literal';
+          const langField = root.getAttribute('data-og-lang-field') || '';
+          let resolvedLang = fallbackLang;
+          if (langSource === 'binding') {
+            const binding = fieldOverride(langField);
+            if (binding.found) {
+              resolvedLang = binding.value;
+            }
+          }
+          const fallbackDir = root.getAttribute('dir') || '';
+          const dirSource = root.getAttribute('data-og-dir-source') || 'literal';
+          const dirField = root.getAttribute('data-og-dir-field') || '';
+          let resolvedDir = fallbackDir;
+          if (dirSource === 'binding') {
+            const binding = fieldOverride(dirField);
+            if (binding.found) {
+              resolvedDir = binding.value;
+            }
+          } else if (dirSource === 'auto') {
+            resolvedDir = resolvedLang ? directionForLanguage(resolvedLang) : fallbackDir;
+          }
+          const documentContext = Object.freeze({
+            lang: resolvedLang,
+            locale: resolvedLang,
+            langSource: langSource,
+            langField: langField,
+            langFallback: fallbackLang,
+            dir: resolvedDir,
+            dirSource: dirSource,
+            dirField: dirField,
+            dirFallback: fallbackDir
+          });
+          const context = {
+            document: documentContext,
+            fields: fields
+          };
+          const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
+          Object.keys(fields).forEach((key) => {
+            if (/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(key) && !blockedKeys.has(key) && !(key in context)) {
+              context[key] = fields[key];
+            }
+          });
+          if (!Object.prototype.hasOwnProperty.call(window, '__OPENGRAPHITE_PREVIEW_DOCUMENT_ATTRIBUTES__')) {
+            Object.defineProperty(window, '__OPENGRAPHITE_PREVIEW_DOCUMENT_ATTRIBUTES__', {
+              configurable: false,
+              enumerable: false,
+              value: Object.freeze({
+                hasLang: document.documentElement.hasAttribute('lang'),
+                lang: document.documentElement.getAttribute('lang') || '',
+                hasDir: document.documentElement.hasAttribute('dir'),
+                dir: document.documentElement.getAttribute('dir') || ''
+              })
+            });
+          }
+          if (documentContext.lang) {
+            document.documentElement.lang = documentContext.lang;
+            document.documentElement.dataset.ogPreviewLocale = documentContext.lang;
+          } else {
+            document.documentElement.removeAttribute('lang');
+            delete document.documentElement.dataset.ogPreviewLocale;
+          }
+          if (documentContext.dir) {
+            document.documentElement.dir = documentContext.dir;
+            document.documentElement.dataset.ogPreviewDir = documentContext.dir;
+          } else {
+            document.documentElement.removeAttribute('dir');
+            delete document.documentElement.dataset.ogPreviewDir;
+          }
+          window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = Object.freeze(context);
+        })();
+        """
+    }
+
     /// 論理名（日本語）: Webキャンバスコーディネーター
     /// 概要: WKWebView と SwiftUI ストアの間で JavaScript bridge、HTML 永続化、context menu を仲介します。
     ///
@@ -418,6 +556,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastReloadToken = 0
         var lastSelectedNodeID: String?
         var lastActiveTool: CanvasTool?
+        var lastPreviewContext = OpenGraphitePreviewContext.empty
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
@@ -858,15 +997,39 @@ struct WebCanvasView: NSViewRepresentable {
                   element.remove();
                 });
               }
+              function removePreviewContextAttributes(root) {
+                if (!root || typeof root.removeAttribute !== 'function') { return; }
+                root.removeAttribute('data-og-preview-locale');
+                root.removeAttribute('data-og-preview-dir');
+              }
+              function restorePreviewDocumentAttributes(root) {
+                if (!root || typeof root.removeAttribute !== 'function') { return; }
+                const original = window.__OPENGRAPHITE_PREVIEW_DOCUMENT_ATTRIBUTES__;
+                if (!original || typeof original !== 'object') { return; }
+                if (original.hasLang === true) {
+                  root.setAttribute('lang', typeof original.lang === 'string' ? original.lang : '');
+                } else {
+                  root.removeAttribute('lang');
+                }
+                if (original.hasDir === true) {
+                  root.setAttribute('dir', typeof original.dir === 'string' ? original.dir : '');
+                } else {
+                  root.removeAttribute('dir');
+                }
+              }
               if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.serializeDocument === 'function') {
                 const html = window.OpenGraphiteRuntime.serializeDocument();
                 const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
                 removeEditorStyles(parsedDocument);
                 if (!parsedDocument.documentElement) { return html; }
+                removePreviewContextAttributes(parsedDocument.documentElement);
+                restorePreviewDocumentAttributes(parsedDocument.documentElement);
                 return '<!doctype html>\\n' + parsedDocument.documentElement.outerHTML;
               }
               const clone = document.documentElement.cloneNode(true);
               removeEditorStyles(clone);
+              removePreviewContextAttributes(clone);
+              restorePreviewDocumentAttributes(clone);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
                 element.removeAttribute('data-og-selected');
               });
@@ -1806,6 +1969,10 @@ struct WebCanvasView: NSViewRepresentable {
           componentKind: element.getAttribute('data-og-component-kind') || '',
           sourceComponentID: element.getAttribute('data-og-source-component') || '',
           sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
+          textContent: editablePlainText(element),
+          fallbackTextContent: fallbackPlainText(element),
+          textSource: element.getAttribute('data-og-text-source') || '',
+          i18nKey: element.getAttribute('data-i18n-key') || '',
           cssVariables: cssVariables(element),
           hidden: element.getAttribute('data-og-hidden') === 'true',
           locked: element.getAttribute('data-og-locked') === 'true',
@@ -1873,6 +2040,17 @@ struct WebCanvasView: NSViewRepresentable {
           if (!element) { return ''; }
           const value = typeof element.innerText === 'string' ? element.innerText : element.textContent || '';
           return value.replace(/\\n+$/, '');
+        }
+
+        function fallbackPlainText(element) {
+          if (!element) { return ''; }
+          const fallbackHTML = element.getAttribute('data-og-runtime-fallback-html') ?? element.getAttribute('data-og-fallback-text');
+          if (fallbackHTML === null) {
+            return editablePlainText(element);
+          }
+          const container = document.createElement('span');
+          container.innerHTML = fallbackHTML;
+          return editablePlainText(container);
         }
 
         function selectTextContents(element) {

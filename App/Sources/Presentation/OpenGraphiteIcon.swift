@@ -150,6 +150,7 @@ struct OpenGraphiteIconLibraryPicker: View {
 extension OpenGraphiteIcon {
     static let sidebarLeft = OpenGraphiteIcon.lucide("panel-left", fallbackSystemName: "sidebar.left")
     static let sidebarRight = OpenGraphiteIcon.lucide("panel-right", fallbackSystemName: "sidebar.right")
+    static let projectPanel = OpenGraphiteIcon.lucide("folder-tree", fallbackSystemName: "folder")
     static let pagesPanel = OpenGraphiteIcon.lucide("file-stack", fallbackSystemName: "rectangle.stack")
     static let componentsPanel = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
     static let chapterGroup = OpenGraphiteIcon.lucide("folder-code", fallbackSystemName: "folder")
@@ -157,6 +158,9 @@ extension OpenGraphiteIcon {
     static let pageDocument = OpenGraphiteIcon.lucide("file-code", fallbackSystemName: "doc.text")
     static let componentDocument = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
     static let componentInstance = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
+    static let dependencyResource = OpenGraphiteIcon.lucide("git-branch", fallbackSystemName: "point.3.connected.trianglepath.dotted")
+    static let i18nResource = OpenGraphiteIcon.lucide("languages", fallbackSystemName: "character.book.closed")
+    static let localeResource = OpenGraphiteIcon.lucide("braces", fallbackSystemName: "curlybraces")
     static let parameterLink = OpenGraphiteIcon.lucide("link", fallbackSystemName: "link")
     static let parameterUnlink = OpenGraphiteIcon.lucide("unlink", fallbackSystemName: "link.slash")
     static let alignHorizontalStart = OpenGraphiteIcon.lucide("align-horizontal-justify-start", fallbackSystemName: "align.horizontal.left")

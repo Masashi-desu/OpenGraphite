@@ -231,25 +231,39 @@ private struct EditorProjectSummaryView: View {
                 PathBadge(title: "Public", path: publicRootPath)
             }
 
-            Text(store.selectedCanvasSegment.title)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-
-            if let groupName = selectedGroupName {
-                Text(groupName)
+            if let selectedProjectResource = store.selectedProjectResource {
+                Text("Project")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-            }
 
-            Text(store.selectedPage?.path ?? store.statusMessage)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Text(selectedProjectResource.title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Text(store.selectedCanvasSegment.title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if let groupName = selectedGroupName {
+                    Text(groupName)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Text(store.selectedPage?.path ?? store.statusMessage)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
@@ -699,7 +713,8 @@ private struct CanvasDocumentView: View {
                 pageURL: pageURL,
                 syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
                 isInteractive: isSelected,
-                reloadToken: reloadToken
+                reloadToken: reloadToken,
+                previewContext: page.canvas.previewContext
             )
                 .frame(width: width, height: height)
                 .allowsHitTesting(isSelected)

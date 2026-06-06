@@ -26,6 +26,14 @@ body {
   margin: 0;
 }
 
+html[data-og-preview-locale] {
+  --og-preview-locale: attr(data-og-preview-locale);
+}
+
+html[data-og-preview-dir] {
+  --og-preview-dir: attr(data-og-preview-dir);
+}
+
 [data-og-type] {
   box-sizing: border-box;
   width: var(--og-width, auto);
@@ -121,6 +129,10 @@ body {
   line-height: var(--og-line-height, 1.2);
   letter-spacing: var(--og-letter-spacing, 0);
   text-align: var(--og-text-align, inherit);
+}
+
+[data-og-type="text"][data-og-text-source="binding"] {
+  overflow-wrap: break-word;
 }
 
 [data-og-type="button"] {

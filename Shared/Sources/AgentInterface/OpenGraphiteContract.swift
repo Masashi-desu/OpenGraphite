@@ -101,6 +101,13 @@ struct OpenGraphiteContract: Codable, Equatable {
             "data-og-variant",
             "data-og-slot",
             "data-og-part",
+            "data-og-text-source",
+            "data-og-lang-source",
+            "data-og-lang-field",
+            "data-og-dir-source",
+            "data-og-dir-field",
+            "data-i18n-key",
+            "data-og-text-variant-eng",
             "data-og-hidden",
             "data-og-locked"
         ],
@@ -115,6 +122,9 @@ struct OpenGraphiteContract: Codable, Equatable {
             "data-og-source-component",
             "data-og-source-instance",
             "data-og-slot-origin",
+            "data-og-preview-locale",
+            "data-og-preview-dir",
+            "data-og-runtime-fallback-html",
             "contenteditable",
             "spellcheck"
         ],

@@ -14,6 +14,10 @@ import Foundation
 /// - `componentKind`: `data-og-component-kind` の値。
 /// - `sourceComponentID`: runtime 展開後の `data-og-source-component` の値。
 /// - `sourceInstanceID`: runtime 展開後の `data-og-source-instance` の値。
+/// - `textContent`: preview DOM 上で現在解決され表示されているプレーンテキスト。
+/// - `fallbackTextContent`: HTML 正本に残る fallback のプレーンテキスト。
+/// - `textSource`: `data-og-text-source` の値。
+/// - `i18nKey`: `data-i18n-key` の値。
 /// - `cssVariables`: inline style から抽出した `--og-*` の値。
 /// - `isHidden`: `data-og-hidden` による非表示状態。
 /// - `isLocked`: `data-og-locked` によるロック状態。
@@ -29,6 +33,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var componentKind: String?
     var sourceComponentID: String?
     var sourceInstanceID: String?
+    var textContent: String?
+    var fallbackTextContent: String?
+    var textSource: String?
+    var i18nKey: String?
     var cssVariables: [String: String]
     var isHidden: Bool
     var isLocked: Bool
@@ -48,6 +56,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - componentKind: `data-og-component-kind`。
     ///   - sourceComponentID: `data-og-source-component`。
     ///   - sourceInstanceID: `data-og-source-instance`。
+    ///   - textContent: preview DOM 上で現在解決され表示されているプレーンテキスト。
+    ///   - fallbackTextContent: HTML 正本に残る fallback のプレーンテキスト。
+    ///   - textSource: `data-og-text-source`。
+    ///   - i18nKey: `data-i18n-key`。
     ///   - cssVariables: inline style 内の `--og-*`。
     ///   - isHidden: 非表示状態。
     ///   - isLocked: ロック状態。
@@ -63,6 +75,10 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         componentKind: String? = nil,
         sourceComponentID: String? = nil,
         sourceInstanceID: String? = nil,
+        textContent: String? = nil,
+        fallbackTextContent: String? = nil,
+        textSource: String? = nil,
+        i18nKey: String? = nil,
         cssVariables: [String: String],
         isHidden: Bool,
         isLocked: Bool,
@@ -78,10 +94,25 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         self.componentKind = Self.emptyNil(componentKind)
         self.sourceComponentID = Self.emptyNil(sourceComponentID)
         self.sourceInstanceID = Self.emptyNil(sourceInstanceID)
+        self.textContent = textContent
+        self.fallbackTextContent = fallbackTextContent
+        self.textSource = Self.emptyNil(textSource)
+        self.i18nKey = Self.emptyNil(i18nKey)
         self.cssVariables = cssVariables
         self.isHidden = isHidden
         self.isLocked = isLocked
         self.depth = depth
+    }
+
+    var isTextBinding: Bool {
+        textSource == "binding" || i18nKey != nil
+    }
+
+    var textSourceLabel: String {
+        if let textSource, !textSource.isEmpty {
+            return textSource
+        }
+        return isTextBinding ? "binding" : "literal"
     }
 
     var inheritedComponentID: String? {

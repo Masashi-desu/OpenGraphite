@@ -107,4 +107,34 @@ struct OpenGraphiteNodeTests {
         #expect(generatedComponentID == "feature-card")
         #expect(masterComponentID == nil)
     }
+
+    /// 論理名（日本語）: テキストbinding表示メタデータテスト
+    /// 概要: text source と i18n key から binding node と表示ラベルを判定できることを確認します。
+    @Test("text binding metadataを表示用に判定できる")
+    func testTextBindingMetadataDisplay() {
+        // コンディション：binding metadata を持つテキストノードを用意する
+        let node = OpenGraphiteNode(
+            id: "hero-lead",
+            tagName: "leadtext",
+            type: "text",
+            layout: nil,
+            role: nil,
+            textContent: "表示中の本文",
+            fallbackTextContent: "fallback本文",
+            textSource: "binding",
+            i18nKey: "home.hero.lead",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 1
+        )
+
+        // 検証内容：Inspector 表示用の binding 判定を取得する
+        let isBinding = node.isTextBinding
+        let sourceLabel = node.textSourceLabel
+
+        // 期待値：binding node として扱われ、source label は metadata の値を表示する
+        #expect(isBinding == true)
+        #expect(sourceLabel == "binding")
+    }
 }

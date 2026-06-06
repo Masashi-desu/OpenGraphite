@@ -1,7 +1,8 @@
+import Foundation
 import SwiftUI
 
 /// 論理名（日本語）: サイドバービュー
-/// 概要: Pages、Components を切り替え、上段で Chapter / Collection、下段で HTML カード内レイヤー階層を選択する左ペインです。
+/// 概要: Project、Pages、Components を切り替え、実装資源または HTML カード内レイヤー階層を選択する左ペインです。
 struct SidebarView: View {
     @EnvironmentObject private var store: EditorStore
     @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.pages.rawValue
@@ -14,7 +15,9 @@ struct SidebarView: View {
                 .padding(.bottom, 10)
 
             Group {
-                if resolvedPanel == .pages {
+                if resolvedPanel == .project {
+                    ProjectDependencyListView()
+                } else if resolvedPanel == .pages {
                     PageListView()
                 } else {
                     ComponentPageListView()
@@ -24,15 +27,22 @@ struct SidebarView: View {
         }
         .onAppear {
             normalizeSelectedPanel()
+            synchronizeSelectedPanelWithStore()
         }
         .onChange(of: selectedPanel) { _, _ in
             normalizeSelectedPanel()
+            synchronizeSelectedPanelWithStore()
         }
         .onChange(of: store.selectedNodeID) { _, newValue in
             if newValue != nil {
                 selectedPanel = store.selectedCanvasSegment == .components
                     ? SidebarPanel.components.rawValue
                     : SidebarPanel.pages.rawValue
+            }
+        }
+        .onChange(of: store.selectedProjectResource) { _, newValue in
+            if newValue != nil {
+                selectedPanel = SidebarPanel.project.rawValue
             }
         }
     }
@@ -50,10 +60,23 @@ struct SidebarView: View {
                 : SidebarPanel.pages.rawValue
         }
     }
+
+    /// 論理名（日本語）: サイドバーパネル選択同期関数
+    /// 処理概要: Project 以外のパネルへ移動したとき、Inspector の Project 資源選択を解除して Canvas 選択へ戻します。
+    private func synchronizeSelectedPanelWithStore() {
+        switch resolvedPanel {
+        case .project:
+            break
+        case .pages:
+            store.selectPagesSegment()
+        case .components:
+            store.selectComponentsSegment()
+        }
+    }
 }
 
 /// 論理名（日本語）: サイドバーパネル切替ビュー
-/// 概要: タイトルバー領域の下に Pages、Components の切替ボタンを表示します。
+/// 概要: タイトルバー領域の下に Project、Pages、Components の切替ボタンを表示します。
 ///
 /// プロパティ:
 /// - `selectedPanel`: 現在選択中のパネル種別。
@@ -261,6 +284,266 @@ private struct SidebarSplitSection<Content: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+/// 論理名（日本語）: Project依存性一覧ビュー
+/// 概要: `.ogp` が参照する実装資源を Project セグメント内の選択可能な依存性として表示します。
+private struct ProjectDependencyListView: View {
+    @EnvironmentObject private var store: EditorStore
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ProjectDependencySection(title: "Dependencies", count: dependencyItems.count) {
+                    ForEach(dependencyItems) { item in
+                        ProjectDependencyRow(
+                            item: item,
+                            isSelected: item.selection == selectedResource,
+                            onSelect: {
+                                store.selectProjectResource(item.selection)
+                            }
+                        )
+                    }
+                }
+
+                ProjectDependencySection(title: "Locale Resources", count: localeItems.count) {
+                    if localeItems.isEmpty {
+                        SidebarEmptyStateRow(text: "No locale resources")
+                    } else {
+                        ForEach(localeItems) { item in
+                            ProjectDependencyRow(
+                                item: item,
+                                isSelected: item.selection == selectedResource,
+                                onSelect: {
+                                    store.selectProjectResource(item.selection)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, EditorColumnStyle.outerPadding)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .onAppear {
+            if store.selectedProjectResource == nil {
+                store.selectProjectResource(.overview)
+            }
+        }
+    }
+
+    private var selectedResource: OpenGraphiteProjectResourceSelection? {
+        store.selectedProjectResource
+    }
+
+    private var dependencyItems: [ProjectDependencyItem] {
+        guard let loadedProject = store.loadedProject else { return [] }
+        let project = loadedProject.project
+        var items: [ProjectDependencyItem] = [
+            ProjectDependencyItem(
+                title: "Project",
+                detail: loadedProject.fileURL.lastPathComponent,
+                status: project.name,
+                icon: .projectPanel,
+                selection: .overview
+            ),
+            ProjectDependencyItem(
+                title: "HTML Root",
+                detail: project.htmlRoot,
+                status: FileManager.default.fileExists(atPath: loadedProject.rootURL.appendingPathComponent(project.htmlRoot).path) ? "Found" : "Missing",
+                icon: .dependencyResource,
+                selection: .htmlRoot
+            ),
+            ProjectDependencyItem(
+                title: "CSS",
+                detail: project.cssLibrary,
+                status: FileManager.default.fileExists(atPath: loadedProject.cssURL.path) ? "Found" : "Missing",
+                icon: .dependencyResource,
+                selection: .cssLibrary
+            )
+        ]
+
+        let runtimePath = "\(project.htmlRoot)/OpenGraphite.runtime.js"
+        let runtimeURL = loadedProject.rootURL.appendingPathComponent(runtimePath)
+        items.append(
+            ProjectDependencyItem(
+                title: "Runtime",
+                detail: runtimePath,
+                status: FileManager.default.fileExists(atPath: runtimeURL.path) ? "Found" : "Missing",
+                icon: .dependencyResource,
+                selection: .runtime(path: runtimePath)
+            )
+        )
+
+        let i18nInspection = store.projectI18nRuntimeInspection
+        items.append(
+            ProjectDependencyItem(
+                title: "I18n Runtime",
+                detail: shortPath(i18nInspection?.configSource) ?? "not detected",
+                status: adapterStatus(i18nInspection?.adapter),
+                icon: .i18nResource,
+                selection: .i18nRuntime
+            )
+        )
+        return items
+    }
+
+    private var localeItems: [ProjectDependencyItem] {
+        guard let loadedProject = store.loadedProject else { return [] }
+        let resources = store.projectI18nRuntimeInspection?.resources ?? [
+            OpenGraphiteI18nResourceStatus(
+                locale: "ja",
+                path: loadedProject.rootURL
+                    .appendingPathComponent(loadedProject.project.htmlRoot)
+                    .appendingPathComponent("locales/ja.json")
+                    .path,
+                exists: false,
+                editable: true
+            ),
+            OpenGraphiteI18nResourceStatus(
+                locale: "eng",
+                path: loadedProject.rootURL
+                    .appendingPathComponent(loadedProject.project.htmlRoot)
+                    .appendingPathComponent("locales/eng.json")
+                    .path,
+                exists: false,
+                editable: true
+            )
+        ]
+        return resources.map { resource in
+            ProjectDependencyItem(
+                title: "\(resource.locale).json",
+                detail: shortPath(resource.path) ?? resource.path,
+                status: resource.exists ? "Found" : "Missing",
+                icon: .localeResource,
+                selection: .localeResource(locale: resource.locale, path: resource.path)
+            )
+        }
+    }
+
+    private func adapterStatus(_ adapter: OpenGraphiteI18nAdapter?) -> String {
+        switch adapter {
+        case .i18next:
+            return "i18next"
+        case .unknown:
+            return "Unknown"
+        case nil:
+            return "Unknown"
+        }
+    }
+
+    private func shortPath(_ path: String?) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
+/// 論理名（日本語）: Project依存性セクションビュー
+/// 概要: Project セグメント内の依存性行を見出し付きでまとめます。
+///
+/// プロパティ:
+/// - `title`: セクション名。
+/// - `count`: セクション内項目数。
+/// - `content`: 依存性行。
+private struct ProjectDependencySection<Content: View>: View {
+    var title: String
+    var count: Int
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+                Text("\(count)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+
+            VStack(alignment: .leading, spacing: 5) {
+                content
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+/// 論理名（日本語）: Project依存性行モデル
+/// 概要: Project セグメントで表示する実装資源の行情報です。
+///
+/// プロパティ:
+/// - `id`: 安定識別子。
+/// - `title`: 表示名。
+/// - `detail`: 補助表示。
+/// - `status`: 検出状態。
+/// - `icon`: 表示アイコン。
+/// - `selection`: 行選択時の Project 資源。
+private struct ProjectDependencyItem: Identifiable {
+    var title: String
+    var detail: String
+    var status: String
+    var icon: OpenGraphiteIcon
+    var selection: OpenGraphiteProjectResourceSelection
+
+    var id: String {
+        "\(title)#\(detail)#\(status)"
+    }
+}
+
+/// 論理名（日本語）: Project依存性行ビュー
+/// 概要: 実装資源の種類、path、検出状態を Sidebar 向けの軽量行として表示します。
+///
+/// プロパティ:
+/// - `item`: 表示する依存性。
+/// - `isSelected`: 現在選択中か。
+/// - `onSelect`: 行選択時に呼び出す処理。
+private struct ProjectDependencyRow: View {
+    var item: ProjectDependencyItem
+    var isSelected: Bool
+    var onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 9) {
+                OpenGraphiteIconView(icon: item.icon, size: 14)
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 18, height: 18)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(item.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 0)
+
+                Text(item.status)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        }
+        .buttonStyle(.plain)
+        .help(item.detail)
     }
 }
 
@@ -1065,12 +1348,14 @@ private struct VisibleLayerRow: Identifiable {
 }
 
 /// 論理名（日本語）: サイドバーパネル
-/// 概要: 左ペインで表示する Pages、Components のセグメント種別を表します。
+/// 概要: 左ペインで表示する Project、Pages、Components のセグメント種別を表します。
 ///
 /// 定義内容:
+/// - `project`: `.ogp` が参照する実装資源と依存性。
 /// - `pages`: Chapter ごとのページ一覧。
 /// - `components`: Collection ごとの component master canvas 一覧。
 private enum SidebarPanel: String, CaseIterable, Identifiable {
+    case project
     case pages
     case components
 
@@ -1078,6 +1363,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .project:
+            return "Project"
         case .pages:
             return "Pages"
         case .components:
@@ -1087,6 +1374,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 
     var icon: OpenGraphiteIcon {
         switch self {
+        case .project:
+            return .projectPanel
         case .pages:
             return .pagesPanel
         case .components:

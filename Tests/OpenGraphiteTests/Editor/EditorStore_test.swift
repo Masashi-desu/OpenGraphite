@@ -24,6 +24,10 @@ struct EditorStoreTests {
                 "componentKind": "",
                 "sourceComponentID": "site-header",
                 "sourceInstanceID": "header-instance",
+                "textContent": "Active headline",
+                "fallbackTextContent": "Fallback headline",
+                "textSource": "binding",
+                "i18nKey": "home.hero.title",
                 "cssVariables": ["--og-gap": "32px"],
                 "hidden": false,
                 "locked": true,
@@ -42,8 +46,55 @@ struct EditorStoreTests {
         #expect(store.nodes[0].componentID == "site-header")
         #expect(store.nodes[0].sourceComponentID == "site-header")
         #expect(store.nodes[0].sourceInstanceID == "header-instance")
+        #expect(store.nodes[0].textContent == "Active headline")
+        #expect(store.nodes[0].fallbackTextContent == "Fallback headline")
+        #expect(store.nodes[0].textSource == "binding")
+        #expect(store.nodes[0].i18nKey == "home.hero.title")
         #expect(store.nodes[0].cssVariables["--og-gap"] == "32px")
         #expect(store.nodes[0].isLocked == true)
+    }
+
+    /// 論理名（日本語）: DOM payload fallback補完テスト
+    /// 概要: preview DOM の resolved text と HTML 正本の fallback text が異なる場合、両方を Inspector 用ノードへ保持することを検証します。
+    @Test("DOM payloadのtext metadataをHTML正本fallbackで補完できる")
+    func testIngestNodePayloadMergesSourceFallbackText() throws {
+        // コンディション：binding text node を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <LeadText
+            data-og-id="hero-lead"
+            data-og-internal-id="lead-node"
+            data-og-type="text"
+            data-og-text-source="binding"
+            data-i18n-key="home.hero.lead">日本語 fallback</LeadText>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：runtime 解決後の DOM から届く active text を取り込む
+        store.ingestNodePayload([
+            [
+                "id": "hero-lead",
+                "internalID": "lead-node",
+                "tagName": "leadtext",
+                "type": "text",
+                "textContent": "English active",
+                "fallbackTextContent": "DOM fallback",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+
+        // 期待値：active resolved text は DOM、fallback と binding metadata は HTML 正本から保持される
+        let node = try #require(store.nodes.first)
+        #expect(node.textContent == "English active")
+        #expect(node.fallbackTextContent == "日本語 fallback")
+        #expect(node.textSource == "binding")
+        #expect(node.i18nKey == "home.hero.lead")
     }
 
     /// 論理名（日本語）: 存在しない選択解除テスト
@@ -100,6 +151,33 @@ struct EditorStoreTests {
         #expect(store.canUndo == false)
         #expect(store.canRedo == false)
         #expect(store.statusMessage == "ページ選択を解除しました。")
+    }
+
+    /// 論理名（日本語）: Project資源選択テスト
+    /// 概要: Project セグメントの実装資源選択が Canvas の表示対象を維持し、通常ページ選択へ戻ると解除されることを確認します。
+    @Test("Project資源選択はCanvas選択と分離される")
+    func testSelectProjectResourceKeepsCanvasSelectionAndClearsOnPageSelection() throws {
+        // コンディション：プロジェクトを開き、先頭ページが選択されている状態を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let selectedPageInternalID = try #require(store.selectedPage?.internalID)
+
+        // 検証内容：Project の i18n runtime を選択してからページを再選択する（When）
+        store.selectProjectResource(.i18nRuntime)
+        let selectedWhileProjectResource = store.selectedPageID
+        store.selectPagesSegment()
+        let projectResourceAfterSegmentSelection = store.selectedProjectResource
+        store.selectProjectResource(.i18nRuntime)
+        store.selectPage(internalID: selectedPageInternalID)
+
+        // 期待値：Project 選択中も Canvas の page は維持され、ページ選択で Project 資源選択だけ解除される（Then）
+        #expect(selectedWhileProjectResource == "home")
+        #expect(projectResourceAfterSegmentSelection == nil)
+        #expect(store.selectedCanvasSegment == .pages)
+        #expect(store.selectedPageID == "home")
+        #expect(store.selectedProjectResource == nil)
     }
 
     /// 論理名（日本語）: 同一ページ再選択時のノード保持テスト
@@ -216,6 +294,43 @@ struct EditorStoreTests {
         reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
         persistedPage = try #require(reloadedProject.project.allPages.first)
         #expect(persistedPage.canvas.name == "mobile")
+        #expect(persistedPage.canvas.width == 414)
+    }
+
+    /// 論理名（日本語）: 選択ページMock State保存テスト
+    /// 概要: 選択中ページの preview Mock State が Store と `.ogp` に保存され、座標だけの更新では保持されることを検証します。
+    @Test("選択ページのMock Stateをogpへ保存する")
+    func testUpdateSelectedPageCanvasPersistsPreviewContext() throws {
+        // コンディション：一時プロジェクトを開き、preview Mock State を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let expectedContext = OpenGraphitePreviewContext(fieldMocks: ["selectedLanguage": "ja"])
+
+        // 検証内容：選択ページの Mock State とキャンバス配置を更新する（When）
+        store.updateSelectedPageCanvas(
+            x: 24,
+            y: -12,
+            width: 390,
+            height: 844,
+            name: "Desktop",
+            previewContext: expectedContext
+        )
+
+        // 期待値：Store とディスク上の `.ogp` が同じ Mock State を保持する（Then）
+        #expect(store.selectedPage?.canvas.previewContext == expectedContext)
+        var reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        var persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas.previewContext == expectedContext)
+
+        // 検証内容：従来の座標更新 API で配置だけを更新する（When）
+        store.updateSelectedPageCanvas(x: 40, y: 0, width: 414, height: 896)
+
+        // 期待値：既存の Mock State は消えずに保持される（Then）
+        reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas.previewContext == expectedContext)
         #expect(persistedPage.canvas.width == 414)
     }
 

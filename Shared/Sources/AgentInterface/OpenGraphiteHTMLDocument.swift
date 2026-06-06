@@ -1,5 +1,93 @@
 import Foundation
 
+/// 論理名（日本語）: HTML Lang source
+/// 概要: HTML `lang` 属性を literal fallback として使うか runtime field で解決するかを表します。
+enum OpenGraphiteHTMLLangSource: String, Codable, Equatable, CaseIterable {
+    case literal
+    case binding
+}
+
+/// 論理名（日本語）: HTML Dir source
+/// 概要: HTML `dir` 属性を literal fallback、自動推定、runtime field のどれで解決するかを表します。
+enum OpenGraphiteHTMLDirSource: String, Codable, Equatable, CaseIterable {
+    case literal
+    case auto
+    case binding
+}
+
+/// 論理名（日本語）: HTML Document Context
+/// 概要: `<html>` に永続化する document attribute と OpenGraphite binding metadata を表します。
+///
+/// プロパティ:
+/// - `langSource`: `lang` の解決方式。
+/// - `langValue`: `lang` 属性として保存する literal / fallback 値。
+/// - `langField`: binding 時に参照する runtime field 名。
+/// - `dirSource`: `dir` の解決方式。
+/// - `dirValue`: `dir` 属性として保存する literal / fallback 値。
+/// - `dirField`: binding 時に参照する runtime field 名。
+struct OpenGraphiteHTMLDocumentContext: Codable, Equatable {
+    static let empty = OpenGraphiteHTMLDocumentContext()
+
+    var langSource: OpenGraphiteHTMLLangSource
+    var langValue: String
+    var langField: String
+    var dirSource: OpenGraphiteHTMLDirSource
+    var dirValue: String
+    var dirField: String
+
+    /// 論理名（日本語）: HTML Document Context初期化関数
+    /// 処理概要: `<html>` attribute と binding metadata を正規化して保持します。
+    ///
+    /// - Parameters:
+    ///   - langSource: `lang` の解決方式。
+    ///   - langValue: `lang` 属性として保存する literal / fallback 値。
+    ///   - langField: binding 時に参照する runtime field 名。
+    ///   - dirSource: `dir` の解決方式。
+    ///   - dirValue: `dir` 属性として保存する literal / fallback 値。
+    ///   - dirField: binding 時に参照する runtime field 名。
+    init(
+        langSource: OpenGraphiteHTMLLangSource = .literal,
+        langValue: String = "",
+        langField: String = "",
+        dirSource: OpenGraphiteHTMLDirSource = .literal,
+        dirValue: String = "",
+        dirField: String = ""
+    ) {
+        self.langSource = langSource
+        self.langValue = langValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.langField = langField.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.dirSource = dirSource
+        self.dirValue = dirValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.dirField = dirField.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+/// 論理名（日本語）: HTML script参照
+/// 概要: HTML 内の `<script>` 要素から i18n 実装検出に必要な参照情報を抽出した値です。
+///
+/// プロパティ:
+/// - `src`: `src` 属性。inline script の場合は `nil`。
+/// - `type`: `type` 属性。
+/// - `content`: inline script 本文。
+struct OpenGraphiteHTMLScriptReference: Equatable {
+    var src: String?
+    var type: String?
+    var content: String
+}
+
+/// 論理名（日本語）: HTML text binding resource
+/// 概要: `data-i18n-key` を持つ text binding の fallback HTML と同梱 variant 属性を表します。
+///
+/// プロパティ:
+/// - `key`: `data-i18n-key`。
+/// - `fallbackHTML`: 要素本文に残る fallback HTML。
+/// - `variants`: `data-og-text-variant-<locale>` の locale と値。
+struct OpenGraphiteHTMLTextBindingResource: Equatable {
+    var key: String
+    var fallbackHTML: String
+    var variants: [String: String]
+}
+
 /// 論理名（日本語）: OpenGraphite HTML文書
 /// 概要: `data-og-id` と `data-og-internal-id` を持つ HTML ノードの抽出、検証、開始タグ単位の編集を担当します。
 ///
@@ -7,6 +95,24 @@ import Foundation
 /// - `html`: 対象 HTML 文字列。
 struct OpenGraphiteHTMLDocument {
     var html: String
+
+    /// 論理名（日本語）: HTML Document Context取得関数
+    /// 処理概要: `<html>` 開始タグから永続 document attribute と binding metadata を読み取ります。
+    ///
+    /// - Returns: HTML document context。`<html>` がない場合は空 context を返します。
+    func htmlDocumentContext() -> OpenGraphiteHTMLDocumentContext {
+        guard let tag = parsedTags().first(where: { $0.tagName == "html" }) else {
+            return .empty
+        }
+        return OpenGraphiteHTMLDocumentContext(
+            langSource: OpenGraphiteHTMLLangSource(rawValue: tag.attributeValue(named: "data-og-lang-source") ?? "") ?? .literal,
+            langValue: tag.attributeValue(named: "lang") ?? "",
+            langField: tag.attributeValue(named: "data-og-lang-field") ?? "",
+            dirSource: OpenGraphiteHTMLDirSource(rawValue: tag.attributeValue(named: "data-og-dir-source") ?? "") ?? .literal,
+            dirValue: tag.attributeValue(named: "dir") ?? "",
+            dirField: tag.attributeValue(named: "data-og-dir-field") ?? ""
+        )
+    }
 
     /// 論理名（日本語）: ノード一覧抽出関数
     /// 処理概要: HTML を軽量に走査し、`data-og-id` を持つ開始タグを OpenGraphite ノードへ変換します。
@@ -43,6 +149,48 @@ struct OpenGraphiteHTMLDocument {
                 nodeStack.append((depth: tag.depth, id: id))
             }
             return node
+        }
+    }
+
+    /// 論理名（日本語）: script参照抽出関数
+    /// 処理概要: HTML 内の `<script>` 要素から `src`、`type`、inline 本文を抽出します。
+    ///
+    /// - Returns: DOM 出現順の script 参照一覧。
+    func scriptReferences() -> [OpenGraphiteHTMLScriptReference] {
+        parsedTags().compactMap { tag in
+            guard tag.tagName == "script" else { return nil }
+            let content = element(for: tag).map { html.substring($0.contentRange) } ?? ""
+            return OpenGraphiteHTMLScriptReference(
+                src: tag.emptyNilAttribute(named: "src"),
+                type: tag.emptyNilAttribute(named: "type"),
+                content: content
+            )
+        }
+    }
+
+    /// 論理名（日本語）: text binding resource抽出関数
+    /// 処理概要: `data-i18n-key` を持つ要素本文と HTML 同梱 locale variant を locale JSON へ移行できる形で抽出します。
+    ///
+    /// - Returns: i18n key ごとの fallback / variant 値一覧。
+    func textBindingResources() -> [OpenGraphiteHTMLTextBindingResource] {
+        parsedTags().compactMap { tag in
+            guard let key = tag.emptyNilAttribute(named: "data-i18n-key"),
+                  let element = element(for: tag)
+            else {
+                return nil
+            }
+            let variants = tag.attributes.reduce(into: [String: String]()) { result, attribute in
+                let prefix = "data-og-text-variant-"
+                guard attribute.name.hasPrefix(prefix) else { return }
+                let locale = String(attribute.name.dropFirst(prefix.count))
+                guard !locale.isEmpty else { return }
+                result[locale] = Self.unescapeAttributeText(attribute.value)
+            }
+            return OpenGraphiteHTMLTextBindingResource(
+                key: key,
+                fallbackHTML: html.substring(element.contentRange),
+                variants: variants
+            )
         }
     }
 
@@ -255,6 +403,98 @@ struct OpenGraphiteHTMLDocument {
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
+    /// 論理名（日本語）: HTML Document Context設定関数
+    /// 処理概要: `<html>` の `lang` / `dir` と OpenGraphite binding metadata を保存します。
+    ///
+    /// - Parameters:
+    ///   - context: 保存する HTML document context。
+    ///   - contract: runtime 属性除去に使う OpenGraphite 契約。
+    /// - Returns: 更新済み HTML と diagnostics。
+    func settingHTMLDocumentContext(
+        _ context: OpenGraphiteHTMLDocumentContext,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        var sanitized = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let sanitizedDocument = OpenGraphiteHTMLDocument(html: sanitized)
+        guard let tag = sanitizedDocument.parsedTags().first(where: { $0.tagName == "html" }) else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-html-root",
+                    message: "<html> 開始タグが見つかりません。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+
+        let normalizedContext = OpenGraphiteHTMLDocumentContext(
+            langSource: context.langSource,
+            langValue: context.langValue,
+            langField: context.langField,
+            dirSource: context.dirSource,
+            dirValue: context.dirValue,
+            dirField: context.dirField
+        )
+        guard normalizedContext.langSource != .binding || !normalizedContext.langField.isEmpty else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-lang-field",
+                    message: "HTML Lang の Binding には field 名が必要です。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+        guard normalizedContext.dirSource != .binding || !normalizedContext.dirField.isEmpty else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-dir-field",
+                    message: "Text Dir の Binding には field 名が必要です。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+        guard Self.isValidDirectionFallback(normalizedContext.dirValue) else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "invalid-dir-value",
+                    message: "dir 属性の fallback は ltr / rtl / auto のいずれか、または空にしてください。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+
+        var attributes = tag.attributes
+        Self.setOrRemoveAttribute("lang", value: normalizedContext.langValue, in: &attributes)
+        Self.setAttribute("data-og-lang-source", value: normalizedContext.langSource.rawValue, in: &attributes)
+        if normalizedContext.langSource == .binding {
+            Self.setAttribute("data-og-lang-field", value: normalizedContext.langField, in: &attributes)
+        } else {
+            attributes.removeAll { $0.name == "data-og-lang-field" }
+        }
+
+        Self.setOrRemoveAttribute("dir", value: normalizedContext.dirValue, in: &attributes)
+        Self.setAttribute("data-og-dir-source", value: normalizedContext.dirSource.rawValue, in: &attributes)
+        if normalizedContext.dirSource == .binding {
+            Self.setAttribute("data-og-dir-field", value: normalizedContext.dirField, in: &attributes)
+        } else {
+            attributes.removeAll { $0.name == "data-og-dir-field" }
+        }
+
+        sanitized.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+    }
+
     /// 論理名（日本語）: 子HTML先頭挿入関数
     /// 処理概要: 一意な `data-og-internal-id` を持つノードの開始タグ直後へ子 HTML を挿入します。
     ///
@@ -305,6 +545,88 @@ struct OpenGraphiteHTMLDocument {
         }
 
         sanitized.replaceRange(element.contentRange, with: Self.escapeText(text))
+        return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+    }
+
+    /// 論理名（日本語）: テキストvariant設定関数
+    /// 処理概要: `data-i18n-key` に一致する binding text の locale variant を属性として保存します。
+    ///
+    /// - Parameters:
+    ///   - text: 保存する variant HTML。空文字も有効な variant として保持されます。
+    ///   - locale: variant の locale 名。
+    ///   - i18nKey: 対象 `data-i18n-key`。
+    ///   - contract: 検証に使う OpenGraphite 契約。
+    /// - Returns: 更新済み HTML と diagnostics。
+    func settingTextVariant(
+        _ text: String,
+        locale: String,
+        i18nKey: String,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        let normalizedKey = i18nKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedKey.isEmpty else {
+            return .failure(
+                html: html,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "empty-i18n-key",
+                    message: "text variant の data-i18n-key は空にできません。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+
+        guard let normalizedLocale = Self.normalizedTextVariantLocale(locale) else {
+            return .failure(
+                html: html,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "invalid-text-variant-locale",
+                    message: "text variant locale は a-z / 0-9 / - の非空文字列で指定してください。",
+                    path: nil,
+                    nodeID: normalizedKey
+                )
+            )
+        }
+
+        let attributeName = "data-og-text-variant-\(normalizedLocale)"
+        guard contract.editableAttributeSet.contains(attributeName) else {
+            return .failure(
+                html: html,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "unknown-text-variant-locale",
+                    message: "\(attributeName) は OpenGraphite.contract.json に定義されていません。",
+                    path: nil,
+                    nodeID: normalizedKey
+                )
+            )
+        }
+
+        var sanitized = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let sanitizedDocument = OpenGraphiteHTMLDocument(html: sanitized)
+        let matches = sanitizedDocument.parsedTags().filter { tag in
+            tag.attributeValue(named: "data-i18n-key") == normalizedKey
+        }
+        guard !matches.isEmpty else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "missing-i18n-key",
+                    message: "data-i18n-key \"\(normalizedKey)\" を持つ text binding が見つかりません。",
+                    path: nil,
+                    nodeID: normalizedKey
+                )
+            )
+        }
+
+        for tag in matches.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
+            var attributes = tag.attributes
+            Self.setAttribute(attributeName, value: text, in: &attributes)
+            sanitized.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        }
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
@@ -897,6 +1219,14 @@ struct OpenGraphiteHTMLDocument {
             .replacingOccurrences(of: ">", with: "&gt;")
     }
 
+    private static func unescapeAttributeText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
+
     private func findTagEnd(startingAt startIndex: String.Index) -> String.Index? {
         Self.findTagEnd(in: html, startingAt: startIndex)
     }
@@ -1011,6 +1341,35 @@ struct OpenGraphiteHTMLDocument {
         } else {
             attributes.append(OpenGraphiteHTMLAttribute(name: name, value: value))
         }
+    }
+
+    private static func setOrRemoveAttribute(_ name: String, value: String, in attributes: inout [OpenGraphiteHTMLAttribute]) {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedValue.isEmpty {
+            attributes.removeAll { $0.name == name }
+        } else {
+            setAttribute(name, value: normalizedValue, in: &attributes)
+        }
+    }
+
+    private static func isValidDirectionFallback(_ value: String) -> Bool {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedValue.isEmpty || ["ltr", "rtl", "auto"].contains(normalizedValue)
+    }
+
+    /// 論理名（日本語）: テキストvariant locale正規化関数
+    /// 処理概要: HTML 属性名に使える locale suffix だけを許可します。
+    ///
+    /// - Parameter locale: 入力 locale。
+    /// - Returns: 正規化済み locale。無効な場合は `nil`。
+    private static func normalizedTextVariantLocale(_ locale: String) -> String? {
+        let normalizedLocale = locale.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedLocale.isEmpty else { return nil }
+        let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
+        guard normalizedLocale.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+            return nil
+        }
+        return normalizedLocale
     }
 }
 

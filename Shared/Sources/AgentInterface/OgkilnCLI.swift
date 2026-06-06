@@ -77,7 +77,8 @@ struct OgkilnCLI {
                     projectURL: projectURL,
                     id: id,
                     path: pagePath,
-                    canvas: canvas
+                    canvas: canvas,
+                    allowDuplicatePath: hasFlag("--allow-duplicate-path", in: arguments)
                 )
                 return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
             case "create":
@@ -116,9 +117,20 @@ struct OgkilnCLI {
                     x: try doubleOption("--x", in: arguments),
                     y: try doubleOption("--y", in: arguments),
                     width: try doubleOption("--width", in: arguments),
-                    height: try doubleOption("--height", in: arguments)
+                    height: try doubleOption("--height", in: arguments),
+                    previewFieldMocks: try previewFieldMocks(in: arguments)
                 )
                 return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+            case "document":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredOption("--page-id", in: arguments)
+                let currentContext = try currentHTMLDocumentContext(projectURL: projectURL, pageID: id, core: core)
+                let result = try core.setProjectPageHTMLDocumentContext(
+                    projectURL: projectURL,
+                    id: id,
+                    context: try htmlDocumentContext(in: arguments, current: currentContext)
+                )
+                return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
             default:
                 break
             }
@@ -181,9 +193,20 @@ struct OgkilnCLI {
                     x: try doubleOption("--x", in: arguments),
                     y: try doubleOption("--y", in: arguments),
                     width: try doubleOption("--width", in: arguments),
-                    height: try doubleOption("--height", in: arguments)
+                    height: try doubleOption("--height", in: arguments),
+                    previewFieldMocks: try previewFieldMocks(in: arguments)
                 )
                 return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+            case "document":
+                let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+                let id = try requiredComponentID(in: arguments)
+                let currentContext = try currentHTMLDocumentContext(projectURL: projectURL, pageID: id, core: core)
+                let result = try core.setProjectComponentHTMLDocumentContext(
+                    projectURL: projectURL,
+                    id: id,
+                    context: try htmlDocumentContext(in: arguments, current: currentContext)
+                )
+                return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
             case "remove":
                 let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
                 let id = try requiredComponentID(in: arguments)
@@ -201,6 +224,24 @@ struct OgkilnCLI {
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let graph = try core.pageGraph(projectURL: projectURL, pageID: requiredPageID(in: arguments))
             return try OgkilnOutput(object: graph, exitCode: graph.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
+        case ["i18n", "inspect"]:
+            let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let result = try core.inspectI18n(
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                locales: try localesOption(in: arguments) ?? ["ja", "eng"]
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
+        case ["i18n", "recommend"]:
+            let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let result = try core.recommendI18n(
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                locales: try localesOption(in: arguments) ?? ["ja", "eng"]
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
 
         default:
             break
@@ -259,7 +300,8 @@ struct OgkilnCLI {
                 readAccessURL: URL(fileURLWithPath: reference.rootURL),
                 width: try doubleOption("--width", in: arguments) ?? reference.canvas.width,
                 height: try doubleOption("--height", in: arguments) ?? reference.canvas.height,
-                padding: try doubleOption("--padding", in: arguments)
+                padding: try doubleOption("--padding", in: arguments),
+                previewContext: reference.canvas.previewContext
             )
             return try OgkilnOutput(object: result, exitCode: 0)
         }
@@ -349,6 +391,36 @@ struct OgkilnCLI {
             let result = try core.setTextContent(
                 text,
                 nodeID: id,
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments)
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+        }
+
+        if arguments.count >= 3, arguments[0] == "text", arguments[1] == "variant", arguments[2] == "set" {
+            let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let key = try requiredOption("--key", in: arguments)
+            let locale = try requiredOption("--locale", in: arguments)
+            let text = try optionalOption("--value", in: arguments) ?? textFromFile(requiredOption("--text-file", in: arguments), currentDirectory: currentDirectory)
+            let result = try core.setTextVariant(
+                text,
+                locale: locale,
+                i18nKey: key,
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments)
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+        }
+
+        if arguments.count >= 3, arguments[0] == "i18n", arguments[1] == "resource", arguments[2] == "set" {
+            let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let key = try requiredOption("--key", in: arguments)
+            let locale = try requiredOption("--locale", in: arguments)
+            let text = try optionalOption("--value", in: arguments) ?? textFromFile(requiredOption("--text-file", in: arguments), currentDirectory: currentDirectory)
+            let result = try core.setI18nResourceValue(
+                text,
+                locale: locale,
+                key: key,
                 projectURL: projectURL,
                 pageID: requiredPageID(in: arguments)
             )
@@ -454,6 +526,145 @@ struct OgkilnCLI {
         return arguments[arguments.index(after: index)]
     }
 
+    /// 論理名（日本語）: 複数オプション値取得関数
+    /// 処理概要: 同じ option name が複数回指定された場合の値を出現順に返します。
+    ///
+    /// - Parameters:
+    ///   - name: 取得する option name。
+    ///   - arguments: CLI 引数。
+    /// - Returns: option に指定された値一覧。
+    private func optionValues(_ name: String, in arguments: [String]) throws -> [String] {
+        var values: [String] = []
+        var index = arguments.startIndex
+        while index < arguments.endIndex {
+            defer { index = arguments.index(after: index) }
+            guard arguments[index] == name else { continue }
+            let valueIndex = arguments.index(after: index)
+            guard arguments.indices.contains(valueIndex) else {
+                throw OgkilnCLIError(message: "\(name) の値が指定されていません。", exitCode: 2)
+            }
+            values.append(arguments[valueIndex])
+        }
+        return values
+    }
+
+    /// 論理名（日本語）: 現在HTML Document Context取得関数
+    /// 処理概要: `.ogp` の page / component 参照から HTML 正本を読み、現在の document context を返します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内 page / component 参照 ID。
+    ///   - core: HTML 参照解決に使う agent core。
+    /// - Returns: 現在の HTML document context。
+    private func currentHTMLDocumentContext(
+        projectURL: URL,
+        pageID: String,
+        core: OpenGraphiteAgentCore
+    ) throws -> OpenGraphiteHTMLDocumentContext {
+        let reference = try core.projectPageReference(projectURL: projectURL, pageID: pageID)
+        let html = try String(contentsOf: URL(fileURLWithPath: reference.htmlURL), encoding: .utf8)
+        return OpenGraphiteHTMLDocument(html: html).htmlDocumentContext()
+    }
+
+    /// 論理名（日本語）: HTML Document Context入力取得関数
+    /// 処理概要: CLI option の指定分だけ現在値へ上書きし、保存用 context を作ります。
+    ///
+    /// - Parameters:
+    ///   - arguments: CLI 引数。
+    ///   - current: 現在の HTML document context。
+    /// - Returns: 更新後 context。
+    private func htmlDocumentContext(
+        in arguments: [String],
+        current: OpenGraphiteHTMLDocumentContext
+    ) throws -> OpenGraphiteHTMLDocumentContext {
+        OpenGraphiteHTMLDocumentContext(
+            langSource: try htmlLangSourceOption("--lang-source", in: arguments) ?? current.langSource,
+            langValue: try optionalOption("--lang", in: arguments) ?? current.langValue,
+            langField: try optionalOption("--lang-field", in: arguments) ?? current.langField,
+            dirSource: try htmlDirSourceOption("--dir-source", in: arguments) ?? current.dirSource,
+            dirValue: try optionalOption("--dir", in: arguments) ?? current.dirValue,
+            dirField: try optionalOption("--dir-field", in: arguments) ?? current.dirField
+        )
+    }
+
+    /// 論理名（日本語）: HTML Lang source option取得関数
+    /// 処理概要: `--lang-source` を `literal` / `binding` として検証します。
+    ///
+    /// - Parameters:
+    ///   - name: option 名。
+    ///   - arguments: CLI 引数。
+    /// - Returns: 指定がある場合は source mode。
+    private func htmlLangSourceOption(_ name: String, in arguments: [String]) throws -> OpenGraphiteHTMLLangSource? {
+        guard let value = try optionalOption(name, in: arguments) else {
+            return nil
+        }
+        guard let source = OpenGraphiteHTMLLangSource(rawValue: value.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw OgkilnCLIError(message: "\(name) は literal / binding のいずれかを指定してください。", exitCode: 2)
+        }
+        return source
+    }
+
+    /// 論理名（日本語）: HTML Dir source option取得関数
+    /// 処理概要: `--dir-source` を `literal` / `auto` / `binding` として検証します。
+    ///
+    /// - Parameters:
+    ///   - name: option 名。
+    ///   - arguments: CLI 引数。
+    /// - Returns: 指定がある場合は source mode。
+    private func htmlDirSourceOption(_ name: String, in arguments: [String]) throws -> OpenGraphiteHTMLDirSource? {
+        guard let value = try optionalOption(name, in: arguments) else {
+            return nil
+        }
+        guard let source = OpenGraphiteHTMLDirSource(rawValue: value.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw OgkilnCLIError(message: "\(name) は literal / auto / binding のいずれかを指定してください。", exitCode: 2)
+        }
+        return source
+    }
+
+    /// 論理名（日本語）: Preview runtime mock state取得関数
+    /// 処理概要: `--preview-mock key=value` の繰り返し指定を辞書へ変換します。
+    ///
+    /// - Parameter arguments: CLI 引数。
+    /// - Returns: 指定がない場合は `nil`、ある場合は mock field 辞書。
+    private func previewFieldMocks(in arguments: [String]) throws -> [String: String]? {
+        let values = try optionValues("--preview-mock", in: arguments)
+        guard !values.isEmpty else { return nil }
+        var result: [String: String] = [:]
+        for value in values {
+            guard let separatorIndex = value.firstIndex(of: "=") else {
+                throw OgkilnCLIError(message: "--preview-mock は key=value で指定してください。", exitCode: 2)
+            }
+            let key = value[..<separatorIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            let fieldValue = value[value.index(after: separatorIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else {
+                throw OgkilnCLIError(message: "--preview-mock の key は空にできません。", exitCode: 2)
+            }
+            result[key] = fieldValue
+        }
+        return result
+    }
+
+    /// 論理名（日本語）: locale一覧option取得関数
+    /// 処理概要: `--locales ja,eng` を重複なしの locale 配列へ変換します。
+    ///
+    /// - Parameter arguments: CLI 引数。
+    /// - Returns: 指定がない場合は `nil`。
+    private func localesOption(in arguments: [String]) throws -> [String]? {
+        guard let value = try optionalOption("--locales", in: arguments) else {
+            return nil
+        }
+        var locales: [String] = []
+        for item in value.split(separator: ",", omittingEmptySubsequences: false) {
+            let locale = item.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !locale.isEmpty, !locales.contains(locale) else { continue }
+            locales.append(locale)
+        }
+        guard !locales.isEmpty else {
+            throw OgkilnCLIError(message: "--locales は ja,eng のように空でない locale を指定してください。", exitCode: 2)
+        }
+        return locales
+    }
+
     private func hasFlag(_ name: String, in arguments: [String]) -> Bool {
         arguments.contains(name)
     }
@@ -551,16 +762,22 @@ struct OgkilnCLI {
       ogkiln contract get --json
       ogkiln project current --json
       ogkiln project inspect <project.ogp|current> --json
-      ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--allow-duplicate-path]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project page place <project.ogp|current> --page-id <page-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project page place <project.ogp|current> --page-id <page-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>]
+      ogkiln project page document <project.ogp|current> --page-id <page-id> [--lang-source <literal|binding>] [--lang <lang>] [--lang-field <field>] [--dir-source <literal|auto|binding>] [--dir <ltr|rtl|auto>] [--dir-field <field>]
       ogkiln project component add <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>]
+      ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>]
+      ogkiln project component document <project.ogp|current> --component-id <component-id> [--lang-source <literal|binding>] [--lang <lang>] [--lang-field <field>] [--dir-source <literal|auto|binding>] [--dir <ltr|rtl|auto>] [--dir-field <field>]
       ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
       ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
+      ogkiln i18n inspect <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locales <locale,locale>] --json
+      ogkiln i18n recommend <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locales <locale,locale>]
+      ogkiln i18n resource set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --locale <locale> --key <i18n-key> --value <text>
+      ogkiln i18n resource set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --locale <locale> --key <i18n-key> --text-file <text-file>
       ogkiln validate <project.ogp|current> [--json]
       ogkiln build <project.ogp|current> --output <dir>
       ogkiln screenshot canvas <project.ogp|current> --output <png>
@@ -574,6 +791,8 @@ struct OgkilnCLI {
       ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr>
       ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --value <text>
       ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --text-file <text-file>
+      ogkiln text variant set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --key <data-i18n-key> --locale <locale> --value <text>
+      ogkiln text variant set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --key <data-i18n-key> --locale <locale> --text-file <text-file>
       ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --html <fragment-html>
       ogkiln node html insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --html-file <fragment.html>
       ogkiln node html replace <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --html <replacement-html>

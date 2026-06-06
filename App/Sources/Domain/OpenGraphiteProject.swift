@@ -557,12 +557,23 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
 /// - `y`: キャンバス上の Y 座標。
 /// - `width`: プレビュー幅。
 /// - `height`: プレビュー高さ。
+/// - `previewContext`: エディター内プレビューへ注入する runtime Mock State。
 struct OpenGraphiteCanvas: Codable, Equatable {
     var name: String = ""
     var x: Double
     var y: Double
     var width: Double
     var height: Double
+    var previewContext: OpenGraphitePreviewContext = .empty
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case x
+        case y
+        case width
+        case height
+        case previewContext
+    }
 
     /// フロー解決で比較する正規化済み配置名。
     var flowResolutionName: String {
@@ -585,6 +596,62 @@ struct OpenGraphiteCanvas: Codable, Equatable {
         "\(Self.displayValue(x)), \(Self.displayValue(y))"
     }
 
+    /// 論理名（日本語）: キャンバス定義初期化関数
+    /// 処理概要: キャンバス配置と preview Mock State を明示値から構成します。
+    ///
+    /// - Parameters:
+    ///   - name: フロー解決用の配置名。
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: プレビュー幅。
+    ///   - height: プレビュー高さ。
+    ///   - previewContext: エディター内プレビューへ注入する runtime Mock State。
+    init(
+        name: String = "",
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        previewContext: OpenGraphitePreviewContext = .empty
+    ) {
+        self.name = name
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.previewContext = previewContext
+    }
+
+    /// 論理名（日本語）: キャンバスデコード初期化関数
+    /// 処理概要: 旧 `.ogp` との互換性のため preview Mock State 未指定時は空として読み込みます。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+        width = try container.decode(Double.self, forKey: .width)
+        height = try container.decode(Double.self, forKey: .height)
+        previewContext = try container.decodeIfPresent(OpenGraphitePreviewContext.self, forKey: .previewContext) ?? .empty
+    }
+
+    /// 論理名（日本語）: キャンバスエンコード関数
+    /// 処理概要: preview Mock State が空の場合は既存 `.ogp` 形式を保つため省略します。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+        try container.encode(width, forKey: .width)
+        try container.encode(height, forKey: .height)
+        if !previewContext.isEmpty {
+            try container.encode(previewContext, forKey: .previewContext)
+        }
+    }
+
     /// 論理名（日本語）: キャンバス値表示関数
     /// 処理概要: キャンバス座標や解像度を UI 表示向けに整数優先の短い文字列へ変換します。
     ///
@@ -596,6 +663,73 @@ struct OpenGraphiteCanvas: Codable, Equatable {
             return String(Int(roundedValue))
         }
         return String(format: "%.1f", value)
+    }
+}
+
+/// 論理名（日本語）: OpenGraphiteプレビューContext
+/// 概要: エディター内 preview にだけ注入する runtime mock state を表します。
+///
+/// プロパティ:
+/// - `locale`: 旧形式の preview locale。decode 互換用で、新規保存では使いません。
+/// - `direction`: 旧形式の preview direction。decode 互換用で、新規保存では使いません。
+/// - `fieldMocks`: runtime script が初期状態として参照する任意の mock field 値。
+struct OpenGraphitePreviewContext: Codable, Equatable {
+    static let empty = OpenGraphitePreviewContext(locale: "", direction: "", fieldMocks: [:])
+
+    var locale: String
+    var direction: String
+    var fieldMocks: [String: String]
+
+    var isEmpty: Bool {
+        fieldMocks.isEmpty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case locale
+        case direction
+        case fieldMocks
+    }
+
+    /// 論理名（日本語）: プレビューContext初期化関数
+    /// 処理概要: runtime mock state と旧形式 preview fields を正規化して保持します。
+    ///
+    /// - Parameters:
+    ///   - locale: 旧形式の preview locale。
+    ///   - direction: 旧形式の preview direction。
+    ///   - fieldMocks: JavaScript runtime mock state。
+    init(locale: String = "", direction: String = "", fieldMocks: [String: String] = [:]) {
+        self.locale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.direction = direction.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.fieldMocks = fieldMocks
+            .reduce(into: [String: String]()) { result, item in
+                let key = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !key.isEmpty else { return }
+                result[key] = item.value
+            }
+    }
+
+    /// 論理名（日本語）: プレビューContextデコード初期化関数
+    /// 処理概要: 省略された field を空値として読み込みます。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            locale: try container.decodeIfPresent(String.self, forKey: .locale) ?? "",
+            direction: try container.decodeIfPresent(String.self, forKey: .direction) ?? "",
+            fieldMocks: try container.decodeIfPresent([String: String].self, forKey: .fieldMocks) ?? [:]
+        )
+    }
+
+    /// 論理名（日本語）: プレビューContextエンコード関数
+    /// 処理概要: Mock State だけを JSON へ保存し、旧形式 locale / direction は再保存しません。
+    ///
+    /// - Parameter encoder: JSON encoder。
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if !fieldMocks.isEmpty {
+            try container.encode(fieldMocks, forKey: .fieldMocks)
+        }
     }
 }
 
@@ -644,6 +778,59 @@ enum OpenGraphiteCanvasSegment: String, Equatable {
             return "Pages"
         case .components:
             return "Components"
+        }
+    }
+}
+
+/// 論理名（日本語）: プロジェクト資源選択
+/// 概要: 左カラムの Project セグメントで選択できる実装資源または依存性を表します。
+///
+/// 定義内容:
+/// - `overview`: project manifest と主要ルートの概要。
+/// - `htmlRoot`: HTML root 依存性。
+/// - `cssLibrary`: CSS library 依存性。
+/// - `runtime`: HTML から参照される実装 runtime。
+/// - `i18nRuntime`: i18n runtime 設定。
+/// - `localeResource`: locale JSON resource。
+enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
+    case overview
+    case htmlRoot
+    case cssLibrary
+    case runtime(path: String)
+    case i18nRuntime
+    case localeResource(locale: String, path: String)
+
+    var title: String {
+        switch self {
+        case .overview:
+            return "Project"
+        case .htmlRoot:
+            return "HTML Root"
+        case .cssLibrary:
+            return "CSS"
+        case .runtime:
+            return "Runtime"
+        case .i18nRuntime:
+            return "I18n Runtime"
+        case .localeResource(let locale, _):
+            return "\(locale).json"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .overview:
+            return "Dependencies"
+        case .htmlRoot:
+            return "public root"
+        case .cssLibrary:
+            return "OpenGraphite CSS"
+        case .runtime(let path):
+            return path
+        case .i18nRuntime:
+            return "implementation i18n config"
+        case .localeResource(_, let path):
+            return path
         }
     }
 }

@@ -63,6 +63,125 @@ struct RuntimeSerializationTests {
         #expect(!serialized.contains("opengraphite-runtime-style"))
     }
 
+    /// 論理名（日本語）: slot text binding metadata伝播テスト
+    /// 概要: component runtime が slot source の i18n metadata を生成済み text node へコピーすることを検証します。
+    @Test("runtimeはslot sourceのtext binding metadataを生成slotへ伝播する")
+    func testRuntimeCopiesSlotTextBindingMetadataToGeneratedSlot() async throws {
+        // Given: i18n metadata を持つ slot source と、text slot を持つ component master を WebView に読み込む
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let runtimeSource = try runtimeJavaScriptSource()
+        let componentHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <Card data-og-id="card-master" data-og-type="frame" data-og-component="card" data-og-component-kind="master" data-og-part="root">
+              <CardTitle data-og-id="card-title" data-og-type="text" data-og-slot="title">Fallback title</CardTitle>
+            </Card>
+          </body>
+        </html>
+        """
+        let pageHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <og-instance data-og-id="card-instance" data-og-type="frame" data-og-component="card" data-og-internal-id="card-instance-internal">
+              <span slot="title" data-og-text-source="binding" data-i18n-key="home.card.title" data-og-text-variant-eng="English slot title">日本語スロット</span>
+            </og-instance>
+          </body>
+        </html>
+        """
+
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(runtimeSource)
+
+        // When: runtime で component を展開し、生成済み slot node の metadata を読む
+        let value = try await webView.evaluateJavaScript(
+            """
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(Self.javaScriptLiteral(componentHTML))]);
+            (() => {
+              const slot = document.querySelector('[data-og-id="card-instance-card-title"]');
+              return {
+                text: slot ? slot.textContent : '',
+                textSource: slot ? slot.getAttribute('data-og-text-source') || '' : '',
+                i18nKey: slot ? slot.getAttribute('data-i18n-key') || '' : '',
+                variant: slot ? slot.getAttribute('data-og-text-variant-eng') || '' : ''
+              };
+            })();
+            """
+        )
+        let payload = try #require(value as? [String: Any])
+
+        // Then: 生成済み text node でも binding node として扱える metadata が保持される
+        #expect(payload["text"] as? String == "日本語スロット")
+        #expect(payload["textSource"] as? String == "binding")
+        #expect(payload["i18nKey"] as? String == "home.card.title")
+        #expect(payload["variant"] as? String == "English slot title")
+    }
+
+    /// 論理名（日本語）: 実装runtime一時HTML復元テスト
+    /// 概要: 実装 i18n runtime が解決済み text を DOM へ反映しても、保存HTMLにはfallbackが残ることを検証します。
+    @Test("runtimeは実装runtimeの一時text HTMLを保存時にfallbackへ戻す")
+    func testRuntimeFallbackHTMLIsRestoredWithoutResolvingI18nText() async throws {
+        // Given: runtime JS と、page内 text / component slot text を WebView に読み込む
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let runtimeSource = try runtimeJavaScriptSource()
+        let componentHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <Card data-og-id="card-master" data-og-type="frame" data-og-component="card" data-og-component-kind="master" data-og-part="root">
+              <CardTitle data-og-id="card-title" data-og-type="text" data-og-slot="title">Fallback slot</CardTitle>
+            </Card>
+          </body>
+        </html>
+        """
+        let pageHTML = """
+        <!doctype html>
+        <html lang="ja" data-og-lang-source="binding" data-og-lang-field="selectedLanguage" dir="ltr" data-og-dir-source="auto">
+          <body>
+            <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語タイトル</Title>
+            <og-instance data-og-id="card-instance" data-og-type="frame" data-og-component="card" data-og-internal-id="card-instance-internal">
+              <span slot="title" data-og-text-source="binding" data-i18n-key="home.slot.title">スロット</span>
+            </og-instance>
+          </body>
+        </html>
+        """
+
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(runtimeSource)
+
+        // When: 実装 i18n runtime 相当の一時 text 置換後に保存用 HTML を取得する
+        let value = try await webView.evaluateJavaScript(
+            """
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(Self.javaScriptLiteral(componentHTML))]);
+            (() => {
+              const title = document.querySelector('[data-i18n-key="home.title"]');
+              title.setAttribute('data-og-runtime-fallback-html', title.innerHTML);
+              title.innerHTML = 'English title';
+              const slot = document.querySelector('[data-og-id="card-instance-card-title"]');
+              slot.setAttribute('data-og-runtime-fallback-html', slot.innerHTML);
+              slot.innerHTML = 'Slot English';
+              return {
+                title: title.innerHTML,
+                slot: slot.innerHTML,
+                serialized: window.OpenGraphiteRuntime.serializeDocument()
+              };
+            })();
+            """
+        )
+        let values = try #require(value as? [String: Any])
+        let serialized = try #require(values["serialized"] as? String)
+
+        // Then: preview DOM は実装 runtime の解決済み text、serialize 結果は fallback source を保持する
+        #expect(values["title"] as? String == "English title")
+        #expect(values["slot"] as? String == "Slot English")
+        #expect(serialized.contains("日本語タイトル"))
+        #expect(serialized.contains(">スロット</span>"))
+        #expect(!serialized.contains("data-og-runtime-fallback-html"))
+    }
+
     /// 論理名（日本語）: runtime JS読み込み関数
     /// 処理概要: テストホストのアプリバンドルに含まれる `public/OpenGraphite.runtime.js` を読み込みます。
     ///

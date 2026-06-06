@@ -5,6 +5,15 @@ function attributeValue(element, name) {
   return element.getAttribute(name) || "";
 }
 
+function restoreRuntimeFallbackHTML(root) {
+  elementsIncludingTemplateContent(root).forEach((element) => {
+    const fallbackHTML = element.getAttribute("data-og-runtime-fallback-html");
+    if (fallbackHTML === null) { return; }
+    element.innerHTML = fallbackHTML;
+    element.removeAttribute("data-og-runtime-fallback-html");
+  });
+}
+
 function componentLinks() {
   return Array.from(document.querySelectorAll('link[rel="opengraphite-components"][href]'));
 }
@@ -89,18 +98,55 @@ function slottedSourceMap(template) {
 }
 
 function assignedHTML(map, slotName, fallbackHTML) {
+  return assignedSlot(map, slotName, fallbackHTML).html;
+}
+
+function assignedSlot(map, slotName, fallbackHTML) {
   const assignedNodes = map.get(slotName) || [];
   if (assignedNodes.length === 0) {
-    return fallbackHTML;
+    return { html: fallbackHTML, sourceNode: null };
   }
-  return assignedNodes.map((node) => node.innerHTML || node.textContent || "").join("");
+  return {
+    html: assignedNodes.map((node) => node.innerHTML || node.textContent || "").join(""),
+    sourceNode: assignedNodes[0]
+  };
+}
+
+function copySlotTextMetadata(slotTarget, sourceNode) {
+  if (!sourceNode) { return; }
+  ["data-og-text-source", "data-i18n-key"].forEach((name) => {
+    const value = sourceNode.getAttribute(name);
+    if (value === null) {
+      slotTarget.removeAttribute(name);
+    } else {
+      slotTarget.setAttribute(name, value);
+    }
+  });
+  Array.from(slotTarget.attributes).forEach((attribute) => {
+    if (attribute.name.startsWith("data-og-text-variant-")) {
+      slotTarget.removeAttribute(attribute.name);
+    }
+  });
+  Array.from(sourceNode.attributes).forEach((attribute) => {
+    if (attribute.name.startsWith("data-og-text-variant-")) {
+      slotTarget.setAttribute(attribute.name, attribute.value);
+    }
+  });
 }
 
 function applySlots(root, sourceMap) {
   root.querySelectorAll("[data-og-slot]").forEach((slotTarget) => {
     const slotName = attributeValue(slotTarget, "data-og-slot") || "default";
-    slotTarget.innerHTML = assignedHTML(sourceMap, slotName, slotTarget.innerHTML);
+    const assignment = assignedSlot(sourceMap, slotName, slotTarget.innerHTML);
+    slotTarget.innerHTML = assignment.html;
     slotTarget.setAttribute("data-og-slot-origin", slotName);
+    copySlotTextMetadata(slotTarget, assignment.sourceNode);
+    if (assignment.sourceNode && assignment.sourceNode.hasAttribute("data-og-runtime-fallback-html")) {
+      slotTarget.setAttribute(
+        "data-og-runtime-fallback-html",
+        assignment.sourceNode.getAttribute("data-og-runtime-fallback-html")
+      );
+    }
   });
 }
 
@@ -130,7 +176,8 @@ function cloneMaster(master, instance, componentID, id) {
   if (instance.getAttribute("style")) {
     root.style.cssText = `${root.style.cssText};${instance.getAttribute("style")}`;
   }
-  applySlots(root, slottedSourceMap(sourceTemplateFor(instance)));
+  const sourceTemplate = sourceTemplateFor(instance);
+  applySlots(root, slottedSourceMap(sourceTemplate));
   rewriteGeneratedIDs(root, id, componentID);
   return root;
 }
@@ -193,10 +240,12 @@ function restoreInstanceSource(instance) {
 function elementsIncludingTemplateContent(root) {
   const elements = [];
   function visit(node) {
-    if (!node || node.nodeType !== Node.ELEMENT_NODE) { return; }
-    elements.push(node);
-    if (node.tagName && node.tagName.toLowerCase() === "template") {
-      Array.from(node.content.childNodes).forEach(visit);
+    if (!node) { return; }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      elements.push(node);
+      if (node.tagName && node.tagName.toLowerCase() === "template") {
+        Array.from(node.content.childNodes).forEach(visit);
+      }
     }
     Array.from(node.childNodes).forEach(visit);
   }
@@ -217,6 +266,7 @@ function stripRuntimeAttributes(root) {
     "data-og-source-component",
     "data-og-source-instance",
     "data-og-slot-origin",
+    "data-og-runtime-fallback-html",
     "contenteditable",
     "spellcheck"
   ];
@@ -237,10 +287,13 @@ function stripRuntimeAttributes(root) {
 }
 
 function serializeDocument() {
+  restoreRuntimeFallbackHTML(document.documentElement);
   document.querySelectorAll("og-instance[data-og-expanded]").forEach(copyGeneratedSlotsBack);
   const clone = document.documentElement.cloneNode(true);
   clone.querySelectorAll("og-instance[data-og-expanded]").forEach(restoreInstanceSource);
+  restoreRuntimeFallbackHTML(clone);
   stripRuntimeAttributes(clone);
+  document.dispatchEvent(new CustomEvent("opengraphite:serialize-complete"));
   return `<!doctype html>\n${clone.outerHTML}`;
 }
 

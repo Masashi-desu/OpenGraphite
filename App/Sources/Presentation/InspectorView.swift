@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// 論理名（日本語）: インスペクタービュー
@@ -16,7 +17,15 @@ struct InspectorView: View {
             .padding(.horizontal, EditorColumnStyle.outerPadding + 4)
             .padding(.bottom, 14)
 
-            if let node = store.selectedNode {
+            if let projectResource = store.selectedProjectResource {
+                ProjectResourceInspectorView(
+                    resource: projectResource,
+                    loadedProject: store.loadedProject,
+                    i18nInspection: store.projectI18nRuntimeInspection,
+                    onRecommendI18n: store.recommendI18nForProject,
+                    onUpdateI18nRuntime: store.updateProjectI18nRuntime
+                )
+            } else if let node = store.selectedNode {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         NodeSummaryPanel(node: node)
@@ -180,6 +189,8 @@ struct InspectorView: View {
                         }
 
                         if node.type == "text" {
+                            TextContentSection(node: node)
+
                             InspectorSection(title: "Typography") {
                                 InspectorFieldGrid {
                                     CSSNumericUnitVariableField(key: "--og-font-size", value: node.cssVariables["--og-font-size"] ?? "", units: ["px", "rem", "em", "%"]) { value in
@@ -262,8 +273,23 @@ struct InspectorView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else if let page = store.selectedPage {
-                PageInspectorView(page: page) { x, y, width, height, name in
-                    store.updateSelectedPageCanvas(x: x, y: y, width: width, height: height, name: name)
+                PageInspectorView(
+                    page: page,
+                    htmlDocumentContext: store.selectedHTMLDocumentContext,
+                    i18nInspection: store.selectedI18nRuntimeInspection,
+                    onOpenI18nRuntime: {
+                        store.selectProjectResource(.i18nRuntime)
+                    }
+                ) { x, y, width, height, name, previewContext, htmlDocumentContext in
+                    store.updateSelectedHTMLDocumentContext(htmlDocumentContext)
+                    store.updateSelectedPageCanvas(
+                        x: x,
+                        y: y,
+                        width: width,
+                        height: height,
+                        name: name,
+                        previewContext: previewContext
+                    )
                 }
                 .id(page.id)
             } else {
@@ -366,6 +392,78 @@ private struct NodeSummaryPanel: View {
     }
 }
 
+/// 論理名（日本語）: テキスト内容セクション
+/// 概要: 選択中 text node の binding metadata、HTML fallback、preview 上の resolved text を Inspector に表示します。
+///
+/// プロパティ:
+/// - `node`: 表示対象の選択 text node。
+private struct TextContentSection: View {
+    var node: OpenGraphiteNode
+
+    var body: some View {
+        InspectorSection(title: "Text") {
+            InspectorInfoRow(label: "source", value: node.textSourceLabel)
+
+            if node.isTextBinding {
+                InspectorInfoRow(label: "i18n key", value: node.i18nKey ?? "-")
+                InspectorTextValueBlock(label: "Fallback", value: fallbackText)
+                InspectorTextValueBlock(label: "Active Resolved", value: activeText)
+            } else {
+                InspectorTextValueBlock(label: "Content", value: activeText)
+            }
+        }
+    }
+
+    private var fallbackText: String {
+        node.fallbackTextContent ?? node.textContent ?? ""
+    }
+
+    private var activeText: String {
+        node.textContent ?? node.fallbackTextContent ?? ""
+    }
+}
+
+/// 論理名（日本語）: インスペクターテキスト値表示
+/// 概要: 複数行になり得る text content を読み取り専用で表示します。
+///
+/// プロパティ:
+/// - `label`: 値の種類。
+/// - `value`: 表示する text content。
+private struct InspectorTextValueBlock: View {
+    var label: String
+    var value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(displayValue)
+                .font(.caption)
+                .textSelection(.enabled)
+                .foregroundStyle(isEmpty ? .secondary : .primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 8)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+                )
+        }
+    }
+
+    private var displayValue: String {
+        isEmpty ? "empty" : value
+    }
+
+    private var isEmpty: Bool {
+        value.isEmpty
+    }
+}
+
 /// 論理名（日本語）: ページキャンバス入力値
 /// 概要: Inspector で編集するページのキャンバス座標と解像度をまとめます。
 ///
@@ -375,12 +473,14 @@ private struct NodeSummaryPanel: View {
 /// - `width`: ページプレビュー幅。
 /// - `height`: ページプレビュー高さ。
 /// - `name`: フロー解決に使う配置名。名前なしは空文字です。
+/// - `previewContext`: エディター内 preview に注入する runtime Mock State。
 private struct PageCanvasInput: Equatable {
     var x: Double
     var y: Double
     var width: Double
     var height: Double
     var name: String
+    var previewContext: OpenGraphitePreviewContext
 
     /// 論理名（日本語）: ページキャンバス入力値初期化関数
     /// 処理概要: `OpenGraphiteCanvas` から Inspector 入力比較用の値を生成します。
@@ -392,10 +492,11 @@ private struct PageCanvasInput: Equatable {
         width = canvas.width
         height = canvas.height
         name = Self.normalizedName(canvas.name)
+        previewContext = canvas.previewContext
     }
 
     /// 論理名（日本語）: ページキャンバス入力値初期化関数
-    /// 処理概要: パース済みの各数値から Inspector 入力値を生成します。
+    /// 処理概要: パース済みの各数値と preview Mock State から Inspector 入力値を生成します。
     ///
     /// - Parameters:
     ///   - x: キャンバス上の X 座標。
@@ -403,12 +504,21 @@ private struct PageCanvasInput: Equatable {
     ///   - width: ページプレビュー幅。
     ///   - height: ページプレビュー高さ。
     ///   - name: フロー解決に使う配置名。
-    init(x: Double, y: Double, width: Double, height: Double, name: String) {
+    ///   - previewContext: エディター内 preview に注入する runtime Mock State。
+    init(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        name: String,
+        previewContext: OpenGraphitePreviewContext
+    ) {
         self.x = x
         self.y = y
         self.width = width
         self.height = height
         self.name = Self.normalizedName(name)
+        self.previewContext = previewContext
     }
 
     /// 論理名（日本語）: ページキャンバス配置名正規化関数
@@ -432,21 +542,49 @@ private enum PageCanvasDimension {
     case height
 }
 
+/// 論理名（日本語）: Preview mock state draft
+/// 概要: Inspector 上で編集中の runtime mock state override 1 行を表します。
+///
+/// プロパティ:
+/// - `id`: SwiftUI の行識別子。
+/// - `name`: runtime が参照する parameter 名。
+/// - `value`: override 値。空文字も有効な注入値です。
+/// - `isOverrideEnabled`: preview へ注入するか。
+private struct PreviewMockFieldDraft: Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var value: String
+    var isOverrideEnabled: Bool
+}
+
 /// 論理名（日本語）: ページインスペクタービュー
 /// 概要: 選択ページの HTML 相対パス、解像度、キャンバス配置を表示・編集します。
 ///
 /// プロパティ:
 /// - `page`: 表示・編集対象のページ。
+/// - `htmlDocumentContext`: HTML 正本の `<html>` attribute と binding metadata。
+/// - `i18nInspection`: 実装資源から検出した i18n runtime 設定。
+/// - `onRecommendI18n`: 推奨 i18n runtime / locale JSON を実装資源へ作成する処理。
 /// - `onCommit`: 有効なキャンバス入力を適用する処理。
 private struct PageInspectorView: View {
     var page: OpenGraphitePage
-    var onCommit: (Double, Double, Double, Double, String) -> Void
+    var htmlDocumentContext: OpenGraphiteHTMLDocumentContext
+    var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var onOpenI18nRuntime: () -> Void
+    var onCommit: (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
 
     @State private var nameDraft: String
     @State private var xDraft: String
     @State private var yDraft: String
     @State private var widthDraft: String
     @State private var heightDraft: String
+    @State private var langSourceDraft: OpenGraphiteHTMLLangSource
+    @State private var langValueDraft: String
+    @State private var langFieldDraft: String
+    @State private var dirSourceDraft: OpenGraphiteHTMLDirSource
+    @State private var dirValueDraft: String
+    @State private var dirFieldDraft: String
+    @State private var mockFieldDrafts: [PreviewMockFieldDraft]
     @State private var isAspectRatioLocked: Bool
     @State private var lockedAspectRatio: PageCanvasAspectRatio?
 
@@ -455,15 +593,45 @@ private struct PageInspectorView: View {
     ///
     /// - Parameters:
     ///   - page: 表示・編集対象のページ。
+    ///   - htmlDocumentContext: HTML 正本の `<html>` attribute と binding metadata。
+    ///   - i18nInspection: 実装資源から検出した i18n runtime 設定。
+    ///   - onOpenI18nRuntime: Project 依存性の i18n runtime 選択へ移動する処理。
     ///   - onCommit: 有効なキャンバス入力を適用する処理。
-    init(page: OpenGraphitePage, onCommit: @escaping (Double, Double, Double, Double, String) -> Void) {
+    init(
+        page: OpenGraphitePage,
+        htmlDocumentContext: OpenGraphiteHTMLDocumentContext,
+        i18nInspection: OpenGraphiteI18nRuntimeInspection?,
+        onOpenI18nRuntime: @escaping () -> Void,
+        onCommit: @escaping (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
+    ) {
         self.page = page
+        self.htmlDocumentContext = htmlDocumentContext
+        self.i18nInspection = i18nInspection
+        self.onOpenI18nRuntime = onOpenI18nRuntime
         self.onCommit = onCommit
         _nameDraft = State(initialValue: page.canvas.displayName ?? "")
         _xDraft = State(initialValue: Self.draftText(for: page.canvas.x))
         _yDraft = State(initialValue: Self.draftText(for: page.canvas.y))
         _widthDraft = State(initialValue: Self.draftText(for: page.canvas.width))
         _heightDraft = State(initialValue: Self.draftText(for: page.canvas.height))
+        _langSourceDraft = State(initialValue: htmlDocumentContext.langSource)
+        _langValueDraft = State(initialValue: htmlDocumentContext.langValue)
+        _langFieldDraft = State(initialValue: htmlDocumentContext.langField)
+        _dirSourceDraft = State(initialValue: htmlDocumentContext.dirSource)
+        _dirValueDraft = State(initialValue: htmlDocumentContext.dirValue)
+        _dirFieldDraft = State(initialValue: htmlDocumentContext.dirField)
+        let injectableMockFieldNames = Self.injectableMockFieldNames(
+            langSource: htmlDocumentContext.langSource,
+            langField: htmlDocumentContext.langField,
+            dirSource: htmlDocumentContext.dirSource,
+            dirField: htmlDocumentContext.dirField,
+            i18nLocaleField: i18nInspection?.localeField,
+            fieldMocks: page.canvas.previewContext.fieldMocks
+        )
+        _mockFieldDrafts = State(initialValue: Self.mockFieldDrafts(
+            for: page.canvas.previewContext.fieldMocks,
+            injectableFieldNames: injectableMockFieldNames
+        ))
         _isAspectRatioLocked = State(initialValue: false)
         _lockedAspectRatio = State(initialValue: PageCanvasAspectRatio(width: page.canvas.width, height: page.canvas.height))
     }
@@ -478,6 +646,36 @@ private struct PageInspectorView: View {
                     InspectorInfoRow(label: "name", value: page.canvas.displayName ?? "-")
                     InspectorInfoRow(label: "resolution", value: page.canvas.resolutionLabel)
                     InspectorInfoRow(label: "position", value: page.canvas.positionLabel)
+                    InspectorInfoRow(label: "html lang", value: htmlDocumentContext.langValue.isEmpty ? "-" : htmlDocumentContext.langValue)
+                    InspectorInfoRow(label: "text dir", value: htmlDocumentContext.dirValue.isEmpty ? "-" : htmlDocumentContext.dirValue)
+                }
+
+                InspectorSection(title: "HTML Document") {
+                    HTMLLangDocumentEditor(
+                        source: $langSourceDraft,
+                        value: $langValueDraft,
+                        field: $langFieldDraft,
+                        onSubmit: commitIfValid
+                    )
+
+                    HTMLDirDocumentEditor(
+                        source: $dirSourceDraft,
+                        value: $dirValueDraft,
+                        field: $dirFieldDraft,
+                        isInvalidValue: isInvalidDirectionDraft,
+                        onSubmit: commitIfValid
+                    )
+                }
+
+                InspectorSection(title: "I18n Runtime") {
+                    I18nRuntimeSummarySection(
+                        inspection: i18nInspection,
+                        onOpenProjectResource: onOpenI18nRuntime
+                    )
+                }
+
+                InspectorSection(title: "Mock State") {
+                    PreviewMockStateEditor(entries: $mockFieldDrafts, onSubmit: commitIfValid)
                 }
 
                 InspectorSection(title: "Canvas") {
@@ -565,6 +763,24 @@ private struct PageInspectorView: View {
         .onChange(of: page.canvas) { _, nextCanvas in
             resetDrafts(with: nextCanvas)
         }
+        .onChange(of: htmlDocumentContext) { _, nextContext in
+            resetHTMLDocumentDrafts(with: nextContext)
+        }
+        .onChange(of: i18nInspection) { _, _ in
+            synchronizeMockFieldDrafts()
+        }
+        .onChange(of: langSourceDraft) { _, _ in
+            synchronizeMockFieldDrafts()
+        }
+        .onChange(of: langFieldDraft) { _, _ in
+            synchronizeMockFieldDrafts()
+        }
+        .onChange(of: dirSourceDraft) { _, _ in
+            synchronizeMockFieldDrafts()
+        }
+        .onChange(of: dirFieldDraft) { _, _ in
+            synchronizeMockFieldDrafts()
+        }
     }
 
     private var widthBinding: Binding<String> {
@@ -608,7 +824,17 @@ private struct PageInspectorView: View {
         else {
             return nil
         }
-        return PageCanvasInput(x: x, y: y, width: width, height: height, name: normalizedNameDraft)
+        guard let previewContext = parsedPreviewContext else {
+            return nil
+        }
+        return PageCanvasInput(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            name: normalizedNameDraft,
+            previewContext: previewContext
+        )
     }
 
     private var validationMessage: String? {
@@ -629,12 +855,32 @@ private struct PageInspectorView: View {
         guard width > 0, height > 0 else {
             return "Width / Height は 0 より大きい数値が必要です。"
         }
+        guard parsedHTMLDocumentContext != nil else {
+            if langSourceDraft == .binding && normalizedLangFieldDraft.isEmpty {
+                return "HTML Lang の Binding には Field が必要です。"
+            }
+            if dirSourceDraft == .binding && normalizedDirFieldDraft.isEmpty {
+                return "Text Dir の Binding には Field が必要です。"
+            }
+            return "HTML Document の入力が不正です。"
+        }
+        if isInvalidDirectionDraft {
+            return "Text Dir は ltr / rtl / auto のいずれか、または空にしてください。"
+        }
+        if parsedFieldMocks == nil {
+            return "Mock State は ON の行に一意な parameter 名が必要です。"
+        }
         return nil
     }
 
     private var canCommit: Bool {
-        guard let parsedInput else { return false }
+        guard let parsedInput,
+              let parsedHTMLDocumentContext
+        else {
+            return false
+        }
         return parsedInput != PageCanvasInput(canvas: page.canvas)
+            || parsedHTMLDocumentContext != htmlDocumentContext
     }
 
     private var currentDraftAspectRatio: PageCanvasAspectRatio? {
@@ -646,6 +892,63 @@ private struct PageInspectorView: View {
             return nil
         }
         return PageCanvasAspectRatio(width: width, height: height)
+    }
+
+    private var parsedPreviewContext: OpenGraphitePreviewContext? {
+        guard let fieldMocks = parsedFieldMocks else {
+            return nil
+        }
+        return OpenGraphitePreviewContext(fieldMocks: fieldMocks)
+    }
+
+    private var parsedHTMLDocumentContext: OpenGraphiteHTMLDocumentContext? {
+        guard !isInvalidDirectionDraft else { return nil }
+        guard langSourceDraft != .binding || !normalizedLangFieldDraft.isEmpty else { return nil }
+        guard dirSourceDraft != .binding || !normalizedDirFieldDraft.isEmpty else { return nil }
+        return OpenGraphiteHTMLDocumentContext(
+            langSource: langSourceDraft,
+            langValue: langValueDraft,
+            langField: langFieldDraft,
+            dirSource: dirSourceDraft,
+            dirValue: dirValueDraft,
+            dirField: dirFieldDraft
+        )
+    }
+
+    private var parsedFieldMocks: [String: String]? {
+        var result: [String: String] = [:]
+        for entry in mockFieldDrafts {
+            let name = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard entry.isOverrideEnabled else { continue }
+            guard !name.isEmpty, result[name] == nil else { return nil }
+            result[name] = value
+        }
+        return result
+    }
+
+    private var isInvalidDirectionDraft: Bool {
+        let direction = dirValueDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !direction.isEmpty && !["ltr", "rtl", "auto"].contains(direction)
+    }
+
+    private var normalizedLangFieldDraft: String {
+        langFieldDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedDirFieldDraft: String {
+        dirFieldDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var currentInjectableMockFieldNames: [String] {
+        Self.injectableMockFieldNames(
+            langSource: langSourceDraft,
+            langField: langFieldDraft,
+            dirSource: dirSourceDraft,
+            dirField: dirFieldDraft,
+            i18nLocaleField: i18nInspection?.localeField,
+            fieldMocks: page.canvas.previewContext.fieldMocks
+        )
     }
 
     /// 論理名（日本語）: ページキャンバス寸法入力反映関数
@@ -692,8 +995,20 @@ private struct PageInspectorView: View {
     /// 論理名（日本語）: ページキャンバス入力確定関数
     /// 処理概要: 必須入力と数値条件を満たす場合だけキャンバス配置を適用します。
     private func commitIfValid() {
-        guard let parsedInput else { return }
-        onCommit(parsedInput.x, parsedInput.y, parsedInput.width, parsedInput.height, parsedInput.name)
+        guard let parsedInput,
+              let parsedHTMLDocumentContext
+        else {
+            return
+        }
+        onCommit(
+            parsedInput.x,
+            parsedInput.y,
+            parsedInput.width,
+            parsedInput.height,
+            parsedInput.name,
+            parsedInput.previewContext,
+            parsedHTMLDocumentContext
+        )
     }
 
     /// 論理名（日本語）: ページキャンバスdraftリセット関数
@@ -706,9 +1021,55 @@ private struct PageInspectorView: View {
         yDraft = Self.draftText(for: canvas.y)
         widthDraft = Self.draftText(for: canvas.width)
         heightDraft = Self.draftText(for: canvas.height)
+        mockFieldDrafts = Self.mockFieldDrafts(
+            for: canvas.previewContext.fieldMocks,
+            injectableFieldNames: Self.injectableMockFieldNames(
+                langSource: langSourceDraft,
+                langField: langFieldDraft,
+                dirSource: dirSourceDraft,
+                dirField: dirFieldDraft,
+                i18nLocaleField: i18nInspection?.localeField,
+                fieldMocks: canvas.previewContext.fieldMocks
+            )
+        )
         if isAspectRatioLocked {
             lockedAspectRatio = PageCanvasAspectRatio(width: canvas.width, height: canvas.height)
         }
+    }
+
+    /// 論理名（日本語）: HTML Document draftリセット関数
+    /// 処理概要: Store 側で更新された HTML document context を入力欄へ反映します。
+    ///
+    /// - Parameter context: 入力欄へ反映する HTML document context。
+    private func resetHTMLDocumentDrafts(with context: OpenGraphiteHTMLDocumentContext) {
+        langSourceDraft = context.langSource
+        langValueDraft = context.langValue
+        langFieldDraft = context.langField
+        dirSourceDraft = context.dirSource
+        dirValueDraft = context.dirValue
+        dirFieldDraft = context.dirField
+        mockFieldDrafts = Self.mockFieldDrafts(
+            for: page.canvas.previewContext.fieldMocks,
+            injectableFieldNames: Self.injectableMockFieldNames(
+                langSource: context.langSource,
+                langField: context.langField,
+                dirSource: context.dirSource,
+                dirField: context.dirField,
+                i18nLocaleField: i18nInspection?.localeField,
+                fieldMocks: page.canvas.previewContext.fieldMocks
+            ),
+            preserving: mockFieldDrafts
+        )
+    }
+
+    /// 論理名（日本語）: Mock State draft同期関数
+    /// 処理概要: HTML Document の binding metadata と保存済み Mock State から注入可能フィールド行を再構成します。
+    private func synchronizeMockFieldDrafts() {
+        mockFieldDrafts = Self.mockFieldDrafts(
+            for: page.canvas.previewContext.fieldMocks,
+            injectableFieldNames: currentInjectableMockFieldNames,
+            preserving: mockFieldDrafts
+        )
     }
 
     /// 論理名（日本語）: ページキャンバスdraft検証関数
@@ -740,6 +1101,614 @@ private struct PageInspectorView: View {
             return String(Int(roundedValue))
         }
         return String(value)
+    }
+
+    /// 論理名（日本語）: 注入可能Mock Stateフィールド名生成関数
+    /// 処理概要: HTML Document binding field と保存済み Mock State key から Inspector に表示する field 名を生成します。
+    ///
+    /// - Parameters:
+    ///   - langSource: HTML Lang の source mode。
+    ///   - langField: HTML Lang binding の field 名。
+    ///   - dirSource: Text Dir の source mode。
+    ///   - dirField: Text Dir binding の field 名。
+    ///   - i18nLocaleField: 実装 runtime が言語解決に使う field 名。
+    ///   - fieldMocks: `.ogp` に保存済みの runtime mock state 辞書。
+    /// - Returns: 重複と空白名を除いた field 名。
+    private static func injectableMockFieldNames(
+        langSource: OpenGraphiteHTMLLangSource,
+        langField: String,
+        dirSource: OpenGraphiteHTMLDirSource,
+        dirField: String,
+        i18nLocaleField: String?,
+        fieldMocks: [String: String]
+    ) -> [String] {
+        var names: [String] = []
+
+        func appendUnique(_ rawName: String) {
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !names.contains(name) else { return }
+            names.append(name)
+        }
+
+        if langSource == .binding {
+            appendUnique(langField)
+        }
+        if dirSource == .binding {
+            appendUnique(dirField)
+        }
+        if let i18nLocaleField {
+            appendUnique(i18nLocaleField)
+        }
+        for name in fieldMocks.keys.sorted() {
+            appendUnique(name)
+        }
+
+        return names
+    }
+
+    /// 論理名（日本語）: mock state draft生成関数
+    /// 処理概要: 注入可能 field 名と runtime mock state 辞書を Inspector の行 draft へ変換します。
+    ///
+    /// - Parameter fieldMocks: runtime mock state 辞書。
+    /// - Parameter injectableFieldNames: Inspector に表示する注入可能 field 名。
+    /// - Parameter currentDrafts: 編集中の値と ON/OFF を保持したい既存行。
+    /// - Returns: 入力欄向けの行 draft。
+    private static func mockFieldDrafts(
+        for fieldMocks: [String: String],
+        injectableFieldNames: [String],
+        preserving currentDrafts: [PreviewMockFieldDraft] = []
+    ) -> [PreviewMockFieldDraft] {
+        let preservedDrafts = currentDrafts.reduce(into: [String: PreviewMockFieldDraft]()) { result, draft in
+            let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, result[name] == nil else { return }
+            var normalizedDraft = draft
+            normalizedDraft.name = name
+            result[name] = normalizedDraft
+        }
+
+        return injectableFieldNames.compactMap { rawName in
+            let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return nil }
+            if let preservedDraft = preservedDrafts[name] {
+                return preservedDraft
+            }
+            if let savedValue = fieldMocks[name] {
+                return PreviewMockFieldDraft(name: name, value: savedValue, isOverrideEnabled: true)
+            }
+            return PreviewMockFieldDraft(name: name, value: "", isOverrideEnabled: false)
+        }
+    }
+}
+
+/// 論理名（日本語）: Project資源インスペクター
+/// 概要: Project セグメントで選択した実装資源と依存性の詳細を表示・編集します。
+///
+/// プロパティ:
+/// - `resource`: 選択中の Project 資源。
+/// - `loadedProject`: 読み込み済み `.ogp`。
+/// - `inspection`: i18n runtime 検査結果。
+/// - `onRecommendI18n`: 推奨 runtime / locale JSON を実装資源へ作成する処理。
+/// - `onUpdateI18nRuntime`: literal i18n runtime 設定を実装資源へ保存する処理。
+private struct ProjectResourceInspectorView: View {
+    var resource: OpenGraphiteProjectResourceSelection
+    var loadedProject: LoadedOpenGraphiteProject?
+    var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var onRecommendI18n: () -> Void
+    var onUpdateI18nRuntime: (_ loadPath: String?, _ fallbackLocale: String?) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ProjectResourceSummaryPanel(resource: resource)
+
+                switch resource {
+                case .overview:
+                    projectOverview
+                case .htmlRoot:
+                    pathResourceSection(title: "HTML Root", path: htmlRootPath)
+                case .cssLibrary:
+                    pathResourceSection(title: "CSS", path: loadedProject?.project.cssLibrary ?? "-")
+                case .runtime(let path):
+                    pathResourceSection(title: "Runtime", path: path)
+                case .i18nRuntime:
+                    InspectorSection(title: "I18n Runtime") {
+                        I18nRuntimeEditorSection(
+                            inspection: i18nInspection,
+                            onRecommend: onRecommendI18n,
+                            onCommit: onUpdateI18nRuntime
+                        )
+                    }
+                case .localeResource(let locale, let path):
+                    InspectorSection(title: "Locale Resource") {
+                        LocaleResourceInspectorSection(
+                            locale: locale,
+                            path: path,
+                            status: localeStatus(locale: locale, path: path),
+                            onCreate: onRecommendI18n
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var projectOverview: some View {
+        InspectorSection(title: "Project") {
+            InspectorInfoRow(label: "name", value: loadedProject?.project.name ?? "-")
+            InspectorInfoRow(label: "manifest", value: loadedProject?.fileURL.lastPathComponent ?? "-")
+            InspectorInfoRow(label: "repository", value: loadedProject?.rootURL.path ?? "-")
+            InspectorInfoRow(label: "html root", value: loadedProject?.project.htmlRoot ?? "-")
+            InspectorInfoRow(label: "css", value: loadedProject?.project.cssLibrary ?? "-")
+        }
+
+        InspectorSection(title: "I18n Runtime") {
+            I18nRuntimeSummaryContent(inspection: i18nInspection)
+        }
+    }
+
+    @ViewBuilder
+    private func pathResourceSection(title: String, path: String) -> some View {
+        InspectorSection(title: title) {
+            InspectorInfoRow(label: "path", value: path)
+            InspectorInfoRow(label: "status", value: resolvedURL(for: path).map { FileManager.default.fileExists(atPath: $0.path) ? "Found" : "Missing" } ?? "-")
+            if let url = resolvedURL(for: path) {
+                InspectorInfoRow(label: "resolved", value: url.path)
+            }
+        }
+    }
+
+    private var htmlRootPath: String {
+        loadedProject?.project.htmlRoot ?? "-"
+    }
+
+    private func resolvedURL(for path: String) -> URL? {
+        guard let loadedProject, !path.isEmpty, path != "-" else { return nil }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+        return loadedProject.rootURL.appendingPathComponent(path).standardizedFileURL
+    }
+
+    private func localeStatus(locale: String, path: String) -> OpenGraphiteI18nResourceStatus {
+        if let resource = i18nInspection?.resources.first(where: { $0.locale == locale }) {
+            return resource
+        }
+        return OpenGraphiteI18nResourceStatus(
+            locale: locale,
+            path: path,
+            exists: FileManager.default.fileExists(atPath: path),
+            editable: true
+        )
+    }
+}
+
+/// 論理名（日本語）: Project資源概要パネル
+/// 概要: Project Inspector 上部に選択中実装資源の種類と補助情報を表示します。
+///
+/// プロパティ:
+/// - `resource`: 選択中の Project 資源。
+private struct ProjectResourceSummaryPanel: View {
+    var resource: OpenGraphiteProjectResourceSelection
+
+    var body: some View {
+        HStack(spacing: 10) {
+            OpenGraphiteIconView(icon: icon, size: 17)
+                .frame(width: 28, height: 28)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.accentFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(resource.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(resource.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+    }
+
+    private var icon: OpenGraphiteIcon {
+        switch resource {
+        case .overview:
+            return .projectPanel
+        case .i18nRuntime:
+            return .i18nResource
+        case .localeResource:
+            return .localeResource
+        case .htmlRoot, .cssLibrary, .runtime:
+            return .dependencyResource
+        }
+    }
+}
+
+/// 論理名（日本語）: Page用i18n runtime概要セクション
+/// 概要: Page Inspector で共有 i18n runtime の検出状態を read-only で表示し、Project 依存性へ移動します。
+///
+/// プロパティ:
+/// - `inspection`: i18n runtime 検査結果。
+/// - `onOpenProjectResource`: Project セグメントの i18n runtime へ移動する処理。
+private struct I18nRuntimeSummarySection: View {
+    var inspection: OpenGraphiteI18nRuntimeInspection?
+    var onOpenProjectResource: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            I18nRuntimeSummaryContent(inspection: inspection)
+
+            Button(action: onOpenProjectResource) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.right.square")
+                    Text("Open Project Dependency")
+                    Spacer()
+                }
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// 論理名（日本語）: i18n runtime概要内容
+/// 概要: Project / Page 双方で使う i18n runtime の read-only 検出情報を表示します。
+///
+/// プロパティ:
+/// - `inspection`: i18n runtime 検査結果。
+private struct I18nRuntimeSummaryContent: View {
+    var inspection: OpenGraphiteI18nRuntimeInspection?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            if let inspection {
+                InspectorInfoRow(label: "Adapter", value: adapterLabel(inspection.adapter))
+                InspectorInfoRow(label: "Config Source", value: shortPath(inspection.configSource))
+                InspectorInfoRow(label: "Load Path", value: propertyLabel(inspection.loadPath))
+                InspectorInfoRow(label: "Fallback Locale", value: propertyLabel(inspection.fallbackLng))
+                InspectorInfoRow(label: "Locale Field", value: inspection.localeField ?? "-")
+
+                I18nResourceStatusList(resources: inspection.resources)
+            } else {
+                Text("Not detected")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func adapterLabel(_ adapter: OpenGraphiteI18nAdapter) -> String {
+        switch adapter {
+        case .i18next:
+            return "i18next"
+        case .unknown:
+            return "unknown"
+        }
+    }
+
+    private func propertyLabel(_ property: OpenGraphiteI18nConfigProperty) -> String {
+        switch property.source {
+        case .literal:
+            return "\(property.value ?? "-") · Project"
+        case .external:
+            return "\(property.expression ?? "External") · Read only"
+        case .missing:
+            return "-"
+        }
+    }
+
+    private func shortPath(_ path: String?) -> String {
+        guard let path, !path.isEmpty else { return "-" }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
+/// 論理名（日本語）: i18n runtime編集セクション
+/// 概要: Project Inspector で literal な i18n runtime 設定を編集します。
+///
+/// プロパティ:
+/// - `inspection`: i18n runtime 検査結果。
+/// - `onRecommend`: 推奨 runtime / locale JSON を実装資源へ作成する処理。
+/// - `onCommit`: literal 設定を実装資源へ保存する処理。
+private struct I18nRuntimeEditorSection: View {
+    var inspection: OpenGraphiteI18nRuntimeInspection?
+    var onRecommend: () -> Void
+    var onCommit: (_ loadPath: String?, _ fallbackLocale: String?) -> Void
+    @State private var loadPathDraft = ""
+    @State private var fallbackLocaleDraft = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let inspection {
+                InspectorInfoRow(label: "Adapter", value: adapterLabel(inspection.adapter))
+                InspectorInfoRow(label: "Config Source", value: shortPath(inspection.configSource))
+                InspectorInfoRow(label: "Locale Field", value: inspection.localeField ?? "-")
+
+                I18nRuntimeLiteralField(
+                    label: "Load Path",
+                    value: $loadPathDraft,
+                    placeholder: "/locales/{{lng}}.json",
+                    isEditable: inspection.loadPath.source == .literal,
+                    readOnlyValue: propertyLabel(inspection.loadPath),
+                    isInvalid: loadPathDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onSubmit: commitIfValid
+                )
+
+                I18nRuntimeLiteralField(
+                    label: "Fallback Locale",
+                    value: $fallbackLocaleDraft,
+                    placeholder: "ja",
+                    isEditable: inspection.fallbackLng.source == .literal,
+                    readOnlyValue: propertyLabel(inspection.fallbackLng),
+                    isInvalid: fallbackLocaleDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onSubmit: commitIfValid
+                )
+
+                I18nResourceStatusList(resources: inspection.resources)
+
+                HStack(spacing: 8) {
+                    Button(action: commitIfValid) {
+                        Text("Apply")
+                            .font(.caption.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(canCommit ? Color.white : Color.secondary)
+                            .background(
+                                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                                    .fill(canCommit ? Color.accentColor : EditorColumnStyle.elevatedRowFill)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canCommit)
+
+                    Button(action: onRecommend) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.caption.weight(.semibold))
+                            .frame(width: 32, height: 28)
+                            .foregroundStyle(Color.accentColor)
+                            .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Use recommended locale JSON")
+                }
+            } else {
+                Text("Not detected")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onRecommend) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wand.and.stars")
+                        Text("Use recommended locale JSON")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(Color.accentColor)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .onAppear(perform: resetDrafts)
+        .onChange(of: inspection) { _, _ in
+            resetDrafts()
+        }
+    }
+
+    private var canCommit: Bool {
+        guard let inspection else { return false }
+        let loadPath = loadPathDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackLocale = fallbackLocaleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let canEditLoadPath = inspection.loadPath.source == .literal && !loadPath.isEmpty
+        let canEditFallback = inspection.fallbackLng.source == .literal && !fallbackLocale.isEmpty
+        let loadPathChanged = canEditLoadPath && loadPath != (inspection.loadPath.value ?? "")
+        let fallbackChanged = canEditFallback && fallbackLocale != (inspection.fallbackLng.value ?? "")
+        return loadPathChanged || fallbackChanged
+    }
+
+    private func commitIfValid() {
+        guard let inspection, canCommit else { return }
+        let loadPath = loadPathDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackLocale = fallbackLocaleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        onCommit(
+            inspection.loadPath.source == .literal && loadPath != (inspection.loadPath.value ?? "") ? loadPath : nil,
+            inspection.fallbackLng.source == .literal && fallbackLocale != (inspection.fallbackLng.value ?? "") ? fallbackLocale : nil
+        )
+    }
+
+    private func resetDrafts() {
+        loadPathDraft = inspection?.loadPath.value ?? ""
+        fallbackLocaleDraft = inspection?.fallbackLng.value ?? ""
+    }
+
+    private func adapterLabel(_ adapter: OpenGraphiteI18nAdapter) -> String {
+        switch adapter {
+        case .i18next:
+            return "i18next"
+        case .unknown:
+            return "unknown"
+        }
+    }
+
+    private func propertyLabel(_ property: OpenGraphiteI18nConfigProperty) -> String {
+        switch property.source {
+        case .literal:
+            return property.value ?? "-"
+        case .external:
+            return property.expression ?? "External"
+        case .missing:
+            return "-"
+        }
+    }
+
+    private func shortPath(_ path: String?) -> String {
+        guard let path, !path.isEmpty else { return "-" }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
+/// 論理名（日本語）: i18n runtime literal入力欄
+/// 概要: literal 設定は入力欄、external / missing 設定は read-only 表示として描画します。
+///
+/// プロパティ:
+/// - `label`: 項目名。
+/// - `value`: literal 編集値。
+/// - `placeholder`: placeholder。
+/// - `isEditable`: 入力可能か。
+/// - `readOnlyValue`: read-only 時の表示値。
+/// - `isInvalid`: invalid 表示を出すか。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct I18nRuntimeLiteralField: View {
+    var label: String
+    @Binding var value: String
+    var placeholder: String
+    var isEditable: Bool
+    var readOnlyValue: String
+    var isInvalid: Bool
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            if isEditable {
+                TextField(placeholder, text: $value)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
+                    )
+                    .onSubmit(onSubmit)
+            } else {
+                Text(readOnlyValue)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: i18n resource状態一覧
+/// 概要: locale JSON resource の存在有無と編集可否を表示します。
+///
+/// プロパティ:
+/// - `resources`: locale JSON の状態一覧。
+private struct I18nResourceStatusList: View {
+    var resources: [OpenGraphiteI18nResourceStatus]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Resource Status")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+            ForEach(resources, id: \.locale) { resource in
+                HStack(spacing: 6) {
+                    Text(resource.locale)
+                        .font(.caption2.monospaced().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .leading)
+                    Text(resource.exists ? "Found" : "Missing")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.secondary)
+                    Spacer(minLength: 6)
+                    Text(resource.editable ? "Editable" : "Read only")
+                        .font(.caption2)
+                        .foregroundStyle(Color.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+            }
+        }
+    }
+}
+
+/// 論理名（日本語）: Locale resourceインスペクターセクション
+/// 概要: Project 依存性で選択された locale JSON の状態を表示し、未作成時の作成導線を出します。
+///
+/// プロパティ:
+/// - `locale`: locale 名。
+/// - `path`: JSON resource path。
+/// - `status`: resource 状態。
+/// - `onCreate`: 推奨 locale JSON 作成処理。
+private struct LocaleResourceInspectorSection: View {
+    var locale: String
+    var path: String
+    var status: OpenGraphiteI18nResourceStatus
+    var onCreate: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            InspectorInfoRow(label: "Locale", value: locale)
+            InspectorInfoRow(label: "Path", value: path)
+            InspectorInfoRow(label: "Status", value: status.exists ? "Found" : "Missing")
+            InspectorInfoRow(label: "Write", value: status.editable ? "Editable" : "Read only")
+            InspectorInfoRow(label: "Keys", value: keyCountLabel)
+
+            if !status.exists && status.editable {
+                Button(action: onCreate) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "wand.and.stars")
+                        Text("Create Resource")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(Color.accentColor)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var keyCountLabel: String {
+        guard status.exists,
+              let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return "-"
+        }
+        return "\(object.count)"
     }
 }
 
@@ -818,6 +1787,253 @@ private struct OptionalCanvasNameField: View {
                 .frame(minWidth: 0, maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: HTML Langエディター
+/// 概要: `<html lang>` の source mode、fallback、binding field を編集します。
+///
+/// プロパティ:
+/// - `source`: `lang` の解決方式。
+/// - `value`: `lang` 属性へ保存する literal / fallback 値。
+/// - `field`: binding 時に参照する runtime field 名。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct HTMLLangDocumentEditor: View {
+    @Binding var source: OpenGraphiteHTMLLangSource
+    @Binding var value: String
+    @Binding var field: String
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("HTML Lang")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Picker("HTML Lang Source", selection: $source) {
+                ForEach(OpenGraphiteHTMLLangSource.allCases, id: \.self) { item in
+                    Text(label(for: item)).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            PreviewContextTextField(
+                label: source == .binding ? "Fallback" : "Value",
+                text: $value,
+                placeholder: "ja",
+                isInvalid: false,
+                onSubmit: onSubmit
+            )
+
+            if source == .binding {
+                PreviewContextTextField(
+                    label: "Field",
+                    text: $field,
+                    placeholder: "selectedLanguage",
+                    isInvalid: field.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onSubmit: onSubmit
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func label(for source: OpenGraphiteHTMLLangSource) -> String {
+        switch source {
+        case .literal:
+            return "Literal"
+        case .binding:
+            return "Binding"
+        }
+    }
+}
+
+/// 論理名（日本語）: HTML Dirエディター
+/// 概要: `<html dir>` の source mode、fallback、binding field を編集します。
+///
+/// プロパティ:
+/// - `source`: `dir` の解決方式。
+/// - `value`: `dir` 属性へ保存する literal / fallback 値。
+/// - `field`: binding 時に参照する runtime field 名。
+/// - `isInvalidValue`: fallback 値が HTML dir として不正か。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct HTMLDirDocumentEditor: View {
+    @Binding var source: OpenGraphiteHTMLDirSource
+    @Binding var value: String
+    @Binding var field: String
+    var isInvalidValue: Bool
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Text Dir")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Picker("Text Dir Source", selection: $source) {
+                ForEach(OpenGraphiteHTMLDirSource.allCases, id: \.self) { item in
+                    Text(label(for: item)).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            PreviewContextTextField(
+                label: source == .literal ? "Value" : "Fallback",
+                text: $value,
+                placeholder: "ltr",
+                isInvalid: isInvalidValue,
+                onSubmit: onSubmit
+            )
+
+            if source == .binding {
+                PreviewContextTextField(
+                    label: "Field",
+                    text: $field,
+                    placeholder: "selectedDirection",
+                    isInvalid: field.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    onSubmit: onSubmit
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func label(for source: OpenGraphiteHTMLDirSource) -> String {
+        switch source {
+        case .literal:
+            return "Literal"
+        case .auto:
+            return "Auto"
+        case .binding:
+            return "Binding"
+        }
+    }
+}
+
+/// 論理名（日本語）: HTML Documentテキストフィールド
+/// 概要: Page Inspector の HTML document context を編集する単一行入力欄です。
+///
+/// プロパティ:
+/// - `label`: 入力欄ラベル。
+/// - `text`: 入力文字列 binding。
+/// - `placeholder`: 未入力時の表示例。
+/// - `isInvalid`: 入力欄を invalid 表示にするか。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct PreviewContextTextField: View {
+    var label: String
+    @Binding var text: String
+    var placeholder: String
+    var isInvalid: Bool
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.caption.monospaced())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
+                )
+                .onSubmit(onSubmit)
+                .frame(minWidth: 0, maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: Mock Stateエディター
+/// 概要: 注入可能な JavaScript runtime mock state field ごとの override 行を編集します。
+///
+/// プロパティ:
+/// - `entries`: 編集中の注入可能 field override 行。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct PreviewMockStateEditor: View {
+    @Binding var entries: [PreviewMockFieldDraft]
+    var onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach($entries) { $entry in
+                PreviewMockStateRow(
+                    entry: $entry,
+                    onSubmit: onSubmit
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: Mock State行
+/// 概要: 1 つの runtime parameter に対する override の ON/OFF と値を編集します。
+///
+/// プロパティ:
+/// - `entry`: 編集中の override 行。
+/// - `onSubmit`: Enter 確定時に実行する処理。
+private struct PreviewMockStateRow: View {
+    @Binding var entry: PreviewMockFieldDraft
+    var onSubmit: () -> Void
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            Button(action: toggleOverride) {
+                Image(systemName: entry.isOverrideEnabled ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 24, height: 28)
+                    .foregroundStyle(entry.isOverrideEnabled ? Color.accentColor : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(entry.isOverrideEnabled ? "Override を無効化" : "Override を有効化")
+            .padding(.bottom, 1)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(entry.name)
+                    .font(.caption2.monospaced().weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                TextField("value", text: $entry.value)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .stroke(entry.isOverrideEnabled ? Color.clear : EditorColumnStyle.separatorColor.opacity(0.7), lineWidth: 1)
+                    )
+                    .opacity(entry.isOverrideEnabled ? 1 : 0.56)
+                    .onSubmit(onSubmit)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .stroke(EditorColumnStyle.separatorColor.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    /// 論理名（日本語）: Mock State override切替関数
+    /// 処理概要: この parameter 行を preview へ注入するかどうかを切り替えます。
+    private func toggleOverride() {
+        entry.isOverrideEnabled.toggle()
     }
 }
 
