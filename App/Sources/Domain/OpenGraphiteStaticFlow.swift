@@ -82,10 +82,12 @@ struct OpenGraphiteStaticFlowLink: Identifiable, Equatable {
 ///
 /// プロパティ:
 /// - `pageURL`: ホバー元リンクを含む HTML page の標準化済み URL。
+/// - `pageInternalID`: ホバー元リンクを含む page card の内部 ID。
 /// - `linkID`: `OpenGraphiteStaticFlowLink.id` と一致するリンク ID。
 /// - `sourceNodeID`: 遷移元要素の `data-og-id`。
 struct OpenGraphiteStaticFlowSourceHover: Equatable {
     var pageURL: URL
+    var pageInternalID: String?
     var linkID: String
     var sourceNodeID: String
 }
@@ -104,6 +106,8 @@ enum OpenGraphiteStaticFlowHorizontalSide: Equatable {
 /// - `id`: 接続線の安定 ID。
 /// - `sourcePageID`: 遷移元 page ID。
 /// - `targetPageID`: 遷移先 page ID。
+/// - `sourcePageInternalID`: 遷移元 page card の内部 ID。
+/// - `targetPageInternalID`: 遷移先 page card の内部 ID。
 /// - `sourcePageURL`: 遷移元 HTML page の標準化済み URL。
 /// - `sourcePoint`: 遷移元ボタン接続端のキャンバス座標。
 /// - `sourceSide`: 遷移元ボタンの接続側。
@@ -114,6 +118,8 @@ struct OpenGraphiteStaticFlowConnection: Identifiable, Equatable {
     var id: String
     var sourcePageID: String
     var targetPageID: String
+    var sourcePageInternalID: String
+    var targetPageInternalID: String
     var sourcePageURL: URL
     var sourcePoint: CGPoint
     var sourceSide: OpenGraphiteStaticFlowHorizontalSide
@@ -134,11 +140,13 @@ enum OpenGraphiteStaticFlowResolver {
     /// - Parameters:
     ///   - pages: 表示中 Chapter の page 一覧。
     ///   - loadedProject: HTML URL 解決に使う読み込み済み project。
+    ///   - linksByPageInternalID: WebView から収集された page card 内部 ID 別リンク一覧。
     ///   - linksByPageURL: WebView から収集された page URL 別リンク一覧。
     /// - Returns: キャンバス座標上の静的フロー接続一覧。
     static func connections(
         pages: [OpenGraphitePage],
         loadedProject: LoadedOpenGraphiteProject,
+        linksByPageInternalID: [String: [OpenGraphiteStaticFlowLink]] = [:],
         linksByPageURL: [URL: [OpenGraphiteStaticFlowLink]]
     ) -> [OpenGraphiteStaticFlowConnection] {
         guard !pages.isEmpty else { return [] }
@@ -149,7 +157,12 @@ enum OpenGraphiteStaticFlowResolver {
 
         for sourcePage in pages {
             let sourceURL = loadedProject.htmlURL(for: sourcePage).standardizedFileURL
-            let links = linksByPageURL[sourceURL] ?? linksByPageURL[loadedProject.htmlURL(for: sourcePage)] ?? []
+            let sourcePageInternalID = pageInternalID(sourcePage)
+            let linksForInternalID = sourcePageInternalID.isEmpty ? nil : linksByPageInternalID[sourcePageInternalID]
+            let links = linksForInternalID
+                ?? linksByPageURL[sourceURL]
+                ?? linksByPageURL[loadedProject.htmlURL(for: sourcePage)]
+                ?? []
             for link in links {
                 guard let targetPage = targetPage(
                     for: link,
@@ -187,9 +200,11 @@ enum OpenGraphiteStaticFlowResolver {
                 )
                 let targetPoint = resolvedTargetPoint(origin: targetOrigin, page: targetPage, side: targetSide)
                 let connection = OpenGraphiteStaticFlowConnection(
-                    id: "\(sourcePage.id):\(link.id):\(targetPage.id)",
+                    id: "\(pageIdentityToken(sourcePage)):\(link.id):\(pageIdentityToken(targetPage))",
                     sourcePageID: sourcePage.id,
                     targetPageID: targetPage.id,
+                    sourcePageInternalID: sourcePageInternalID,
+                    targetPageInternalID: pageInternalID(targetPage),
                     sourcePageURL: sourceURL,
                     sourcePoint: sourcePoint,
                     sourceSide: sourceSide,
@@ -299,7 +314,7 @@ enum OpenGraphiteStaticFlowResolver {
         let sourceFlowName = sourcePage.canvas.flowResolutionName
         guard !sourceFlowName.isEmpty else { return nil }
         let candidates = pages.filter { page in
-            page.id != sourcePage.id
+            !isSamePageCard(page, sourcePage)
                 && page.canvas.flowResolutionName == sourceFlowName
                 && matches(page: page, link: link, sourceURL: sourceURL, loadedProject: loadedProject)
         }
@@ -322,12 +337,74 @@ enum OpenGraphiteStaticFlowResolver {
         loadedProject: LoadedOpenGraphiteProject
     ) -> Bool {
         let referenceValues = normalizedReferenceValues(for: link)
-        if referenceValues.contains(page.id) || referenceValues.contains(normalizedPath(page.path)) {
+        if !referenceValues.isDisjoint(with: pageReferenceValues(for: page)) {
             return true
         }
 
         guard let candidateURL = normalizedTargetURL(for: link, sourceURL: sourceURL) else { return false }
         return candidateURL == loadedProject.htmlURL(for: page).standardizedFileURL
+    }
+
+    /// 論理名（日本語）: page参照値生成関数
+    /// 処理概要: 静的リンクの raw target と照合するため、page ID、表示名、HTML path を比較候補として生成します。
+    ///
+    /// - Parameter page: 参照値を生成する page。
+    /// - Returns: page を指す文字列候補の集合。
+    private static func pageReferenceValues(for page: OpenGraphitePage) -> Set<String> {
+        let values = [
+            page.id,
+            page.displayName,
+            page.title ?? "",
+            page.path,
+            normalizedPath(page.path)
+        ]
+        return Set(values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    }
+
+    /// 論理名（日本語）: page内部ID正規化関数
+    /// 処理概要: `.ogp` 内の page card 内部 ID から前後空白を取り除き、フロー照合に使う値を返します。
+    ///
+    /// - Parameter page: 内部 ID を取り出す page。
+    /// - Returns: 正規化済み page 内部 ID。
+    private static func pageInternalID(_ page: OpenGraphitePage) -> String {
+        page.internalID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 論理名（日本語）: page識別トークン生成関数
+    /// 処理概要: 接続 ID の衝突を避けるため、内部 ID を優先し、未補完時は page の配置情報から fallback token を生成します。
+    ///
+    /// - Parameter page: 識別 token を生成する page。
+    /// - Returns: 接続 ID に埋め込む page 識別 token。
+    private static func pageIdentityToken(_ page: OpenGraphitePage) -> String {
+        let internalID = pageInternalID(page)
+        guard internalID.isEmpty else { return internalID }
+        return [
+            page.id,
+            page.path,
+            page.canvas.flowResolutionName,
+            "\(page.canvas.x)",
+            "\(page.canvas.y)",
+            "\(page.canvas.width)",
+            "\(page.canvas.height)"
+        ].joined(separator: "|")
+    }
+
+    /// 論理名（日本語）: 同一pageカード判定関数
+    /// 処理概要: 内部 ID がある場合は内部 ID で同一 card を判定し、未補完時だけ既存テスト用の値比較へ fallback します。
+    ///
+    /// - Parameters:
+    ///   - lhs: 比較する page。
+    ///   - rhs: 比較する page。
+    /// - Returns: 同じ page card を指す場合は `true`。
+    private static func isSamePageCard(_ lhs: OpenGraphitePage, _ rhs: OpenGraphitePage) -> Bool {
+        let lhsInternalID = pageInternalID(lhs)
+        let rhsInternalID = pageInternalID(rhs)
+        if !lhsInternalID.isEmpty, !rhsInternalID.isEmpty {
+            return lhsInternalID == rhsInternalID
+        }
+        return lhs.id == rhs.id
+            && lhs.path == rhs.path
+            && lhs.canvas == rhs.canvas
     }
 
     /// 論理名（日本語）: 参照値正規化関数

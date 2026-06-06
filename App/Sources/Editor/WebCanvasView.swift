@@ -250,6 +250,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// プロパティ:
 /// - `store`: エディター状態を保持するストア。
 /// - `pageURL`: 表示する HTML ファイル URL。未指定時は選択中ページを使います。
+/// - `pageInternalID`: 表示している page card の内部 ID。
 /// - `syncTarget`: 保存対象 HTML の object identity と固定 URL。
 /// - `isInteractive`: DOM 収集、選択、編集同期を有効にするか。
 /// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
@@ -257,6 +258,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
     var pageURL: URL?
+    var pageInternalID: String?
     var syncTarget: HTMLSyncTarget?
     var isInteractive = true
     var reloadToken = 0
@@ -267,7 +269,7 @@ struct WebCanvasView: NSViewRepresentable {
     ///
     /// - Returns: WebCanvasView 用コーディネーター。
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store, isInteractive: isInteractive)
+        Coordinator(store: store, isInteractive: isInteractive, pageInternalID: pageInternalID)
     }
 
     /// 論理名（日本語）: WKWebView生成関数
@@ -313,6 +315,7 @@ struct WebCanvasView: NSViewRepresentable {
         let becameInteractive = !context.coordinator.isInteractive && isInteractive
         context.coordinator.store = store
         context.coordinator.isInteractive = isInteractive
+        context.coordinator.pageInternalID = pageInternalID
         context.coordinator.syncTarget = syncTarget
 
         let previewContextChanged = context.coordinator.lastPreviewContext != previewContext
@@ -547,10 +550,12 @@ struct WebCanvasView: NSViewRepresentable {
     /// - `store`: エディター状態ストア。
     /// - `webView`: 管理対象の WKWebView。
     /// - `loadedURL`: 現在読み込み済みの HTML URL。
+    /// - `pageInternalID`: 現在の WebView が対応する page card 内部 ID。
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate {
         @MainActor var store: EditorStore
         weak var webView: WKWebView?
         var isInteractive: Bool
+        var pageInternalID: String?
         var syncTarget: HTMLSyncTarget?
         var loadedURL: URL?
         var lastReloadToken = 0
@@ -571,9 +576,11 @@ struct WebCanvasView: NSViewRepresentable {
         /// - Parameters:
         ///   - store: 連携対象のエディター状態ストア。
         ///   - isInteractive: DOM 収集、選択、編集同期を有効にするか。
-        init(store: EditorStore, isInteractive: Bool) {
+        ///   - pageInternalID: WebView が表示する page card の内部 ID。
+        init(store: EditorStore, isInteractive: Bool, pageInternalID: String?) {
             self.store = store
             self.isInteractive = isInteractive
+            self.pageInternalID = pageInternalID
         }
 
         /// 論理名（日本語）: 暫定プレビュー非表示関数
@@ -644,14 +651,14 @@ struct WebCanvasView: NSViewRepresentable {
             if message.name == "openGraphiteStaticFlowLinks", let payload = message.body as? [[String: Any]] {
                 Task { @MainActor in
                     guard let loadedURL else { return }
-                    store.ingestStaticFlowLinkPayload(payload, pageURL: loadedURL)
+                    store.ingestStaticFlowLinkPayload(payload, pageURL: loadedURL, pageInternalID: pageInternalID)
                 }
             }
 
             if message.name == "openGraphiteStaticFlowHover", let payload = message.body as? [String: Any] {
                 Task { @MainActor in
                     guard let loadedURL else { return }
-                    store.ingestStaticFlowSourceHoverPayload(payload, pageURL: loadedURL)
+                    store.ingestStaticFlowSourceHoverPayload(payload, pageURL: loadedURL, pageInternalID: pageInternalID)
                 }
             }
         }

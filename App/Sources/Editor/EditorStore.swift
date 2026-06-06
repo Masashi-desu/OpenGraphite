@@ -21,6 +21,7 @@ import Foundation
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
 /// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
+/// - `staticFlowLinksByPageInternalID`: page card 内部 ID ごとに収集した静的フローリンク。
 /// - `cssMutation`: WebView へ反映待ちの CSS 変数変更。
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
@@ -51,6 +52,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
+    @Published private(set) var staticFlowLinksByPageInternalID: [String: [OpenGraphiteStaticFlowLink]] = [:]
     @Published private(set) var staticFlowLinksByPageURL: [URL: [OpenGraphiteStaticFlowLink]] = [:]
 
     private let loader: ProjectLoader
@@ -593,6 +595,7 @@ final class EditorStore: ObservableObject {
             syncHistories = [:]
             lastKnownPageHTMLByURL = [:]
             pageReloadTokensByURL = [:]
+            staticFlowLinksByPageInternalID = [:]
             staticFlowLinksByPageURL = [:]
             hoveredStaticFlowSource = nil
             do {
@@ -1144,14 +1147,19 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 静的フローリンクpayload取り込み関数
-    /// 処理概要: WebView から届いた静的リンク一覧を page URL ごとに保持し、フロー表示オーバーレイの入力へ変換します。
+    /// 処理概要: WebView から届いた静的リンク一覧を page card 内部 ID と page URL ごとに保持し、フロー表示オーバーレイの入力へ変換します。
     ///
     /// - Parameters:
     ///   - payload: JavaScript から受け取ったリンク辞書配列。
     ///   - pageURL: payload を収集した HTML page URL。
-    func ingestStaticFlowLinkPayload(_ payload: [[String: Any]], pageURL: URL) {
+    ///   - pageInternalID: payload を収集した page card の内部 ID。
+    func ingestStaticFlowLinkPayload(_ payload: [[String: Any]], pageURL: URL, pageInternalID: String? = nil) {
         let links = payload.compactMap(OpenGraphiteStaticFlowLink.init(payload:))
         staticFlowLinksByPageURL[pageURL.standardizedFileURL] = links
+        let normalizedPageInternalID = pageInternalID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !normalizedPageInternalID.isEmpty {
+            staticFlowLinksByPageInternalID[normalizedPageInternalID] = links
+        }
     }
 
     /// 論理名（日本語）: 静的フロー元ホバーpayload取り込み関数
@@ -1160,15 +1168,17 @@ final class EditorStore: ObservableObject {
     /// - Parameters:
     ///   - payload: JavaScript から受け取った hover 対象リンク辞書。
     ///   - pageURL: payload を収集した HTML page URL。
-    func ingestStaticFlowSourceHoverPayload(_ payload: [String: Any], pageURL: URL) {
+    ///   - pageInternalID: payload を収集した page card の内部 ID。
+    func ingestStaticFlowSourceHoverPayload(_ payload: [String: Any], pageURL: URL, pageInternalID: String? = nil) {
         let linkID = (payload["id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !linkID.isEmpty else {
-            clearStaticFlowSourceHover(pageURL: pageURL)
+            clearStaticFlowSourceHover(pageURL: pageURL, pageInternalID: pageInternalID)
             return
         }
 
         hoveredStaticFlowSource = OpenGraphiteStaticFlowSourceHover(
             pageURL: pageURL.standardizedFileURL,
+            pageInternalID: pageInternalID?.trimmingCharacters(in: .whitespacesAndNewlines),
             linkID: linkID,
             sourceNodeID: payload["sourceNodeID"] as? String ?? ""
         )
@@ -1177,10 +1187,22 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: 静的フロー元ホバー解除関数
     /// 処理概要: 指定 page または現在保持中の静的フロー遷移元 hover 状態を解除します。
     ///
-    /// - Parameter pageURL: 解除対象を限定する HTML page URL。`nil` の場合は無条件で解除します。
-    func clearStaticFlowSourceHover(pageURL: URL? = nil) {
+    /// - Parameters:
+    ///   - pageURL: 解除対象を限定する HTML page URL。`nil` の場合は無条件で解除します。
+    ///   - pageInternalID: 解除対象を限定する page card 内部 ID。
+    func clearStaticFlowSourceHover(pageURL: URL? = nil, pageInternalID: String? = nil) {
         guard let pageURL else {
             hoveredStaticFlowSource = nil
+            return
+        }
+
+        guard hoveredStaticFlowSource?.pageURL == pageURL.standardizedFileURL else {
+            return
+        }
+
+        let normalizedPageInternalID = pageInternalID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !normalizedPageInternalID.isEmpty,
+           hoveredStaticFlowSource?.pageInternalID != normalizedPageInternalID {
             return
         }
 

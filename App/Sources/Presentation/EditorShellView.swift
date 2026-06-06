@@ -505,7 +505,7 @@ private struct CanvasProjectView: View {
     var loadedProject: LoadedOpenGraphiteProject
     var pages: [OpenGraphitePage]
     var zoom: Double
-    @State private var hoveredFlowTargetPageID: String?
+    @State private var hoveredFlowTargetPageInternalID: String?
 
     var body: some View {
         let bounds = CanvasProjectBounds(pages: pages)
@@ -514,6 +514,7 @@ private struct CanvasProjectView: View {
         let flowConnections = isFlowHoverEnabled ? OpenGraphiteStaticFlowResolver.connections(
             pages: pages,
             loadedProject: loadedProject,
+            linksByPageInternalID: store.staticFlowLinksByPageInternalID,
             linksByPageURL: store.staticFlowLinksByPageURL
         ) : []
 
@@ -545,10 +546,11 @@ private struct CanvasProjectView: View {
                 CanvasStaticFlowOverlay(
                     connections: flowConnections,
                     hoveredSource: store.hoveredStaticFlowSource,
-                    hoveredTargetPageID: hoveredFlowTargetPageID,
+                    hoveredTargetPageInternalID: hoveredFlowTargetPageInternalID,
                     selectedSourcePageURL: store.selectedCanvasSegment == .pages ? store.selectedPageURL?.standardizedFileURL : nil,
+                    selectedSourcePageInternalID: store.selectedCanvasSegment == .pages ? store.selectedPage?.internalID : nil,
                     selectedSourceNodeID: store.selectedCanvasSegment == .pages ? store.selectedNodeID : nil,
-                    selectedTargetPageID: store.selectedCanvasSegment == .pages && store.selectedNodeID == nil ? store.selectedPage?.id : nil
+                    selectedTargetPageInternalID: store.selectedCanvasSegment == .pages && store.selectedNodeID == nil ? store.selectedPage?.internalID : nil
                 )
                 .allowsHitTesting(false)
             }
@@ -600,46 +602,47 @@ private struct CanvasProjectView: View {
         if let sourceConnection = connections.first(where: { connection in
             sourceHoverRect(for: connection).insetBy(dx: -6, dy: -6).contains(location)
         }) {
-            hoveredFlowTargetPageID = nil
+            hoveredFlowTargetPageInternalID = nil
             store.ingestStaticFlowSourceHoverPayload(
                 [
                     "id": sourceConnection.link.id,
                     "sourceNodeID": sourceConnection.link.sourceNodeID
                 ],
-                pageURL: sourceConnection.sourcePageURL
+                pageURL: sourceConnection.sourcePageURL,
+                pageInternalID: sourceConnection.sourcePageInternalID
             )
             return
         }
 
         store.clearStaticFlowSourceHover()
-        hoveredFlowTargetPageID = pages.first { page in
+        hoveredFlowTargetPageInternalID = pages.first { page in
             pageRect(for: page, in: bounds).contains(location)
-        }?.id
+        }?.internalID
     }
 
     /// 論理名（日本語）: フロー遷移先ページホバー処理関数
     /// 処理概要: ページプレビュー上の hover 状態を保持し、受け側 page に入る接続線の強調対象を更新します。
     ///
     /// - Parameters:
-    ///   - pageID: hover 状態が変化した page ID。
+    ///   - pageInternalID: hover 状態が変化した page card 内部 ID。
     ///   - isHovering: ポインタが page 上にある場合は `true`。
-    private func handleFlowTargetPageHover(pageID: String, isHovering: Bool) {
+    private func handleFlowTargetPageHover(pageInternalID: String, isHovering: Bool) {
         guard store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages else {
             clearFlowHoverState()
             return
         }
 
         if isHovering {
-            hoveredFlowTargetPageID = pageID
-        } else if hoveredFlowTargetPageID == pageID {
-            hoveredFlowTargetPageID = nil
+            hoveredFlowTargetPageInternalID = pageInternalID
+        } else if hoveredFlowTargetPageInternalID == pageInternalID {
+            hoveredFlowTargetPageInternalID = nil
         }
     }
 
     /// 論理名（日本語）: フローhover状態解除関数
     /// 処理概要: フロー表示から離れたときに source/target の hover 強調状態をまとめて解除します。
     private func clearFlowHoverState() {
-        hoveredFlowTargetPageID = nil
+        hoveredFlowTargetPageInternalID = nil
         store.clearStaticFlowSourceHover()
     }
 
@@ -711,6 +714,7 @@ private struct CanvasDocumentView: View {
             WebCanvasView(
                 store: store,
                 pageURL: pageURL,
+                pageInternalID: page.internalID,
                 syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
                 isInteractive: isSelected,
                 reloadToken: reloadToken,
@@ -771,7 +775,7 @@ private struct CanvasDocumentView: View {
         }
         .onHover { isHovering in
             guard isFlowHoverEnabled else { return }
-            onFlowTargetPageHover(page.id, isHovering)
+            onFlowTargetPageHover(page.internalID, isHovering)
         }
     }
 }
@@ -827,17 +831,19 @@ private struct CanvasPreviewModePicker: View {
 /// プロパティ:
 /// - `connections`: 描画対象の静的フロー接続一覧。
 /// - `hoveredSource`: ホバー中の遷移元リンク。該当接続を不透明にします。
-/// - `hoveredTargetPageID`: ホバー中の遷移先 page ID。該当 page への接続を不透明にします。
+/// - `hoveredTargetPageInternalID`: ホバー中の遷移先 page card 内部 ID。該当 page への接続を不透明にします。
 /// - `selectedSourcePageURL`: 選択中ノードを含む HTML page の URL。
+/// - `selectedSourcePageInternalID`: 選択中ノードを含む page card 内部 ID。
 /// - `selectedSourceNodeID`: 選択中ノード ID。遷移元リンクと一致する接続を不透明にします。
-/// - `selectedTargetPageID`: 選択中 page ID。受け側 page と一致する接続を不透明にします。
+/// - `selectedTargetPageInternalID`: 選択中 page card 内部 ID。受け側 page と一致する接続を不透明にします。
 private struct CanvasStaticFlowOverlay: View {
     var connections: [OpenGraphiteStaticFlowConnection]
     var hoveredSource: OpenGraphiteStaticFlowSourceHover?
-    var hoveredTargetPageID: String?
+    var hoveredTargetPageInternalID: String?
     var selectedSourcePageURL: URL?
+    var selectedSourcePageInternalID: String?
     var selectedSourceNodeID: String?
-    var selectedTargetPageID: String?
+    var selectedTargetPageInternalID: String?
 
     var body: some View {
         Canvas { context, _ in
@@ -853,10 +859,11 @@ private struct CanvasStaticFlowOverlay: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: hoveredSource)
-        .animation(.easeOut(duration: 0.12), value: hoveredTargetPageID)
+        .animation(.easeOut(duration: 0.12), value: hoveredTargetPageInternalID)
         .animation(.easeOut(duration: 0.12), value: selectedSourcePageURL)
+        .animation(.easeOut(duration: 0.12), value: selectedSourcePageInternalID)
         .animation(.easeOut(duration: 0.12), value: selectedSourceNodeID)
-        .animation(.easeOut(duration: 0.12), value: selectedTargetPageID)
+        .animation(.easeOut(duration: 0.12), value: selectedTargetPageInternalID)
     }
 
     /// 論理名（日本語）: フロー接続描画関数
@@ -898,26 +905,43 @@ private struct CanvasStaticFlowOverlay: View {
     private func isConnectionHighlighted(_ connection: OpenGraphiteStaticFlowConnection) -> Bool {
         if let hoveredSource,
            connection.sourcePageURL == hoveredSource.pageURL,
+           isMatchingPageInternalID(connection.sourcePageInternalID, hoveredSource.pageInternalID),
            connection.link.id == hoveredSource.linkID {
             return true
         }
 
-        if let hoveredTargetPageID, connection.targetPageID == hoveredTargetPageID {
+        if let hoveredTargetPageInternalID,
+           connection.targetPageInternalID == hoveredTargetPageInternalID {
             return true
         }
 
         if let selectedSourcePageURL,
+           let selectedSourcePageInternalID,
            let selectedSourceNodeID,
            connection.sourcePageURL == selectedSourcePageURL,
+           connection.sourcePageInternalID == selectedSourcePageInternalID,
            connection.link.sourceNodeID == selectedSourceNodeID {
             return true
         }
 
-        if let selectedTargetPageID, connection.targetPageID == selectedTargetPageID {
+        if let selectedTargetPageInternalID,
+           connection.targetPageInternalID == selectedTargetPageInternalID {
             return true
         }
 
         return false
+    }
+
+    /// 論理名（日本語）: page内部ID一致判定関数
+    /// 処理概要: 選択中 page 内部 ID がある場合だけ source hover 強調をその page card に限定します。
+    ///
+    /// - Parameters:
+    ///   - connectionPageInternalID: 接続が持つ page card 内部 ID。
+    ///   - selectedPageInternalID: 選択中 page card 内部 ID。
+    /// - Returns: 強調対象として扱う場合は `true`。
+    private func isMatchingPageInternalID(_ connectionPageInternalID: String, _ selectedPageInternalID: String?) -> Bool {
+        guard let selectedPageInternalID, !selectedPageInternalID.isEmpty else { return true }
+        return connectionPageInternalID == selectedPageInternalID
     }
 
     /// 論理名（日本語）: 矢印ヘッド生成関数

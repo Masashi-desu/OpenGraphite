@@ -15,16 +15,19 @@ struct OpenGraphiteStaticFlowTests {
         let pages = [
             OpenGraphitePage(
                 id: "home-desktop",
+                internalID: "home-desktop-card",
                 path: "index.html",
                 canvas: OpenGraphiteCanvas(name: "desktop", x: 0, y: 0, width: 100, height: 100)
             ),
             OpenGraphitePage(
                 id: "docs-desktop",
+                internalID: "docs-desktop-card",
                 path: "docs.html",
                 canvas: OpenGraphiteCanvas(name: "desktop", x: 200, y: 0, width: 100, height: 100)
             ),
             OpenGraphitePage(
                 id: "docs-mobile",
+                internalID: "docs-mobile-card",
                 path: "docs.html",
                 canvas: OpenGraphiteCanvas(name: "mobile", x: 400, y: 0, width: 100, height: 100)
             )
@@ -69,10 +72,138 @@ struct OpenGraphiteStaticFlowTests {
         }
         #expect(connection.sourcePageID == "home-desktop")
         #expect(connection.targetPageID == "docs-desktop")
+        #expect(connection.sourcePageInternalID == "home-desktop-card")
+        #expect(connection.targetPageInternalID == "docs-desktop-card")
         #expect(connection.sourcePoint == CGPoint(x: 48, y: 28))
         #expect(connection.sourceSide == .right)
         #expect(connection.targetPoint == CGPoint(x: 200, y: 0))
         #expect(connection.targetSide == .left)
+    }
+
+    /// 論理名（日本語）: 同名Page内部IDフロー解決テスト
+    /// 概要: 同じ page ID/path を持つ別カードがある場合、内部 ID で別 page として扱い、同じ配置名の page へ接続することを検証します。
+    @Test("同じpage IDの別カードも同じ配置名なら静的フローの遷移先にできる")
+    func testConnectionsResolveSamePageNameByInternalID() throws {
+        // コンディション：同じ page ID/path を持つ desktop/mobile の page 配置を用意する（Given）
+        let pages = [
+            OpenGraphitePage(
+                id: "home",
+                internalID: "home-desktop-card",
+                path: "index.html",
+                canvas: OpenGraphiteCanvas(name: "desktop", x: 0, y: 0, width: 100, height: 100)
+            ),
+            OpenGraphitePage(
+                id: "home",
+                internalID: "home-mobile-card",
+                path: "index.html",
+                canvas: OpenGraphiteCanvas(name: "mobile", x: 200, y: 0, width: 100, height: 100)
+            ),
+            OpenGraphitePage(
+                id: "home",
+                internalID: "home-desktop-target-card",
+                path: "index.html",
+                canvas: OpenGraphiteCanvas(name: "desktop", x: 400, y: 0, width: 100, height: 100)
+            )
+        ]
+        let rootURL = URL(fileURLWithPath: "/tmp/OpenGraphiteStaticFlow", isDirectory: true)
+        let loadedProject = LoadedOpenGraphiteProject(
+            project: OpenGraphiteProject(
+                version: "1",
+                name: "Static Flow",
+                repositoryRoot: nil,
+                htmlRoot: "public",
+                cssLibrary: "CSS/OpenGraphite.css",
+                pages: pages
+            ),
+            fileURL: rootURL.appendingPathComponent("Project.ogp"),
+            rootURL: rootURL
+        )
+        let link = OpenGraphiteStaticFlowLink(
+            id: "home-link",
+            sourceNodeID: "home-button",
+            sourceLabel: "Home",
+            targetHref: "./index.html",
+            targetURL: "",
+            sourceRect: CGRect(x: 12, y: 20, width: 36, height: 16)
+        )
+
+        // 検証内容：source と同じ page ID/path へのリンクを静的フロー接続へ解決する（When）
+        let connections = OpenGraphiteStaticFlowResolver.connections(
+            pages: pages,
+            loadedProject: loadedProject,
+            linksByPageInternalID: [
+                "home-desktop-card": [link]
+            ],
+            linksByPageURL: [:]
+        )
+
+        // 期待値：同じ内部 ID の source は除外しつつ、同じ配置名を持つ別カードへ接続される（Then）
+        #expect(connections.count == 1)
+        guard let connection = connections.first else {
+            Issue.record("同名 page の静的フロー接続が生成されませんでした。")
+            return
+        }
+        #expect(connection.sourcePageID == "home")
+        #expect(connection.sourcePageInternalID == "home-desktop-card")
+        #expect(connection.targetPageID == "home")
+        #expect(connection.targetPageInternalID == "home-desktop-target-card")
+    }
+
+    /// 論理名（日本語）: 表示名フロー解決テスト
+    /// 概要: data-og-target などが page の表示名を参照する場合でも、同じ配置名の page へ接続できることを検証します。
+    @Test("page表示名を参照する静的リンクも同じ配置名のpageへ解決する")
+    func testConnectionsResolveTargetByPageDisplayName() throws {
+        // コンディション：title を持つ target page と、その表示名を raw target に持つリンクを用意する（Given）
+        let pages = [
+            OpenGraphitePage(
+                id: "home",
+                internalID: "home-card",
+                path: "index.html",
+                canvas: OpenGraphiteCanvas(name: "desktop", x: 0, y: 0, width: 100, height: 100)
+            ),
+            OpenGraphitePage(
+                id: "docs",
+                internalID: "docs-card",
+                title: "Docs Landing",
+                path: "docs.html",
+                canvas: OpenGraphiteCanvas(name: "desktop", x: 200, y: 0, width: 100, height: 100)
+            )
+        ]
+        let rootURL = URL(fileURLWithPath: "/tmp/OpenGraphiteStaticFlow", isDirectory: true)
+        let loadedProject = LoadedOpenGraphiteProject(
+            project: OpenGraphiteProject(
+                version: "1",
+                name: "Static Flow",
+                repositoryRoot: nil,
+                htmlRoot: "public",
+                cssLibrary: "CSS/OpenGraphite.css",
+                pages: pages
+            ),
+            fileURL: rootURL.appendingPathComponent("Project.ogp"),
+            rootURL: rootURL
+        )
+        let link = OpenGraphiteStaticFlowLink(
+            id: "docs-display-name",
+            sourceNodeID: "docs-button",
+            sourceLabel: "Docs",
+            targetHref: "Docs Landing",
+            targetURL: "",
+            sourceRect: CGRect(x: 12, y: 20, width: 36, height: 16)
+        )
+
+        // 検証内容：表示名を参照するリンクを静的フロー接続へ解決する（When）
+        let connections = OpenGraphiteStaticFlowResolver.connections(
+            pages: pages,
+            loadedProject: loadedProject,
+            linksByPageInternalID: [
+                "home-card": [link]
+            ],
+            linksByPageURL: [:]
+        )
+
+        // 期待値：targetHref が path ではなく表示名でも target page が解決される（Then）
+        #expect(connections.count == 1)
+        #expect(connections.first?.targetPageInternalID == "docs-card")
     }
 
     /// 論理名（日本語）: 左向きフロー接続テスト

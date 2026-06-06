@@ -1112,17 +1112,62 @@ struct EditorStoreTests {
                 "id": "docs-button:./docs.html",
                 "sourceNodeID": "docs-button"
             ],
-            pageURL: pageURL
+            pageURL: pageURL,
+            pageInternalID: "index-card"
         )
-        store.clearStaticFlowSourceHover(pageURL: URL(fileURLWithPath: "/tmp/OpenGraphiteFlow/docs.html"))
+        store.clearStaticFlowSourceHover(pageURL: URL(fileURLWithPath: "/tmp/OpenGraphiteFlow/docs.html"), pageInternalID: "index-card")
+        store.clearStaticFlowSourceHover(pageURL: pageURL, pageInternalID: "other-card")
         let retainedHover = store.hoveredStaticFlowSource
-        store.ingestStaticFlowSourceHoverPayload(["id": ""], pageURL: pageURL)
+        store.ingestStaticFlowSourceHoverPayload(["id": ""], pageURL: pageURL, pageInternalID: "index-card")
 
-        // 期待値：同一 page の空 ID だけが hover 状態を解除する（Then）
+        // 期待値：同一 URL かつ同一 page internalID の空 ID だけが hover 状態を解除する（Then）
         #expect(retainedHover?.pageURL == pageURL.standardizedFileURL)
+        #expect(retainedHover?.pageInternalID == "index-card")
         #expect(retainedHover?.linkID == "docs-button:./docs.html")
         #expect(retainedHover?.sourceNodeID == "docs-button")
         #expect(store.hoveredStaticFlowSource == nil)
+    }
+
+    /// 論理名（日本語）: 静的フローリンク内部ID保持テスト
+    /// 概要: 同じ HTML URL を共有する複数 page から届いたリンク payload が、page 内部 ID ごとに分離されることを検証します。
+    @Test("静的フローリンクpayloadをpage内部IDごとに保持する")
+    func testIngestStaticFlowLinkPayloadStoresByPageInternalID() throws {
+        // コンディション：同じ HTML URL を共有する2つの page card から別々のリンク payload が届く（Given）
+        let store = EditorStore()
+        let pageURL = URL(fileURLWithPath: "/tmp/OpenGraphiteFlow/index.html")
+        let firstPayload: [[String: Any]] = [
+            [
+                "id": "first-link:./docs.html",
+                "sourceNodeID": "first-link",
+                "targetHref": "./docs.html",
+                "targetURL": "",
+                "x": 10.0,
+                "y": 20.0,
+                "width": 30.0,
+                "height": 12.0
+            ]
+        ]
+        let secondPayload: [[String: Any]] = [
+            [
+                "id": "second-link:./downloads.html",
+                "sourceNodeID": "second-link",
+                "targetHref": "./downloads.html",
+                "targetURL": "",
+                "x": 40.0,
+                "y": 50.0,
+                "width": 60.0,
+                "height": 14.0
+            ]
+        ]
+
+        // 検証内容：同じ URL の payload を異なる page 内部 ID で取り込む（When）
+        store.ingestStaticFlowLinkPayload(firstPayload, pageURL: pageURL, pageInternalID: "first-card")
+        store.ingestStaticFlowLinkPayload(secondPayload, pageURL: pageURL, pageInternalID: "second-card")
+
+        // 期待値：URL fallback は最新 payload を保持し、内部 ID 別の payload は互いに上書きされない（Then）
+        #expect(store.staticFlowLinksByPageURL[pageURL.standardizedFileURL]?.first?.sourceNodeID == "second-link")
+        #expect(store.staticFlowLinksByPageInternalID["first-card"]?.first?.sourceNodeID == "first-link")
+        #expect(store.staticFlowLinksByPageInternalID["second-card"]?.first?.sourceNodeID == "second-link")
     }
 
     /// 論理名（日本語）: 階層参照ID生成テスト
