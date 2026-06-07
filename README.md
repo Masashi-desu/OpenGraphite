@@ -134,17 +134,45 @@ Useful modes:
 This repository includes the local DMG/notarization workflow adapted from
 [My-Swift-Project-template](https://github.com/Masashi-desu/My-Swift-Project-template).
 
+Application releases use `project.yml` as the version source of truth. The
+current app version is `0.1.0(1)`, represented as `MARKETING_VERSION: 0.1.0`
+and `CURRENT_PROJECT_VERSION: 1`.
+
+For the current release operation, `dev` is the release-preparation branch and
+`main` is the public branch. The signed and notarized DMG is created locally
+and uploaded to GitHub Releases from the `dev` commit without adding the DMG to
+Git. Pushes to `dev` and `main` still run CI; the `main` push verifies that the
+expected release tag and DMG asset already exist. See
+`Docs/release/README_dev_main_github.md`.
+
 Create a local release configuration:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` for your Developer ID / notarization credentials and run:
+Then edit `.env` for your Developer ID / notarization credentials.
+
+Commit the release changes on `dev`, push `dev`, and wait for CI to pass. Then
+build the local DMG:
 
 ```bash
-./Scripts/release_dmg.zsh
+./Scripts/release_dmg.zsh --output-dir dist
 ```
+
+Create the GitHub Release from the `dev` commit and upload the local DMG:
+
+```bash
+./Scripts/release/github/publish_local_release.sh
+```
+
+After the release is created, publish the same commit to `main`:
+
+```bash
+git push origin HEAD:main
+```
+
+CI does not rebuild, sign, notarize, or upload the DMG.
 
 For local DMG creation without notarization, install `create-dmg`, set
 `CODESIGN_IDENTITY="-"` and `CODESIGN_ENTITLEMENTS=""` in `.env`, then run:

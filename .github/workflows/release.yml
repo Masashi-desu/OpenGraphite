@@ -1,0 +1,120 @@
+name: CI and Release Policy
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Release comparison base ref"
+        required: false
+        default: "origin/main"
+      head_ref:
+        description: "Release comparison head ref"
+        required: false
+        default: "origin/dev"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_APP_NAME: ${{ vars.RELEASE_APP_NAME || 'OpenGraphite' }}
+
+jobs:
+  quality_gate:
+    name: Quality gate
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+
+      - name: Run quality gate
+        run: ./Scripts/quality_gate.sh
+
+  release_policy:
+    name: Verify dev release before main publication
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: quality_gate
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch long-lived branches and tags
+        run: |
+          git fetch origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/dev:refs/remotes/origin/dev \
+            --tags
+
+      - name: Check dev/main release policy
+        id: release_meta
+        env:
+          BASE_REF: ${{ github.event_name == 'push' && github.event.before || inputs.base_ref }}
+          HEAD_REF: ${{ github.event_name == 'push' && github.sha || inputs.head_ref }}
+          REQUIRE_HEAD_REF: ${{ github.event_name == 'push' && 'origin/dev' || '' }}
+        run: ./Scripts/release/github/check_release_branch_policy.sh
+
+      - name: Verify release tag points at published commit
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
+          HEAD_SHA: ${{ steps.release_meta.outputs.head_sha }}
+        run: |
+          tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")"
+          if [[ "${tag_sha}" != "${HEAD_SHA}" ]]; then
+            echo "::error::Release tag ${RELEASE_TAG} points at ${tag_sha}, expected ${HEAD_SHA}"
+            exit 1
+          fi
+
+      - name: Verify GitHub Release and DMG asset exist
+        env:
+          RELEASE_TAG: ${{ steps.release_meta.outputs.tag }}
+          VERSION: ${{ steps.release_meta.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_url="$(gh release view "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json url \
+            --jq '.url')"
+
+          is_draft="$(gh release view "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json isDraft \
+            --jq '.isDraft')"
+          if [[ "${is_draft}" == "true" ]]; then
+            echo "::error::GitHub Release is still draft: ${RELEASE_TAG}"
+            exit 1
+          fi
+
+          asset_name="${RELEASE_APP_NAME}-${VERSION}.dmg"
+          if ! gh release view "${RELEASE_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --json assets \
+            --jq '.assets[].name' | grep -Fxq "${asset_name}"; then
+            echo "::error::GitHub Release asset is missing: ${asset_name}"
+            exit 1
+          fi
+
+          echo "Verified ${RELEASE_TAG}: ${release_url}"

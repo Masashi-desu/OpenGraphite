@@ -34,7 +34,7 @@ cp .env.example .env
 ## 1) 一発実行する
 
 ```bash
-./Scripts/release_dmg.zsh
+./Scripts/release_dmg.zsh --output-dir dist
 ```
 
 このコマンドは以下を順番に実行します。
@@ -127,6 +127,7 @@ shasum -a 256 dist/*.dmg
 
 1. `cd <repository-root>` でリポジトリ直下に移動させる。
 2. `.env` の設定が済んでいることを確認させる。
-3. `./Scripts/release_dmg.zsh` を実行させ、各ステップのログと生成物を報告させる。
+3. `./Scripts/release_dmg.zsh --output-dir dist` を実行させ、各ステップのログと生成物を報告させる。
 4. 公証を省略する場合は理由と回避手順を明記させる。
 5. 生成された DMG のパス・サイズ・ハッシュの提示も依頼する。
+6. 当面の GitHub Release 運用では、DMG を Git 管理に含めない。`dev` を push して CI 成功を確認後、`./Scripts/release/github/publish_local_release.sh` で GitHub Release asset へ直接 upload し、その後 `git push origin HEAD:main` を実行する。
