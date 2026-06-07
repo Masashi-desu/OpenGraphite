@@ -102,6 +102,11 @@ schemes:
         OpenGraphiteTests: [test]
     run:
       config: Debug
+      preActions:
+        - name: Sign Local Debug App
+          settingsTarget: OpenGraphite
+          script: |
+            "$PROJECT_DIR/Scripts/sign_local_app.sh" "$TARGET_BUILD_DIR/$WRAPPER_NAME"
       environmentVariables:
         OPENGRAPHITE_SAMPLE_PROJECT_PATH: "$(PROJECT_DIR)/SampleProject/OpenGraphiteSample.ogp"
     test:

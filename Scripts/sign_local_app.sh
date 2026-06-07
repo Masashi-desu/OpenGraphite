@@ -42,5 +42,5 @@ else
   echo "==> codesign local app with Apple-issued identity"
 fi
 
-codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
+codesign --force --deep --options runtime --preserve-metadata=entitlements --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
