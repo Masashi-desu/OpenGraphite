@@ -194,7 +194,8 @@ struct OgkilnCLI {
                     y: try doubleOption("--y", in: arguments),
                     width: try doubleOption("--width", in: arguments),
                     height: try doubleOption("--height", in: arguments),
-                    previewFieldMocks: try previewFieldMocks(in: arguments)
+                    previewFieldMocks: try previewFieldMocks(in: arguments),
+                    previewPlacementMocks: try previewPlacementMocks(in: arguments)
                 )
                 return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
             case "document":
@@ -644,6 +645,39 @@ struct OgkilnCLI {
         return result
     }
 
+    /// 論理名（日本語）: Placement preview runtime mock state取得関数
+    /// 処理概要: `--preview-placement-mock placement-id:key=value` の繰り返し指定を辞書へ変換します。
+    ///
+    /// - Parameter arguments: CLI 引数。
+    /// - Returns: 指定がない場合は `nil`、ある場合は placement ID ごとの mock field 辞書。
+    private func previewPlacementMocks(in arguments: [String]) throws -> [String: [String: String]]? {
+        let values = try optionValues("--preview-placement-mock", in: arguments)
+        guard !values.isEmpty else { return nil }
+        var result: [String: [String: String]] = [:]
+        for value in values {
+            guard let placementSeparatorIndex = value.firstIndex(of: ":") else {
+                throw OgkilnCLIError(message: "--preview-placement-mock は placement-id:key=value で指定してください。", exitCode: 2)
+            }
+            let placementID = value[..<placementSeparatorIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            let assignment = value[value.index(after: placementSeparatorIndex)...]
+            guard let fieldSeparatorIndex = assignment.firstIndex(of: "=") else {
+                throw OgkilnCLIError(message: "--preview-placement-mock は placement-id:key=value で指定してください。", exitCode: 2)
+            }
+            let key = assignment[..<fieldSeparatorIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+            let fieldValue = assignment[assignment.index(after: fieldSeparatorIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !placementID.isEmpty else {
+                throw OgkilnCLIError(message: "--preview-placement-mock の placement-id は空にできません。", exitCode: 2)
+            }
+            guard !key.isEmpty else {
+                throw OgkilnCLIError(message: "--preview-placement-mock の key は空にできません。", exitCode: 2)
+            }
+            var fields = result[placementID] ?? [:]
+            fields[key] = fieldValue
+            result[placementID] = fields
+        }
+        return result
+    }
+
     /// 論理名（日本語）: locale一覧option取得関数
     /// 処理概要: `--locales ja,eng` を重複なしの locale 配列へ変換します。
     ///
@@ -770,7 +804,7 @@ struct OgkilnCLI {
       ogkiln project component add <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
       ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-      ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>]
+      ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>] [--preview-placement-mock <placement-id:key=value>]
       ogkiln project component document <project.ogp|current> --component-id <component-id> [--lang-source <literal|binding>] [--lang <lang>] [--lang-field <field>] [--dir-source <literal|auto|binding>] [--dir <ltr|rtl|auto>] [--dir-field <field>]
       ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
       ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json

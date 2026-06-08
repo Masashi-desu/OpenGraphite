@@ -564,7 +564,7 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// - `createProjectComponent(projectURL:collectionID:id:path:canvas:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML 作成と component entry 登録を一体で行う。
 /// - `projectPageReference(projectURL:pageID:)`: ``.ogp` の page 参照 ID から HTML を解決する。
 /// - `placeProjectPage(projectURL:id:name:x:y:width:height:previewFieldMocks:)`: 既存 page entry の canvas 配置と preview mock state を更新する。
-/// - `placeProjectComponent(projectURL:id:name:x:y:width:height:previewFieldMocks:)`: 既存 component entry の canvas 配置と preview mock state を更新する。
+/// - `placeProjectComponent(projectURL:id:name:x:y:width:height:previewFieldMocks:previewPlacementMocks:)`: 既存 component entry の canvas 配置と preview mock state を更新する。
 /// - `setProjectPageHTMLDocumentContext(projectURL:id:context:)`: page HTML 正本の document attribute を更新する。
 /// - `setProjectComponentHTMLDocumentContext(projectURL:id:context:)`: component HTML 正本の document attribute を更新する。
 /// - `createPage(at:title:lang:stylesheetPath:bodyHTML:overwrite:)`: HTML page file を作成する。
@@ -1031,7 +1031,7 @@ struct OpenGraphiteAgentCore {
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
     ///   - height: 更新後プレビュー高さ。`nil` の場合は既存値を維持します。
-    ///   - previewFieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
+    ///   - previewFieldMocks: 更新する canvas 全体の runtime mock state。`nil` の場合は既存値を維持します。
     /// - Returns: 更新後 project summary。
     func placeProjectPage(
         projectURL: URL,
@@ -1097,7 +1097,8 @@ struct OpenGraphiteAgentCore {
     ///   - y: 更新後 Y 座標。`nil` の場合は既存値を維持します。
     ///   - width: 更新後プレビュー幅。`nil` の場合は既存値を維持します。
     ///   - height: 更新後プレビュー高さ。`nil` の場合は既存値を維持します。
-    ///   - previewFieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
+    ///   - previewFieldMocks: 更新する canvas 全体の runtime mock state。`nil` の場合は既存値を維持します。
+    ///   - previewPlacementMocks: 更新する placement 単位の runtime mock state。`nil` の場合は既存値を維持します。
     /// - Returns: 更新後 project summary。
     func placeProjectComponent(
         projectURL: URL,
@@ -1107,7 +1108,8 @@ struct OpenGraphiteAgentCore {
         y: Double?,
         width: Double?,
         height: Double?,
-        previewFieldMocks: [String: String]? = nil
+        previewFieldMocks: [String: String]? = nil,
+        previewPlacementMocks: [String: [String: String]]? = nil
     ) throws -> OpenGraphiteProjectSummary {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
         var project = loadedProject.project
@@ -1132,7 +1134,8 @@ struct OpenGraphiteAgentCore {
             height: height ?? currentCanvas.height,
             previewContext: try updatedPreviewContext(
                 currentCanvas.previewContext,
-                fieldMocks: previewFieldMocks
+                fieldMocks: previewFieldMocks,
+                placementMocks: previewPlacementMocks
             )
         )
         try writeProject(project, to: projectURL)
@@ -1666,8 +1669,23 @@ struct OpenGraphiteAgentCore {
     func validateProject(at url: URL) throws -> OpenGraphiteValidationResult {
         let summary = try inspectProject(at: url)
         var diagnostics = summary.diagnostics
-        for page in summary.pages + summary.components {
-            diagnostics.append(contentsOf: try validateHTML(at: URL(fileURLWithPath: page.htmlURL)).diagnostics)
+        for page in summary.pages {
+            let graph = try pageGraph(at: URL(fileURLWithPath: page.htmlURL))
+            diagnostics.append(contentsOf: graph.diagnostics)
+            diagnostics.append(contentsOf: componentPlacementUsageDiagnostics(
+                nodes: graph.nodes,
+                path: page.htmlURL,
+                allowsComponentPlacements: false
+            ))
+        }
+        for component in summary.components {
+            let graph = try pageGraph(at: URL(fileURLWithPath: component.htmlURL))
+            diagnostics.append(contentsOf: graph.diagnostics)
+            diagnostics.append(contentsOf: componentPlacementReferenceDiagnostics(
+                nodes: graph.nodes,
+                path: component.htmlURL,
+                componentInternalID: component.internalID
+            ))
         }
 
         return OpenGraphiteValidationResult(
@@ -3294,11 +3312,13 @@ struct OpenGraphiteAgentCore {
     ///
     /// - Parameters:
     ///   - current: 既存 preview Mock State。
-    ///   - fieldMocks: 更新する runtime mock state。`nil` の場合は既存値を維持します。
+    ///   - fieldMocks: 更新する canvas 全体の runtime mock state。`nil` の場合は既存値を維持します。
+    ///   - placementMocks: 更新する placement 単位の runtime mock state。`nil` の場合は既存値を維持します。
     /// - Returns: 更新後 preview Mock State。
     private func updatedPreviewContext(
         _ current: OpenGraphitePreviewContext,
-        fieldMocks: [String: String]?
+        fieldMocks: [String: String]?,
+        placementMocks: [String: [String: String]]? = nil
     ) throws -> OpenGraphitePreviewContext {
         var nextFieldMocks = current.fieldMocks
         if let fieldMocks {
@@ -3308,8 +3328,26 @@ struct OpenGraphiteAgentCore {
                 nextFieldMocks[normalizedKey] = value
             }
         }
+        var nextPlacementMocks = current.placementMocks
+        if let placementMocks {
+            for (rawPlacementID, fields) in placementMocks {
+                let placementID = rawPlacementID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !placementID.isEmpty else { continue }
+                var nextFields = nextPlacementMocks[placementID] ?? [:]
+                for (rawKey, value) in fields {
+                    let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !key.isEmpty else { continue }
+                    nextFields[key] = value
+                }
+                guard !nextFields.isEmpty else { continue }
+                nextPlacementMocks[placementID] = nextFields
+            }
+        }
 
-        return OpenGraphitePreviewContext(fieldMocks: nextFieldMocks)
+        return OpenGraphitePreviewContext(
+            fieldMocks: nextFieldMocks,
+            placementMocks: nextPlacementMocks
+        )
     }
 
     /// 論理名（日本語）: プロジェクトページパス検証関数
@@ -3587,6 +3625,35 @@ struct OpenGraphiteAgentCore {
                 )
             }
 
+            if node.role == "component-placement" {
+                if (node.attributes["data-og-source-component-internal-id"] ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty {
+                    diagnostics.append(
+                        OpenGraphiteDiagnostic(
+                            severity: .error,
+                            code: "component-placement-missing-source-component",
+                            message: "component placement には data-og-source-component-internal-id が必要です。",
+                            path: path,
+                            nodeID: node.id
+                        )
+                    )
+                }
+                if (node.attributes["data-og-source-node-internal-id"] ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty {
+                    diagnostics.append(
+                        OpenGraphiteDiagnostic(
+                            severity: .error,
+                            code: "component-placement-missing-source-node",
+                            message: "component placement には data-og-source-node-internal-id が必要です。",
+                            path: path,
+                            nodeID: node.id
+                        )
+                    )
+                }
+            }
+
             for key in node.cssVariables.keys.sorted() where !contract.cssVariableSet.contains(key) {
                 diagnostics.append(
                     OpenGraphiteDiagnostic(
@@ -3613,6 +3680,81 @@ struct OpenGraphiteAgentCore {
         }
 
         return diagnostics
+    }
+
+    /// 論理名（日本語）: Component Placement使用文脈検証関数
+    /// 処理概要: component placement が Components / Collection canvas 以外に置かれていないか検証します。
+    ///
+    /// - Parameters:
+    ///   - nodes: 検証対象 node 一覧。
+    ///   - path: 診断に付与する HTML path。
+    ///   - allowsComponentPlacements: component placement を許可する文脈か。
+    /// - Returns: placement 使用文脈に関する diagnostics。
+    private func componentPlacementUsageDiagnostics(
+        nodes: [OpenGraphiteAgentNode],
+        path: String,
+        allowsComponentPlacements: Bool
+    ) -> [OpenGraphiteDiagnostic] {
+        guard !allowsComponentPlacements else { return [] }
+        return nodes
+            .filter { $0.role == "component-placement" }
+            .map { node in
+                OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "component-placement-outside-collection",
+                    message: "component placement は Components / Collection canvas にだけ配置できます。",
+                    path: path,
+                    nodeID: node.id
+                )
+            }
+    }
+
+    /// 論理名（日本語）: Component Placement参照検証関数
+    /// 処理概要: component placement の参照元 component / node が現在の component canvas 内で解決できるか検証します。
+    ///
+    /// - Parameters:
+    ///   - nodes: 検証対象 node 一覧。
+    ///   - path: 診断に付与する HTML path。
+    ///   - componentInternalID: `.ogp` 上の component canvas 内部 ID。
+    /// - Returns: placement 参照に関する diagnostics。
+    private func componentPlacementReferenceDiagnostics(
+        nodes: [OpenGraphiteAgentNode],
+        path: String,
+        componentInternalID: String
+    ) -> [OpenGraphiteDiagnostic] {
+        let internalIDs = Set(nodes.map(\.internalID).filter { !$0.isEmpty })
+        return nodes
+            .filter { $0.role == "component-placement" }
+            .flatMap { node -> [OpenGraphiteDiagnostic] in
+                var diagnostics: [OpenGraphiteDiagnostic] = []
+                let sourceComponentID = (node.attributes["data-og-source-component-internal-id"] ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let sourceNodeID = (node.attributes["data-og-source-node-internal-id"] ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !sourceComponentID.isEmpty && sourceComponentID != componentInternalID {
+                    diagnostics.append(
+                        OpenGraphiteDiagnostic(
+                            severity: .error,
+                            code: "component-placement-source-component-mismatch",
+                            message: "component placement の参照元 component は現在の component canvas と一致する必要があります。",
+                            path: path,
+                            nodeID: node.id
+                        )
+                    )
+                }
+                if !sourceNodeID.isEmpty && !internalIDs.contains(sourceNodeID) {
+                    diagnostics.append(
+                        OpenGraphiteDiagnostic(
+                            severity: .error,
+                            code: "component-placement-source-node-missing",
+                            message: "component placement の参照元 node が component canvas 内に見つかりません。",
+                            path: path,
+                            nodeID: node.id
+                        )
+                    )
+                }
+                return diagnostics
+            }
     }
 
     private func uniqueNodeDiagnostics(

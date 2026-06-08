@@ -673,31 +673,40 @@ struct OpenGraphiteCanvas: Codable, Equatable {
 /// - `locale`: 旧形式の preview locale。decode 互換用で、新規保存では使いません。
 /// - `direction`: 旧形式の preview direction。decode 互換用で、新規保存では使いません。
 /// - `fieldMocks`: runtime script が初期状態として参照する任意の mock field 値。
+/// - `placementMocks`: component placement ごとの preview 専用 mock field 値。
 struct OpenGraphitePreviewContext: Codable, Equatable {
-    static let empty = OpenGraphitePreviewContext(locale: "", direction: "", fieldMocks: [:])
+    static let empty = OpenGraphitePreviewContext(locale: "", direction: "", fieldMocks: [:], placementMocks: [:])
 
     var locale: String
     var direction: String
     var fieldMocks: [String: String]
+    var placementMocks: [String: [String: String]]
 
     var isEmpty: Bool {
-        fieldMocks.isEmpty
+        fieldMocks.isEmpty && placementMocks.isEmpty
     }
 
     private enum CodingKeys: String, CodingKey {
         case locale
         case direction
         case fieldMocks
+        case placementMocks
     }
 
     /// 論理名（日本語）: プレビューContext初期化関数
-    /// 処理概要: runtime mock state と旧形式 preview fields を正規化して保持します。
+    /// 処理概要: canvas 全体と placement 単位の runtime mock state、旧形式 preview fields を正規化して保持します。
     ///
     /// - Parameters:
     ///   - locale: 旧形式の preview locale。
     ///   - direction: 旧形式の preview direction。
-    ///   - fieldMocks: JavaScript runtime mock state。
-    init(locale: String = "", direction: String = "", fieldMocks: [String: String] = [:]) {
+    ///   - fieldMocks: canvas 全体へ注入する JavaScript runtime mock state。
+    ///   - placementMocks: placement host ごとに追加注入する runtime mock state。
+    init(
+        locale: String = "",
+        direction: String = "",
+        fieldMocks: [String: String] = [:],
+        placementMocks: [String: [String: String]] = [:]
+    ) {
         self.locale = locale.trimmingCharacters(in: .whitespacesAndNewlines)
         self.direction = direction.trimmingCharacters(in: .whitespacesAndNewlines)
         self.fieldMocks = fieldMocks
@@ -705,6 +714,18 @@ struct OpenGraphitePreviewContext: Codable, Equatable {
                 let key = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !key.isEmpty else { return }
                 result[key] = item.value
+            }
+        self.placementMocks = placementMocks
+            .reduce(into: [String: [String: String]]()) { result, item in
+                let placementID = item.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !placementID.isEmpty else { return }
+                let fields = item.value.reduce(into: [String: String]()) { fieldResult, fieldItem in
+                    let key = fieldItem.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !key.isEmpty else { return }
+                    fieldResult[key] = fieldItem.value
+                }
+                guard !fields.isEmpty else { return }
+                result[placementID] = fields
             }
     }
 
@@ -717,7 +738,8 @@ struct OpenGraphitePreviewContext: Codable, Equatable {
         self.init(
             locale: try container.decodeIfPresent(String.self, forKey: .locale) ?? "",
             direction: try container.decodeIfPresent(String.self, forKey: .direction) ?? "",
-            fieldMocks: try container.decodeIfPresent([String: String].self, forKey: .fieldMocks) ?? [:]
+            fieldMocks: try container.decodeIfPresent([String: String].self, forKey: .fieldMocks) ?? [:],
+            placementMocks: try container.decodeIfPresent([String: [String: String]].self, forKey: .placementMocks) ?? [:]
         )
     }
 
@@ -729,6 +751,9 @@ struct OpenGraphitePreviewContext: Codable, Equatable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         if !fieldMocks.isEmpty {
             try container.encode(fieldMocks, forKey: .fieldMocks)
+        }
+        if !placementMocks.isEmpty {
+            try container.encode(placementMocks, forKey: .placementMocks)
         }
     }
 }

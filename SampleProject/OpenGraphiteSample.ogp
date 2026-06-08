@@ -120,6 +120,12 @@
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"
+              },
+              "placementMocks" : {
+                "67a2e12dbed8" : {
+                  "codeViewerMode" : "preview",
+                  "selectedLanguage" : "ja"
+                }
               }
             },
             "width" : 1180,

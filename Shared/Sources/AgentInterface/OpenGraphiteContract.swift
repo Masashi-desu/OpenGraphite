@@ -30,6 +30,15 @@ struct OpenGraphiteContract: Codable, Equatable {
         Set(cssVariables.filter { !$0.editable }.map(\.name))
     }
 
+    /// 論理名（日本語）: 編集可能属性判定関数
+    /// 処理概要: 契約に列挙された永続 HTML 属性かを判定します。
+    ///
+    /// - Parameter name: 判定する属性名。
+    /// - Returns: CLI / MCP / Inspector から編集可能な属性であれば `true`。
+    func isEditableAttribute(_ name: String) -> Bool {
+        editableAttributeSet.contains(name)
+    }
+
     /// 論理名（日本語）: 契約ファイル読み込み関数
     /// 処理概要: 指定 URL の JSON をデコードして OpenGraphite の機械可読契約を返します。
     ///
@@ -90,6 +99,7 @@ struct OpenGraphiteContract: Codable, Equatable {
             "secondary-button",
             "card",
             "eyebrow",
+            "component-placement",
             "muted"
         ],
         editableAttributes: [
@@ -106,6 +116,9 @@ struct OpenGraphiteContract: Codable, Equatable {
             "data-og-lang-field",
             "data-og-dir-source",
             "data-og-dir-field",
+            "data-og-source-component-internal-id",
+            "data-og-source-node-internal-id",
+            "data-og-placement-mode",
             "data-i18n-key",
             "data-og-text-variant-eng",
             "data-og-hidden",
@@ -121,6 +134,9 @@ struct OpenGraphiteContract: Codable, Equatable {
             "data-og-instance-source",
             "data-og-source-component",
             "data-og-source-instance",
+            "data-og-source-placement",
+            "data-og-preview-clone",
+            "data-og-placement-generated",
             "data-og-slot-origin",
             "data-og-preview-locale",
             "data-og-preview-dir",

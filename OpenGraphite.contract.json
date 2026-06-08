@@ -19,6 +19,7 @@
     "secondary-button",
     "card",
     "eyebrow",
+    "component-placement",
     "muted"
   ],
   "editableAttributes": [
@@ -35,6 +36,9 @@
     "data-og-lang-field",
     "data-og-dir-source",
     "data-og-dir-field",
+    "data-og-source-component-internal-id",
+    "data-og-source-node-internal-id",
+    "data-og-placement-mode",
     "data-i18n-key",
     "data-og-text-variant-eng",
     "data-og-hidden",
@@ -50,6 +54,9 @@
     "data-og-instance-source",
     "data-og-source-component",
     "data-og-source-instance",
+    "data-og-source-placement",
+    "data-og-preview-clone",
+    "data-og-placement-generated",
     "data-og-slot-origin",
     "data-og-preview-locale",
     "data-og-preview-dir",

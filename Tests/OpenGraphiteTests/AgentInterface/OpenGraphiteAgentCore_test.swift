@@ -113,6 +113,73 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!html.contains("renamed"))
     }
 
+    /// 論理名（日本語）: Mock属性編集拒否テスト
+    /// 概要: preview 専用 mock injection を HTML 属性として保存しないことを確認します。
+    @Test("data-og-mock属性をHTML編集対象にしない")
+    func testSetAttributeRejectsMockInjectionAttribute() throws {
+        // コンディション：placement host を含む HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <og-placement data-og-id="placement" data-og-type="frame" data-og-role="component-placement"></og-placement>
+            </body></html>
+            """
+        )
+
+        // 検証内容：mock injection 用の任意パラメータ属性を設定しようとする
+        let result = try fixture.core.setAttribute(
+            "data-og-mock-code-viewer-mode",
+            value: "preview",
+            nodeID: "placement",
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：属性は拒否され、正本 HTML へ保存されない
+        #expect(result.updated == false)
+        #expect(result.diagnostics.contains { $0.code == "disallowed-attribute" })
+        #expect(!html.contains("data-og-mock-code-viewer-mode"))
+    }
+
+    /// 論理名（日本語）: Placement Mock Stateデコードテスト
+    /// 概要: `.ogp` previewContext が placement 単位の mock injection を保持できることを確認します。
+    @Test("previewContextはplacementMocksを保持できる")
+    func testPreviewContextDecodesPlacementMocks() throws {
+        // コンディション：canvas 全体と placement 単位の Mock State を持つ JSON を用意する（Given）
+        let json = """
+        {
+          "locale": "ja-JP",
+          "direction": "ltr",
+          "fieldMocks": {
+            "selectedLanguage": "ja"
+          },
+          "placementMocks": {
+            "67a2e12dbed8": {
+              "codeViewerMode": "preview",
+              "selectedLanguage": "ja"
+            }
+          }
+        }
+        """
+        let context = try JSONDecoder().decode(OpenGraphitePreviewContext.self, from: Data(json.utf8))
+
+        // 検証内容：再エンコードする（When）
+        let encodedData = try JSONEncoder().encode(context)
+        let encoded = String(data: encodedData, encoding: .utf8) ?? ""
+
+        // 期待値：旧形式 locale / direction は読み込み互換だけで、placementMocks は保存対象になる（Then）
+        #expect(context.locale == "ja-JP")
+        #expect(context.direction == "ltr")
+        #expect(context.fieldMocks["selectedLanguage"] == "ja")
+        #expect(context.placementMocks["67a2e12dbed8"]?["codeViewerMode"] == "preview")
+        #expect(encoded.contains("placementMocks"))
+        #expect(!encoded.contains("locale"))
+        #expect(!encoded.contains("direction"))
+    }
+
     /// 論理名（日本語）: ノード検索テスト
     /// 概要: type、role、text を組み合わせて node graph を検索できることを確認します。
     @Test("node queryで条件に一致するノードを検索できる")
@@ -1173,6 +1240,48 @@ struct OpenGraphiteAgentCoreTests {
         #expect(previewContext.fieldMocks["emptyState"] == "")
     }
 
+    /// 論理名（日本語）: CLIコンポーネントPlacement Mock更新テスト
+    /// 概要: `ogkiln project component place` が component canvas の placement mock state を `.ogp` へ保存できることを確認します。
+    @Test("CLIはcomponent canvasのplacement mock stateを更新できる")
+    func testCLIProjectComponentPlaceUpdatesPlacementMocks() throws {
+        // コンディション：component を持つ project manifest を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：component canvas の placement mock を CLI で更新する（When）
+        let code = cli.run(
+            arguments: [
+                "project", "component", "place", "Sample.ogp",
+                "--component-id", fixture.componentPageInternalID,
+                "--preview-placement-mock", "67a2e12dbed8:codeViewerMode=preview",
+                "--preview-placement-mock", "67a2e12dbed8:emptyState="
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        let previewContext = loadedProject.project.collections[0].components[0].canvas.previewContext
+
+        // 期待値：placementMocks は component canvas の previewContext に保存される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"placementMocks\""))
+        #expect(previewContext.placementMocks["67a2e12dbed8"]?["codeViewerMode"] == "preview")
+        #expect(previewContext.placementMocks["67a2e12dbed8"]?["emptyState"] == "")
+    }
+
     /// 論理名（日本語）: CLIページHTML Document Context更新テスト
     /// 概要: `ogkiln project page document` が HTML 正本の document attribute と binding metadata を更新できることを確認します。
     @Test("CLIはproject page documentでHTML document contextを更新できる")
@@ -1503,6 +1612,49 @@ struct OpenGraphiteAgentCoreTests {
         // 期待値：components 側の validation error により project validation が失敗する
         #expect(result.valid == false)
         #expect(result.diagnostics.contains { $0.nodeID == "cards" })
+    }
+
+    /// 論理名（日本語）: Placement配置文脈検証テスト
+    /// 概要: component placement は Components / Collection canvas にだけ配置できることを確認します。
+    @Test("project validateはPages上のcomponent placementを禁止する")
+    func testValidateProjectRejectsComponentPlacementInPages() throws {
+        // コンディション：Pages 側に placement、Components 側に同じ placement role を持つ HTML を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Page data-og-id="page" data-og-type="page">
+                <og-placement data-og-id="page-placement" data-og-type="frame" data-og-role="component-placement" data-og-source-component-internal-id="c9a63f" data-og-source-node-internal-id="cards-internal"></og-placement>
+              </Page>
+            </body></html>
+            """
+        )
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Cards data-og-id="cards" data-og-internal-id="cards-internal" data-og-type="frame"></Cards>
+              <og-placement data-og-id="component-placement" data-og-type="frame" data-og-role="component-placement" data-og-source-component-internal-id="c9a63f" data-og-source-node-internal-id="cards-internal"></og-placement>
+            </body></html>
+            """,
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
+        try fixture.writeProjectWithComponents(to: projectURL)
+
+        // 検証内容：project 全体を validate する（When）
+        let result = try fixture.core.validateProject(at: projectURL)
+
+        // 期待値：Pages 側の placement だけが文脈エラーになる（Then）
+        #expect(result.valid == false)
+        #expect(result.diagnostics.contains {
+            $0.code == "component-placement-outside-collection" && $0.nodeID == "page-placement"
+        })
+        #expect(!result.diagnostics.contains {
+            $0.code == "component-placement-outside-collection" && $0.nodeID == "component-placement"
+        })
     }
 
     /// 論理名（日本語）: component buildテスト

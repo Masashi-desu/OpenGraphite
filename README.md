@@ -38,7 +38,7 @@ HTML is the canonical document.
 </HeroSection>
 ```
 
-OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`.
+OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`. Component canvases can also contain `data-og-role="component-placement"` nodes that reference another component node and display multiple preview states side by side while keeping edits synchronized to the source component. Placement-specific preview mocks live in the `.ogp` canvas `previewContext`, not in the source HTML.
 
 ## Build
 

@@ -255,6 +255,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// - `isInteractive`: DOM 収集、選択、編集同期を有効にするか。
 /// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
 /// - `previewContext`: エディター内 preview に注入する runtime Mock State。
+/// - `allowsComponentPlacements`: component placement の preview clone 展開を許可するか。
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
     var pageURL: URL?
@@ -263,6 +264,7 @@ struct WebCanvasView: NSViewRepresentable {
     var isInteractive = true
     var reloadToken = 0
     var previewContext: OpenGraphitePreviewContext = .empty
+    var allowsComponentPlacements = false
 
     /// 論理名（日本語）: コーディネーター生成関数
     /// 処理概要: WKWebView の navigation、script message、context menu を処理するコーディネーターを生成します。
@@ -286,7 +288,11 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowLinks")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowHover")
-        Self.installUserScripts(on: userContentController, previewContext: previewContext)
+        Self.installUserScripts(
+            on: userContentController,
+            previewContext: previewContext,
+            allowsComponentPlacements: allowsComponentPlacements
+        )
 
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = userContentController
@@ -301,6 +307,7 @@ struct WebCanvasView: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
         context.coordinator.webView = webView
         context.coordinator.lastPreviewContext = previewContext
+        context.coordinator.lastAllowsComponentPlacements = allowsComponentPlacements
         WebScrollStateRegistry.shared.update(.outside, for: webView)
         return webView
     }
@@ -319,16 +326,22 @@ struct WebCanvasView: NSViewRepresentable {
         context.coordinator.syncTarget = syncTarget
 
         let previewContextChanged = context.coordinator.lastPreviewContext != previewContext
-        if previewContextChanged {
-            Self.installUserScripts(on: webView.configuration.userContentController, previewContext: previewContext)
+        let componentPlacementModeChanged = context.coordinator.lastAllowsComponentPlacements != allowsComponentPlacements
+        if previewContextChanged || componentPlacementModeChanged {
+            Self.installUserScripts(
+                on: webView.configuration.userContentController,
+                previewContext: previewContext,
+                allowsComponentPlacements: allowsComponentPlacements
+            )
             context.coordinator.lastPreviewContext = previewContext
+            context.coordinator.lastAllowsComponentPlacements = allowsComponentPlacements
         }
 
         let targetPageURL = syncTarget?.htmlURL ?? pageURL ?? store.selectedPageURL
         if let targetPageURL {
             let loadedURLChanged = context.coordinator.loadedURL != targetPageURL
             let reloadTokenChanged = context.coordinator.lastReloadToken != reloadToken
-            if loadedURLChanged || reloadTokenChanged || previewContextChanged {
+            if loadedURLChanged || reloadTokenChanged || previewContextChanged || componentPlacementModeChanged {
                 context.coordinator.loadedURL = targetPageURL
                 context.coordinator.lastReloadToken = reloadToken
                 context.coordinator.lastSelectedNodeID = nil
@@ -416,7 +429,8 @@ struct WebCanvasView: NSViewRepresentable {
     ///   - previewContext: preview に注入する runtime Mock State。
     private static func installUserScripts(
         on userContentController: WKUserContentController,
-        previewContext: OpenGraphitePreviewContext
+        previewContext: OpenGraphitePreviewContext,
+        allowsComponentPlacements: Bool
     ) {
         userContentController.removeAllUserScripts()
         userContentController.addUserScript(
@@ -426,6 +440,15 @@ struct WebCanvasView: NSViewRepresentable {
                 forMainFrameOnly: true
             )
         )
+        if allowsComponentPlacements {
+            userContentController.addUserScript(
+                WKUserScript(
+                    source: componentPlacementReferencesScript,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true
+                )
+            )
+        }
         userContentController.addUserScript(
             WKUserScript(
                 source: bridgeScript,
@@ -442,7 +465,8 @@ struct WebCanvasView: NSViewRepresentable {
     /// - Returns: document start で実行する JavaScript。
     private static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
         let payload: [String: Any] = [
-            "fields": previewContext.fieldMocks
+            "fields": previewContext.fieldMocks,
+            "placementMocks": previewContext.placementMocks
         ]
         let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
         let literal = String(data: data, encoding: .utf8) ?? "{}"
@@ -450,11 +474,23 @@ struct WebCanvasView: NSViewRepresentable {
         (function() {
           const payload = \(literal);
           const rawFields = payload && typeof payload.fields === 'object' && payload.fields ? payload.fields : {};
+          const rawPlacementMocks = payload && typeof payload.placementMocks === 'object' && payload.placementMocks ? payload.placementMocks : {};
           const fields = {};
           Object.keys(rawFields).forEach((key) => {
             fields[key] = rawFields[key];
           });
           Object.freeze(fields);
+          const placementMocks = {};
+          Object.keys(rawPlacementMocks).forEach((placementID) => {
+            const rawPlacementFields = rawPlacementMocks[placementID];
+            if (!rawPlacementFields || typeof rawPlacementFields !== 'object') { return; }
+            const placementFields = {};
+            Object.keys(rawPlacementFields).forEach((key) => {
+              placementFields[key] = rawPlacementFields[key];
+            });
+            placementMocks[placementID] = Object.freeze(placementFields);
+          });
+          Object.freeze(placementMocks);
           const root = document.documentElement;
           function fieldOverride(name) {
             if (!name || !Object.prototype.hasOwnProperty.call(fields, name)) {
@@ -504,7 +540,8 @@ struct WebCanvasView: NSViewRepresentable {
           });
           const context = {
             document: documentContext,
-            fields: fields
+            fields: fields,
+            placementMocks: placementMocks
           };
           const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
           Object.keys(fields).forEach((key) => {
@@ -543,6 +580,114 @@ struct WebCanvasView: NSViewRepresentable {
         """
     }
 
+    /// 論理名（日本語）: Component Placement参照レンダリングスクリプト
+    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開します。
+    private static let componentPlacementReferencesScript = """
+        (function() {
+          function placementHosts() {
+            return Array.from(document.querySelectorAll('[data-og-role="component-placement"][data-og-source-node-internal-id]'));
+          }
+
+          function sourceNodeFor(host) {
+            const nodeInternalID = String(host.getAttribute('data-og-source-node-internal-id') || '').trim();
+            if (!nodeInternalID) { return null; }
+            return Array.from(document.querySelectorAll('[data-og-internal-id]')).find((element) => {
+              if (element === host) { return false; }
+              if (element.getAttribute('data-og-generated') === 'true') { return false; }
+              if (element.closest('[data-og-placement-generated="true"]')) { return false; }
+              return element.getAttribute('data-og-internal-id') === nodeInternalID;
+            }) || null;
+          }
+
+          function clearGeneratedPlacementContent(host) {
+            Array.from(host.children).forEach((child) => {
+              if (child.getAttribute('data-og-generated') === 'true' ||
+                  child.getAttribute('data-og-placement-generated') === 'true') {
+                child.remove();
+              }
+            });
+          }
+
+          function mockFieldsFor(host) {
+            const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
+            const fields = Object.assign({}, context.fields || {});
+            const placementMocks = context.placementMocks || {};
+            [
+              host.getAttribute('data-og-internal-id'),
+              host.getAttribute('data-og-id')
+            ].forEach((placementID) => {
+              const key = String(placementID || '').trim();
+              if (!key || !placementMocks[key]) { return; }
+              Object.assign(fields, placementMocks[key]);
+            });
+            return fields;
+          }
+
+          function applyCodeViewerMode(root, fields) {
+            const mode = String((fields && fields.codeViewerMode) || '').trim();
+            if (!mode) { return; }
+            root.querySelectorAll('[data-code-viewer-panel]').forEach((panel) => {
+              panel.setAttribute('data-og-hidden', panel.getAttribute('data-code-viewer-panel') === mode ? 'false' : 'true');
+            });
+            root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
+              const active = button.getAttribute('data-code-viewer-tab') === mode;
+              button.setAttribute('aria-pressed', active ? 'true' : 'false');
+              button.style.setProperty('--og-background', active ? '#858892' : '#343438');
+              button.style.setProperty('--og-border', active ? '1px solid #858892' : '1px solid transparent');
+            });
+          }
+
+          function markGenerated(root, host) {
+            const placementID = host.getAttribute('data-og-id') || '';
+            root.setAttribute('data-og-generated', 'true');
+            root.setAttribute('data-og-placement-generated', 'true');
+            root.setAttribute('data-og-source-placement', placementID);
+            root.setAttribute('data-og-preview-clone', 'true');
+            root.querySelectorAll('[data-og-id]').forEach((element) => {
+              element.setAttribute('data-og-generated', 'true');
+              element.setAttribute('data-og-placement-generated', 'true');
+              element.setAttribute('data-og-source-placement', placementID);
+              element.setAttribute('data-og-preview-clone', 'true');
+            });
+          }
+
+          function inlinePlacementVariable(host, name) {
+            return String((host && host.style && host.style.getPropertyValue(name)) || '').trim();
+          }
+
+          function applyPlacementFrameSizing(clone, host) {
+            clone.style.setProperty('--og-margin', '0');
+            if (inlinePlacementVariable(host, '--og-width')) {
+              clone.style.setProperty('--og-width', '100%');
+              clone.style.setProperty('--og-max-width', 'none');
+            }
+            if (inlinePlacementVariable(host, '--og-height')) {
+              clone.style.setProperty('--og-height', '100%');
+            }
+          }
+
+          function renderComponentPlacementReferences() {
+            const hosts = placementHosts();
+            hosts.forEach(clearGeneratedPlacementContent);
+            hosts.forEach((host) => {
+              const source = sourceNodeFor(host);
+              if (!source) { return; }
+              const clone = source.cloneNode(true);
+              applyPlacementFrameSizing(clone, host);
+              clone.style.pointerEvents = 'none';
+              applyCodeViewerMode(clone, mockFieldsFor(host));
+              markGenerated(clone, host);
+              host.appendChild(clone);
+            });
+          }
+
+          window.OpenGraphiteComponentPlacementReferences = Object.freeze({
+            render: renderComponentPlacementReferences
+          });
+          renderComponentPlacementReferences();
+        })();
+        """
+
     /// 論理名（日本語）: Webキャンバスコーディネーター
     /// 概要: WKWebView と SwiftUI ストアの間で JavaScript bridge、HTML 永続化、context menu を仲介します。
     ///
@@ -562,6 +707,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastSelectedNodeID: String?
         var lastActiveTool: CanvasTool?
         var lastPreviewContext = OpenGraphitePreviewContext.empty
+        var lastAllowsComponentPlacements = false
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
@@ -1009,6 +1155,12 @@ struct WebCanvasView: NSViewRepresentable {
                 root.removeAttribute('data-og-preview-locale');
                 root.removeAttribute('data-og-preview-dir');
               }
+              function removePlacementGeneratedNodes(root) {
+                if (!root || typeof root.querySelectorAll !== 'function') { return; }
+                root.querySelectorAll('[data-og-placement-generated="true"]').forEach((element) => {
+                  element.remove();
+                });
+              }
               function restorePreviewDocumentAttributes(root) {
                 if (!root || typeof root.removeAttribute !== 'function') { return; }
                 const original = window.__OPENGRAPHITE_PREVIEW_DOCUMENT_ATTRIBUTES__;
@@ -1029,12 +1181,14 @@ struct WebCanvasView: NSViewRepresentable {
                 const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
                 removeEditorStyles(parsedDocument);
                 if (!parsedDocument.documentElement) { return html; }
+                removePlacementGeneratedNodes(parsedDocument);
                 removePreviewContextAttributes(parsedDocument.documentElement);
                 restorePreviewDocumentAttributes(parsedDocument.documentElement);
                 return '<!doctype html>\\n' + parsedDocument.documentElement.outerHTML;
               }
               const clone = document.documentElement.cloneNode(true);
               removeEditorStyles(clone);
+              removePlacementGeneratedNodes(clone);
               removePreviewContextAttributes(clone);
               restorePreviewDocumentAttributes(clone);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
@@ -1592,6 +1746,13 @@ struct WebCanvasView: NSViewRepresentable {
 
       function allEditableNodes() {
         return Array.from(document.querySelectorAll('[data-og-id]')).filter((element) => {
+          if (element.closest('[data-og-placement-generated="true"]')) {
+            return false;
+          }
+          const persistentPlacementRoot = element.closest('[data-og-role="component-placement"]');
+          if (persistentPlacementRoot && persistentPlacementRoot !== element) {
+            return false;
+          }
           return !(element.tagName && element.tagName.toLowerCase() === 'og-instance' && element.hasAttribute('data-og-expanded'));
         });
       }
@@ -1964,6 +2125,12 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
       function collectNodes() {
+        if (window.OpenGraphiteComponentPlacementReferences && typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
+          window.OpenGraphiteComponentPlacementReferences.render();
+          if (currentSelectedID) {
+            selectNode(currentSelectedID);
+          }
+        }
         ensureInternalIDs();
         const nodes = allEditableNodes().map((element) => ({
           id: element.getAttribute('data-og-id') || '',
@@ -1976,6 +2143,7 @@ struct WebCanvasView: NSViewRepresentable {
           componentKind: element.getAttribute('data-og-component-kind') || '',
           sourceComponentID: element.getAttribute('data-og-source-component') || '',
           sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
+          sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
           textContent: editablePlainText(element),
           fallbackTextContent: fallbackPlainText(element),
           textSource: element.getAttribute('data-og-text-source') || '',
@@ -2028,7 +2196,13 @@ struct WebCanvasView: NSViewRepresentable {
 
         function htmlForNodeList(nodes) {
           return Array.from(nodes).map((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) { return node.outerHTML; }
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              if (node.getAttribute('data-og-placement-generated') === 'true' ||
+                  node.closest('[data-og-placement-generated="true"]')) {
+                return '';
+              }
+              return node.outerHTML;
+            }
             if (node.nodeType === Node.TEXT_NODE) { return escapeHTMLText(node.textContent || ''); }
             return '';
           }).join('');
@@ -2840,11 +3014,15 @@ struct WebCanvasView: NSViewRepresentable {
           if (!element) {
             return { id: '', internalID: '', html: '', text: '' };
           }
+          const clone = element.cloneNode(true);
+          clone.querySelectorAll('[data-og-placement-generated="true"]').forEach((generated) => {
+            generated.remove();
+          });
         return {
           id: element.getAttribute('data-og-id') || '',
           internalID: element.getAttribute('data-og-internal-id') || '',
-          html: element.outerHTML,
-          text: (element.textContent || '').trim(),
+          html: clone.outerHTML,
+          text: (clone.textContent || '').trim(),
           cssVariables: cssVariables(element)
         };
       }

@@ -14,6 +14,7 @@ import Foundation
 /// - `componentKind`: `data-og-component-kind` の値。
 /// - `sourceComponentID`: runtime 展開後の `data-og-source-component` の値。
 /// - `sourceInstanceID`: runtime 展開後の `data-og-source-instance` の値。
+/// - `sourceNodeInternalID`: component placement が参照する source node の内部 ID。
 /// - `textContent`: preview DOM 上で現在解決され表示されているプレーンテキスト。
 /// - `fallbackTextContent`: HTML 正本に残る fallback のプレーンテキスト。
 /// - `textSource`: `data-og-text-source` の値。
@@ -33,6 +34,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var componentKind: String?
     var sourceComponentID: String?
     var sourceInstanceID: String?
+    var sourceNodeInternalID: String?
     var textContent: String?
     var fallbackTextContent: String?
     var textSource: String?
@@ -56,6 +58,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - componentKind: `data-og-component-kind`。
     ///   - sourceComponentID: `data-og-source-component`。
     ///   - sourceInstanceID: `data-og-source-instance`。
+    ///   - sourceNodeInternalID: `data-og-source-node-internal-id`。
     ///   - textContent: preview DOM 上で現在解決され表示されているプレーンテキスト。
     ///   - fallbackTextContent: HTML 正本に残る fallback のプレーンテキスト。
     ///   - textSource: `data-og-text-source`。
@@ -75,6 +78,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         componentKind: String? = nil,
         sourceComponentID: String? = nil,
         sourceInstanceID: String? = nil,
+        sourceNodeInternalID: String? = nil,
         textContent: String? = nil,
         fallbackTextContent: String? = nil,
         textSource: String? = nil,
@@ -94,6 +98,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         self.componentKind = Self.emptyNil(componentKind)
         self.sourceComponentID = Self.emptyNil(sourceComponentID)
         self.sourceInstanceID = Self.emptyNil(sourceInstanceID)
+        self.sourceNodeInternalID = Self.emptyNil(sourceNodeInternalID)
         self.textContent = textContent
         self.fallbackTextContent = fallbackTextContent
         self.textSource = Self.emptyNil(textSource)

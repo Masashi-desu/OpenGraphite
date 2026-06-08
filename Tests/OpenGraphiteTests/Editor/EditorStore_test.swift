@@ -24,6 +24,7 @@ struct EditorStoreTests {
                 "componentKind": "",
                 "sourceComponentID": "site-header",
                 "sourceInstanceID": "header-instance",
+                "sourceNodeInternalID": "source-node",
                 "textContent": "Active headline",
                 "fallbackTextContent": "Fallback headline",
                 "textSource": "binding",
@@ -46,12 +47,54 @@ struct EditorStoreTests {
         #expect(store.nodes[0].componentID == "site-header")
         #expect(store.nodes[0].sourceComponentID == "site-header")
         #expect(store.nodes[0].sourceInstanceID == "header-instance")
+        #expect(store.nodes[0].sourceNodeInternalID == "source-node")
         #expect(store.nodes[0].textContent == "Active headline")
         #expect(store.nodes[0].fallbackTextContent == "Fallback headline")
         #expect(store.nodes[0].textSource == "binding")
         #expect(store.nodes[0].i18nKey == "home.hero.title")
         #expect(store.nodes[0].cssVariables["--og-gap"] == "32px")
         #expect(store.nodes[0].isLocked == true)
+    }
+
+    /// 論理名（日本語）: Placement選択リダイレクトテスト
+    /// 概要: component placement host を選択した場合、編集対象が参照元 component node になることを確認します。
+    @Test("placement選択は参照元component nodeへ解決される")
+    func testSelectNodeRedirectsComponentPlacementToSourceNode() {
+        // コンディション：source node と placement host の payload を取り込む（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            [
+                "id": "codeviewer",
+                "internalID": "hrbifdygbcig",
+                "tagName": "codeviewer",
+                "type": "frame",
+                "layout": "vertical",
+                "role": "",
+                "cssVariables": ["--og-width": "440px"],
+                "hidden": false,
+                "locked": false,
+                "depth": 1
+            ],
+            [
+                "id": "placement-code-viewer-preview",
+                "internalID": "67a2e12dbed8",
+                "tagName": "og-placement",
+                "type": "frame",
+                "layout": "vertical",
+                "role": "component-placement",
+                "sourceNodeInternalID": "hrbifdygbcig",
+                "cssVariables": [String: String](),
+                "hidden": false,
+                "locked": false,
+                "depth": 1
+            ]
+        ])
+
+        // 検証内容：placement host を選択する（When）
+        store.selectNode(id: "placement-code-viewer-preview")
+
+        // 期待値：選択 ID は source component node に解決される（Then）
+        #expect(store.selectedNodeID == "codeviewer")
     }
 
     /// 論理名（日本語）: DOM payload fallback補完テスト

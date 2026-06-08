@@ -157,7 +157,8 @@ extension OpenGraphiteIcon {
     static let collectionGroup = OpenGraphiteIcon.lucide("blocks", fallbackSystemName: "square.grid.2x2")
     static let pageDocument = OpenGraphiteIcon.lucide("file-code", fallbackSystemName: "doc.text")
     static let componentDocument = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
-    static let componentInstance = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
+    static let componentInstance = OpenGraphiteIcon.lucide("replace", fallbackSystemName: "arrow.triangle.2.circlepath")
+    static let componentPlacement = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
     static let dependencyResource = OpenGraphiteIcon.lucide("git-branch", fallbackSystemName: "point.3.connected.trianglepath.dotted")
     static let i18nResource = OpenGraphiteIcon.lucide("languages", fallbackSystemName: "character.book.closed")
     static let localeResource = OpenGraphiteIcon.lucide("braces", fallbackSystemName: "curlybraces")
@@ -232,6 +233,9 @@ extension OpenGraphiteIcon {
     /// - Parameter node: 左カラムの Layers に表示する OpenGraphite ノード。
     /// - Returns: ノードの意味を表すアイコン記述子。
     static func layerNode(_ node: OpenGraphiteNode) -> OpenGraphiteIcon {
+        if node.role == "component-placement" {
+            return .componentPlacement
+        }
         if node.componentKind == "master" {
             return .componentDocument
         }

@@ -855,7 +855,24 @@ final class EditorStore: ObservableObject {
         if id != nil {
             selectedProjectResource = nil
         }
-        selectedNodeID = id
+        selectedNodeID = componentSourceNodeIDForPlacementSelection(id) ?? id
+    }
+
+    /// 論理名（日本語）: Placement選択リダイレクト関数
+    /// 処理概要: component placement host が選択された場合、編集対象を参照元 component node へ解決します。
+    ///
+    /// - Parameter id: 選択要求された node ID。
+    /// - Returns: 参照元 node ID。placement 以外または解決不能な場合は `nil`。
+    private func componentSourceNodeIDForPlacementSelection(_ id: String?) -> String? {
+        guard let id,
+              let placementNode = nodes.first(where: { $0.id == id }),
+              placementNode.role == "component-placement",
+              let sourceNodeInternalID = placementNode.sourceNodeInternalID,
+              let sourceNode = nodes.first(where: { $0.internalID == sourceNodeInternalID })
+        else {
+            return nil
+        }
+        return sourceNode.id
     }
 
     /// 論理名（日本語）: コンポーネント継承元解決関数
@@ -2423,6 +2440,7 @@ final class EditorStore: ObservableObject {
             componentKind: dictionary["componentKind"] as? String,
             sourceComponentID: dictionary["sourceComponentID"] as? String,
             sourceInstanceID: dictionary["sourceInstanceID"] as? String,
+            sourceNodeInternalID: dictionary["sourceNodeInternalID"] as? String,
             textContent: dictionary["textContent"] as? String,
             fallbackTextContent: sourceNode?.textContent ?? dictionary["fallbackTextContent"] as? String,
             textSource: sourceNode?.attributes["data-og-text-source"] ?? dictionary["textSource"] as? String,

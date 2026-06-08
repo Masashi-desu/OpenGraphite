@@ -898,7 +898,10 @@ private struct PageInspectorView: View {
         guard let fieldMocks = parsedFieldMocks else {
             return nil
         }
-        return OpenGraphitePreviewContext(fieldMocks: fieldMocks)
+        return OpenGraphitePreviewContext(
+            fieldMocks: fieldMocks,
+            placementMocks: page.canvas.previewContext.placementMocks
+        )
     }
 
     private var parsedHTMLDocumentContext: OpenGraphiteHTMLDocumentContext? {

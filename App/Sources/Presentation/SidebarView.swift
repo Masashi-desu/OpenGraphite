@@ -938,6 +938,9 @@ private struct PageLayerListView: View {
                                     store.selectNode(id: node.id)
                                     store.copyNodeReferenceIDToPasteboard(node)
                                 },
+                                onSelectNode: { nodeID in
+                                    store.selectNode(id: nodeID)
+                                },
                                 nodeReferenceID: { node in
                                     store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
                                 }
@@ -1271,6 +1274,7 @@ private struct PageLayerListView: View {
 /// - `onToggle`: 展開切替時に呼び出す処理。
 /// - `onCopyReferenceID`: HTML カード参照 ID コピー時に呼び出す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
+/// - `onSelectNode`: DOM node 選択時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct PageLayerCard: View {
     var page: OpenGraphitePage
@@ -1283,6 +1287,7 @@ private struct PageLayerCard: View {
     var onToggle: () -> Void
     var onCopyReferenceID: () -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
+    var onSelectNode: (String) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
 
     var body: some View {
@@ -1339,6 +1344,7 @@ private struct PageLayerCard: View {
                 LayerOutlineContentView(
                     nodes: nodes,
                     selectedNodeID: $selectedNodeID,
+                    onSelectNode: onSelectNode,
                     onCopyNodeReferenceID: onCopyNodeReferenceID,
                     nodeReferenceID: nodeReferenceID
                 )
@@ -1368,12 +1374,14 @@ private struct PageLayerCard: View {
 /// プロパティ:
 /// - `nodes`: WebView から抽出されたノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
+/// - `onSelectNode`: DOM node 選択時に呼び出す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct LayerOutlineContentView: View {
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
     @State private var expandedNodeIDs: Set<String> = []
+    var onSelectNode: (String) -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
 
@@ -1388,10 +1396,10 @@ private struct LayerOutlineContentView: View {
                         toggle(row.id)
                     },
                     onSelect: {
-                        selectedNodeID = row.id
+                        onSelectNode(row.id)
                     },
                     onCopyReferenceID: {
-                        selectedNodeID = row.id
+                        onSelectNode(row.id)
                         onCopyNodeReferenceID(row.node)
                     }
                 )

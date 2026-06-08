@@ -302,6 +302,7 @@ struct OpenGraphiteScreenshotRenderer {
         let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport, previewContext: previewContext)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
         try await snapshotter.renderLocalComponentReferences()
+        try await snapshotter.renderComponentPlacementReferences()
         try await snapshotter.applyImplementationI18nRuntimeIfAvailable()
         let documentSize = try await snapshotter.documentSize()
         snapshotter.resize(to: documentSize)
@@ -415,6 +416,7 @@ struct OpenGraphiteScreenshotRenderer {
         let snapshotter = OpenGraphitePageSnapshotter(viewport: viewport, previewContext: previewContext)
         try await snapshotter.load(htmlURL: htmlURL, readAccessURL: readAccessURL)
         try await snapshotter.renderLocalComponentReferences()
+        try await snapshotter.renderComponentPlacementReferences()
         try await snapshotter.applyImplementationI18nRuntimeIfAvailable()
         if fullPage {
             let documentSize = try await snapshotter.documentSize()
@@ -605,6 +607,12 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         _ = try await evaluateJavaScript(renderScript)
     }
 
+    /// 論理名（日本語）: Component Placement参照レンダリング関数
+    /// 処理概要: screenshot 用 WebView で component placement host へ参照元 node の clone を展開します。
+    func renderComponentPlacementReferences() async throws {
+        _ = try await evaluateJavaScript(Self.componentPlacementReferencesScript)
+    }
+
     /// 論理名（日本語）: 実装i18n runtime適用関数
     /// 処理概要: ページ側 runtime が `window.OpenGraphiteI18n.apply` を公開している場合だけ、その runtime に locale 適用を再実行させます。
     func applyImplementationI18nRuntimeIfAvailable() async throws {
@@ -643,7 +651,8 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
     /// - Returns: document start で実行する JavaScript。
     private static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
         let payload: [String: Any] = [
-            "fields": previewContext.fieldMocks
+            "fields": previewContext.fieldMocks,
+            "placementMocks": previewContext.placementMocks
         ]
         let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
         let literal = String(data: data, encoding: .utf8) ?? "{}"
@@ -651,11 +660,23 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         (function() {
           const payload = \(literal);
           const rawFields = payload && typeof payload.fields === 'object' && payload.fields ? payload.fields : {};
+          const rawPlacementMocks = payload && typeof payload.placementMocks === 'object' && payload.placementMocks ? payload.placementMocks : {};
           const fields = {};
           Object.keys(rawFields).forEach((key) => {
             fields[key] = rawFields[key];
           });
           Object.freeze(fields);
+          const placementMocks = {};
+          Object.keys(rawPlacementMocks).forEach((placementID) => {
+            const rawPlacementFields = rawPlacementMocks[placementID];
+            if (!rawPlacementFields || typeof rawPlacementFields !== 'object') { return; }
+            const placementFields = {};
+            Object.keys(rawPlacementFields).forEach((key) => {
+              placementFields[key] = rawPlacementFields[key];
+            });
+            placementMocks[placementID] = Object.freeze(placementFields);
+          });
+          Object.freeze(placementMocks);
           const root = document.documentElement;
           function fieldOverride(name) {
             if (!name || !Object.prototype.hasOwnProperty.call(fields, name)) {
@@ -705,7 +726,8 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
           });
           const context = {
             document: documentContext,
-            fields: fields
+            fields: fields,
+            placementMocks: placementMocks
           };
           const blockedKeys = new Set(['__proto__', 'constructor', 'prototype']);
           Object.keys(fields).forEach((key) => {
@@ -731,6 +753,107 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         })();
         """
     }
+
+    /// 論理名（日本語）: Component Placement参照レンダリングスクリプト
+    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開します。
+    private static let componentPlacementReferencesScript = """
+        (function() {
+          function placementHosts() {
+            return Array.from(document.querySelectorAll('[data-og-role="component-placement"][data-og-source-node-internal-id]'));
+          }
+
+          function sourceNodeFor(host) {
+            const nodeInternalID = String(host.getAttribute('data-og-source-node-internal-id') || '').trim();
+            if (!nodeInternalID) { return null; }
+            return Array.from(document.querySelectorAll('[data-og-internal-id]')).find((element) => {
+              if (element === host) { return false; }
+              if (element.getAttribute('data-og-generated') === 'true') { return false; }
+              if (element.closest('[data-og-placement-generated="true"]')) { return false; }
+              return element.getAttribute('data-og-internal-id') === nodeInternalID;
+            }) || null;
+          }
+
+          function clearGeneratedPlacementContent(host) {
+            Array.from(host.children).forEach((child) => {
+              if (child.getAttribute('data-og-generated') === 'true' ||
+                  child.getAttribute('data-og-placement-generated') === 'true') {
+                child.remove();
+              }
+            });
+          }
+
+          function mockFieldsFor(host) {
+            const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
+            const fields = Object.assign({}, context.fields || {});
+            const placementMocks = context.placementMocks || {};
+            [
+              host.getAttribute('data-og-internal-id'),
+              host.getAttribute('data-og-id')
+            ].forEach((placementID) => {
+              const key = String(placementID || '').trim();
+              if (!key || !placementMocks[key]) { return; }
+              Object.assign(fields, placementMocks[key]);
+            });
+            return fields;
+          }
+
+          function applyCodeViewerMode(root, fields) {
+            const mode = String((fields && fields.codeViewerMode) || '').trim();
+            if (!mode) { return; }
+            root.querySelectorAll('[data-code-viewer-panel]').forEach((panel) => {
+              panel.setAttribute('data-og-hidden', panel.getAttribute('data-code-viewer-panel') === mode ? 'false' : 'true');
+            });
+            root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
+              const active = button.getAttribute('data-code-viewer-tab') === mode;
+              button.setAttribute('aria-pressed', active ? 'true' : 'false');
+              button.style.setProperty('--og-background', active ? '#858892' : '#343438');
+              button.style.setProperty('--og-border', active ? '1px solid #858892' : '1px solid transparent');
+            });
+          }
+
+          function markGenerated(root, host) {
+            const placementID = host.getAttribute('data-og-id') || '';
+            root.setAttribute('data-og-generated', 'true');
+            root.setAttribute('data-og-placement-generated', 'true');
+            root.setAttribute('data-og-source-placement', placementID);
+            root.setAttribute('data-og-preview-clone', 'true');
+            root.querySelectorAll('[data-og-id]').forEach((element) => {
+              element.setAttribute('data-og-generated', 'true');
+              element.setAttribute('data-og-placement-generated', 'true');
+              element.setAttribute('data-og-source-placement', placementID);
+              element.setAttribute('data-og-preview-clone', 'true');
+            });
+          }
+
+          function inlinePlacementVariable(host, name) {
+            return String((host && host.style && host.style.getPropertyValue(name)) || '').trim();
+          }
+
+          function applyPlacementFrameSizing(clone, host) {
+            clone.style.setProperty('--og-margin', '0');
+            if (inlinePlacementVariable(host, '--og-width')) {
+              clone.style.setProperty('--og-width', '100%');
+              clone.style.setProperty('--og-max-width', 'none');
+            }
+            if (inlinePlacementVariable(host, '--og-height')) {
+              clone.style.setProperty('--og-height', '100%');
+            }
+          }
+
+          const hosts = placementHosts();
+          hosts.forEach(clearGeneratedPlacementContent);
+          hosts.forEach((host) => {
+            const source = sourceNodeFor(host);
+            if (!source) { return; }
+            const clone = source.cloneNode(true);
+            applyPlacementFrameSizing(clone, host);
+            clone.style.pointerEvents = 'none';
+            applyCodeViewerMode(clone, mockFieldsFor(host));
+            markGenerated(clone, host);
+            host.appendChild(clone);
+          });
+        })();
+        """
 
     /// 論理名（日本語）: WebViewリサイズ関数
     /// 処理概要: document 全体や canvas サイズに合わせて offscreen WKWebView をリサイズします。

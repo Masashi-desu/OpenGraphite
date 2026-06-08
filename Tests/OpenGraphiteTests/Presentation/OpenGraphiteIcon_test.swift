@@ -97,7 +97,7 @@ struct OpenGraphiteIconTests {
     /// 概要: component master と component instance が Lucide の専用アイコンを優先することを検証します。
     @Test("componentとinstanceは専用アイコンを優先する")
     func testLayerNodeUsesComponentAndInstanceIcons() {
-        // コンディション：component master、instance本体、runtime生成root、runtime生成子要素を用意する（Given）
+        // コンディション：component master、instance本体、runtime生成root、runtime生成子要素、preview placementを用意する（Given）
         let masterNode = OpenGraphiteNode(
             id: "feature-card-master",
             tagName: "featurecard",
@@ -149,16 +149,28 @@ struct OpenGraphiteIconTests {
             isLocked: false,
             depth: 1
         )
+        let placementNode = OpenGraphiteNode(
+            id: "placement-code-viewer-preview",
+            tagName: "og-placement",
+            type: "frame",
+            layout: nil,
+            role: "component-placement",
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 1
+        )
 
         // 検証内容：レイヤー行用アイコン名を取得する（When）
         let iconNames = [
             OpenGraphiteIcon.layerNode(masterNode).name,
             OpenGraphiteIcon.layerNode(instanceNode).name,
             OpenGraphiteIcon.layerNode(generatedRootNode).name,
-            OpenGraphiteIcon.layerNode(generatedChildNode).name
+            OpenGraphiteIcon.layerNode(generatedChildNode).name,
+            OpenGraphiteIcon.layerNode(placementNode).name
         ]
 
-        // 期待値：master は component、instance root は copy、子要素は本来の text アイコンになる（Then）
-        #expect(iconNames == ["component", "copy", "copy", "type"])
+        // 期待値：master は component、instance root は replace、placement は copy、子要素は本来の text アイコンになる（Then）
+        #expect(iconNames == ["component", "replace", "replace", "type", "copy"])
     }
 }

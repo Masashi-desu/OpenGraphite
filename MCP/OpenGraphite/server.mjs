@@ -328,7 +328,14 @@ function toolsList() {
         y: { type: "number" },
         width: { type: "number" },
         height: { type: "number" },
-        previewMocks: { type: "object", additionalProperties: { type: "string" } }
+        previewMocks: { type: "object", additionalProperties: { type: "string" } },
+        previewPlacementMocks: {
+          type: "object",
+          additionalProperties: {
+            type: "object",
+            additionalProperties: { type: "string" }
+          }
+        }
       }, ["projectPath", "componentID"])
     },
     {
@@ -617,7 +624,8 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
         ...optionalValueFlag(args, "height", "--height"),
-        ...optionalPreviewMockFlags(args)
+        ...optionalPreviewMockFlags(args),
+        ...optionalPreviewPlacementMockFlags(args)
       ];
     case "set_project_page_document_context":
       return [
@@ -962,6 +970,22 @@ function optionalPreviewMockFlags(args) {
     return [];
   }
   return Object.entries(mocks).flatMap(([key, value]) => ["--preview-mock", `${key}=${String(value)}`]);
+}
+
+function optionalPreviewPlacementMockFlags(args) {
+  const mocks = args?.previewPlacementMocks;
+  if (!mocks || typeof mocks !== "object" || Array.isArray(mocks)) {
+    return [];
+  }
+  return Object.entries(mocks).flatMap(([placementID, fields]) => {
+    if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+      return [];
+    }
+    return Object.entries(fields).flatMap(([key, value]) => [
+      "--preview-placement-mock",
+      `${placementID}:${key}=${String(value)}`
+    ]);
+  });
 }
 
 function optionalStringArg(args, key) {

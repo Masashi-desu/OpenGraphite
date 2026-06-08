@@ -39,7 +39,7 @@ ogkiln project page document <project.ogp|current> --page-id <page-id> [--lang-s
 
 `--path` は `.ogp` の `htmlRoot` から見た相対 HTML path であり、絶対 path、`..`、HTML 以外の拡張子は受け付けない。これにより、ユーザーが `.ogp` で認知できない資源が編集対象になることを避ける。
 
-`project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。通常は同じ HTML path の重複登録を拒否するが、同じ正本 HTML を別 preview context で並べたい場合だけ `--allow-duplicate-path` を指定できる。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。`project page place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`--preview-mock key=value` は実装が参照する任意の runtime Mock State を `.ogp` の canvas metadata へ保存する。空文字 override は `--preview-mock key=` と指定する。
+`project page add` は既存 HTML を `.ogp` の既定 Chapter `pages[]` に追加する。通常は同じ HTML path の重複登録を拒否するが、同じ正本 HTML を別 preview context で並べたい場合だけ `--allow-duplicate-path` を指定できる。`project page create` は HTML ファイルを作成してから同じ操作内で既定 Chapter `pages[]` に登録する。`canvas` は `--x`、`--y`、`--width`、`--height` で指定し、省略時は `0,0,1440,1200` になる。`project page place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`--preview-mock key=value` は実装が参照する任意の runtime Mock State を `.ogp` の canvas metadata へ保存する。空文字 override は `--preview-mock key=` と指定する。component placement は Chapter / Pages に配置できないため、placement mock 更新は `project component place --preview-placement-mock` で行う。
 
 `project page document` は HTML 正本の `<html>` attribute と OpenGraphite metadata を更新する。`--lang-source literal` は `lang` を literal 値として保存し、`--lang-source binding` は `lang` に fallback 値を残したまま `data-og-lang-source="binding"` と `data-og-lang-field` を保存する。`--dir-source literal` は `dir` を literal 値として保存し、`--dir-source auto` は `data-og-dir-source="auto"` を保存して preview/runtime で resolved lang から `ltr` / `rtl` を推定する。`--dir-source binding` は `dir` に fallback 値を残し、`data-og-dir-field` を保存する。変数名を `lang` / `dir` 属性へ直接保存してはならない。
 
@@ -49,12 +49,12 @@ ogkiln project page document <project.ogp|current> --page-id <page-id> [--lang-s
 ogkiln project component add <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>]
 ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
 ogkiln project component create <project.ogp|current> [--collection-id <collection-id>] --component-id <component-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
-ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>]
+ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>] [--preview-placement-mock <placement-id:key=value>]
 ogkiln project component document <project.ogp|current> --component-id <component-id> [--lang-source <literal|binding>] [--lang <lang>] [--lang-field <field>] [--dir-source <literal|auto|binding>] [--dir <ltr|rtl|auto>] [--dir-field <field>]
 ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
 ```
 
-Components は Collection ごとに component master を置く asset canvas として扱う。`project component add/create` は `.ogp` の `collections[].components[]` を更新し、`--collection-id` で登録先 Collection を指定できる。未指定時は先頭または既定 Collection を使う。node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`project component place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`--preview-mock key=value` は runtime Mock State を更新する。空文字 override は `--preview-mock key=` と指定する。`project component document` は page と同じルールで component HTML 正本の document attribute と metadata を更新する。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
+Components は Collection ごとに component master を置く asset canvas として扱う。`project component add/create` は `.ogp` の `collections[].components[]` を更新し、`--collection-id` で登録先 Collection を指定できる。未指定時は先頭または既定 Collection を使う。node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`project component place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`--preview-mock key=value` は runtime Mock State を更新する。空文字 override は `--preview-mock key=` と指定する。`--preview-placement-mock placement-id:key=value` は component canvas 内の placement preview 用に `previewContext.placementMocks` を部分更新する。`project component document` は page と同じルールで component HTML 正本の document attribute と metadata を更新する。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
 
 ## Read Commands
 
@@ -97,7 +97,7 @@ ogkiln node text set <project.ogp|current> [--page-id <page-id>|--component-id <
 ogkiln node text set <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <id> --text-file <text-file>
 ```
 
-`node style set/remove` は `--og-*` だけを扱う。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-internal-id` は変更しない。
+`node style set/remove` は `--og-*` だけを扱う。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-internal-id` は変更しない。component placement の mock injection は HTML 属性ではなく `.ogp` の `previewContext.placementMocks` に保存するため、`node attr set/remove` では扱わない。
 
 `node text set` は text として保存する。HTML 断片を入れる操作ではないため、`<`、`>`、`&` は escape する。
 

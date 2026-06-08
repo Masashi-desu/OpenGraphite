@@ -58,7 +58,10 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
             "width": 1440,
             "height": 1200,
             "previewContext": {
-              "fieldMocks": { "selectedLanguage": "ja" }
+              "fieldMocks": { "selectedLanguage": "ja" },
+              "placementMocks": {
+                "67a2e12dbed8": { "codeViewerMode": "preview" }
+              }
             }
           }
         }
@@ -139,6 +142,8 @@ HTML document context は `.ogp` ではなく HTML 正本の `<html>` attribute 
 
 Inspector の Mock State は HTML document binding metadata と保存済み `fieldMocks` から注入可能 field を列挙する。field 自体の作成 UI ではなく、各 field を preview に mock inject するかを ON/OFF と値で制御する。
 
+component placement の Mock State は HTML 正本ではなく、`.ogp` canvas metadata の `previewContext.placementMocks` へ保存する。HTML host は component/node 参照と配置デザインを持ち、`.ogp` は preview のためだけに注入する parameter を持つ。これは同じ component canvas 内で code / preview / loading など複数状態を並べるための placement-local injection であり、page または component canvas 全体へ注入する `canvas.previewContext.fieldMocks` とは分離する。
+
 Text binding の HTML fallback は要素本文に残し、`data-i18n-key` で実装側 locale resource を参照する。推奨正本は `public/locales/<locale>.json` の flat key JSON であり、`.ogp` は i18n 設定や locale text の正本ではない。HTML 側の `data-og-text-variant-<locale>` は lightweight fallback / sample として残せるが、推奨運用では JSON resource へ移行する。`selectedLanguage=eng` のような Mock State は実装 runtime に初期状態を与える入力であり、Mock State 自体を text resource として扱わない。
 
 OpenGraphite は HTML の `script` / `type="module"` script と辿れる import から `i18n.init({...})` を検出する。`lng`、`fallbackLng`、`backend.loadPath` の literal を表示し、`backend.loadPath: "/locales/{{lng}}.json"` は editable resource path として扱う。`import.meta.env.VITE_I18N_LOAD_PATH`、関数式、識別子などは external / readonly とし、OpenGraphite が動的式を書き換えない。
@@ -170,6 +175,8 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 ## Page Graph
 
 `ogkiln page graph <project.ogp|current> --page-id <page-reference-id>|--component-id <component-reference-id> --json` と MCP の graph resource は、`.ogp` の対象 page または component canvas に含まれる `[data-og-id]` ノードを DOM 出現順に返す。Collection 内 component HTML は `--component-id <component-reference-id>` で同じ graph / node edit 経路を使う。`--page-id` / `--component-id` は `internalID`、`<groupInternalID>:<pageInternalID>`、または `referenceID` で解決する。
+
+`data-og-role="component-placement"` を持つ placement host は component canvas の graph に通常 node として含める。`parentID` は DOM 上の親 OpenGraphite node を返し、`.ogp` の page / component card としては扱わない。placement が表示のために生成した clone とその descendants は `data-og-placement-generated="true"` を持つ runtime-only DOM であり、graph / Layers / node edit の対象から除外する。Chapter / Pages HTML に placement host が存在する場合、project validation は `component-placement-outside-collection` error を返す。
 
 ```json
 {
@@ -205,6 +212,8 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 `data-og-id` は UI 表示や従来の node edit operation に使うページ内 ID である。`data-og-internal-id` は名称変更から独立した内部不変 ID であり、コピーされる agent 向け参照IDの node 部分に使う。DOM の位置や tag name は同一性として使わない。
 
 `parentID` は最も近い OpenGraphite ancestor の `data-og-id` である。HTML に通常の `div` や `span` が挟まっても、AI は OpenGraphite node graph 上の親子関係として扱える。`textContent` は node subtree 内のタグを除いたプレーンテキストであり、検索と確認に使う。
+
+component placement は `data-og-source-component-internal-id` と `data-og-source-node-internal-id` で参照元を保持する。project validation は source component が現在の component canvas と一致し、source node が同じ component HTML 内に存在することを検証する。AI が placement の preview 状態を変える場合は `.ogp` の `canvas.previewContext.placementMocks[placementInternalID]` を編集する。placement への通常編集は component の編集と同義であり、参照元 component node の構造や標準サイズを変える場合は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を対象にする。placement host の `--og-*` は、明示的に placement 側の配置 override を行う場合だけ編集する。
 
 ## Diagnostics
 

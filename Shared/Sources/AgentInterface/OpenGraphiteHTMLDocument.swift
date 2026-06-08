@@ -370,7 +370,7 @@ struct OpenGraphiteHTMLDocument {
     ) -> OpenGraphiteHTMLMutationResult {
         guard name != "data-og-id",
               name != "data-og-internal-id",
-              contract.editableAttributeSet.contains(name)
+              contract.isEditableAttribute(name)
         else {
             return .failure(
                 html: html,

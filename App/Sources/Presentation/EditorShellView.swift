@@ -718,7 +718,8 @@ private struct CanvasDocumentView: View {
                 syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
                 isInteractive: isSelected,
                 reloadToken: reloadToken,
-                previewContext: page.canvas.previewContext
+                previewContext: page.canvas.previewContext,
+                allowsComponentPlacements: store.selectedCanvasSegment == .components
             )
                 .frame(width: width, height: height)
                 .allowsHitTesting(isSelected)

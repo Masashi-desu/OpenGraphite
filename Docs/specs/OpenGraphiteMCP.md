@@ -79,7 +79,9 @@ page / component canvas を対象にする tool は `pageID` または `componen
 
 `create_project_page` は page 登録と初期 canvas 配置を同時に扱える。`create_project_component` は component HTML の作成と Collection 登録を行い、配置変更は `place_project_component` で行う。
 
-`place_project_page` と `place_project_component` の `name`、`x`、`y`、`width`、`height` は任意であり、省略した値は `.ogp` 内の現在値を維持する。`name` はフロー解決用の canvas 配置名として保存され、空文字または空白だけを指定すると名前なしとして保存する。`previewMocks` は `.ogp` の canvas metadata に保存する runtime Mock State であり、空文字値も有効な override として扱う。
+`place_project_page` と `place_project_component` の `name`、`x`、`y`、`width`、`height` は任意であり、省略した値は `.ogp` 内の現在値を維持する。`name` はフロー解決用の canvas 配置名として保存され、空文字または空白だけを指定すると名前なしとして保存する。`previewMocks` は `.ogp` の canvas metadata に保存する canvas 全体の runtime Mock State であり、空文字値も有効な override として扱う。`previewPlacementMocks` は `place_project_component` のみで受け取り、component canvas 内 placement ID ごとの runtime Mock State を `previewContext.placementMocks` へ部分更新する。
+
+component placement の状態差分は HTML 正本ではなく、`.ogp` canvas metadata の `previewContext.placementMocks` に保存する。MCP の `set_node_attribute` は `OpenGraphite.contract.json` の editable attributes だけを扱い、placement mock injection は HTML 属性として保存しない。
 
 `set_project_page_document_context` と `set_project_component_document_context` は HTML 正本の `<html>` attribute を編集する。`langSource` は `literal` / `binding`、`dirSource` は `literal` / `auto` / `binding` を受け取る。Binding の場合も `lang` / `dir` 属性には fallback 値を残し、field 名は `data-og-lang-field` / `data-og-dir-field` metadata として保存する。
 
