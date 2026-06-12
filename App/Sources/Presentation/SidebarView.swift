@@ -942,7 +942,7 @@ private struct PageLayerListView: View {
                                     store.selectNode(id: nodeID)
                                 },
                                 nodeReferenceID: { node in
-                                    store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID)
+                                    store.nodeReferenceID(forNodeID: node.editTargetNodeID, nodeInternalID: node.internalID)
                                 }
                             )
                             .onCopyCommand {
@@ -1648,7 +1648,7 @@ private struct LayerRow: View {
                 Text(row.node.tagName)
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
-                Text("\(row.node.id) · \(row.node.detailLine)")
+                Text("\(row.node.displayID) · \(row.node.detailLine)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

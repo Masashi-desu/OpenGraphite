@@ -7,7 +7,7 @@ import Foundation
 /// - `sequence`: 要求の順序番号。
 /// - `pageURL`: 適用対象の HTML ファイル URL。
 /// - `html`: 適用する HTML 全文。
-/// - `selectedNodeID`: 復元後に再選択を試みる `data-og-id`。
+/// - `selectedNodeID`: 復元後に再選択を試みる node ID。placement clone 内では表示専用の合成 ID。
 struct DocumentReplacementRequest: Equatable {
     var sequence: Int
     var pageURL: URL

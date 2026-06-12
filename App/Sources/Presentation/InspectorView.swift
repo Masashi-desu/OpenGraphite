@@ -38,7 +38,7 @@ struct InspectorView: View {
 
                         InspectorSection(title: "Context") {
                             InspectorInfoRow(label: "tag", value: node.tagName)
-                            InspectorInfoRow(label: "data-og-id", value: node.id)
+                            InspectorInfoRow(label: "data-og-id", value: node.displayID)
                             InspectorInfoRow(label: "data-og-type", value: node.type)
                             EditableAttributeField(
                                 label: "data-og-role",

@@ -674,7 +674,6 @@ struct WebCanvasView: NSViewRepresentable {
               if (!source) { return; }
               const clone = source.cloneNode(true);
               applyPlacementFrameSizing(clone, host);
-              clone.style.pointerEvents = 'none';
               applyCodeViewerMode(clone, mockFieldsFor(host));
               markGenerated(clone, host);
               host.appendChild(clone);
@@ -1014,7 +1013,7 @@ struct WebCanvasView: NSViewRepresentable {
         /// 論理名（日本語）: WebViewノード選択関数
         /// 処理概要: Swift 側の選択 ID を JavaScript bridge 経由で DOM の選択表示へ反映します。
         ///
-        /// - Parameter id: 選択する `data-og-id`。選択解除時は `nil`。
+        /// - Parameter id: 選択する node ID。placement clone 内では表示専用の合成 ID、選択解除時は `nil`。
         func selectNode(_ id: String?) {
             guard let webView else { return }
             let idLiteral = Self.javaScriptLiteral(id ?? "")
@@ -1744,10 +1743,20 @@ struct WebCanvasView: NSViewRepresentable {
         return count;
       }
 
+      function isPlacementGeneratedElement(element) {
+        return !!(element && element.closest && element.closest('[data-og-placement-generated="true"]'));
+      }
+
+      function placementGeneratedRootForElement(element) {
+        return element && element.closest ?
+          element.closest('[data-og-placement-generated="true"][data-og-source-placement]') :
+          null;
+      }
+
       function allEditableNodes() {
         return Array.from(document.querySelectorAll('[data-og-id]')).filter((element) => {
-          if (element.closest('[data-og-placement-generated="true"]')) {
-            return false;
+          if (isPlacementGeneratedElement(element)) {
+            return true;
           }
           const persistentPlacementRoot = element.closest('[data-og-role="component-placement"]');
           if (persistentPlacementRoot && persistentPlacementRoot !== element) {
@@ -1784,6 +1793,7 @@ struct WebCanvasView: NSViewRepresentable {
           const used = new Set();
           let changed = false;
           allEditableNodes().forEach((element) => {
+            if (isPlacementGeneratedElement(element)) { return; }
             const current = (element.getAttribute('data-og-internal-id') || '').trim();
             if (!current || used.has(current)) {
               element.setAttribute('data-og-internal-id', randomInternalID(used));
@@ -1798,7 +1808,10 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function nodeWithID(id) {
-          return allEditableNodes().find((element) => element.getAttribute('data-og-id') === id);
+          return allEditableNodes().find((element) => {
+            return selectionIDForElement(element) === id ||
+              (!isPlacementGeneratedElement(element) && elementID(element) === id);
+          });
         }
 
         function canScrollForSelection(element) {
@@ -1912,12 +1925,49 @@ struct WebCanvasView: NSViewRepresentable {
           return element ? element.getAttribute('data-og-id') || element.getAttribute('data-og-host-id') || '' : '';
         }
 
+        function sourcePlacementIDForElement(element) {
+          const generated = placementGeneratedRootForElement(element);
+          if (!generated) { return ''; }
+          const placementID = generated.getAttribute('data-og-source-placement') || '';
+          return placementID;
+        }
+
+        function selectionIDForElement(element) {
+          if (!element) { return ''; }
+          const sourceID = elementID(element);
+          if (!isPlacementGeneratedElement(element)) { return sourceID; }
+          const placementID = sourcePlacementIDForElement(element);
+          const stableNodeID = nodeInternalID(element) || sourceID;
+          if (!placementID || !stableNodeID) { return sourceID; }
+          return 'ogpl:' + encodeURIComponent(placementID) + ':' + encodeURIComponent(stableNodeID);
+        }
+
+        function sourceElementForPlacementGeneratedElement(element) {
+          if (!isPlacementGeneratedElement(element)) { return element; }
+          const internalID = nodeInternalID(element);
+          const sourceID = elementID(element);
+          return Array.from(document.querySelectorAll('[data-og-id]')).find((candidate) => {
+            if (candidate === element || isPlacementGeneratedElement(candidate)) { return false; }
+            if (internalID) {
+              return nodeInternalID(candidate) === internalID;
+            }
+            return sourceID && elementID(candidate) === sourceID;
+          }) || null;
+        }
+
+        function editElementForSelectionID(id) {
+          const element = nodeWithID(id);
+          if (!element) { return null; }
+          return sourceElementForPlacementGeneratedElement(element) || element;
+        }
+
         function editableElementFromTarget(target) {
           let element = target;
           while (element && element.nodeType !== Node.ELEMENT_NODE) {
             element = element.parentElement;
           }
-          return element ? element.closest('[data-og-id]') : null;
+          if (!element) { return null; }
+          return element.closest('[data-og-id]');
         }
 
         function selectableChainFor(element) {
@@ -1941,18 +1991,18 @@ struct WebCanvasView: NSViewRepresentable {
           const chain = selectableChainFor(element);
           if (chain.length === 0) { return ''; }
 
-          const currentIndex = chain.findIndex((candidate) => elementID(candidate) === currentSelectedID);
+          const currentIndex = chain.findIndex((candidate) => selectionIDForElement(candidate) === currentSelectedID);
           if (currentIndex < 0) {
-            return elementID(chain[0]);
+            return selectionIDForElement(chain[0]);
           }
 
           const nextIndex = Math.min(currentIndex + 1, chain.length - 1);
-          return elementID(chain[nextIndex]);
+          return selectionIDForElement(chain[nextIndex]);
         }
 
         function elementInChain(chain, id) {
           if (!id) { return null; }
-          return chain.find((candidate) => elementID(candidate) === id) || null;
+          return chain.find((candidate) => selectionIDForElement(candidate) === id) || null;
         }
 
         function hasLockedAncestor(element) {
@@ -2133,7 +2183,7 @@ struct WebCanvasView: NSViewRepresentable {
         }
         ensureInternalIDs();
         const nodes = allEditableNodes().map((element) => ({
-          id: element.getAttribute('data-og-id') || '',
+          id: selectionIDForElement(element),
           internalID: element.getAttribute('data-og-internal-id') || '',
           tagName: element.tagName.toLowerCase(),
           type: element.getAttribute('data-og-type') || '',
@@ -2144,6 +2194,9 @@ struct WebCanvasView: NSViewRepresentable {
           sourceComponentID: element.getAttribute('data-og-source-component') || '',
           sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
           sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
+          sourceNodeID: isPlacementGeneratedElement(element) ? elementID(element) : '',
+          sourcePlacementID: sourcePlacementIDForElement(element),
+          placementGenerated: isPlacementGeneratedElement(element),
           textContent: editablePlainText(element),
           fallbackTextContent: fallbackPlainText(element),
           textSource: element.getAttribute('data-og-text-source') || '',
@@ -2283,7 +2336,7 @@ struct WebCanvasView: NSViewRepresentable {
             finishTextEditing(false, false);
           }
 
-          const id = elementID(element);
+          const id = selectionIDForElement(element);
           selectNode(id);
           notifySelection(id);
           editingTextElement = element;
@@ -2303,7 +2356,7 @@ struct WebCanvasView: NSViewRepresentable {
         function finishTextEditing(cancelled, shouldRestoreSelection) {
           const element = editingTextElement;
           if (!element) { return; }
-          const selectedID = elementID(element);
+          const selectedID = selectionIDForElement(element);
           const originalText = editingOriginalText;
           const nextText = cancelled ? originalText : editablePlainText(element);
 
@@ -2318,11 +2371,15 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           if (!cancelled && nextText !== originalText) {
+            const editElement = editElementForSelectionID(selectedID) || element;
+            if (editElement !== element) {
+              replaceTextContents(editElement, nextText);
+            }
             collectNodes();
             notifyDocumentChange({
               operation: 'setTextContent',
               nodeID: selectedID,
-              nodeInternalID: nodeInternalID(element),
+              nodeInternalID: nodeInternalID(editElement),
               value: nextText,
               previousValue: originalText
             });
@@ -2330,7 +2387,7 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
       function setCSSVariable(id, key, value) {
-        const element = nodeWithID(id);
+        const element = editElementForSelectionID(id);
         if (!element) { return false; }
         if ((value || '').trim().length === 0) {
           element.style.removeProperty(key);
@@ -2342,7 +2399,7 @@ struct WebCanvasView: NSViewRepresentable {
       }
 
         function setAttributeValue(id, name, value) {
-          const element = nodeWithID(id);
+          const element = editElementForSelectionID(id);
           if (!element) { return false; }
         if ((value || '').trim().length === 0) {
           element.removeAttribute(name);
@@ -2458,7 +2515,7 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function setLayout(layout) {
-          const element = selectedElement();
+          const element = editElementForSelectionID(currentSelectedID) || selectedElement();
           if (!element) { return ''; }
           element.setAttribute('data-og-layout', layout);
           return element.getAttribute('data-og-id') || '';
@@ -2479,7 +2536,7 @@ struct WebCanvasView: NSViewRepresentable {
           while (current && current !== document.documentElement) {
             if (current.hasAttribute && current.hasAttribute('data-og-id')) {
               result.push({
-                id: current.getAttribute('data-og-id') || '',
+                id: selectionIDForElement(current),
                 tagName: current.tagName.toLowerCase(),
                 type: current.getAttribute('data-og-type') || '',
                 role: current.getAttribute('data-og-role') || ''
@@ -3010,16 +3067,17 @@ struct WebCanvasView: NSViewRepresentable {
 
         function copyPayload() {
           ensureInternalIDs();
-          const element = selectedElement();
-          if (!element) {
+          const visualElement = selectedElement();
+          if (!visualElement) {
             return { id: '', internalID: '', html: '', text: '' };
           }
+          const element = editElementForSelectionID(currentSelectedID) || visualElement;
           const clone = element.cloneNode(true);
           clone.querySelectorAll('[data-og-placement-generated="true"]').forEach((generated) => {
             generated.remove();
           });
         return {
-          id: element.getAttribute('data-og-id') || '',
+          id: elementID(element),
           internalID: element.getAttribute('data-og-internal-id') || '',
           html: clone.outerHTML,
           text: (clone.textContent || '').trim(),
@@ -3062,12 +3120,13 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function runCommand(command, payload) {
-          const element = selectedElement();
+          const visualElement = selectedElement();
+          const element = editElementForSelectionID(currentSelectedID) || visualElement;
           if (!element && command !== 'pasteHere') {
             return { success: false, selectedID: '' };
           }
 
-          let selectedID = element ? element.getAttribute('data-og-id') || '' : '';
+          let selectedID = visualElement ? selectionIDForElement(visualElement) : '';
           const selectedInternalID = nodeInternalID(element);
           let edit = null;
           const isLocked = element && element.getAttribute('data-og-locked') === 'true';

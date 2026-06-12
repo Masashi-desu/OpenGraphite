@@ -213,7 +213,7 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 
 `parentID` は最も近い OpenGraphite ancestor の `data-og-id` である。HTML に通常の `div` や `span` が挟まっても、AI は OpenGraphite node graph 上の親子関係として扱える。`textContent` は node subtree 内のタグを除いたプレーンテキストであり、検索と確認に使う。
 
-component placement は `data-og-source-component-internal-id` と `data-og-source-node-internal-id` で参照元を保持する。project validation は source component が現在の component canvas と一致し、source node が同じ component HTML 内に存在することを検証する。AI が placement の preview 状態を変える場合は `.ogp` の `canvas.previewContext.placementMocks[placementInternalID]` を編集する。placement への通常編集は component の編集と同義であり、参照元 component node の構造や標準サイズを変える場合は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を対象にする。placement host の `--og-*` は、明示的に placement 側の配置 override を行う場合だけ編集する。
+component placement は `data-og-source-component-internal-id` と `data-og-source-node-internal-id` で参照元を保持する。project validation は source component が現在の component canvas と一致し、source node が同じ component HTML 内に存在することを検証する。AI が placement の preview 状態を変える場合は `.ogp` の `canvas.previewContext.placementMocks[placementInternalID]` を編集する。placement host は開閉可能な参照表示であり、内部に表示される clone node は実体を持たない。clone node を選択して編集する場合、保存対象は同じ `data-og-internal-id` を持つ参照元 component node であり、agent 向け参照 ID も `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を指す。placement host の `--og-*` は、その placement 側の表示枠 override として編集する。
 
 ## Diagnostics
 

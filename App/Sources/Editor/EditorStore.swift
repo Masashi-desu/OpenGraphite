@@ -16,7 +16,7 @@ import Foundation
 /// - `selectedComponentPageID`: 選択中 component canvas の ID。
 /// - `selectedComponentPageInternalID`: 選択中 component canvas カードの内部 ID。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
-/// - `selectedNodeID`: 選択中ノードの `data-og-id`。
+/// - `selectedNodeID`: 選択中ノード ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
@@ -379,8 +379,8 @@ final class EditorStore: ObservableObject {
     @discardableResult
     func copyNodeReferenceIDToPasteboard(_ node: OpenGraphiteNode) -> Bool {
         copyReferenceIDToPasteboard(
-            nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID),
-            label: "Node \(node.id)"
+            nodeReferenceID(forNodeID: node.editTargetNodeID, nodeInternalID: node.internalID),
+            label: "Node \(node.displayID)"
         )
     }
 
@@ -850,29 +850,12 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: ノード選択関数
     /// 処理概要: Layers、Canvas、Context Menu から渡された `data-og-id` を選択状態として保存します。
     ///
-    /// - Parameter id: 選択するノード ID。選択解除時は `nil`。
+    /// - Parameter id: 選択するノード ID。placement clone 内では表示専用の合成 ID、選択解除時は `nil`。
     func selectNode(id: String?) {
         if id != nil {
             selectedProjectResource = nil
         }
-        selectedNodeID = componentSourceNodeIDForPlacementSelection(id) ?? id
-    }
-
-    /// 論理名（日本語）: Placement選択リダイレクト関数
-    /// 処理概要: component placement host が選択された場合、編集対象を参照元 component node へ解決します。
-    ///
-    /// - Parameter id: 選択要求された node ID。
-    /// - Returns: 参照元 node ID。placement 以外または解決不能な場合は `nil`。
-    private func componentSourceNodeIDForPlacementSelection(_ id: String?) -> String? {
-        guard let id,
-              let placementNode = nodes.first(where: { $0.id == id }),
-              placementNode.role == "component-placement",
-              let sourceNodeInternalID = placementNode.sourceNodeInternalID,
-              let sourceNode = nodes.first(where: { $0.internalID == sourceNodeInternalID })
-        else {
-            return nil
-        }
-        return sourceNode.id
+        selectedNodeID = id
     }
 
     /// 論理名（日本語）: コンポーネント継承元解決関数
@@ -1292,11 +1275,11 @@ final class EditorStore: ObservableObject {
         cssMutation = CSSVariableMutation(
             sequence: mutationSequence,
             pageURL: target.htmlURL,
-            nodeID: selectedNodeID,
+            nodeID: selectedNode.id,
             key: key,
             value: normalizedValue
         )
-        statusMessage = "\(selectedNodeID) の \(key) を更新しました。"
+        statusMessage = "\(selectedNode.displayID) の \(key) を更新しました。"
     }
 
     /// 論理名（日本語）: ノード属性更新関数
@@ -1366,11 +1349,11 @@ final class EditorStore: ObservableObject {
         attributeMutation = NodeAttributeMutation(
             sequence: attributeMutationSequence,
             pageURL: target.htmlURL,
-            nodeID: selectedNodeID,
+            nodeID: selectedNode.id,
             name: name,
             value: normalizedValue
         )
-        statusMessage = "\(selectedNodeID) の \(name) を更新しました。"
+        statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
     }
 
     /// 論理名（日本語）: CSS変数mutation適用完了関数
@@ -2441,6 +2424,9 @@ final class EditorStore: ObservableObject {
             sourceComponentID: dictionary["sourceComponentID"] as? String,
             sourceInstanceID: dictionary["sourceInstanceID"] as? String,
             sourceNodeInternalID: dictionary["sourceNodeInternalID"] as? String,
+            sourceNodeID: dictionary["sourceNodeID"] as? String,
+            sourcePlacementID: dictionary["sourcePlacementID"] as? String,
+            isPlacementGenerated: dictionary["placementGenerated"] as? Bool ?? false,
             textContent: dictionary["textContent"] as? String,
             fallbackTextContent: sourceNode?.textContent ?? dictionary["fallbackTextContent"] as? String,
             textSource: sourceNode?.attributes["data-og-text-source"] ?? dictionary["textSource"] as? String,

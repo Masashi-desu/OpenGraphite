@@ -175,7 +175,7 @@ component master は Collection 内 component HTML に通常の OpenGraphite nod
 
 component placement は、Collection 内の component canvas にある既存 component node を、同じ component canvas 上へ別状態で並べるための永続 HTML node です。Chapter / Pages には配置できず、公開 page の構造ではなく編集用の表示です。`.ogp` の page / component card ではなく、通常の OpenGraphite node と同じ DOM 階層に置きます。表示用に生成された clone は直接編集対象にしません。
 
-placement host は `data-og-role="component-placement"` を持つ `frame` として表します。`data-og-source-component-internal-id` は参照元 component canvas、`data-og-source-node-internal-id` は参照元 node を指します。現在の実装では、参照元 component は placement が置かれている component canvas と一致し、参照元 node は同じ component HTML 内に存在する必要があります。placement は component の参照であり、通常の Canvas / Layers / Inspector 操作で placement を選んだ場合の編集対象は参照元 component node です。参照先 node の編集は全 placement に同期されます。placement 側に明示した `--og-*` は、その placement だけの配置 override として扱います。
+placement host は `data-og-role="component-placement"` を持つ `frame` として表します。`data-og-source-component-internal-id` は参照元 component canvas、`data-og-source-node-internal-id` は参照元 node を指します。現在の実装では、参照元 component は placement が置かれている component canvas と一致し、参照元 node は同じ component HTML 内に存在する必要があります。placement host は Layers 上で開閉できる参照表示として扱い、内部に表示される clone node は選択できますが実体を持ちません。clone node への Inspector / Canvas 編集は同じ `data-og-internal-id` を持つ参照元 component node に保存され、全 placement に同期されます。placement 側に明示した `--og-*` は、その placement だけの表示枠 override として扱います。
 
 ```html
 <og-placement

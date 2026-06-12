@@ -4,7 +4,7 @@ import Foundation
 /// 概要: HTML 内の `data-og-id` 付き要素を Layers と Inspector で扱うための表示・編集モデルです。
 ///
 /// プロパティ:
-/// - `id`: `data-og-id` の値。
+/// - `id`: 選択用 ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
 /// - `internalID`: `data-og-internal-id` の値。
 /// - `tagName`: HTML タグ名または独自タグ名。
 /// - `type`: `data-og-type` の値。
@@ -15,6 +15,9 @@ import Foundation
 /// - `sourceComponentID`: runtime 展開後の `data-og-source-component` の値。
 /// - `sourceInstanceID`: runtime 展開後の `data-og-source-instance` の値。
 /// - `sourceNodeInternalID`: component placement が参照する source node の内部 ID。
+/// - `sourceNodeID`: component placement clone が参照する source node の `data-og-id`。
+/// - `sourcePlacementID`: component placement clone の生成元 placement host ID。
+/// - `isPlacementGenerated`: component placement から生成された表示専用 clone か。
 /// - `textContent`: preview DOM 上で現在解決され表示されているプレーンテキスト。
 /// - `fallbackTextContent`: HTML 正本に残る fallback のプレーンテキスト。
 /// - `textSource`: `data-og-text-source` の値。
@@ -35,6 +38,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var sourceComponentID: String?
     var sourceInstanceID: String?
     var sourceNodeInternalID: String?
+    var sourceNodeID: String?
+    var sourcePlacementID: String?
+    var isPlacementGenerated: Bool
     var textContent: String?
     var fallbackTextContent: String?
     var textSource: String?
@@ -48,7 +54,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     /// 処理概要: HTML ノードの表示 ID、内部 ID、編集メタデータから UI モデルを構成します。
     ///
     /// - Parameters:
-    ///   - id: `data-og-id`。
+    ///   - id: 選択用 ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
     ///   - internalID: `data-og-internal-id`。
     ///   - tagName: HTML tag name。
     ///   - type: `data-og-type`。
@@ -59,6 +65,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - sourceComponentID: `data-og-source-component`。
     ///   - sourceInstanceID: `data-og-source-instance`。
     ///   - sourceNodeInternalID: `data-og-source-node-internal-id`。
+    ///   - sourceNodeID: 表示専用 placement clone が参照する source node の `data-og-id`。
+    ///   - sourcePlacementID: 表示専用 placement clone の生成元 placement host ID。
+    ///   - isPlacementGenerated: component placement から生成された表示専用 clone か。
     ///   - textContent: preview DOM 上で現在解決され表示されているプレーンテキスト。
     ///   - fallbackTextContent: HTML 正本に残る fallback のプレーンテキスト。
     ///   - textSource: `data-og-text-source`。
@@ -79,6 +88,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         sourceComponentID: String? = nil,
         sourceInstanceID: String? = nil,
         sourceNodeInternalID: String? = nil,
+        sourceNodeID: String? = nil,
+        sourcePlacementID: String? = nil,
+        isPlacementGenerated: Bool = false,
         textContent: String? = nil,
         fallbackTextContent: String? = nil,
         textSource: String? = nil,
@@ -99,6 +111,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         self.sourceComponentID = Self.emptyNil(sourceComponentID)
         self.sourceInstanceID = Self.emptyNil(sourceInstanceID)
         self.sourceNodeInternalID = Self.emptyNil(sourceNodeInternalID)
+        self.sourceNodeID = Self.emptyNil(sourceNodeID)
+        self.sourcePlacementID = Self.emptyNil(sourcePlacementID)
+        self.isPlacementGenerated = isPlacementGenerated
         self.textContent = textContent
         self.fallbackTextContent = fallbackTextContent
         self.textSource = Self.emptyNil(textSource)
@@ -118,6 +133,14 @@ struct OpenGraphiteNode: Identifiable, Hashable {
             return textSource
         }
         return isTextBinding ? "binding" : "literal"
+    }
+
+    var displayID: String {
+        sourceNodeID ?? id
+    }
+
+    var editTargetNodeID: String {
+        sourceNodeID ?? id
     }
 
     var inheritedComponentID: String? {

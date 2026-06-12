@@ -56,10 +56,10 @@ struct EditorStoreTests {
         #expect(store.nodes[0].isLocked == true)
     }
 
-    /// 論理名（日本語）: Placement選択リダイレクトテスト
-    /// 概要: component placement host を選択した場合、編集対象が参照元 component node になることを確認します。
-    @Test("placement選択は参照元component nodeへ解決される")
-    func testSelectNodeRedirectsComponentPlacementToSourceNode() {
+    /// 論理名（日本語）: Placement選択維持テスト
+    /// 概要: component placement host を選択した場合、参照元 component node へ解決せず placement 自体を選択状態にすることを確認します。
+    @Test("placement選択はplacement node自体を維持する")
+    func testSelectNodeKeepsComponentPlacementSelected() {
         // コンディション：source node と placement host の payload を取り込む（Given）
         let store = EditorStore()
         store.ingestNodePayload([
@@ -93,8 +93,71 @@ struct EditorStoreTests {
         // 検証内容：placement host を選択する（When）
         store.selectNode(id: "placement-code-viewer-preview")
 
-        // 期待値：選択 ID は source component node に解決される（Then）
-        #expect(store.selectedNodeID == "codeviewer")
+        // 期待値：選択 ID は placement host のまま保持される（Then）
+        #expect(store.selectedNodeID == "placement-code-viewer-preview")
+    }
+
+    /// 論理名（日本語）: Placement内部ノード編集テスト
+    /// 概要: placement clone 内の node を選択した場合、表示専用 ID を維持しつつ正本 component node を更新することを確認します。
+    @Test("placement内部nodeの編集は参照元component nodeへ保存する")
+    func testPlacementGeneratedNodeEditsSourceComponentNode() throws {
+        // コンディション：参照元 node を持つ HTML と、placement clone の payload を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <CodeViewer data-og-id="codeviewer" data-og-internal-id="hrbifdygbcig" data-og-type="frame" style="--og-gap:9px;"></CodeViewer>
+          <og-placement data-og-id="placement-code-viewer-preview" data-og-internal-id="placement-node" data-og-type="frame" data-og-role="component-placement" data-og-source-node-internal-id="hrbifdygbcig"></og-placement>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let placementSelectionID = "ogpl:placement-code-viewer-preview:hrbifdygbcig"
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "codeviewer",
+                "internalID": "hrbifdygbcig",
+                "tagName": "codeviewer",
+                "type": "frame",
+                "cssVariables": ["--og-gap": "9px"],
+                "depth": 0
+            ],
+            [
+                "id": "placement-code-viewer-preview",
+                "internalID": "placement-node",
+                "tagName": "og-placement",
+                "type": "frame",
+                "role": "component-placement",
+                "sourceNodeInternalID": "hrbifdygbcig",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ],
+            [
+                "id": placementSelectionID,
+                "internalID": "hrbifdygbcig",
+                "tagName": "codeviewer",
+                "type": "frame",
+                "sourceNodeID": "codeviewer",
+                "sourcePlacementID": "placement-code-viewer-preview",
+                "placementGenerated": true,
+                "cssVariables": ["--og-gap": "9px"],
+                "depth": 1
+            ]
+        ])
+
+        // 検証内容：placement clone 内 node を選択して CSS 変数を更新する（When）
+        store.selectNode(id: placementSelectionID)
+        store.updateCSSVariable(key: "--og-gap", value: "24px")
+
+        // 期待値：選択 ID は clone 用のまま、保存先 HTML は同じ internalID の正本 node になる（Then）
+        #expect(store.selectedNodeID == placementSelectionID)
+        #expect(store.selectedNode?.displayID == "codeviewer")
+        #expect(store.selectedNode?.editTargetNodeID == "codeviewer")
+        #expect(store.selectedNode?.isPlacementGenerated == true)
+        #expect(store.cssMutation?.nodeID == placementSelectionID)
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(diskHTML.contains("--og-gap:24px"))
     }
 
     /// 論理名（日本語）: DOM payload fallback補完テスト
