@@ -1,4 +1,4 @@
 interface:
-  display_name: "OpenGraphite CSS Contract"
-  short_description: "Help users author OpenGraphite.css HTML"
-  default_prompt: "Use $opengraphite-css-contract to author or debug HTML that uses OpenGraphite.css, data-og-* attributes, and --og-* variables."
+  display_name: "OpenGraphite CSS 契約"
+  short_description: "OpenGraphite HTML/CSS 契約を確認する"
+  default_prompt: "$opengraphite-css-contract を使って、OpenGraphite.css、data-og-* 属性、--og-* 変数を使う HTML を作成・デバッグする。"

@@ -1,37 +1,39 @@
 ---
 name: opengraphite-css-contract
-description: Use when helping users author, review, debug, or transform HTML that uses OpenGraphite.css, data-og-* attributes, --og-* CSS variables, layouts, roles, and reusable design snippets.
+description: "OpenGraphite.css、data-og-* 属性、--og-* CSS 変数、layout、role、component、再利用可能なデザイン断片を使う HTML の作成、レビュー、デバッグ、変換を支援するときに使う。OpenGraphite HTML/CSS 契約、属性、変数、role、layout、component runtime の説明や検証観点が必要なときに使う。"
 ---
 
-# OpenGraphite CSS Contract
+# OpenGraphite CSS 契約
 
-Use this skill when an agent needs to help a general OpenGraphite user write or fix HTML that is rendered by `OpenGraphite.css`.
+一般ユーザーが `OpenGraphite.css` で描画される HTML を書く、修正する、または OpenGraphite HTML/CSS 契約を確認するときに、この skill を使う。
 
-## Audience
+## 対象
 
-This is user-facing context for people who consume `OpenGraphite.css` in HTML documents. Assume the user is authoring standalone HTML and CSS, not modifying OpenGraphite itself.
+これは `OpenGraphite.css` を HTML document で利用する人のための契約説明である。ユーザーが standalone HTML / CSS を authoring しているものとして扱う。
 
-If the user provides their own copy or version of `OpenGraphite.css`, inspect that file and prefer the actual rules in front of you. If no stylesheet is provided, use the public contract below.
+OpenGraphite リポジトリ内の `public/` page や component HTML を編集する作業手順は、`opengraphite-page-editing` skill の責務である。ページ編集中に `data-og-*`、`--og-*`、role、layout、component の契約確認が必要な場合だけ、この skill も併用する。
 
-When the repository contains `OpenGraphite.contract.json`, treat it as the machine-readable source for known `data-og-*` values, roles, layouts, and `--og-*` variables. Use the prose below to explain the contract, but prefer the JSON file for validation-oriented work.
+ユーザーが独自の `OpenGraphite.css` や特定バージョンを提示した場合は、そのファイルを確認し、実際のルールを優先する。stylesheet が提示されない場合は、下記の公開契約を使う。
 
-Explain the CSS contract directly from attributes, variables, and examples. Do not require implementation files or build tools to answer normal usage questions.
+リポジトリに `OpenGraphite.contract.json` がある場合は、既知の `data-og-*` 値、role、layout、`--og-*` 変数の機械可読な正本として扱う。説明には本文の契約を使ってよいが、検証向けの判断では JSON を優先する。
 
-## Core Model
+通常は、属性、変数、例から CSS 契約を直接説明する。利用質問に答えるためだけに、実装ファイルやビルドツールを必須にしない。
 
-OpenGraphite documents are ordinary HTML. `OpenGraphite.css` renders elements by reading:
+## コアモデル
 
-- semantic tag names chosen by the author;
-- `data-og-*` attributes for OpenGraphite structure and variants;
-- inline `--og-*` CSS variables for design values;
-- optional component master HTML in the project `components` segment and `<og-instance>` references in pages;
-- standard CSS values such as lengths, colors, shorthands, gradients, `min()`, `max()`, and `clamp()`.
+OpenGraphite document は通常の HTML である。`OpenGraphite.css` は次を読み取って要素を描画する。
 
-Class names may be used by the surrounding website, but do not make class names the OpenGraphite editing contract. Prefer `data-og-*` and `--og-*` for content that should remain understandable to OpenGraphite-aware tools.
+- 作者が選ぶ semantic tag name。
+- OpenGraphite の構造と variant を示す `data-og-*` 属性。
+- design value を示す inline の `--og-*` CSS 変数。
+- project の `components` segment にある optional な component master HTML と、pages 内の `<og-instance>` 参照。
+- length、color、shorthand、gradient、`min()`、`max()`、`clamp()` などの標準 CSS 値。
 
-## Basic Setup
+class 名は周辺の Web サイト実装で使ってよいが、OpenGraphite の編集契約にしない。OpenGraphite-aware tool が理解できる必要がある内容には、`data-og-*` と `--og-*` を優先する。
 
-Include the stylesheet and mark editable/rendered elements with `data-og-type`:
+## 基本セットアップ
+
+stylesheet を読み込み、編集・描画対象の要素に `data-og-type` を付ける。
 
 ```html
 <link rel="stylesheet" href="OpenGraphite.css">
@@ -51,7 +53,7 @@ Include the stylesheet and mark editable/rendered elements with `data-og-type`:
 </main>
 ```
 
-For component references, keep masters in component canvas HTML and reference them from pages with a component source link plus the optional runtime:
+component 参照では、master を component canvas HTML に置き、page 側から component source link と optional runtime で参照する。
 
 ```html
 <link rel="stylesheet" href="OpenGraphite.css">
@@ -59,41 +61,41 @@ For component references, keep masters in component canvas HTML and reference th
 <script src="OpenGraphite.runtime.js" defer></script>
 ```
 
-## Attributes
+## 属性
 
-- `data-og-id`: stable element identifier. Use unique IDs when tools or people need to refer to specific nodes.
-- `data-og-type`: primitive rendering type. Known values are `page`, `frame`, `text`, `button`, and `image`.
-- `data-og-layout`: child layout mode. Known values are `vertical`, `horizontal`, and `absolute`.
-- `data-og-role`: reusable visual or semantic variant. Known roles include `page-preview`, `landing-hero`, `primary-button`, `secondary-button`, `card`, `eyebrow`, and `muted`.
-- `data-og-component`: component identifier used by a master root or an `<og-instance>`.
-- `data-og-component-kind="master"`: marks a component master subtree in the Components segment.
-- `data-og-variant`: optional component or role variant.
-- `data-og-slot`: slot target inside a component master. The element's existing contents are fallback content.
-- `data-og-part`: stable part name inside a component. Use `root` on the master root when runtime ID mapping should preserve the instance ID.
-- `data-og-hidden="true"`: hides the element.
-- `data-og-locked="true"`: marks the element as locked and changes the cursor.
-- `data-og-selected="true"` and `data-og-editing="true"` are UI/session states. Runtime expansion can also add `data-og-expanded`, `data-og-generated`, `data-og-component-error`, `data-og-host-id`, `data-og-instance-source`, `data-og-source-component`, `data-og-source-instance`, and `data-og-slot-origin`. Do not include runtime attributes in hand-authored source HTML unless you are explicitly debugging runtime output.
+- `data-og-id`: 安定した element identifier。tool や人が特定 node を参照する必要がある場合は一意にする。
+- `data-og-type`: primitive rendering type。既知の値は `page`、`frame`、`text`、`button`、`image`。
+- `data-og-layout`: 子要素の layout mode。既知の値は `vertical`、`horizontal`、`absolute`。
+- `data-og-role`: 再利用可能な visual / semantic variant。既知の role には `page-preview`、`landing-hero`、`primary-button`、`secondary-button`、`card`、`eyebrow`、`muted` がある。
+- `data-og-component`: master root または `<og-instance>` が使う component identifier。
+- `data-og-component-kind="master"`: Components segment 内の component master subtree を示す。
+- `data-og-variant`: optional な component / role variant。
+- `data-og-slot`: component master 内の slot target。要素の既存 contents は fallback content になる。
+- `data-og-part`: component 内の安定した part name。runtime ID mapping で instance ID を保持したい場合は master root に `root` を使う。
+- `data-og-hidden="true"`: 要素を非表示にする。
+- `data-og-locked="true"`: 要素を locked として扱い、cursor を変える。
+- `data-og-selected="true"` と `data-og-editing="true"` は UI/session state。runtime expansion は `data-og-expanded`、`data-og-generated`、`data-og-component-error`、`data-og-host-id`、`data-og-instance-source`、`data-og-source-component`、`data-og-source-instance`、`data-og-slot-origin` も追加できる。runtime output を明示的に debug している場合を除き、hand-authored source HTML には runtime 属性を含めない。
 
-## Types
+## 型
 
-- `page` and `frame`: block containers with relative positioning.
-- `text`: block text with `--og-font-size`, `--og-font-weight`, `--og-line-height`, `--og-letter-spacing`, and `--og-text-align`.
-- `button`: inline-flex action element with centered content, default gap, padding, radius, and pointer cursor.
-- `image`: media frame with hidden overflow. Direct `img` and `video` children fill the frame and use `--og-object-fit`.
+- `page` と `frame`: relative positioning を持つ block container。
+- `text`: `--og-font-size`、`--og-font-weight`、`--og-line-height`、`--og-letter-spacing`、`--og-text-align` を持つ block text。
+- `button`: centered content、default gap、padding、radius、pointer cursor を持つ inline-flex action element。
+- `image`: overflow hidden の media frame。直接の `img` / `video` child は frame を埋め、`--og-object-fit` を使う。
 
-## Layouts
+## レイアウト
 
-- `vertical`: `display:flex`, column direction, `--og-align` default `stretch`, `--og-justify` default `flex-start`, and `--og-gap` default `0`.
-- `horizontal`: `display:flex`, row direction, `--og-align` default `center`, `--og-justify` default `flex-start`, and `--og-gap` default `0`.
-- `absolute`: parent becomes a positioned block; direct `data-og-type` children are absolutely positioned with `--og-x` and `--og-y`.
+- `vertical`: `display:flex`、column direction、`--og-align` default `stretch`、`--og-justify` default `flex-start`、`--og-gap` default `0`。
+- `horizontal`: `display:flex`、row direction、`--og-align` default `center`、`--og-justify` default `flex-start`、`--og-gap` default `0`。
+- `absolute`: parent が positioned block になり、直接の `data-og-type` child は `--og-x` と `--og-y` で absolutely positioned になる。
 
-When any element has inline `--og-x` or `--og-y`, `OpenGraphite.css` also gives it relative positioning with `left` and `top` offsets.
+inline の `--og-x` または `--og-y` を持つ要素には、`OpenGraphite.css` が relative positioning と `left` / `top` offset も付ける。
 
-On screens up to 760px wide, horizontal layouts stack vertically, buttons become full width, and `page-preview` uses `--og-padding:24px`.
+画面幅 760px 以下では、horizontal layout は vertical に積まれ、button は full width になり、`page-preview` は `--og-padding:24px` を使う。
 
-## CSS Variables
+## CSS 変数
 
-Global theme variables usually live on `:root`:
+global theme variable は通常 `:root` に置く。
 
 - `--og-page-background`
 - `--og-text-color`
@@ -101,7 +103,7 @@ Global theme variables usually live on `:root`:
 - `--og-accent`
 - `--og-accent-foreground`
 
-Common box and layout variables:
+box / layout の共通 variable:
 
 - `--og-width`, `--og-height`
 - `--og-min-width`, `--og-min-height`, `--og-max-width`
@@ -110,7 +112,7 @@ Common box and layout variables:
 - `--og-gap`, `--og-align`, `--og-justify`
 - `--og-x`, `--og-y`
 
-Appearance variables:
+appearance variable:
 
 - `--og-foreground`
 - `--og-background`
@@ -118,7 +120,7 @@ Appearance variables:
 - `--og-radius`
 - `--og-shadow`
 
-Text variables:
+text variable:
 
 - `--og-font-size`
 - `--og-font-weight`
@@ -126,44 +128,44 @@ Text variables:
 - `--og-letter-spacing`
 - `--og-text-align`
 
-Media and transform variables:
+media / transform variable:
 
 - `--og-object-fit`
 - `--og-scale-x`, `--og-scale-y`
 - `--og-transform-origin`
 
-Editing helper variables:
+editing helper variable:
 
 - `--og-edit-width`
 - `--og-edit-min-height`
 
-## Roles
+## ロール
 
-- `page-preview`: gives a page-like full viewport preview using `--og-background` and `--og-foreground` with theme fallbacks.
-- `landing-hero`: clips overflow for hero compositions.
-- `primary-button`: uses accent color defaults and a colored shadow.
-- `secondary-button`: uses a light background and subtle border defaults.
-- `card`: uses a light background, subtle border, and default shadow.
-- `eyebrow`: accent-colored uppercase small text.
-- `muted`: uses the muted theme color.
+- `page-preview`: theme fallback と `--og-background` / `--og-foreground` を使い、page-like な full viewport preview を作る。
+- `landing-hero`: hero composition 用に overflow を clip する。
+- `primary-button`: accent color default と colored shadow を使う。
+- `secondary-button`: light background と subtle border default を使う。
+- `card`: light background、subtle border、default shadow を使う。
+- `eyebrow`: accent color の uppercase small text。
+- `muted`: muted theme color を使う。
 
-Roles are reusable variants, not unique identifiers. Multiple elements can share the same role.
+role は再利用可能な variant であり、一意な identifier ではない。複数要素が同じ role を共有してよい。
 
-## Authoring Rules
+## オーサリングルール
 
-- Keep design values as standard CSS strings in `--og-*` variables.
-- Prefer shorthand values such as `--og-padding:14px 20px`, `--og-border:1px solid rgba(...)`, and `--og-shadow:0 18px 44px rgba(...)`.
-- Use CSS functions directly when useful, for example `--og-width:min(100%,560px)` or `--og-background:linear-gradient(...)`.
-- Avoid invented decomposed variables such as `--og-padding-top`, `--og-border-color`, or `--og-shadow-blur` unless the user's stylesheet explicitly supports them.
-- Do not replace the OpenGraphite contract with classes. Classes can coexist, but `data-og-*` and `--og-*` should remain understandable on their own.
-- For generated snippets, include enough `data-og-id` values to make the structure easy to inspect and edit.
-- Put reusable multi-node components in component canvas HTML registered under `.ogp` `components[]`; keep pages lightweight with `<og-instance>` references when runtime or build expansion is desired.
-- Use `OpenGraphite.runtime.js` for lightweight source-first projects. Use `ogkiln build` when static deployment, SEO, or no-JS delivery matters.
-- Slot overrides in pages use the standard `slot` attribute, while master targets use `data-og-slot`.
+- design value は標準 CSS string として `--og-*` variable に保持する。
+- `--og-padding:14px 20px`、`--og-border:1px solid rgba(...)`、`--og-shadow:0 18px 44px rgba(...)` のような shorthand value を優先する。
+- 有用な場合は `--og-width:min(100%,560px)` や `--og-background:linear-gradient(...)` のように CSS function を直接使う。
+- ユーザーの stylesheet が明示的に対応している場合を除き、`--og-padding-top`、`--og-border-color`、`--og-shadow-blur` のような独自の分解 variable を作らない。
+- OpenGraphite 契約を class で置き換えない。class は共存してよいが、`data-og-*` と `--og-*` だけでも理解できる状態を保つ。
+- snippet を生成する場合は、構造を inspect / edit しやすいだけの `data-og-id` を含める。
+- 再利用する multi-node component は `.ogp` の `components[]` に登録された component canvas HTML に置く。runtime または build expansion が必要な場合、page は `<og-instance>` 参照で軽量に保つ。
+- 軽量な source-first project には `OpenGraphite.runtime.js` を使う。static deployment、SEO、no-JS delivery が重要な場合は `ogkiln build` を使う。
+- page 側の slot override には標準の `slot` 属性を使い、master target には `data-og-slot` を使う。
 
-## Common Patterns
+## よく使うパターン
 
-Vertical section:
+vertical section:
 
 ```html
 <Section
@@ -175,7 +177,7 @@ Vertical section:
 </Section>
 ```
 
-Horizontal action row:
+horizontal action row:
 
 ```html
 <Actions
@@ -188,7 +190,7 @@ Horizontal action row:
 </Actions>
 ```
 
-Image frame:
+image frame:
 
 ```html
 <Preview
@@ -200,7 +202,7 @@ Image frame:
 </Preview>
 ```
 
-Absolute placement:
+absolute placement:
 
 ```html
 <Canvas data-og-id="canvas" data-og-type="frame" data-og-layout="absolute">
@@ -213,7 +215,7 @@ Absolute placement:
 </Canvas>
 ```
 
-Component master:
+component master:
 
 ```html
 <FeatureCard
@@ -241,7 +243,7 @@ Component master:
 </FeatureCard>
 ```
 
-Component instance:
+component instance:
 
 ```html
 <og-instance
@@ -253,16 +255,16 @@ Component instance:
 </og-instance>
 ```
 
-## Debugging
+## デバッグ
 
-When rendering looks wrong:
+描画がおかしい場合は次を確認する。
 
-1. Confirm `OpenGraphite.css` is loaded with the expected URL.
-2. Confirm the element has `data-og-type`; most base rules depend on it.
-3. Confirm layout is on the parent with `data-og-layout`, not only on the children.
-4. Confirm inline variables are valid CSS declarations and end with semicolons.
-5. For image/video sizing, put the media element directly inside a `data-og-type="image"` wrapper.
-6. For absolute layout, set `data-og-layout="absolute"` on the parent and `--og-x` / `--og-y` on direct child elements.
-7. Check responsive behavior at 760px and below if horizontal layouts or buttons changed shape.
-8. For `<og-instance>`, confirm the page has a valid `rel="opengraphite-components"` link, `OpenGraphite.runtime.js` is loaded when using runtime expansion, and the master has matching `data-og-component` plus `data-og-component-kind="master"`.
-9. If deployment output is wrong but runtime preview is correct, verify `ogkiln build <project.ogp|current> --output <dir>` and inspect the generated static HTML.
+1. `OpenGraphite.css` が期待した URL で読み込まれているか確認する。
+2. 要素に `data-og-type` があるか確認する。多くの基本ルールはこれに依存する。
+3. layout が child だけでなく parent の `data-og-layout` に付いているか確認する。
+4. inline variable が valid な CSS declaration で、semicolon で終わっているか確認する。
+5. image / video sizing では、media element を `data-og-type="image"` wrapper の直接 child に置く。
+6. absolute layout では、parent に `data-og-layout="absolute"` を付け、直接 child element に `--og-x` / `--og-y` を設定する。
+7. horizontal layout や button の形が変わる場合は、760px 以下の responsive behavior を確認する。
+8. `<og-instance>` では、page に valid な `rel="opengraphite-components"` link があり、runtime expansion を使う場合は `OpenGraphite.runtime.js` が読み込まれ、master 側に一致する `data-og-component` と `data-og-component-kind="master"` があることを確認する。
+9. runtime preview は正しいが deployment output が違う場合は、`ogkiln build <project.ogp|current> --output <dir>` を確認し、生成された static HTML を inspect する。
