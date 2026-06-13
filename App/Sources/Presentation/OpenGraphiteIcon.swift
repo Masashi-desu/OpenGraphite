@@ -160,6 +160,7 @@ extension OpenGraphiteIcon {
     static let componentInstance = OpenGraphiteIcon.lucide("replace", fallbackSystemName: "arrow.triangle.2.circlepath")
     static let componentPlacement = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")
     static let dependencyResource = OpenGraphiteIcon.lucide("git-branch", fallbackSystemName: "point.3.connected.trianglepath.dotted")
+    static let iconCDNResource = OpenGraphiteIcon.lucide("cloud", fallbackSystemName: "cloud")
     static let i18nResource = OpenGraphiteIcon.lucide("languages", fallbackSystemName: "character.book.closed")
     static let localeResource = OpenGraphiteIcon.lucide("braces", fallbackSystemName: "curlybraces")
     static let parameterLink = OpenGraphiteIcon.lucide("link", fallbackSystemName: "link")

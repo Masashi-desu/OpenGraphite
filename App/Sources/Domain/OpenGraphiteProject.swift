@@ -815,6 +815,7 @@ enum OpenGraphiteCanvasSegment: String, Equatable {
 /// - `htmlRoot`: HTML root 依存性。
 /// - `cssLibrary`: CSS library 依存性。
 /// - `runtime`: HTML から参照される実装 runtime。
+/// - `iconCDN`: HTML 内の CDN icon 依存性。
 /// - `i18nRuntime`: i18n runtime 設定。
 /// - `localeResource`: locale JSON resource。
 enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
@@ -822,6 +823,7 @@ enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
     case htmlRoot
     case cssLibrary
     case runtime(path: String)
+    case iconCDN(library: String, provider: String, package: String, version: String, usedCount: Int, iconNames: [String])
     case i18nRuntime
     case localeResource(locale: String, path: String)
 
@@ -835,6 +837,8 @@ enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
             return "CSS"
         case .runtime:
             return "Runtime"
+        case .iconCDN:
+            return "Icon CDN"
         case .i18nRuntime:
             return "I18n Runtime"
         case .localeResource(let locale, _):
@@ -852,6 +856,9 @@ enum OpenGraphiteProjectResourceSelection: Hashable, Equatable {
             return "OpenGraphite CSS"
         case .runtime(let path):
             return path
+        case .iconCDN(_, let provider, let package, let version, _, _):
+            let packageLabel = version.isEmpty ? package : "\(package)@\(version)"
+            return "\(packageLabel) · \(provider)"
         case .i18nRuntime:
             return "implementation i18n config"
         case .localeResource(_, let path):

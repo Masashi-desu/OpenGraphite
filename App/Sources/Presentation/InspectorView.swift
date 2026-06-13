@@ -1323,6 +1323,15 @@ private struct ProjectResourceInspectorView: View {
                     pathResourceSection(title: "CSS", path: loadedProject?.project.cssLibrary ?? "-")
                 case .runtime(let path):
                     pathResourceSection(title: "Runtime", path: path)
+                case .iconCDN(let library, let provider, let package, let version, let usedCount, let iconNames):
+                    iconCDNResourceSection(
+                        library: library,
+                        provider: provider,
+                        package: package,
+                        version: version,
+                        usedCount: usedCount,
+                        iconNames: iconNames
+                    )
                 case .i18nRuntime:
                     InspectorSection(title: "I18n Runtime") {
                         I18nRuntimeEditorSection(
@@ -1361,6 +1370,26 @@ private struct ProjectResourceInspectorView: View {
 
         InspectorSection(title: "I18n Runtime") {
             I18nRuntimeSummaryContent(inspection: i18nInspection)
+        }
+    }
+
+    @ViewBuilder
+    private func iconCDNResourceSection(
+        library: String,
+        provider: String,
+        package: String,
+        version: String,
+        usedCount: Int,
+        iconNames: [String]
+    ) -> some View {
+        InspectorSection(title: "Icon CDN") {
+            InspectorInfoRow(label: "Library", value: library)
+            InspectorInfoRow(label: "Provider", value: provider)
+            InspectorInfoRow(label: "Package", value: package)
+            InspectorInfoRow(label: "Version", value: version.isEmpty ? "-" : version)
+            InspectorInfoRow(label: "Status", value: version.lowercased() == "latest" ? "Unpinned" : "External")
+            InspectorInfoRow(label: "Used Count", value: "\(usedCount)")
+            InspectorInfoRow(label: "Icons", value: iconNames.isEmpty ? "-" : iconNames.joined(separator: ", "))
         }
     }
 
@@ -1443,6 +1472,8 @@ private struct ProjectResourceSummaryPanel: View {
             return .i18nResource
         case .localeResource:
             return .localeResource
+        case .iconCDN:
+            return .iconCDNResource
         case .htmlRoot, .cssLibrary, .runtime:
             return .dependencyResource
         }

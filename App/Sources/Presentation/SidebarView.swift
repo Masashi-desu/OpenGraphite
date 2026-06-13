@@ -376,7 +376,27 @@ private struct ProjectDependencyListView: View {
                 selection: .runtime(path: runtimePath)
             )
         )
+        items.append(contentsOf: iconCDNDependencyItems(for: loadedProject))
         return items
+    }
+
+    private func iconCDNDependencyItems(for loadedProject: LoadedOpenGraphiteProject) -> [ProjectDependencyItem] {
+        OpenGraphiteIconCDNDependencyScanner.dependencies(for: loadedProject).map { dependency in
+            ProjectDependencyItem(
+                title: "Icon CDN",
+                detail: "\(dependency.packageLabel) · \(dependency.usageLabel)",
+                status: dependency.statusLabel,
+                icon: .iconCDNResource,
+                selection: .iconCDN(
+                    library: dependency.library,
+                    provider: dependency.provider,
+                    package: dependency.package,
+                    version: dependency.version,
+                    usedCount: dependency.usedCount,
+                    iconNames: dependency.iconNames
+                )
+            )
+        }
     }
 
     private var i18nItem: ProjectDependencyItem? {
