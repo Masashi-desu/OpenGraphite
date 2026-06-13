@@ -730,6 +730,8 @@ struct WebCanvasView: NSViewRepresentable {
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
         private static let nodeReferencePasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.node-reference+json")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
+        private static let webKitErrorDomain = "WebKitErrorDomain"
+        private static let frameLoadInterruptedErrorCode = 102
 
         /// 論理名（日本語）: コーディネーター初期化関数
         /// 処理概要: WebView ブリッジで更新するエディター状態ストアを保持します。
@@ -742,6 +744,24 @@ struct WebCanvasView: NSViewRepresentable {
             self.store = store
             self.isInteractive = isInteractive
             self.pageInternalID = pageInternalID
+        }
+
+        /// 論理名（日本語）: Navigationエラー抑止判定関数
+        /// 処理概要: 外部変更同期や同一URL再読み込みで発生する正常な中断をユーザー表示から除外します。
+        ///
+        /// - Parameter error: WebKit から渡された navigation error。
+        /// - Returns: 一時的な navigation 中断として無視できる場合は true。
+        static func shouldSuppressNavigationError(_ error: Error) -> Bool {
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+                return true
+            }
+
+            if nsError.domain == webKitErrorDomain, nsError.code == frameLoadInterruptedErrorCode {
+                return true
+            }
+
+            return false
         }
 
         /// 論理名（日本語）: 暫定プレビュー非表示関数
@@ -1006,6 +1026,7 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - navigation: 失敗した navigation。
         ///   - error: WebKit から渡されたエラー。
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            guard !Self.shouldSuppressNavigationError(error) else { return }
             Task { @MainActor in
                 store.reportWebError("HTMLの読み込みに失敗しました: \(error.localizedDescription)")
             }
@@ -1019,6 +1040,7 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - navigation: 失敗した provisional navigation。
         ///   - error: WebKit から渡されたエラー。
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            guard !Self.shouldSuppressNavigationError(error) else { return }
             Task { @MainActor in
                 store.reportWebError("HTMLの読み込みに失敗しました: \(error.localizedDescription)")
             }
