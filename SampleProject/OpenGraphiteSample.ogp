@@ -125,6 +125,9 @@
                 "67a2e12dbed8" : {
                   "codeViewerMode" : "preview",
                   "selectedLanguage" : "ja"
+                },
+                "docsnavcollapsedplacement" : {
+                  "placementMode" : "collapsed"
                 }
               }
             },

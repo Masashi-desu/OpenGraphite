@@ -5,6 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenGraphite Docs</title>
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <style>
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"] {
+        width: 40px !important;
+        height: 40px !important;
+        min-width: 40px !important;
+        min-height: 40px !important;
+        max-width: 40px !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0 !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-hidden~="collapsed"] {
+        display: none !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"] {
+        display: block !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-layout="vertical"],
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-layout="horizontal"] {
+        display: flex !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-type="button"],
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-type="icon"] {
+        display: inline-flex !important;
+      }
+
+      [data-og-id="docs-left-column"]:has(
+          [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        ) {
+        --og-width: 40px !important;
+        --og-min-width: 40px !important;
+        --og-max-width: 40px !important;
+        --og-flex: 0 0 40px !important;
+        width: 40px !important;
+        min-width: 40px !important;
+        max-width: 40px !important;
+        flex: 0 0 40px !important;
+      }
+    </style>
     <script src="./i18n.js" defer></script>
   </head>
   <body>
