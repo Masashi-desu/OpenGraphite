@@ -14,7 +14,8 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `public/index.html`: standalone OpenGraphite introduction page
 - `project.yml`: XcodeGen source of truth
 - `Docs/Architecture.md`: design notes
-- `Docs/specs/DesignPhilosophy.md`: design philosophy and source-of-truth contract
+- `Docs/specs/DesignPhilosophy.md`: design philosophy and decision principles
+- `Docs/specs/SourceOfTruthContract.md`: cross-cutting source-of-truth contract for `data-og-*`, `--og-*`, CSS, runtime, preview, and resources
 - `Docs/specs/AgentInterface.md`: CLI, MCP, JSON graph, and external-sync contract
 
 ## Model
@@ -210,4 +211,5 @@ When launched without that environment variable, Open Sample Project treats the 
 - Swift document comment guidance: `Docs/rules/DocumentCommentStandards.md`
 - Swift Testing guidance: `Docs/rules/TestingStandards.md`
 - Design philosophy: `Docs/specs/DesignPhilosophy.md`
+- Source-of-truth contract: `Docs/specs/SourceOfTruthContract.md`
 - Operations TODO governance: `Docs/operations/TODO/GOVERNANCE.md`
