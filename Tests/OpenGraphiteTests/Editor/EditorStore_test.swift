@@ -499,6 +499,198 @@ struct EditorStoreTests {
         #expect(diskHTML.contains("--og-gap:32px"))
     }
 
+    /// 論理名（日本語）: Inspectorテキストfallback更新テスト
+    /// 概要: binding text node の Inspector 更新が HTML 正本の fallback を保存し、WebView 反映 mutation を発行することを検証します。
+    @Test("Inspectorのtext更新でfallbackとmutationを更新する")
+    func testUpdateNodeTextContentPersistsFallbackAndMutation() throws {
+        // コンディション：binding text node を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <LeadText
+            data-og-id="hero-lead"
+            data-og-internal-id="lead-node"
+            data-og-type="text"
+            data-og-text-source="binding"
+            data-i18n-key="home.hero.lead">日本語 fallback</LeadText>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "hero-lead",
+                "internalID": "lead-node",
+                "tagName": "leadtext",
+                "type": "text",
+                "textContent": "English active",
+                "fallbackTextContent": "DOM fallback",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero-lead")
+
+        // 検証内容：Inspector の Fallback 入力相当で text content を更新する
+        store.updateNodeTextContent("更新 fallback")
+
+        // 期待値：HTML 正本の fallback、Store の fallback、WebView 反映 mutation が更新される
+        let node = try #require(store.nodes.first)
+        #expect(node.textContent == "English active")
+        #expect(node.fallbackTextContent == "更新 fallback")
+        #expect(store.textMutation?.nodeID == "hero-lead")
+        #expect(store.textMutation?.value == "更新 fallback")
+        #expect(store.textMutation?.mode == .fallback)
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(diskHTML.contains("更新 fallback"))
+        #expect(!diskHTML.contains("日本語 fallback"))
+    }
+
+    /// 論理名（日本語）: Inspectorテキスト遅延保存対象ガードテスト
+    /// 概要: 入力中の node から選択が移動した後に遅延保存が発火しても、現在選択中の別 node を更新しないことを検証します。
+    @Test("Inspectorの遅延text保存は別選択nodeへ流れない")
+    func testUpdateNodeTextContentIgnoresStaleSelectionCommit() throws {
+        // コンディション：2つの text node を持つ一時プロジェクトを開き、2つ目へ選択を移す
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text">Title</Title>
+          <Lead data-og-id="lead" data-og-internal-id="lead-node" data-og-type="text">Lead</Lead>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "internalID": "title-node",
+                "tagName": "title",
+                "type": "text",
+                "textContent": "Title",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ],
+            [
+                "id": "lead",
+                "internalID": "lead-node",
+                "tagName": "lead",
+                "type": "text",
+                "textContent": "Lead",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "lead")
+
+        // 検証内容：title 入力欄由来の古い遅延保存が、lead 選択中に発火した状況を再現する
+        store.updateNodeTextContent(
+            "Stale title",
+            expectedNodeID: "title",
+            expectedPageURL: fixture.htmlURL
+        )
+
+        // 期待値：現在選択中の lead も HTML 正本も変更されない
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(store.nodes.first(where: { $0.id == "lead" })?.textContent == "Lead")
+        #expect(store.textMutation == nil)
+        #expect(diskHTML.contains(">Title<"))
+        #expect(diskHTML.contains(">Lead<"))
+        #expect(!diskHTML.contains("Stale title"))
+    }
+
+    /// 論理名（日本語）: Inspector Active Resolved更新テスト
+    /// 概要: 表示中 locale の text resource を Inspector から更新でき、HTML fallback は変更しないことを検証します。
+    @Test("InspectorのActive Resolved更新で表示中locale JSONを更新する")
+    func testUpdateActiveResolvedTextContentPersistsCurrentLocaleResource() throws {
+        // コンディション：selectedLanguage=ja の preview と editable locale JSON を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html lang="ja" data-og-lang-source="binding" data-og-lang-field="selectedLanguage"><head>
+          <script src="./i18n.js" defer></script>
+        </head><body>
+          <LeadText
+            data-og-id="hero-lead"
+            data-og-internal-id="lead-node"
+            data-og-type="text"
+            data-og-text-source="binding"
+            data-i18n-key="home.hero.lead">HTML fallback</LeadText>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try """
+        function selectedLanguage() { return "ja"; }
+        const i18n = { init(config) { return config; } };
+        i18n.init({
+          lng: selectedLanguage(),
+          fallbackLng: "ja",
+          backend: { loadPath: "/locales/{{lng}}.json" }
+        });
+        """.write(to: fixture.publicURL.appendingPathComponent("i18n.js"), atomically: true, encoding: .utf8)
+        let localeDirectory = fixture.publicURL.appendingPathComponent("locales")
+        try FileManager.default.createDirectory(at: localeDirectory, withIntermediateDirectories: true)
+        try #"{"home.hero.lead":"現在 ja"}"#.write(
+            to: localeDirectory.appendingPathComponent("ja.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try fixture.writeProject(
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 100,
+                        previewContext: OpenGraphitePreviewContext(fieldMocks: ["selectedLanguage": "ja"])
+                    )
+                )
+            ]
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "hero-lead",
+                "internalID": "lead-node",
+                "tagName": "leadtext",
+                "type": "text",
+                "textContent": "現在 ja",
+                "fallbackTextContent": "HTML fallback",
+                "textSource": "binding",
+                "i18nKey": "home.hero.lead",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero-lead")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+        let context = try #require(store.activeResolvedTextEditContext(for: store.nodes[0]))
+
+        // 検証内容：Inspector の Active Resolved 入力相当で表示中 locale の text を更新する
+        store.updateActiveResolvedTextContent("更新 ja", locale: context.locale)
+
+        // 期待値：ja resource だけが更新され、HTML fallback は維持され、resolved text mutation が発行される
+        let updatedResource = try Self.localeJSON(at: localeDirectory.appendingPathComponent("ja.json"))
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(context.locale == "ja")
+        #expect(context.isEditable == true)
+        #expect(updatedResource["home.hero.lead"] as? String == "更新 ja")
+        #expect(store.nodes[0].textContent == "更新 ja")
+        #expect(store.nodes[0].fallbackTextContent == "HTML fallback")
+        #expect(store.textMutation?.nodeID == "hero-lead")
+        #expect(store.textMutation?.value == "更新 ja")
+        #expect(store.textMutation?.mode == .resolved)
+        #expect(diskHTML.contains("HTML fallback"))
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken)
+    }
+
     /// 論理名（日本語）: 固定HTML同期対象保存テスト
     /// 概要: 選択ページが切り替わっても、object edit は capture 済み HTML target へ保存されることを検証します。
     @Test("object editは選択切替後も固定targetへ保存する")
@@ -1408,6 +1600,16 @@ struct EditorStoreTests {
         #expect(store.chapterReferenceID(for: docsChapter) == "ogref:chapter:\(docsChapter.internalID)")
         #expect(docsPageReferenceID == "ogref:page:\(docsChapter.internalID):\(docsPage.internalID)")
         #expect(componentReferenceID == "ogref:component:\(componentCollection.internalID):\(componentPage.internalID)")
+    }
+
+    /// 論理名（日本語）: locale JSON読込ヘルパー
+    /// 処理概要: テスト用 locale JSON を辞書として読み込みます。
+    ///
+    /// - Parameter url: 読み込む locale JSON の URL。
+    /// - Returns: JSON object の辞書表現。
+    private static func localeJSON(at url: URL) throws -> [String: Any] {
+        let data = try Data(contentsOf: url)
+        return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 }
 

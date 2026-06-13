@@ -508,6 +508,8 @@ private struct NodeSummaryPanel: View {
 /// プロパティ:
 /// - `node`: 表示対象の選択 text node。
 private struct TextContentSection: View {
+    @EnvironmentObject private var store: EditorStore
+
     var node: OpenGraphiteNode
 
     var body: some View {
@@ -516,10 +518,30 @@ private struct TextContentSection: View {
 
             if node.isTextBinding {
                 InspectorInfoRow(label: "i18n key", value: node.i18nKey ?? "-")
-                InspectorTextValueBlock(label: "Fallback", value: fallbackText)
-                InspectorTextValueBlock(label: "Active Resolved", value: activeText)
+                InspectorEditableTextValueBlock(label: "Fallback", value: fallbackText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                    store.updateNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
+                }
+                .id("\(node.id)-text-fallback")
+
+                if let activeEditContext = store.activeResolvedTextEditContext(for: node),
+                   activeEditContext.isEditable {
+                    InspectorEditableTextValueBlock(label: "Active Resolved (\(activeEditContext.locale))", value: activeText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                        store.updateActiveResolvedTextContent(
+                            value,
+                            locale: activeEditContext.locale,
+                            expectedNodeID: nodeID,
+                            expectedPageURL: pageURL
+                        )
+                    }
+                    .id("\(node.id)-text-active-\(activeEditContext.locale)")
+                } else {
+                    InspectorTextValueBlock(label: activeResolvedLabel, value: activeText)
+                }
             } else {
-                InspectorTextValueBlock(label: "Content", value: activeText)
+                InspectorEditableTextValueBlock(label: "Content", value: activeText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                    store.updateNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
+                }
+                .id("\(node.id)-text-content")
             }
         }
     }
@@ -530,6 +552,142 @@ private struct TextContentSection: View {
 
     private var activeText: String {
         node.textContent ?? node.fallbackTextContent ?? ""
+    }
+
+    private var activeResolvedLabel: String {
+        if let locale = store.activeResolvedTextEditContext(for: node)?.locale {
+            return "Active Resolved (\(locale))"
+        }
+        return "Active Resolved"
+    }
+}
+
+/// 論理名（日本語）: インスペクターテキスト値編集
+/// 概要: 複数行になり得る text content を編集し、入力停止、フォーカスアウト、適用ボタンで保存します。
+///
+/// プロパティ:
+/// - `label`: 値の種類。
+/// - `value`: 現在の text content。
+/// - `onCommit`: 保存時に呼び出す処理。
+private struct InspectorEditableTextValueBlock: View {
+    var label: String
+    var value: String
+    var onCommit: (String) -> Void
+
+    @State private var draft: String
+    @State private var pendingCommitTask: Task<Void, Never>?
+    @FocusState private var isFocused: Bool
+
+    /// 論理名（日本語）: インスペクターテキスト値編集初期化関数
+    /// 処理概要: 現在値を draft state へコピーし、保存処理を保持します。
+    ///
+    /// - Parameters:
+    ///   - label: 値の種類。
+    ///   - value: 現在の text content。
+    ///   - onCommit: 保存時に呼び出す処理。
+    init(label: String, value: String, onCommit: @escaping (String) -> Void) {
+        self.label = label
+        self.value = value
+        self.onCommit = onCommit
+        _draft = State(initialValue: value)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button(action: commitIfChanged) {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 22, height: 20)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(hasChanges ? Color.accentColor : Color.secondary)
+                .disabled(!hasChanges)
+                .help("Apply text")
+            }
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $draft)
+                    .font(.caption)
+                    .scrollContentBackground(.hidden)
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 3)
+                    .frame(minHeight: 72, maxHeight: 132)
+                    .focused($isFocused)
+
+                if draft.isEmpty {
+                    Text("empty")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+            }
+            .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    .stroke(isFocused ? Color.accentColor.opacity(0.55) : EditorColumnStyle.separatorColor, lineWidth: 1)
+            )
+        }
+        .onChange(of: value) { _, newValue in
+            guard !isFocused else { return }
+            draft = newValue
+        }
+        .onChange(of: draft) { _, _ in
+            guard isFocused else { return }
+            scheduleCommitIfChanged()
+        }
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitIfChanged()
+        }
+        .onDisappear {
+            commitIfChanged()
+            pendingCommitTask?.cancel()
+            pendingCommitTask = nil
+        }
+    }
+
+    private var hasChanges: Bool {
+        draft != value
+    }
+
+    /// 論理名（日本語）: インスペクターテキスト値変更時適用関数
+    /// 処理概要: draft が現在値と異なる場合だけ text content 更新を反映します。
+    private func commitIfChanged() {
+        pendingCommitTask?.cancel()
+        pendingCommitTask = nil
+        guard hasChanges else { return }
+        onCommit(draft)
+    }
+
+    /// 論理名（日本語）: インスペクターテキスト値自動適用予約関数
+    /// 処理概要: 入力が短時間止まった場合に text content 更新を反映するよう予約します。
+    private func scheduleCommitIfChanged() {
+        pendingCommitTask?.cancel()
+        guard hasChanges else {
+            pendingCommitTask = nil
+            return
+        }
+        pendingCommitTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 350_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                commitIfChanged()
+            }
+        }
     }
 }
 

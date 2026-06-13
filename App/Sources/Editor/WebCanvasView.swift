@@ -397,6 +397,12 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.applyAttributeMutation(mutation)
         }
 
+        if let mutation = store.textMutation,
+           mutation.pageURL == context.coordinator.loadedURL,
+           context.coordinator.lastAppliedTextMutationSequence != mutation.sequence {
+            context.coordinator.applyTextMutation(mutation)
+        }
+
         if let request = store.documentReplacementRequest,
            request.pageURL == context.coordinator.loadedURL,
            context.coordinator.lastAppliedDocumentReplacementSequence != request.sequence {
@@ -725,6 +731,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastAllowsComponentPlacements = false
         var lastAppliedMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
+        var lastAppliedTextMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
         private var previewReadinessGeneration = 0
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
@@ -1162,6 +1169,38 @@ struct WebCanvasView: NSViewRepresentable {
 
                     if (result as? Bool) == true {
                         self.store.markAttributeMutationApplied(sequence: mutation.sequence)
+                    }
+                }
+            }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: テキストmutation反映関数
+        /// 処理概要: Inspector で更新された text content を DOM へ適用し、成功時に mutation を完了扱いにします。
+        ///
+        /// - Parameter mutation: 反映対象の text mutation。
+        func applyTextMutation(_ mutation: NodeTextContentMutation) {
+            guard let webView else { return }
+            lastAppliedTextMutationSequence = mutation.sequence
+
+            let script = """
+            window.OpenGraphite && window.OpenGraphite.setTextContent(
+              \(Self.javaScriptLiteral(mutation.nodeID)),
+              \(Self.javaScriptLiteral(mutation.value)),
+              \(Self.javaScriptLiteral(mutation.mode.rawValue))
+            );
+            """
+
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error {
+                        self.store.reportWebError("テキストの反映に失敗しました: \(error.localizedDescription)")
+                        return
+                    }
+
+                    if (result as? Bool) == true {
+                        self.store.markTextMutationApplied(sequence: mutation.sequence)
                     }
                 }
             }
@@ -2404,6 +2443,45 @@ struct WebCanvasView: NSViewRepresentable {
           });
         }
 
+        function htmlForPlainText(text) {
+          const container = document.createElement('span');
+          replaceTextContents(container, text);
+          return htmlForNodeList(container.childNodes);
+        }
+
+        function setTextContent(id, text, mode) {
+          const element = editElementForSelectionID(id);
+          if (!element) { return false; }
+
+          if (mode === 'resolved') {
+            replaceTextContents(element, text);
+            collectNodes();
+            return true;
+          }
+
+          const previousActiveText = editablePlainText(element);
+          const previousFallbackText = fallbackPlainText(element);
+          const hasRuntimeFallback = element.hasAttribute('data-og-runtime-fallback-html');
+          const hasFallbackText = element.hasAttribute('data-og-fallback-text');
+          if (hasRuntimeFallback || hasFallbackText) {
+            const fallbackHTML = htmlForPlainText(text);
+            if (hasRuntimeFallback) {
+              element.setAttribute('data-og-runtime-fallback-html', fallbackHTML);
+            }
+            if (hasFallbackText) {
+              element.setAttribute('data-og-fallback-text', fallbackHTML);
+            }
+            if (previousActiveText === previousFallbackText) {
+              replaceTextContents(element, text);
+            }
+          } else {
+            replaceTextContents(element, text);
+          }
+
+          collectNodes();
+          return true;
+        }
+
         function beginTextEditing(element, shouldSelectText) {
           if (activeTool !== 'select' || !isTextElement(element) || hasLockedAncestor(element)) {
             return false;
@@ -3519,6 +3597,7 @@ struct WebCanvasView: NSViewRepresentable {
           setActiveTool: setActiveTool,
           setCSSVariable: setCSSVariable,
           setAttributeValue: setAttributeValue,
+          setTextContent: setTextContent,
           copyPayload: copyPayload,
           replaceDocumentHTML: replaceDocumentHTML,
           runCommand: runCommand

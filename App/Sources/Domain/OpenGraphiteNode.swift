@@ -271,6 +271,34 @@ struct NodeAttributeMutation: Equatable {
     var value: String
 }
 
+/// 論理名（日本語）: ノードテキスト変更モード
+/// 概要: Inspector で編集された text が HTML fallback と解決済み表示値のどちらを更新するかを表します。
+///
+/// 定義内容:
+/// - `fallback`: HTML 正本に残る fallback text を更新します。
+/// - `resolved`: i18n resource で解決された表示中 text を更新します。
+enum NodeTextContentMutationMode: String, Equatable {
+    case fallback
+    case resolved
+}
+
+/// 論理名（日本語）: ノードテキスト変更要求
+/// 概要: Inspector で編集された text node の内容を WebView 側 DOM へ反映するための mutation です。
+///
+/// プロパティ:
+/// - `sequence`: mutation の順序番号。
+/// - `pageURL`: mutation を適用する HTML ファイル URL。
+/// - `nodeID`: 対象ノードの `data-og-id`。
+/// - `value`: 反映するプレーンテキスト。
+/// - `mode`: fallback と resolved のどちらへ反映するか。
+struct NodeTextContentMutation: Equatable {
+    var sequence: Int
+    var pageURL: URL
+    var nodeID: String
+    var value: String
+    var mode: NodeTextContentMutationMode = .fallback
+}
+
 /// 論理名（日本語）: キャンバス操作ツール
 /// 概要: プレビュー上で利用する選択、図形、テキスト、フレーム、ハンドの各操作モードを表します。
 ///
