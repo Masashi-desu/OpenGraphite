@@ -1,10 +1,10 @@
 :root {
   color-scheme: light dark;
-  --og-page-background: #f6f7f8;
-  --og-text-color: #1d2228;
-  --og-muted-color: #68707a;
-  --og-accent: #0f9f8f;
-  --og-accent-foreground: #ffffff;
+  --og-page-background: #08090a;
+  --og-text-color: #f4f6f7;
+  --og-muted-color: #aab3ba;
+  --og-accent: #f5f7f8;
+  --og-accent-foreground: #08090a;
 }
 
 * {
@@ -273,7 +273,7 @@ html[data-og-preview-dir] {
   color: var(--og-foreground, var(--og-accent));
   font-size: var(--og-font-size, 13px);
   font-weight: var(--og-font-weight, 760);
-  letter-spacing: var(--og-letter-spacing, 0.08em);
+  letter-spacing: var(--og-letter-spacing, 0);
   text-transform: uppercase;
 }
 
@@ -291,7 +291,7 @@ html[data-og-preview-dir] {
   cursor: text;
   max-width: var(--og-edit-width, var(--og-width, none));
   min-height: var(--og-edit-min-height, 1em);
-  outline: 2px solid #0f9f8f;
+  outline: 2px solid #c7cdd2;
   outline-offset: 3px;
   overflow-wrap: normal;
   user-select: text;

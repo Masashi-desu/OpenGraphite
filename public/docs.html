@@ -9,82 +9,141 @@
   </head>
   <body>
     <link rel="opengraphite-components" href="./_components/design-system.html">
-<OpenGraphitePage
-  data-og-id="page"
-  data-og-type="page"
-  data-og-layout="vertical"
-  data-og-role="page-preview"
-  style="--og-gap:0; --og-padding:30px 52px 76px; --og-background:#151514; --og-foreground:#ece7de;" data-og-internal-id="ef8e793c1658">
+<OpenGraphitePage data-og-id="page" data-og-type="page" data-og-layout="vertical" data-og-role="page-preview" style="--og-gap:0; --og-padding:30px clamp(24px,5vw,52px) 76px; --og-background:#08090a; --og-foreground:#f4f6f7;" data-og-internal-id="ef8e793c1658">
   <og-instance data-og-id="site-header" data-og-type="frame" data-og-component="site-header" data-og-internal-id="9887112f291a">
   <template slot="nav">
-    <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="b6fad7f280fb">
+    <a href="./index.html" data-og-id="nav-home" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#08090a; --og-foreground:#dfe3e6; --og-border:1px solid #4b535b;" data-og-internal-id="b6fad7f280fb">
       <NavLabel data-og-id="nav-home-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.home" style="--og-line-height:1;" data-og-internal-id="docsnavhomelabel" data-og-text-variant-eng="Home">ホーム</NavLabel>
     </a>
-    <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#151514; --og-foreground:#d7d0c4; --og-border:1px solid #4a4740;" data-og-internal-id="f643c144d6ee">
+    <a href="./downloads.html" data-og-id="nav-downloads" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#08090a; --og-foreground:#dfe3e6; --og-border:1px solid #4b535b;" data-og-internal-id="f643c144d6ee">
       <NavLabel data-og-id="nav-downloads-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.downloads" style="--og-line-height:1;" data-og-internal-id="docsnavdownloadslabel" data-og-text-variant-eng="Downloads">ダウンロード</NavLabel>
     </a>
-    <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#e7dfd2; --og-foreground:#151514; --og-border:1px solid #e7dfd2;" data-og-internal-id="b61ca0c3c3e9">
+    <a href="./docs.html" data-og-id="nav-docs" data-og-type="button" style="--og-padding:10px 14px; --og-radius:4px; --og-background:#f5f7f8; --og-foreground:#08090a; --og-border:1px solid #f5f7f8;" data-og-internal-id="b61ca0c3c3e9">
       <NavLabel data-og-id="nav-docs-label" data-og-type="text" data-og-text-source="binding" data-i18n-key="site.nav.docs" style="--og-line-height:1;" data-og-internal-id="docsnavdocslabel" data-og-text-variant-eng="Docs">ドキュメント</NavLabel>
     </a>
   </template>
 </og-instance>
-  <DocsViewportFrame data-og-id="docs-viewport-frame" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-min-height:calc(100vh - 118px); --og-flex:1 1 auto; --og-gap:28px; --og-padding:34px 0 0;" data-og-internal-id="f1b9d3a7c284">
-  <DocsIntro data-og-id="docs-hero" data-og-type="frame" data-og-layout="horizontal" data-og-role="landing-hero" style="--og-width:100%; --og-margin:0; --og-gap:58px; --og-align:stretch; --og-padding:42px 0 42px; border-bottom:1px solid #34322e;" data-og-internal-id="e39d02540b80">
-    <HeroCopy data-og-id="docs-hero-copy" data-og-type="frame" data-og-layout="vertical" style="--og-gap:22px; --og-flex:1 1 0; --og-justify:center;" data-og-internal-id="5aa878848f7f">
-      <EyebrowText data-og-id="docs-hero-eyebrow" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.hero.eyebrow" style="--og-foreground:#b8b0a3; --og-font-size:12px;" data-og-internal-id="28082dd7e38a" data-og-text-variant-eng="Docs / Interface Contract">ドキュメント / インターフェース契約</EyebrowText>
-      <PageTitle data-og-id="docs-hero-title" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.title" style="--og-font-size:52px; --og-font-weight:820; --og-line-height:1.03; --og-letter-spacing:0; --og-max-width:760px; overflow-wrap:anywhere;" data-og-internal-id="1fb37cc0de50" data-og-text-variant-eng="The repository and AI edit the same surface.">リポジトリとAIが同じ面を編集する。</PageTitle>
-      <LeadText data-og-id="docs-hero-lead" data-og-type="text" data-og-role="muted" data-og-text-source="binding" data-i18n-key="docs.hero.lead" style="--og-font-size:19px; --og-line-height:1.72; --og-foreground:#aaa49a; --og-max-width:760px;" data-og-internal-id="eb1860ea5f51" data-og-text-variant-eng="OpenGraphite.app, OpenGraphite.css, ogkiln, and MCP treat HTML as the source of truth, not a generated artifact. Visual, CLI, and AI edits converge into the same files.">OpenGraphite.app、OpenGraphite.css、ogkiln、MCPは、HTMLを生成物ではなく正本として扱います。画面、CLI、AIの編集が同じファイルへ収束します。</LeadText>
-    </HeroCopy>
-    <HeroAside data-og-id="docs-hero-aside" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,380px); --og-gap:0; --og-padding:18px 0 0; background:#1a1a18; border:1px solid #3b3832; border-radius:2px; align-self:center; height:max-content;" data-og-internal-id="c1ba85d70a7d">
-      <StackLabel data-og-id="docs-stack-label" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.stack.label" style="--og-padding:0 24px 16px; --og-foreground:#d7d0c4; --og-font-size:11px;" data-og-internal-id="975b4644e636" data-og-text-variant-eng="Source editing surfaces">正本の編集面</StackLabel>
-      <StackRow data-og-id="docs-stack-app" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;" data-og-internal-id="1b905e0cef2e">
-        <StackNumber data-og-id="docs-stack-app-no" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.app.no" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;" data-og-internal-id="bf2dbabff202" data-og-text-variant-eng="01">01</StackNumber>
-        <StackText data-og-id="docs-stack-app-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.app.text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;" data-og-internal-id="0507d7d71b77" data-og-text-variant-eng="OpenGraphite.app&lt;br>Visual editing">OpenGraphite.app<br>ビジュアル編集</StackText>
-      </StackRow>
-      <StackRow data-og-id="docs-stack-css" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;" data-og-internal-id="c090787ef770">
-        <StackNumber data-og-id="docs-stack-css-no" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.css.no" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;" data-og-internal-id="8c2a1748f546" data-og-text-variant-eng="02">02</StackNumber>
-        <StackText data-og-id="docs-stack-css-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.css.text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;" data-og-internal-id="66fc796b3b75" data-og-text-variant-eng="OpenGraphite.css&lt;br>Render contract">OpenGraphite.css<br>描画契約</StackText>
-      </StackRow>
-      <StackRow data-og-id="docs-stack-cli" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;" data-og-internal-id="1d8de261097a">
-        <StackNumber data-og-id="docs-stack-cli-no" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.cli.no" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;" data-og-internal-id="5c9d30715e0f" data-og-text-variant-eng="03">03</StackNumber>
-        <StackText data-og-id="docs-stack-cli-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.cli.text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;" data-og-internal-id="142dcdf904b3" data-og-text-variant-eng="ogkiln&lt;br>Reproducible edits">ogkiln<br>再現可能な編集</StackText>
-      </StackRow>
-      <StackRow data-og-id="docs-stack-mcp" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:18px; --og-align:flex-start; --og-padding:15px 24px; border-top:1px solid #34322e;" data-og-internal-id="f292782bed55">
-        <StackNumber data-og-id="docs-stack-mcp-no" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.mcp.no" style="--og-width:34px; --og-font-size:12px; --og-foreground:#8f887d;" data-og-internal-id="6f8783ed1ae5" data-og-text-variant-eng="04">04</StackNumber>
-        <StackText data-og-id="docs-stack-mcp-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.stack.mcp.text" style="--og-font-size:15px; --og-font-weight:760; --og-line-height:1.35;" data-og-internal-id="086a2a9d22b9" data-og-text-variant-eng="OpenGraphite MCP&lt;br>AI tool surface">OpenGraphite MCP<br>AIツール面</StackText>
-      </StackRow>
-    </HeroAside>
-  </DocsIntro>
+  <DocsViewportFrame data-og-id="docs-viewport-frame" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,1180px); --og-margin:0 auto; --og-min-height:calc(100vh - 118px); --og-flex:1 1 auto; --og-gap:0; --og-padding:34px 0 0; --og-align:stretch;" data-og-internal-id="f1b9d3a7c284">
+<DocsIntro data-og-id="docs-hero" data-og-type="frame" data-og-layout="vertical" data-og-role="landing-hero" style="--og-width:100%; --og-margin:0; --og-gap:34px; --og-align:stretch; --og-padding:54px 0 48px; border-bottom:1px solid #30363d;" data-og-internal-id="e39d02540b80">
+  <HeroCopy data-og-id="docs-hero-copy" data-og-type="frame" data-og-layout="vertical" style="--og-gap:22px; --og-width:100%; --og-max-width:100%;" data-og-internal-id="5aa878848f7f">
+    <EyebrowText data-og-id="docs-hero-eyebrow" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.hero.eyebrow" style="--og-foreground:#aeb6bd; --og-font-size:12px; --og-letter-spacing:0;" data-og-internal-id="28082dd7e38a" data-og-text-variant-eng="The issue OpenGraphite solves">OpenGraphite が解決するイシュー</EyebrowText>
+    <PageTitle data-og-id="docs-hero-title" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.title" style="--og-font-size:58px; --og-font-weight:850; --og-line-height:1.02; --og-letter-spacing:0; --og-max-width:100%; overflow-wrap:anywhere;" data-og-internal-id="1fb37cc0de50" data-og-text-variant-eng="Design tools, code, and agents should not edit different sources of truth.">デザインツール、コード、agents が別々の正本を編集してしまう問題をなくす。</PageTitle>
+    <LeadText data-og-id="docs-hero-lead" data-og-type="text" data-og-role="muted" data-og-text-source="binding" data-i18n-key="docs.hero.lead" style="--og-font-size:19px; --og-line-height:1.72; --og-foreground:#b8c0c7; --og-max-width:100%;" data-og-internal-id="eb1860ea5f51" data-og-text-variant-eng="OpenGraphite opens the web source files themselves, keeps editor metadata in data-og-* and design values in --og-* variables, and makes HTML/CSS/assets/locales the reviewable deliverable instead of an exported copy.">OpenGraphite は Web source files そのものを開き、編集情報を data-og-*、デザイン値を --og-* に残します。export された別成果物ではなく、HTML / CSS / assets / locales をレビュー可能な deliverable にします。</LeadText>
+  </HeroCopy>
+  <HeroIssueGrid data-og-id="docs-hero-issue-grid" data-og-type="frame" data-og-layout="horizontal" style="--og-width:100%; --og-gap:0; --og-align:stretch; border-top:1px solid #30363d; border-bottom:1px solid #30363d;" data-og-internal-id="docsheroissuegrid">
+    <HeroIssue data-og-id="docs-hero-issue-ir" data-og-type="frame" data-og-layout="vertical" style="--og-flex:1 1 0; --og-gap:12px; --og-padding:22px 24px 22px 0; border-right:1px solid #30363d;" data-og-internal-id="docsheroissueir">
+      <IssueLabel data-og-id="docs-hero-issue-ir-label" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.hero.issue.ir.label" style="--og-foreground:#818b94; --og-font-size:11px; --og-letter-spacing:0;" data-og-internal-id="docsheroissueirlabel" data-og-text-variant-eng="Issue 01">Issue 01</IssueLabel>
+      <IssueText data-og-id="docs-hero-issue-ir-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.issue.ir.text" style="--og-font-size:18px; --og-font-weight:780; --og-line-height:1.32;" data-og-internal-id="docsheroissueirtext" data-og-text-variant-eng="Design IR drifts away from the shipped web files.">design IR が公開される Web files から分岐する。</IssueText>
+    </HeroIssue>
+    <HeroIssue data-og-id="docs-hero-issue-agent" data-og-type="frame" data-og-layout="vertical" style="--og-flex:1 1 0; --og-gap:12px; --og-padding:22px 24px; border-right:1px solid #30363d;" data-og-internal-id="docsheroissueagent">
+      <IssueLabel data-og-id="docs-hero-issue-agent-label" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.hero.issue.agent.label" style="--og-foreground:#818b94; --og-font-size:11px; --og-letter-spacing:0;" data-og-internal-id="docsheroissueagentlabel" data-og-text-variant-eng="Issue 02">Issue 02</IssueLabel>
+      <IssueText data-og-id="docs-hero-issue-agent-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.issue.agent.text" style="--og-font-size:18px; --og-font-weight:780; --og-line-height:1.32;" data-og-internal-id="docsheroissueagenttext" data-og-text-variant-eng="Agents cannot tell which visible node is safe to edit.">agents が表示中 node と保存先を安全に特定できない。</IssueText>
+    </HeroIssue>
+    <HeroIssue data-og-id="docs-hero-issue-review" data-og-type="frame" data-og-layout="vertical" style="--og-flex:1 1 0; --og-gap:12px; --og-padding:22px 0 22px 24px;" data-og-internal-id="docsheroissuereview">
+      <IssueLabel data-og-id="docs-hero-issue-review-label" data-og-type="text" data-og-role="eyebrow" data-og-text-source="binding" data-i18n-key="docs.hero.issue.review.label" style="--og-foreground:#818b94; --og-font-size:11px; --og-letter-spacing:0;" data-og-internal-id="docsheroissuereviewlabel" data-og-text-variant-eng="Issue 03">Issue 03</IssueLabel>
+      <IssueText data-og-id="docs-hero-issue-review-text" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.issue.review.text" style="--og-font-size:18px; --og-font-weight:780; --og-line-height:1.32;" data-og-internal-id="docsheroissuereviewtext" data-og-text-variant-eng="Reviews happen on exported artifacts instead of source changes.">review が source changes ではなく export artifacts 上で起きる。</IssueText>
+    </HeroIssue>
+  </HeroIssueGrid>
+</DocsIntro>
+<DocsContentLayout data-og-id="docs-content-layout" data-og-type="frame" data-og-layout="horizontal" style="--og-width:100%; --og-gap:38px; --og-align:flex-start; --og-padding:34px 0 0;" data-og-internal-id="docscontentlayout1">
+<DocsLeftColumn data-og-id="docs-left-column" data-og-type="frame" data-og-layout="vertical" style="--og-width:min(100%,280px); --og-flex:0 0 280px; --og-gap:0;" data-og-internal-id="docsleftcolumn1">
+    <og-instance data-og-id="docs-navigation" data-og-type="frame" data-og-component="docs-navigation" data-og-internal-id="docsnavinst001"></og-instance>
+  </DocsLeftColumn>
 
-  <DocsList data-og-id="docs-list" data-og-type="frame" data-og-layout="vertical" style="--og-width:100%; --og-margin:0; --og-gap:0; --og-padding:26px 0 0;" data-og-internal-id="39be792e4d20">
-    <og-instance data-og-id="doc-app" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="2330e54d6777">
-      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.list.app.index" data-og-text-variant-eng="01">01</span>
-      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.list.app.title" data-og-text-variant-eng="OpenGraphite.app">OpenGraphite.app</span>
-      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.list.app.body" data-og-text-variant-eng="It resolves HTML and CSS from `.ogp`, then edits through Canvas, Layers, and Inspector. External changes are detected so the view follows the same source.">`.ogp` からHTMLとCSSを解決し、Canvas、Layers、Inspectorで編集します。外部変更を検出して、表示を同じ正本へ追従させます。</span>
-      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.list.app.meta" data-og-text-variant-eng="Canvas / Layers / Inspector / external sync">Canvas / Layers / Inspector / 外部同期</span>
+<DocsMainColumn data-og-id="docs-main-column" data-og-type="frame" data-og-layout="vertical" style="--og-flex:1 1 0; --og-min-width:0; --og-gap:0;" data-og-internal-id="docsmaincolumn1">
+<DocsArticle data-og-id="docs-article" data-og-type="frame" data-og-layout="vertical" style="--og-flex:1 1 0; --og-gap:0; --og-min-width:0;" data-og-internal-id="docsarticle001">
+    <og-instance data-og-id="docs-spec-heading" data-og-type="frame" data-og-component="section-heading" data-og-internal-id="docsspechead01">
+      <span slot="eyebrow" data-og-text-source="binding" data-i18n-key="docs.spec.heading.eyebrow" data-og-text-variant-eng="Users and agents">使用者と agents</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.heading.title" data-og-text-variant-eng="The technical contract for editing OpenGraphite pages.">OpenGraphite pages を編集するための技術契約。</span>
     </og-instance>
-    <og-instance data-og-id="doc-css" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="89be61311a2e">
-      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.list.css.index" data-og-text-variant-eng="02">02</span>
-      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.list.css.title" data-og-text-variant-eng="OpenGraphite.css">OpenGraphite.css</span>
-      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.list.css.body" data-og-text-variant-eng="It reads `data-og-type`, `data-og-layout`, `data-og-role`, and `--og-*` variables so HTML can be displayed directly as a design artifact.">`data-og-type`、`data-og-layout`、`data-og-role`、`--og-*` 変数を読み取り、HTMLをそのままデザイン成果物として表示するCSS契約です。</span>
-      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.list.css.meta" data-og-text-variant-eng="semantic tags / data-og-* / --og-* variables">semantic tags / data-og-* / --og-* 変数</span>
+
+    <og-instance id="source-model" data-og-id="docs-spec-source-model" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecsource1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.source.index" data-og-text-variant-eng="01">01</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.source.title" data-og-text-variant-eng="Source model">正本モデル</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.source.body" data-og-text-variant-eng="HTML is the page DOM, CSS renders shared rules, assets and locale JSON stay as implementation resources, and runtime or build output is derived. OpenGraphite does not create another design IR.">HTML は page DOM、CSS は共通描画、assets と locale JSON は実装資源、runtime / build output は派生物です。OpenGraphite は別の design IR を増やしません。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.source.meta" data-og-text-variant-eng="DesignPhilosophy.md / SourceOfTruthContract.md">DesignPhilosophy.md / SourceOfTruthContract.md</span>
     </og-instance>
-    <og-instance data-og-id="doc-cli" data-og-type="frame" data-og-component="doc-code-row" data-og-internal-id="fb1954bc9811">
-      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.list.cli.index" data-og-text-variant-eng="03">03</span>
-      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.list.cli.title" data-og-text-variant-eng="OpenGraphite CLI">OpenGraphite CLI</span>
-      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.list.cli.body" data-og-text-variant-eng="`ogkiln` provides structure inspection, validation, node-level edits, page placement, and canvas/page/node screenshots in one command system.">`ogkiln` は構造取得、検証、node単位編集、page配置、canvas/page/node screenshotを同じコマンド体系で提供します。</span>
-      <span slot="code">./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
-./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --page-id docs --id doc-cli --output screenshots/doc-cli.png</span>
+
+    <og-instance id="project-scope" data-og-id="docs-spec-project-scope" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecscope1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.scope.index" data-og-text-variant-eng="02">02</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.scope.title" data-og-text-variant-eng="Project scope">project scope</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.scope.body" data-og-text-variant-eng=".ogp stores repository resolution, htmlRoot, Chapters, Collections, page/component entries, canvas placement, viewport size, and preview mock state. It does not duplicate DOM structure or design values.">.ogp は repository 解決、htmlRoot、Chapters、Collections、page/component entry、canvas 配置、viewport、preview mock state を持ちます。DOM 構造や主要な design values は複製しません。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.scope.meta" data-og-text-variant-eng="project inspect / project current">project inspect / project current</span>
     </og-instance>
-    <og-instance data-og-id="doc-mcp" data-og-type="frame" data-og-component="doc-code-row" style="border-bottom:1px solid #34322e;" data-og-internal-id="0554c358c3ee">
-      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.list.mcp.index" data-og-text-variant-eng="04">04</span>
-      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.list.mcp.title" data-og-text-variant-eng="OpenGraphite MCP">OpenGraphite MCP</span>
-      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.list.mcp.body" data-og-text-variant-eng="It exposes resources and tools to AI clients, while write and screenshot tools pass through the same validation and rendering path as `ogkiln`.">AIクライアントにresourcesとtoolsを公開し、write toolとscreenshot toolは`ogkiln`と同じ検証・レンダリング経路を通してHTMLとPNGを扱います。</span>
-      <span slot="code">tools: validate, query_nodes, insert_html, move_node, copy_node
-screenshot_canvas, screenshot_page, screenshot_node</span>
+
+    <og-instance id="reference-ids" data-og-id="docs-spec-reference-ids" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecrefs1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.refs.index" data-og-text-variant-eng="03">03</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.refs.title" data-og-text-variant-eng="Reference IDs">参照 ID</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.refs.body" data-og-text-variant-eng="Agents should target copied ogref values. Pages use ogref:page:chapterInternalID:pageInternalID, components use ogref:component:collectionInternalID:componentInternalID, and nodes add the node internal ID.">Agents はコピーされた ogref 値を対象にします。Pages は ogref:page:chapterInternalID:pageInternalID、components は ogref:component:collectionInternalID:componentInternalID、nodes は node internal ID を末尾に持ちます。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.refs.meta" data-og-text-variant-eng="data-og-id for display / data-og-internal-id for identity">data-og-id は表示用 / data-og-internal-id は同一性</span>
     </og-instance>
-  </DocsList>
-</DocsViewportFrame>
+
+    <og-instance id="editable-nodes" data-og-id="docs-spec-editable-nodes" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecnodes1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.index" data-og-text-variant-eng="04">04</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.title" data-og-text-variant-eng="Editable nodes">編集可能 node</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.body" data-og-text-variant-eng="Tag names carry human meaning, data-og-* carries editor metadata, --og-* carries editable design values, and OpenGraphite.css turns type, layout, role, and variables into browser rendering.">タグ名は人間向けの意味、data-og-* は editor metadata、--og-* は editable design values、OpenGraphite.css は type / layout / role / variables をブラウザ描画へ変換します。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.meta" data-og-text-variant-eng="data-og-type page/frame/text/button/image">data-og-type page/frame/text/button/image</span>
+    </og-instance>
+
+    <og-instance id="components-slots" data-og-id="docs-spec-components-slots" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecslots1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.slots.index" data-og-text-variant-eng="05">05</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.slots.title" data-og-text-variant-eng="Components and slots">components / slots</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.slots.body" data-og-text-variant-eng="Component masters live in Collection HTML with data-og-component-kind=master. Pages keep lightweight og-instance references and pass page-specific content through standard slot attributes into master data-og-slot targets.">Component master は Collection HTML に data-og-component-kind=master として置きます。Pages は軽い og-instance 参照を持ち、page 固有 content は標準 slot 属性で master の data-og-slot へ渡します。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.slots.meta" data-og-text-variant-eng="Generated DOM is not source">生成 DOM は正本ではありません</span>
+    </og-instance>
+
+    <og-instance id="placement-mocks" data-og-id="docs-spec-placement-mocks" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecplace1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.place.index" data-og-text-variant-eng="06">06</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.place.title" data-og-text-variant-eng="Placement mocks">placement mock</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.place.body" data-og-text-variant-eng="component-placement hosts only belong in component canvases. Their display clone is not editable source; edits resolve back to the source component node, while placement-specific mock state is stored in .ogp previewContext.placementMocks.">component-placement host は component canvas にだけ置きます。表示 clone は正本ではなく、編集は参照元 component node へ戻ります。placement 固有の mock state は .ogp の previewContext.placementMocks に保存します。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.place.meta" data-og-text-variant-eng="data-og-role=component-placement">data-og-role=component-placement</span>
+    </og-instance>
+
+    <og-instance id="i18n-resources" data-og-id="docs-spec-i18n-resources" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspeci18n1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.i18n.index" data-og-text-variant-eng="07">07</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.i18n.title" data-og-text-variant-eng="i18n resources">i18n resource</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.i18n.body" data-og-text-variant-eng="Binding text keeps readable HTML fallback plus data-i18n-key. The preferred source for localized text is public/locales/&lt;locale&gt;.json; preview mock state selects a variant but is not itself a text resource.">Binding text は HTML fallback と data-i18n-key を残します。localized text の推奨正本は public/locales/&lt;locale&gt;.json です。preview mock state は variant を選ぶだけで、text resource ではありません。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.i18n.meta" data-og-text-variant-eng="i18n inspect / i18n resource set / text variant set">i18n inspect / i18n resource set / text variant set</span>
+    </og-instance>
+
+    <og-instance id="command-surface" data-og-id="docs-spec-command-surface" data-og-type="frame" data-og-component="doc-code-row" data-og-internal-id="docsspeccmds1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.commands.index" data-og-text-variant-eng="08">08</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.commands.title" data-og-text-variant-eng="Command surface">command surface</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.commands.body" data-og-text-variant-eng="ogkiln covers contract reads, project registration, document context, page/component graphs, i18n resources, validation, build output, screenshots, and node-level edits through one repository-backed interface.">ogkiln は contract read、project registration、document context、page/component graph、i18n resource、validation、build output、screenshot、node-level edit を 1 つの repository-backed interface で扱います。</span>
+      <span slot="code">contract get
+project current | project inspect | project page add/create/place/document
+project component add/create/place/document/remove
+page graph | i18n inspect/recommend/resource set
+node query/get/style/attr/text/html/delete/move/copy
+validate | build | screenshot canvas/page/node</span>
+    </og-instance>
+
+    <og-instance id="node-edits" data-og-id="docs-spec-node-edits" data-og-type="frame" data-og-component="doc-code-row" data-og-internal-id="docsspecedits1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.edits.index" data-og-text-variant-eng="09">09</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.edits.title" data-og-text-variant-eng="Node edits">node edits</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.edits.body" data-og-text-variant-eng="Prefer small node operations over full-file rewrites. Writes fail on duplicate data-og-id or data-og-internal-id, invalid target scope, invalid editable attributes, or post-edit validation errors.">HTML 全体置換より小さな node operation を優先します。data-og-id / data-og-internal-id 重複、無効な対象 scope、許可されない editable attribute、編集後 validation error がある場合、write は失敗します。</span>
+      <span slot="code">./Scripts/ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --type text --json
+./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id &lt;page&gt; --id &lt;node&gt; --var --og-gap --value 32px
+./Scripts/ogkiln node html replace SampleProject/OpenGraphiteSample.ogp --component-id &lt;component&gt; --id &lt;node&gt; --html-file fragment.html</span>
+    </og-instance>
+
+    <og-instance id="verify-build" data-og-id="docs-spec-verify-build" data-og-type="frame" data-og-component="doc-code-row" data-og-internal-id="docsspecverify1">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.verify.index" data-og-text-variant-eng="10">10</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.verify.title" data-og-text-variant-eng="Verify and build">verify / build</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.verify.body" data-og-text-variant-eng="Every design change should validate the .ogp graph, capture visual output, and when static deployment matters, run build to expand component instances and copy public assets into a no-runtime distribution.">すべての design change は .ogp graph を validate し、visual output を capture します。静的配布では build が component instance を展開し、public assets を no-runtime distribution へコピーします。</span>
+      <span slot="code">./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json
+./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png --full-page
+./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:2opic2blumreb:&lt;node&gt; --output screenshots/node.png
+./Scripts/ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist</span>
+    </og-instance>
+
+    <og-instance id="mcp-interface" data-og-id="docs-spec-mcp-interface" data-og-type="frame" data-og-component="doc-row" style="border-bottom:1px solid #30363d;" data-og-internal-id="docsspecmcp01">
+      <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.mcp.index" data-og-text-variant-eng="11">11</span>
+      <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.mcp.title" data-og-text-variant-eng="MCP interface">MCP interface</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.mcp.body" data-og-text-variant-eng="OpenGraphite MCP exposes resources and tools, but write tools delegate to ogkiln. AI clients therefore read the same project scope, node graph, diagnostics, screenshots, and write path as humans and CI.">OpenGraphite MCP は resources / tools を公開しますが、write tools は ogkiln に委譲します。AI clients は人間や CI と同じ project scope、node graph、diagnostics、screenshots、write path を通ります。</span>
+      <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.mcp.meta" data-og-text-variant-eng="MCP/OpenGraphite/server.mjs maps tools to ogkiln">MCP/OpenGraphite/server.mjs が tools を ogkiln へ対応</span>
+    </og-instance>
+  </DocsArticle></DocsMainColumn></DocsContentLayout></DocsViewportFrame>
 </OpenGraphitePage>
 <script src="./OpenGraphite.runtime.js" defer></script>
   </body>
