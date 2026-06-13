@@ -707,6 +707,51 @@ struct EditorStoreTests {
         #expect(store.attributeMutation == nil)
     }
 
+    /// 論理名（日本語）: アイコンInspector更新テスト
+    /// 概要: Store の icon 更新が metadata と保存済み描画 HTML を同時に更新し、置換要求を発行することを検証します。
+    @Test("Storeのicon更新はHTML置換要求を発行する")
+    func testUpdateIconPersistsMarkupAndRequestsReplacement() throws {
+        // コンディション：icon node を含む一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Icon data-og-id="decorative-icon" data-og-internal-id="decorative-icon-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+          </Icon>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "decorative-icon",
+                "internalID": "decorative-icon-node",
+                "tagName": "icon",
+                "type": "icon",
+                "iconLibrary": "lucide",
+                "iconName": "circle",
+                "iconSource": "inline",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "decorative-icon")
+
+        // 検証内容：Inspector 相当で source/name を更新する（When）
+        store.updateIcon(library: "lucide", name: "star", source: "cdn")
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：ディスク HTML と Store node が更新され、WebView 置換要求が発行される（Then）
+        #expect(store.nodes[0].iconName == "star")
+        #expect(store.nodes[0].iconSource == "cdn")
+        #expect(diskHTML.contains("data-og-icon-name=\"star\""))
+        #expect(diskHTML.contains("data-og-icon-mask=\"true\""))
+        #expect(diskHTML.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
+        #expect(store.documentReplacementRequest?.html == diskHTML)
+        #expect(store.documentReplacementRequest?.selectedNodeID == "decorative-icon")
+    }
+
     /// 論理名（日本語）: 複合CSS変数更新テスト
     /// 概要: CSS shorthand や関数値を分解せず、HTML 正本へ戻す値としてそのまま保持することを検証します。
     @Test("複合CSS値をStoreで正規化しすぎずmutationへ渡せる")

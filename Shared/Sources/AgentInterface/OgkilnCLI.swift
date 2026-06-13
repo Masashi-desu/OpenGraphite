@@ -385,6 +385,39 @@ struct OgkilnCLI {
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
         }
 
+        if arguments.count >= 3, arguments[0] == "node", arguments[1] == "icon", arguments[2] == "set" {
+            let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let id = try requiredOption("--id", in: arguments)
+            let result = try core.setIcon(
+                library: try optionalOption("--library", in: arguments) ?? OpenGraphiteIconMarkup.defaultLibrary,
+                name: try requiredOption("--name", in: arguments),
+                source: try optionalOption("--source", in: arguments) ?? OpenGraphiteIconMarkup.defaultSource,
+                nodeID: id,
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments)
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+        }
+
+        if arguments.count >= 3, arguments[0] == "node", arguments[1] == "icon", arguments[2] == "insert" {
+            let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let id = try requiredOption("--id", in: arguments)
+            let position = try insertionPosition(from: requiredOption("--position", in: arguments))
+            let result = try core.insertIcon(
+                library: try optionalOption("--library", in: arguments) ?? OpenGraphiteIconMarkup.defaultLibrary,
+                name: try requiredOption("--name", in: arguments),
+                source: try optionalOption("--source", in: arguments) ?? OpenGraphiteIconMarkup.defaultSource,
+                iconID: try optionalOption("--icon-id", in: arguments),
+                anchorNodeID: id,
+                position: position,
+                width: try optionalOption("--width", in: arguments),
+                height: try optionalOption("--height", in: arguments),
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments)
+            )
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+        }
+
         if arguments.count >= 3, arguments[0] == "node", arguments[1] == "text", arguments[2] == "set" {
             let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let id = try requiredOption("--id", in: arguments)
@@ -823,6 +856,8 @@ struct OgkilnCLI {
       ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <--og-var>
       ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr> --value <value>
       ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr>
+      ogkiln node icon set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <lucide-name> [--library lucide] [--source <inline|cdn|library>]
+      ogkiln node icon insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --name <lucide-name> [--icon-id <data-og-id>] [--library lucide] [--source <inline|cdn|library>] [--width <css-length>] [--height <css-length>]
       ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --value <text>
       ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --text-file <text-file>
       ogkiln text variant set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --key <data-i18n-key> --locale <locale> --value <text>

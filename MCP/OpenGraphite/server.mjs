@@ -467,6 +467,34 @@ function toolsList() {
       }, ["projectPath", "id", "name"])
     },
     {
+      name: "set_icon",
+      description: "Update a Lucide icon node's metadata and saved page-side markup.",
+      inputSchema: nodeTargetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        ...pageSelectorProperties(),
+        id: { type: "string", description: "Icon node data-og-internal-id or ogref." },
+        name: { type: "string", description: "Lucide icon name, e.g. circle or star." },
+        library: { type: "string", enum: ["lucide"] },
+        source: { type: "string", enum: ["inline", "cdn", "library"] }
+      }, ["projectPath", "id", "name"])
+    },
+    {
+      name: "insert_icon",
+      description: "Insert a Lucide icon node before, after, prepend, or append relative to an anchor node.",
+      inputSchema: nodeTargetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        ...pageSelectorProperties(),
+        id: { type: "string", description: "Anchor node data-og-internal-id or ogref." },
+        position: { type: "string", enum: ["before", "after", "prepend", "append"] },
+        name: { type: "string", description: "Lucide icon name, e.g. circle or star." },
+        iconID: { type: "string", description: "Optional data-og-id for the new icon node." },
+        library: { type: "string", enum: ["lucide"] },
+        source: { type: "string", enum: ["inline", "cdn", "library"] },
+        width: { type: "string", description: "Optional CSS length for --og-width." },
+        height: { type: "string", description: "Optional CSS length for --og-height." }
+      }, ["projectPath", "id", "position", "name"])
+    },
+    {
       name: "set_text_content",
       description: "Replace a node's inner content with escaped plain text.",
       inputSchema: nodeTargetObjectSchema({
@@ -830,6 +858,41 @@ function commandForTool(name, args) {
         requiredArg(args, "id"),
         "--name",
         requiredArg(args, "name")
+      ];
+    case "set_icon":
+      return [
+        "node",
+        "icon",
+        "set",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        "--id",
+        requiredArg(args, "id"),
+        "--name",
+        requiredArg(args, "name"),
+        ...optionalFlag(args, "library", "--library"),
+        ...optionalFlag(args, "source", "--source"),
+        "--json"
+      ];
+    case "insert_icon":
+      return [
+        "node",
+        "icon",
+        "insert",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        "--id",
+        requiredArg(args, "id"),
+        "--position",
+        requiredArg(args, "position"),
+        "--name",
+        requiredArg(args, "name"),
+        ...optionalFlag(args, "iconID", "--icon-id"),
+        ...optionalFlag(args, "library", "--library"),
+        ...optionalFlag(args, "source", "--source"),
+        ...optionalFlag(args, "width", "--width"),
+        ...optionalFlag(args, "height", "--height"),
+        "--json"
       ];
     case "set_text_content":
       return [

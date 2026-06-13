@@ -811,6 +811,20 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             });
           }
 
+          function applyPlacementModeState(root, host, fields) {
+            const mode = String((fields && fields.placementMode) || host.getAttribute('data-og-placement-mode') || '').trim();
+            if (!mode) { return; }
+            const stateTokens = mode.split(/\\s+/).filter((token) => /^[A-Za-z0-9_-]+$/.test(token));
+            stateTokens.forEach((token) => {
+              root.querySelectorAll('[data-og-state-hidden~="' + token + '"]').forEach((node) => {
+                node.setAttribute('data-og-hidden', 'true');
+              });
+              root.querySelectorAll('[data-og-state-visible~="' + token + '"]').forEach((node) => {
+                node.setAttribute('data-og-hidden', 'false');
+              });
+            });
+          }
+
           function markGenerated(root, host) {
             const placementID = host.getAttribute('data-og-id') || '';
             root.setAttribute('data-og-generated', 'true');
@@ -846,9 +860,11 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             const source = sourceNodeFor(host);
             if (!source) { return; }
             const clone = source.cloneNode(true);
+            const fields = mockFieldsFor(host);
             applyPlacementFrameSizing(clone, host);
             clone.style.pointerEvents = 'none';
-            applyCodeViewerMode(clone, mockFieldsFor(host));
+            applyCodeViewerMode(clone, fields);
+            applyPlacementModeState(clone, host, fields);
             markGenerated(clone, host);
             host.appendChild(clone);
           });

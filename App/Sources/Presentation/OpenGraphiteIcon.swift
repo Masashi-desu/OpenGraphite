@@ -186,6 +186,8 @@ extension OpenGraphiteIcon {
             return .lucide("type", fallbackSystemName: "textformat")
         case .frame:
             return .lucide("frame", fallbackSystemName: "square.dashed")
+        case .icon:
+            return .lucide("star", fallbackSystemName: "star")
         case .hand:
             return .lucide("hand", fallbackSystemName: "hand.raised")
         }
@@ -222,6 +224,8 @@ extension OpenGraphiteIcon {
             return .lucide("square-mouse-pointer", fallbackSystemName: "button.programmable")
         case "image":
             return .lucide("image", fallbackSystemName: "photo")
+        case "icon":
+            return .lucide("star", fallbackSystemName: "star")
         default:
             return .lucide("code-xml", fallbackSystemName: "curlybraces")
         }

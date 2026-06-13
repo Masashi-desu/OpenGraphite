@@ -178,14 +178,16 @@ struct InspectorView: View {
                             }
                             .id("\(node.id)-background")
 
-                            CSSColorVariableField(
-                                key: "--og-foreground",
-                                value: node.cssVariables["--og-foreground"] ?? "",
-                                initialColor: .black
-                            ) { value in
-                                store.updateCSSVariable(key: "--og-foreground", value: value)
+                            if node.type != "icon" {
+                                CSSColorVariableField(
+                                    key: "--og-foreground",
+                                    value: node.cssVariables["--og-foreground"] ?? "",
+                                    initialColor: .black
+                                ) { value in
+                                    store.updateCSSVariable(key: "--og-foreground", value: value)
+                                }
+                                .id("\(node.id)-foreground")
                             }
-                            .id("\(node.id)-foreground")
                         }
 
                         if node.type == "text" {
@@ -235,6 +237,62 @@ struct InspectorView: View {
                                     store.updateCSSVariable(key: "--og-object-fit", value: value)
                                 }
                                 .id("\(node.id)-object-fit")
+                            }
+                        }
+
+                        if node.type == "icon" {
+                            InspectorSection(title: "Icon") {
+                                IconAttributeOptionPicker(
+                                    label: "data-og-icon-library",
+                                    value: node.iconLibrary ?? "lucide",
+                                    options: ["lucide"]
+                                ) { value in
+                                    store.updateIcon(
+                                        library: value,
+                                        name: node.iconName ?? "circle",
+                                        source: node.iconSource ?? "inline"
+                                    )
+                                }
+                                .id("\(node.id)-icon-library")
+
+                                IconAttributeOptionPicker(
+                                    label: "data-og-icon-source",
+                                    value: node.iconSource ?? "inline",
+                                    options: ["inline", "cdn", "library"]
+                                ) { value in
+                                    store.updateIcon(
+                                        library: node.iconLibrary ?? "lucide",
+                                        name: node.iconName ?? "circle",
+                                        source: value
+                                    )
+                                }
+                                .id("\(node.id)-icon-source")
+
+                                EditableAttributeField(
+                                    label: "data-og-icon-name",
+                                    value: node.iconName ?? ""
+                                ) { value in
+                                    store.updateIcon(
+                                        library: node.iconLibrary ?? "lucide",
+                                        name: value,
+                                        source: node.iconSource ?? "inline"
+                                    )
+                                }
+                                .id("\(node.id)-icon-name")
+
+                                CSSColorVariableField(
+                                    key: "--og-foreground",
+                                    value: node.cssVariables["--og-foreground"] ?? "",
+                                    initialColor: .white
+                                ) { value in
+                                    store.updateCSSVariable(key: "--og-foreground", value: value)
+                                }
+                                .id("\(node.id)-icon-foreground")
+
+                                CSSNumericUnitVariableField(key: "--og-stroke-width", value: node.cssVariables["--og-stroke-width"] ?? "", units: ["", "px"]) { value in
+                                    store.updateCSSVariable(key: "--og-stroke-width", value: value)
+                                }
+                                .id("\(node.id)-stroke-width")
                             }
                         }
 
@@ -298,6 +356,58 @@ struct InspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// 論理名（日本語）: アイコン属性選択ピッカー
+/// 概要: icon node の library/source など、候補が固定される metadata をボタン群で編集します。
+///
+/// プロパティ:
+/// - `label`: 表示する属性名。
+/// - `value`: 現在の属性値。
+/// - `options`: 選択可能な属性値。
+/// - `onChange`: 値選択時に呼び出す処理。
+private struct IconAttributeOptionPicker: View {
+    var label: String
+    var value: String
+    var options: [String]
+    var onChange: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 86, alignment: .leading)
+
+            HStack(spacing: 4) {
+                ForEach(options, id: \.self) { option in
+                    Button {
+                        guard option != value else { return }
+                        onChange(option)
+                    } label: {
+                        Text(option)
+                            .font(.caption)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                                    .fill(value == option ? EditorColumnStyle.selectedRowFill : Color.clear)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                                    .stroke(value == option ? Color.accentColor.opacity(0.45) : EditorColumnStyle.separatorColor, lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

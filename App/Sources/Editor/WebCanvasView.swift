@@ -637,6 +637,20 @@ struct WebCanvasView: NSViewRepresentable {
             });
           }
 
+          function applyPlacementModeState(root, host, fields) {
+            const mode = String((fields && fields.placementMode) || host.getAttribute('data-og-placement-mode') || '').trim();
+            if (!mode) { return; }
+            const stateTokens = mode.split(/\\s+/).filter((token) => /^[A-Za-z0-9_-]+$/.test(token));
+            stateTokens.forEach((token) => {
+              root.querySelectorAll('[data-og-state-hidden~="' + token + '"]').forEach((node) => {
+                node.setAttribute('data-og-hidden', 'true');
+              });
+              root.querySelectorAll('[data-og-state-visible~="' + token + '"]').forEach((node) => {
+                node.setAttribute('data-og-hidden', 'false');
+              });
+            });
+          }
+
           function markGenerated(root, host) {
             const placementID = host.getAttribute('data-og-id') || '';
             root.setAttribute('data-og-generated', 'true');
@@ -673,8 +687,10 @@ struct WebCanvasView: NSViewRepresentable {
               const source = sourceNodeFor(host);
               if (!source) { return; }
               const clone = source.cloneNode(true);
+              const fields = mockFieldsFor(host);
               applyPlacementFrameSizing(clone, host);
-              applyCodeViewerMode(clone, mockFieldsFor(host));
+              applyCodeViewerMode(clone, fields);
+              applyPlacementModeState(clone, host, fields);
               markGenerated(clone, host);
               host.appendChild(clone);
             });
@@ -782,6 +798,9 @@ struct WebCanvasView: NSViewRepresentable {
                     guard let target = syncTarget else { return }
                     let result = store.applyHTMLObjectEditPayload(payload, target: target)
                     if result.updated {
+                        if let selectedID = payload["selectedID"] as? String, !selectedID.isEmpty {
+                            store.selectNode(id: selectedID)
+                        }
                         if result.requiresReload {
                             reloadCurrentPageFromDisk()
                         } else {
@@ -816,6 +835,17 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - navigation: 完了した navigation。
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             renderLocalComponentReferences(in: webView)
+            renderComponentPlacements(in: webView) { [weak self, weak webView] in
+                guard let self, let webView else { return }
+                self.finishPreviewLoad(in: webView)
+            }
+        }
+
+        /// 論理名（日本語）: Preview読み込み後処理関数
+        /// 処理概要: 生成DOMの反映後に preview 表示、静的リンク収集、編集状態の再適用を行います。
+        ///
+        /// - Parameter webView: 読み込み完了後の WebView。
+        private func finishPreviewLoad(in webView: WKWebView) {
             revealPreviewWhenDocumentIsStyled(in: webView)
             collectStaticFlowLinks()
             guard isInteractive else { return }
@@ -868,15 +898,34 @@ struct WebCanvasView: NSViewRepresentable {
 
                 webView.evaluateJavaScript(renderScript) { [weak self] result, _ in
                     guard let self, (result as? Bool) == true else { return }
-                    self.revealPreviewWhenDocumentIsStyled(in: webView)
-                    self.collectStaticFlowLinks()
-                    if self.isInteractive {
-                        self.ensureInternalIDsAndCollectNodes()
-                        Task { @MainActor in
-                            self.setActiveTool(self.store.activeTool)
-                            self.selectNode(self.store.selectedNodeID)
-                        }
+                    self.renderComponentPlacements(in: webView) { [weak self, weak webView] in
+                        guard let self, let webView else { return }
+                        self.finishPreviewLoad(in: webView)
                     }
+                }
+            }
+        }
+
+        /// 論理名（日本語）: Component Placement再描画関数
+        /// 処理概要: WebView 内の placement host へ source node clone と placement-local state を反映します。
+        ///
+        /// - Parameters:
+        ///   - webView: placement を展開する WebView。
+        ///   - completion: 展開試行後に main thread で実行する処理。
+        private func renderComponentPlacements(in webView: WKWebView, completion: (() -> Void)? = nil) {
+            let script = """
+            (function() {
+              if (window.OpenGraphiteComponentPlacementReferences &&
+                  typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
+                window.OpenGraphiteComponentPlacementReferences.render();
+                return true;
+              }
+              return false;
+            })();
+            """
+            webView.evaluateJavaScript(script) { _, _ in
+                DispatchQueue.main.async {
+                    completion?()
                 }
             }
         }
@@ -1124,7 +1173,10 @@ struct WebCanvasView: NSViewRepresentable {
                         self.reloadCurrentPageFromDisk()
                     } else if let webView {
                         self.renderLocalComponentReferences(in: webView)
-                        self.revealPreviewWhenDocumentIsStyled(in: webView)
+                        self.renderComponentPlacements(in: webView) { [weak self, weak webView] in
+                            guard let self, let webView else { return }
+                            self.finishPreviewLoad(in: webView)
+                        }
                     }
 
                     self.store.markDocumentReplacementApplied(sequence: request.sequence)
@@ -2201,6 +2253,9 @@ struct WebCanvasView: NSViewRepresentable {
           fallbackTextContent: fallbackPlainText(element),
           textSource: element.getAttribute('data-og-text-source') || '',
           i18nKey: element.getAttribute('data-i18n-key') || '',
+          iconLibrary: element.getAttribute('data-og-icon-library') || '',
+          iconName: element.getAttribute('data-og-icon-name') || '',
+          iconSource: element.getAttribute('data-og-icon-source') || '',
           cssVariables: cssVariables(element),
           hidden: element.getAttribute('data-og-hidden') === 'true',
           locked: element.getAttribute('data-og-locked') === 'true',
@@ -2510,8 +2565,127 @@ struct WebCanvasView: NSViewRepresentable {
           return type === 'frame' || type === 'page' || element.hasAttribute('data-og-layout');
         }
 
+        function newInternalID() {
+          return randomInternalID(new Set(allEditableNodes().map((node) => nodeInternalID(node))));
+        }
+
         function createFrameID() {
           return uniqueID('frame');
+        }
+
+        function applyDefaultBoxStyles(element, width, height) {
+          element.style.setProperty('--og-width', width);
+          element.style.setProperty('--og-height', height);
+        }
+
+        function lucideInlineSVG(name) {
+          if (name === 'circle') {
+            return [
+              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">',
+              '<circle cx="12" cy="12" r="10"></circle>',
+              '</svg>'
+            ].join('');
+          }
+          return [
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">',
+            '<circle cx="12" cy="12" r="10"></circle>',
+            '</svg>'
+          ].join('');
+        }
+
+        function createIconElement() {
+          const element = document.createElement('Icon');
+          const iconName = 'circle';
+          element.setAttribute('data-og-id', uniqueID('icon'));
+          element.setAttribute('data-og-internal-id', newInternalID());
+          element.setAttribute('data-og-type', 'icon');
+          element.setAttribute('data-og-icon-library', 'lucide');
+          element.setAttribute('data-og-icon-name', iconName);
+          element.setAttribute('data-og-icon-source', 'inline');
+          element.innerHTML = lucideInlineSVG(iconName);
+          applyDefaultBoxStyles(element, '24px', '24px');
+          return element;
+        }
+
+        function createFrameElement() {
+          const element = document.createElement('Frame');
+          element.setAttribute('data-og-id', createFrameID());
+          element.setAttribute('data-og-internal-id', newInternalID());
+          element.setAttribute('data-og-type', 'frame');
+          element.setAttribute('data-og-layout', 'vertical');
+          element.style.setProperty('--og-gap', '0');
+          element.style.setProperty('--og-padding', '0');
+          return element;
+        }
+
+        function createTextElement() {
+          const element = textElementFromString('Text');
+          element.style.setProperty('--og-font-size', '16px');
+          return element;
+        }
+
+        function createRectangleElement() {
+          const element = document.createElement('Rectangle');
+          element.setAttribute('data-og-id', uniqueID('rectangle'));
+          element.setAttribute('data-og-internal-id', newInternalID());
+          element.setAttribute('data-og-type', 'frame');
+          applyDefaultBoxStyles(element, '120px', '80px');
+          element.style.setProperty('--og-background', 'color-mix(in srgb, currentColor 12%, transparent)');
+          element.style.setProperty('--og-border', '1px solid color-mix(in srgb, currentColor 28%, transparent)');
+          return element;
+        }
+
+        function createdElementForTool(tool) {
+          if (tool === 'rectangle') { return createRectangleElement(); }
+          if (tool === 'text') { return createTextElement(); }
+          if (tool === 'frame') { return createFrameElement(); }
+          if (tool === 'icon') { return createIconElement(); }
+          return null;
+        }
+
+        function applyClickPositionIfNeeded(element, parent, event) {
+          if (!parent || parent.getAttribute('data-og-layout') !== 'absolute') { return; }
+          const parentRect = parent.getBoundingClientRect();
+          element.style.setProperty('--og-x', pixelString(event.clientX - parentRect.left));
+          element.style.setProperty('--og-y', pixelString(event.clientY - parentRect.top));
+        }
+
+        function placeCreatedElement(event) {
+          const created = createdElementForTool(activeTool);
+          if (!created) { return false; }
+
+          const anchor = editableElementFromTarget(event.target) || selectedElement();
+          if (!anchor || hasLockedAncestor(anchor)) { return false; }
+
+          const appendToAnchor = canReceiveChildren(anchor);
+          const parent = appendToAnchor ? anchor : anchor.parentElement;
+          if (!parent || hasLockedAncestor(parent)) { return false; }
+
+          applyClickPositionIfNeeded(created, parent, event);
+          const position = appendToAnchor ? 'append' : 'after';
+          const anchorInternalID = nodeInternalID(anchor);
+          if (!anchorInternalID) { return false; }
+
+          const html = created.outerHTML;
+          if (appendToAnchor) {
+            anchor.append(created);
+          } else {
+            anchor.after(created);
+          }
+
+          const selectedID = elementID(created);
+          collectNodes();
+          selectNode(selectedID);
+          notifySelection(selectedID);
+          collectStaticFlowLinks();
+          notifyDocumentChange({
+            operation: 'insertHTML',
+            selectedID: selectedID,
+            anchorInternalID: anchorInternalID,
+            position: position,
+            html: html
+          });
+          return true;
         }
 
         function setLayout(layout) {
@@ -3463,7 +3637,13 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           if (editingTextElement && editingTextElement.contains(event.target)) { return; }
-          if (activeTool !== 'select') { return; }
+          if (activeTool !== 'select') {
+            if (placeCreatedElement(event)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            return;
+          }
           const element = editableElementFromTarget(event.target);
           if (!element) { return; }
           event.preventDefault();

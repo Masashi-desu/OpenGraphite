@@ -22,6 +22,9 @@ import Foundation
 /// - `fallbackTextContent`: HTML 正本に残る fallback のプレーンテキスト。
 /// - `textSource`: `data-og-text-source` の値。
 /// - `i18nKey`: `data-i18n-key` の値。
+/// - `iconLibrary`: `data-og-icon-library` の値。
+/// - `iconName`: `data-og-icon-name` の値。
+/// - `iconSource`: `data-og-icon-source` の値。
 /// - `cssVariables`: inline style から抽出した `--og-*` の値。
 /// - `isHidden`: `data-og-hidden` による非表示状態。
 /// - `isLocked`: `data-og-locked` によるロック状態。
@@ -45,6 +48,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var fallbackTextContent: String?
     var textSource: String?
     var i18nKey: String?
+    var iconLibrary: String?
+    var iconName: String?
+    var iconSource: String?
     var cssVariables: [String: String]
     var isHidden: Bool
     var isLocked: Bool
@@ -72,6 +78,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - fallbackTextContent: HTML 正本に残る fallback のプレーンテキスト。
     ///   - textSource: `data-og-text-source`。
     ///   - i18nKey: `data-i18n-key`。
+    ///   - iconLibrary: `data-og-icon-library`。
+    ///   - iconName: `data-og-icon-name`。
+    ///   - iconSource: `data-og-icon-source`。
     ///   - cssVariables: inline style 内の `--og-*`。
     ///   - isHidden: 非表示状態。
     ///   - isLocked: ロック状態。
@@ -95,6 +104,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         fallbackTextContent: String? = nil,
         textSource: String? = nil,
         i18nKey: String? = nil,
+        iconLibrary: String? = nil,
+        iconName: String? = nil,
+        iconSource: String? = nil,
         cssVariables: [String: String],
         isHidden: Bool,
         isLocked: Bool,
@@ -118,6 +130,9 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         self.fallbackTextContent = fallbackTextContent
         self.textSource = Self.emptyNil(textSource)
         self.i18nKey = Self.emptyNil(i18nKey)
+        self.iconLibrary = Self.emptyNil(iconLibrary)
+        self.iconName = Self.emptyNil(iconName)
+        self.iconSource = Self.emptyNil(iconSource)
         self.cssVariables = cssVariables
         self.isHidden = isHidden
         self.isLocked = isLocked
@@ -264,12 +279,14 @@ struct NodeAttributeMutation: Equatable {
 /// - `rectangle`: レクトアングル作成ツール。
 /// - `text`: テキスト作成ツール。
 /// - `frame`: フレーム作成ツール。
+/// - `icon`: アイコン作成ツール。
 /// - `hand`: キャンバス移動用ツール。
 enum CanvasTool: String, CaseIterable, Identifiable {
     case select
     case rectangle
     case text
     case frame
+    case icon
     case hand
 
     var id: String { rawValue }
@@ -284,6 +301,8 @@ enum CanvasTool: String, CaseIterable, Identifiable {
             return "テキスト"
         case .frame:
             return "フレーム"
+        case .icon:
+            return "アイコン"
         case .hand:
             return "ハンド"
         }
@@ -299,6 +318,8 @@ enum CanvasTool: String, CaseIterable, Identifiable {
             return "textformat"
         case .frame:
             return "square.dashed"
+        case .icon:
+            return "star"
         case .hand:
             return "hand.raised"
         }

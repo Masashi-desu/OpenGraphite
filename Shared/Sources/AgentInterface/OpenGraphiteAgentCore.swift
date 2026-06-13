@@ -572,7 +572,9 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 /// - `validateHTML(at:)`: HTML を契約に対して検証する。
 /// - `setCSSVariable(_:value:nodeID:htmlURL:)`: node 単位で CSS 変数を更新する。
 /// - `setAttribute(_:value:nodeID:htmlURL:)`: node 単位で属性を更新する。
+/// - `setIcon(library:name:source:nodeID:htmlURL:)`: icon node の metadata と描画 HTML を更新する。
 /// - `setTextContent(_:nodeID:htmlURL:)`: node の text content を更新する。
+/// - `insertIcon(library:name:source:iconID:anchorNodeID:position:width:height:htmlURL:)`: anchor node 基準で icon node を挿入する。
 /// - `insertHTML(_:anchorNodeID:position:htmlURL:)`: anchor node 基準で HTML 断片を挿入する。
 /// - `replaceNodeHTML(_:nodeID:htmlURL:)`: node 全体を HTML 断片で置換する。
 /// - `deleteNode(nodeID:htmlURL:)`: node 全体を削除する。
@@ -1831,6 +1833,58 @@ struct OpenGraphiteAgentCore {
         return try setAttribute(name, value: value, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
     }
 
+    /// 論理名（日本語）: アイコンファイル更新関数
+    /// 処理概要: HTML ファイル内の icon node metadata と保存済み描画 HTML を更新します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。空の場合は lucide。
+    ///   - name: icon name。空の場合は circle。
+    ///   - source: icon source。空の場合は inline。
+    ///   - nodeID: 対象 `data-og-internal-id`。
+    ///   - htmlURL: HTML ファイル URL。
+    /// - Returns: 編集結果。
+    func setIcon(
+        library: String,
+        name: String,
+        source: String,
+        nodeID: String,
+        htmlURL: URL
+    ) throws -> OpenGraphiteEditResult {
+        let normalizedNodeID = resolvedNodeID(nodeID)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let mutation = OpenGraphiteHTMLDocument(html: html).settingIcon(
+            library: library,
+            name: name,
+            source: source,
+            forNodeID: normalizedNodeID,
+            contract: contract
+        )
+        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
+    }
+
+    /// 論理名（日本語）: プロジェクトページアイコン更新関数
+    /// 処理概要: `.ogp` の page 参照 ID で明示された HTML 内 icon node を更新します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。
+    ///   - name: icon name。
+    ///   - source: icon source。
+    ///   - nodeID: 対象 `data-og-internal-id`。
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内の page 参照 ID。
+    /// - Returns: 編集結果。
+    func setIcon(
+        library: String,
+        name: String,
+        source: String,
+        nodeID: String,
+        projectURL: URL,
+        pageID: String
+    ) throws -> OpenGraphiteEditResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [nodeID])
+        return try setIcon(library: library, name: name, source: source, nodeID: resolvedNodeID(nodeID), htmlURL: target.htmlURL)
+    }
+
     /// 論理名（日本語）: テキスト内容ファイル更新関数
     /// 処理概要: HTML ファイル内の指定 node の text content を更新し、成功時に同じファイルへ書き戻します。
     ///
@@ -1908,6 +1962,118 @@ struct OpenGraphiteAgentCore {
     ) throws -> OpenGraphiteEditResult {
         let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
         return try setTextVariant(text, locale: locale, i18nKey: i18nKey, htmlURL: target.htmlURL)
+    }
+
+    /// 論理名（日本語）: アイコンHTML挿入ファイル更新関数
+    /// 処理概要: HTML ファイル内の anchor node を基準に icon node を挿入します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。空の場合は lucide。
+    ///   - name: icon name。空の場合は circle。
+    ///   - source: icon source。空の場合は inline。
+    ///   - iconID: 新規 icon の `data-og-id`。`nil` の場合は icon name から一意化します。
+    ///   - anchorNodeID: 基準 `data-og-internal-id`。
+    ///   - position: 挿入位置。
+    ///   - width: `--og-width`。`nil` の場合は 24px。
+    ///   - height: `--og-height`。`nil` の場合は 24px。
+    ///   - htmlURL: HTML ファイル URL。
+    /// - Returns: 編集結果。
+    func insertIcon(
+        library: String,
+        name: String,
+        source: String,
+        iconID: String?,
+        anchorNodeID: String,
+        position: OpenGraphiteHTMLInsertionPosition,
+        width: String?,
+        height: String?,
+        htmlURL: URL
+    ) throws -> OpenGraphiteEditResult {
+        let resolvedAnchorNodeID = resolvedNodeID(anchorNodeID)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let existingIDs = Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.id))
+        let displayID: String
+        if let explicitIconID = iconID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !explicitIconID.isEmpty {
+            displayID = explicitIconID
+        } else {
+            displayID = uniqueDisplayID(base: OpenGraphiteIconMarkup.defaultDisplayIDBase(name: name), existingIDs: existingIDs)
+        }
+        let icon = OpenGraphiteIconMarkup.elementHTML(
+            id: displayID,
+            internalID: uniqueInternalID(existingIDs: Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.internalID))),
+            library: library,
+            name: name,
+            source: source,
+            width: width ?? "24px",
+            height: height ?? "24px",
+            nodeID: displayID
+        )
+        guard icon.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: icon.diagnostics.map { withPath($0, path: htmlURL.path) },
+                insertedNodes: nil
+            )
+        }
+
+        let beforeIDs = existingIDs
+        let mutation = OpenGraphiteHTMLDocument(html: html).insertingHTML(
+            icon.html,
+            relativeToNodeID: resolvedAnchorNodeID,
+            position: position,
+            contract: contract
+        )
+        return try persistMutation(
+            mutation,
+            htmlURL: htmlURL,
+            nodeID: resolvedAnchorNodeID,
+            insertedNodeIDsBeforeMutation: beforeIDs
+        )
+    }
+
+    /// 論理名（日本語）: プロジェクトページアイコン挿入関数
+    /// 処理概要: `.ogp` の page 参照 ID で明示された HTML へ icon node を挿入します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。
+    ///   - name: icon name。
+    ///   - source: icon source。
+    ///   - iconID: 新規 icon の `data-og-id`。
+    ///   - anchorNodeID: 基準 `data-og-internal-id`。
+    ///   - position: 挿入位置。
+    ///   - width: `--og-width`。
+    ///   - height: `--og-height`。
+    ///   - projectURL: `.ogp` ファイル URL。
+    ///   - pageID: `.ogp` 内の page 参照 ID。
+    /// - Returns: 編集結果。
+    func insertIcon(
+        library: String,
+        name: String,
+        source: String,
+        iconID: String?,
+        anchorNodeID: String,
+        position: OpenGraphiteHTMLInsertionPosition,
+        width: String?,
+        height: String?,
+        projectURL: URL,
+        pageID: String
+    ) throws -> OpenGraphiteEditResult {
+        let target = try projectPageTarget(projectURL: projectURL, pageID: pageID, nodeReferenceIDs: [anchorNodeID])
+        return try insertIcon(
+            library: library,
+            name: name,
+            source: source,
+            iconID: iconID,
+            anchorNodeID: resolvedNodeID(anchorNodeID),
+            position: position,
+            width: width,
+            height: height,
+            htmlURL: target.htmlURL
+        )
     }
 
     /// 論理名（日本語）: HTML断片挿入ファイル更新関数
@@ -2984,6 +3150,49 @@ struct OpenGraphiteAgentCore {
     /// - Returns: HTML 編集で使う node 内部 ID。
     private func resolvedNodeID(_ id: String) -> String {
         OpenGraphiteReferenceID.nodeInternalID(from: id) ?? id
+    }
+
+    /// 論理名（日本語）: 一意表示ID生成関数
+    /// 処理概要: 既存 `data-og-id` と重複しない candidate を連番付きで生成します。
+    ///
+    /// - Parameters:
+    ///   - base: 希望する base ID。
+    ///   - existingIDs: 既存 `data-og-id` 一覧。
+    /// - Returns: 重複しない `data-og-id`。
+    private func uniqueDisplayID(base: String, existingIDs: Set<String>) -> String {
+        let normalizedBase = base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "icon"
+            : base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard existingIDs.contains(normalizedBase) else { return normalizedBase }
+
+        var index = 2
+        var candidate = "\(normalizedBase)-\(index)"
+        while existingIDs.contains(candidate) {
+            index += 1
+            candidate = "\(normalizedBase)-\(index)"
+        }
+        return candidate
+    }
+
+    /// 論理名（日本語）: 一意内部ID生成関数
+    /// 処理概要: 既存 `data-og-internal-id` と重複しない新規 ID を生成します。
+    ///
+    /// - Parameter existingIDs: 既存 `data-og-internal-id` 一覧。
+    /// - Returns: 重複しない `data-og-internal-id`。
+    private func uniqueInternalID(existingIDs: Set<String>) -> String {
+        var candidate = UUID().uuidString
+            .replacingOccurrences(of: "-", with: "")
+            .lowercased()
+            .prefix(12)
+            .description
+        while existingIDs.contains(candidate) {
+            candidate = UUID().uuidString
+                .replacingOccurrences(of: "-", with: "")
+                .lowercased()
+                .prefix(12)
+                .description
+        }
+        return candidate
     }
 
     /// 論理名（日本語）: 参照IDページ整合性検証関数

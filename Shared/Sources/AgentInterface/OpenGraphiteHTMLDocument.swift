@@ -403,6 +403,76 @@ struct OpenGraphiteHTMLDocument {
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
+    /// 論理名（日本語）: アイコン設定関数
+    /// 処理概要: icon node の library/name/source metadata と保存済み描画 HTML を同時に更新します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。空の場合は lucide。
+    ///   - name: icon name。空の場合は circle。
+    ///   - source: icon source。空の場合は inline。
+    ///   - id: 対象ノードの `data-og-internal-id`。
+    ///   - contract: 検証に使う OpenGraphite 契約。
+    /// - Returns: 更新済み HTML と diagnostics。
+    func settingIcon(
+        library: String,
+        name: String,
+        source: String,
+        forNodeID id: String,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        var sanitized = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let sanitizedDocument = OpenGraphiteHTMLDocument(html: sanitized)
+        let match = sanitizedDocument.uniqueElement(forNodeID: id)
+        guard let element = match.element else {
+            return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: match.diagnostics)
+        }
+
+        guard element.tag.attributeValue(named: "data-og-type") == "icon" else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "non-icon-node",
+                    message: "\(id) は data-og-type=\"icon\" のノードではありません。",
+                    path: nil,
+                    nodeID: id
+                )
+            )
+        }
+
+        guard !element.tag.selfClosing && !Self.voidElementNames.contains(element.tag.tagName) else {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "self-closing-icon-node",
+                    message: "\(id) は自己終了タグのため icon content を設定できません。",
+                    path: nil,
+                    nodeID: id
+                )
+            )
+        }
+
+        let icon = OpenGraphiteIconMarkup.contentHTML(
+            library: library,
+            name: name,
+            source: source,
+            nodeID: id
+        )
+        guard icon.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: icon.diagnostics)
+        }
+
+        var attributes = element.tag.attributes
+        Self.setAttribute("data-og-icon-library", value: icon.library, in: &attributes)
+        Self.setAttribute("data-og-icon-name", value: icon.name, in: &attributes)
+        Self.setAttribute("data-og-icon-source", value: icon.source, in: &attributes)
+
+        sanitized.replaceRange(element.contentRange, with: icon.html)
+        sanitized.replaceRange(element.tag.range, with: element.tag.serialized(with: attributes))
+        return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+    }
+
     /// 論理名（日本語）: HTML Document Context設定関数
     /// 処理概要: `<html>` の `lang` / `dir` と OpenGraphite binding metadata を保存します。
     ///

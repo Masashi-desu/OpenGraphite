@@ -5,7 +5,8 @@
     "frame",
     "text",
     "button",
-    "image"
+    "image",
+    "icon"
   ],
   "layouts": [
     "vertical",
@@ -39,6 +40,11 @@
     "data-og-source-component-internal-id",
     "data-og-source-node-internal-id",
     "data-og-placement-mode",
+    "data-og-state-hidden",
+    "data-og-state-visible",
+    "data-og-icon-library",
+    "data-og-icon-name",
+    "data-og-icon-source",
     "data-i18n-key",
     "data-og-text-variant-eng",
     "data-og-hidden",
@@ -94,6 +100,8 @@
     { "name": "--og-letter-spacing", "category": "text", "syntax": "<length>|normal", "editable": true },
     { "name": "--og-text-align", "category": "text", "syntax": "<text-align>", "editable": true },
     { "name": "--og-object-fit", "category": "media", "syntax": "<object-fit>", "editable": true },
+    { "name": "--og-stroke-width", "category": "icon", "syntax": "<number>|<length>", "editable": true },
+    { "name": "--og-icon-url", "category": "icon", "syntax": "url()", "editable": false },
     { "name": "--og-scale-x", "category": "transform", "syntax": "<number>", "editable": true },
     { "name": "--og-scale-y", "category": "transform", "syntax": "<number>", "editable": true },
     { "name": "--og-transform-origin", "category": "transform", "syntax": "<position>", "editable": true },

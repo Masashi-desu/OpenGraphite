@@ -27,7 +27,7 @@ struct OpenGraphiteContract: Codable, Equatable {
     var runtimeAttributeSet: Set<String> { Set(runtimeAttributes) }
     var cssVariableSet: Set<String> { Set(cssVariables.map(\.name)) }
     var runtimeCSSVariableSet: Set<String> {
-        Set(cssVariables.filter { !$0.editable }.map(\.name))
+        Set(cssVariables.filter { $0.category == "runtime" }.map(\.name))
     }
 
     /// 論理名（日本語）: 編集可能属性判定関数
@@ -90,7 +90,7 @@ struct OpenGraphiteContract: Codable, Equatable {
 
     static let builtIn = OpenGraphiteContract(
         version: "0.1.0",
-        types: ["page", "frame", "text", "button", "image"],
+        types: ["page", "frame", "text", "button", "image", "icon"],
         layouts: ["vertical", "horizontal", "absolute"],
         roles: [
             "page-preview",
@@ -119,6 +119,11 @@ struct OpenGraphiteContract: Codable, Equatable {
             "data-og-source-component-internal-id",
             "data-og-source-node-internal-id",
             "data-og-placement-mode",
+            "data-og-state-hidden",
+            "data-og-state-visible",
+            "data-og-icon-library",
+            "data-og-icon-name",
+            "data-og-icon-source",
             "data-i18n-key",
             "data-og-text-variant-eng",
             "data-og-hidden",
@@ -174,6 +179,8 @@ struct OpenGraphiteContract: Codable, Equatable {
             OpenGraphiteCSSVariableContract(name: "--og-letter-spacing", category: "text", syntax: "<length>|normal", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-text-align", category: "text", syntax: "<text-align>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-object-fit", category: "media", syntax: "<object-fit>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-stroke-width", category: "icon", syntax: "<number>|<length>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-icon-url", category: "icon", syntax: "url()", editable: false),
             OpenGraphiteCSSVariableContract(name: "--og-scale-x", category: "transform", syntax: "<number>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-scale-y", category: "transform", syntax: "<number>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-transform-origin", category: "transform", syntax: "<position>", editable: true),

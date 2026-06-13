@@ -144,6 +144,114 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!html.contains("data-og-mock-code-viewer-mode"))
     }
 
+    /// 論理名（日本語）: Lucideアイコンノード契約テスト
+    /// 概要: `data-og-type="icon"` と Lucide の page-side metadata が contract validation を通ることを確認します。
+    @Test("LucideアイコンノードをHTML契約として扱える")
+    func testValidateAcceptsLucideIconNode() throws {
+        // コンディション：inline Lucide SVG を保持する icon node を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Icon data-og-id="decorative-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline" style="--og-width:24px; --og-height:24px; --og-stroke-width:2;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+              </Icon>
+            </body></html>
+            """
+        )
+
+        // 検証内容：page graph と validation を実行する（When）
+        let graph = try fixture.core.pageGraph(at: fixture.htmlURL)
+        let result = try fixture.core.validateHTML(at: fixture.htmlURL)
+
+        // 期待値：icon primitive と Lucide metadata が既知の契約として扱われる（Then）
+        #expect(result.valid == true)
+        #expect(graph.nodes.map(\.type) == ["icon"])
+        #expect(graph.nodes[0].attributes["data-og-icon-library"] == "lucide")
+        #expect(graph.nodes[0].attributes["data-og-icon-name"] == "circle")
+        #expect(graph.nodes[0].attributes["data-og-icon-source"] == "inline")
+        #expect(graph.nodes[0].cssVariables["--og-stroke-width"] == "2")
+    }
+
+    /// 論理名（日本語）: アイコン更新テスト
+    /// 概要: icon node の metadata と page-side inline SVG が同時に保存されることを確認します。
+    @Test("Lucideアイコン更新でmetadataとinline SVGを保存する")
+    func testSetIconUpdatesMetadataAndInlineSVG() throws {
+        // コンディション：circle の icon node を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Icon data-og-id="decorative-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+              </Icon>
+            </body></html>
+            """
+        )
+
+        // 検証内容：icon name を star に更新する（When）
+        let result = try fixture.core.setIcon(
+            library: "lucide",
+            name: "star",
+            source: "inline",
+            nodeID: "decorative-icon",
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：metadata と inline SVG body が star に更新される（Then）
+        #expect(result.updated == true)
+        #expect(result.node?.attributes["data-og-icon-name"] == "star")
+        #expect(html.contains("data-og-icon-name=\"star\""))
+        #expect(html.contains("11.525 2.295"))
+        #expect(!html.contains("<circle cx=\"12\" cy=\"12\" r=\"10\"></circle>"))
+    }
+
+    /// 論理名（日本語）: アイコン挿入テスト
+    /// 概要: anchor node 基準で Lucide CDN icon node を挿入できることを確認します。
+    @Test("Lucide CDNアイコンをnodeとして挿入できる")
+    func testInsertIconCreatesCDNIconNode() throws {
+        // コンディション：挿入先 frame を持つ HTML を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Frame data-og-id="hero" data-og-type="frame"></Frame></body></html>
+            """
+        )
+
+        // 検証内容：hero の子として star アイコンを CDN source で挿入する（When）
+        let result = try fixture.core.insertIcon(
+            library: "lucide",
+            name: "star",
+            source: "cdn",
+            iconID: nil,
+            anchorNodeID: "hero",
+            position: .append,
+            width: nil,
+            height: nil,
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：新規 icon node が挿入され、Lucide static CDN 参照を保持する（Then）
+        #expect(result.updated == true)
+        #expect(result.insertedNodes?.map(\.id) == ["icon-star"])
+        #expect(result.insertedNodes?.first?.internalID.isEmpty == false)
+        #expect(result.insertedNodes?.first?.internalID != "hero")
+        #expect(result.insertedNodes?.first?.attributes["data-og-icon-source"] == "cdn")
+        #expect(html.contains("data-og-internal-id="))
+        #expect(html.contains("data-og-icon-mask=\"true\""))
+        #expect(html.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
+        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(html.contains("--og-width:24px; --og-height:24px;"))
+    }
+
     /// 論理名（日本語）: Placement Mock Stateデコードテスト
     /// 概要: `.ogp` previewContext が placement 単位の mock injection を保持できることを確認します。
     @Test("previewContextはplacementMocksを保持できる")
@@ -1124,6 +1232,102 @@ struct OpenGraphiteAgentCoreTests {
         #expect(rejectedCode == 2)
         #expect(html.contains("--og-gap:32px;"))
         #expect(stderr.contains(".ogp"))
+    }
+
+    /// 論理名（日本語）: CLIアイコン編集テスト
+    /// 概要: `ogkiln node icon set` から icon node の metadata と保存 HTML を更新できることを確認します。
+    @Test("CLIでLucideアイコンnodeを更新できる")
+    func testCLISetIconUpdatesPageSideMarkup() throws {
+        // コンディション：単一 page project と circle icon node を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Icon data-og-id="decorative-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+              </Icon>
+            </body></html>
+            """
+        )
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で library source の star へ更新する（When）
+        let code = cli.run(
+            arguments: [
+                "node", "icon", "set", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--id", "decorative-icon",
+                "--name", "star",
+                "--source", "library"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：CLI が成功し、runtime library 用の data-lucide が保存される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"updated\" : true"))
+        #expect(html.contains("data-og-icon-name=\"star\""))
+        #expect(html.contains("<i data-lucide=\"star\" aria-hidden=\"true\"></i>"))
+        #expect(!html.contains("<circle cx=\"12\" cy=\"12\" r=\"10\"></circle>"))
+    }
+
+    /// 論理名（日本語）: CLIアイコンCDN URL保持テスト
+    /// 概要: `ogkiln node icon set` が対象外 CDN icon の mask URL を削除しないことを確認します。
+    @Test("CLIは対象外CDNアイコンのmask URLを保持する")
+    func testCLISetIconPreservesSiblingCDNMaskURL() throws {
+        // コンディション：CDN source の icon node を2つ持つ page project を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Icon data-og-id="target-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="cdn">
+                <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/circle.svg');" aria-hidden="true"></span>
+              </Icon>
+              <Icon data-og-id="sibling-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-open" data-og-icon-source="cdn">
+                <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');" aria-hidden="true"></span>
+              </Icon>
+            </body></html>
+            """
+        )
+        try fixture.writeProject(to: projectURL)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：片方の icon node だけを CDN source の star へ更新する（When）
+        let code = cli.run(
+            arguments: [
+                "node", "icon", "set", "Sample.ogp",
+                "--page-id", fixture.homePageInternalID,
+                "--id", "target-icon",
+                "--name", "star",
+                "--source", "cdn"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：対象 icon は更新され、対象外 icon の CDN mask URL は保持される（Then）
+        #expect(code == 0)
+        #expect(stderr.isEmpty)
+        #expect(stdout.contains("\"updated\" : true"))
+        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');"))
     }
 
     /// 論理名（日本語）: CLI typed node参照解決テスト

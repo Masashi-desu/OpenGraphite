@@ -35,6 +35,7 @@ struct HTMLSyncTarget: Equatable {
 /// - `setCSSVariable`: CSS 変数を設定または削除します。
 /// - `setCSSVariables`: 複数 CSS 変数を同一 node に設定または削除します。
 /// - `setAttribute`: 永続属性を設定または削除します。
+/// - `setIcon`: icon node の metadata と描画 HTML を更新します。
 /// - `setTextContent`: text node のプレーンテキストを置換します。
 /// - `insertHTML`: anchor node の相対位置へ HTML 断片を挿入します。
 /// - `replaceNodeHTML`: node subtree を HTML 断片で置換します。
@@ -44,6 +45,7 @@ enum HTMLObjectEditOperation: Equatable {
     case setCSSVariable(nodeInternalID: String, key: String, value: String, expectedOldValue: String)
     case setCSSVariables(nodeInternalID: String, values: [String: String], expectedOldValues: [String: String])
     case setAttribute(nodeInternalID: String, name: String, value: String, expectedOldValue: String)
+    case setIcon(nodeInternalID: String, library: String, name: String, source: String, expectedOldValues: [String: String])
     case setTextContent(nodeInternalID: String, text: String, expectedOldValue: String)
     case insertHTML(anchorInternalID: String, position: OpenGraphiteHTMLInsertionPosition, html: String, baselineNodeHash: String?)
     case replaceNodeHTML(nodeInternalID: String, html: String, baselineNodeHash: String?)
@@ -56,6 +58,8 @@ enum HTMLObjectEditOperation: Equatable {
         switch self {
         case .setCSSVariable, .setCSSVariables, .setAttribute, .setTextContent:
             return false
+        case .setIcon:
+            return true
         case .insertHTML, .replaceNodeHTML, .deleteNode:
             return true
         case .moveNode:

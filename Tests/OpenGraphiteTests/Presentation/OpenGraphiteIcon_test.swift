@@ -53,6 +53,23 @@ struct OpenGraphiteIconTests {
         #expect(icon.fallbackSystemName == "shippingbox")
     }
 
+    /// 論理名（日本語）: キャンバスアイコンツール割り当てテスト
+    /// 概要: アイコン配置ツールが Lucide の star icon で表示されることを検証します。
+    @Test("キャンバスアイコンツールをLucideアイコンで表示する")
+    func testCanvasIconToolUsesLucideIcon() {
+        // コンディション：キャンバスツール一覧と icon ツールの表示 icon を取得する（Given）
+        let tools = CanvasTool.allCases
+        let icon = OpenGraphiteIcon.canvasTool(.icon)
+
+        // 検証内容：ツール一覧と Lucide ID を確認する（When）
+        let toolIDs = tools.map(\.rawValue)
+
+        // 期待値：icon ツールが選択肢にあり、Lucide の star で表示される（Then）
+        #expect(toolIDs == ["select", "rectangle", "text", "frame", "icon", "hand"])
+        #expect(icon.library == .lucide)
+        #expect(icon.name == "star")
+    }
+
     /// 論理名（日本語）: パラメータ連動アイコン割り当てテスト
     /// 概要: Inspector の連動切替がリンク/解除のアイコンで表現されることを検証します。
     @Test("連動切替アイコンをリンクと解除にする")
@@ -91,6 +108,22 @@ struct OpenGraphiteIconTests {
         // 期待値：frame は code、HTML page は file-code、component 系は component / blocks になる（Then）
         #expect(iconNames == ["code", "file-code", "component", "blocks"])
         #expect(frameIcon.fallbackSystemName == "chevron.left.forwardslash.chevron.right")
+    }
+
+    /// 論理名（日本語）: iconレイヤーアイコン割り当てテスト
+    /// 概要: HTML の icon primitive が Lucide の star で表示されることを検証します。
+    @Test("icon primitiveをレイヤー上でアイコン表示する")
+    func testLayerTypeIconUsesStar() {
+        // コンディション：icon primitive のレイヤーアイコンを取得する（Given）
+        let icon = OpenGraphiteIcon.layerType("icon")
+
+        // 検証内容：Lucide ID を確認する（When）
+        let iconName = icon.name
+
+        // 期待値：icon primitive は star で表現される（Then）
+        #expect(icon.library == .lucide)
+        #expect(iconName == "star")
+        #expect(icon.fallbackSystemName == "star")
     }
 
     /// 論理名（日本語）: componentとinstanceのレイヤーアイコン判定テスト

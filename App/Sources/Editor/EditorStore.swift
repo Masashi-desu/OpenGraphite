@@ -1308,6 +1308,12 @@ final class EditorStore: ObservableObject {
                 expectedOldValue = nodes[index].layout ?? ""
             case "data-og-role":
                 expectedOldValue = nodes[index].role ?? ""
+            case "data-og-icon-library":
+                expectedOldValue = nodes[index].iconLibrary ?? ""
+            case "data-og-icon-name":
+                expectedOldValue = nodes[index].iconName ?? ""
+            case "data-og-icon-source":
+                expectedOldValue = nodes[index].iconSource ?? ""
             default:
                 expectedOldValue = ""
             }
@@ -1318,6 +1324,12 @@ final class EditorStore: ObservableObject {
                 expectedOldValue = selectedNode.layout ?? ""
             case "data-og-role":
                 expectedOldValue = selectedNode.role ?? ""
+            case "data-og-icon-library":
+                expectedOldValue = selectedNode.iconLibrary ?? ""
+            case "data-og-icon-name":
+                expectedOldValue = selectedNode.iconName ?? ""
+            case "data-og-icon-source":
+                expectedOldValue = selectedNode.iconSource ?? ""
             default:
                 expectedOldValue = ""
             }
@@ -1340,6 +1352,12 @@ final class EditorStore: ObservableObject {
                 nodes[index].layout = normalizedValue.isEmpty ? nil : normalizedValue
             case "data-og-role":
                 nodes[index].role = normalizedValue.isEmpty ? nil : normalizedValue
+            case "data-og-icon-library":
+                nodes[index].iconLibrary = normalizedValue.isEmpty ? nil : normalizedValue
+            case "data-og-icon-name":
+                nodes[index].iconName = normalizedValue.isEmpty ? nil : normalizedValue
+            case "data-og-icon-source":
+                nodes[index].iconSource = normalizedValue.isEmpty ? nil : normalizedValue
             default:
                 break
             }
@@ -1354,6 +1372,69 @@ final class EditorStore: ObservableObject {
             value: normalizedValue
         )
         statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
+    }
+
+    /// 論理名（日本語）: アイコン属性更新関数
+    /// 処理概要: 選択中 icon node の metadata と保存済み描画 HTML を更新し、WebView へ置換要求を発行します。
+    ///
+    /// - Parameters:
+    ///   - library: icon library。空の場合は lucide として保存します。
+    ///   - name: icon name。空の場合は circle として保存します。
+    ///   - source: icon source。空の場合は inline として保存します。
+    func updateIcon(library: String, name: String, source: String) {
+        guard let selectedNodeID,
+              let selectedNode,
+              selectedNode.type == "icon",
+              let target = currentHTMLSyncTarget()
+        else {
+            return
+        }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
+
+        let currentLibrary = selectedNode.iconLibrary ?? OpenGraphiteIconMarkup.defaultLibrary
+        let currentName = selectedNode.iconName ?? OpenGraphiteIconMarkup.defaultName
+        let currentSource = selectedNode.iconSource ?? OpenGraphiteIconMarkup.defaultSource
+        let normalizedLibrary = Self.normalizedIconValue(library, defaultValue: OpenGraphiteIconMarkup.defaultLibrary)
+        let normalizedName = Self.normalizedIconValue(name, defaultValue: OpenGraphiteIconMarkup.defaultName)
+        let normalizedSource = Self.normalizedIconValue(source, defaultValue: OpenGraphiteIconMarkup.defaultSource)
+
+        guard currentLibrary != normalizedLibrary
+                || currentName != normalizedName
+                || currentSource != normalizedSource
+        else {
+            return
+        }
+
+        let edit = HTMLObjectEdit(
+            target: target,
+            operation: .setIcon(
+                nodeInternalID: selectedNode.internalID,
+                library: normalizedLibrary,
+                name: normalizedName,
+                source: normalizedSource,
+                expectedOldValues: [
+                    "data-og-icon-library": selectedNode.iconLibrary ?? "",
+                    "data-og-icon-name": selectedNode.iconName ?? "",
+                    "data-og-icon-source": selectedNode.iconSource ?? ""
+                ]
+            )
+        )
+        let result = applyHTMLObjectEdit(edit)
+        guard result.updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            nodes[index].iconLibrary = normalizedLibrary
+            nodes[index].iconName = normalizedName
+            nodes[index].iconSource = normalizedSource
+        }
+
+        if result.requiresReload {
+            requestDocumentReplacementFromDisk(for: target, selectedNodeID: selectedNodeID)
+        }
+        statusMessage = "\(selectedNode.displayID) の icon を更新しました。"
     }
 
     /// 論理名（日本語）: CSS変数mutation適用完了関数
@@ -1830,6 +1911,18 @@ final class EditorStore: ObservableObject {
                     expectedOldValue: payload["previousValue"] as? String ?? ""
                 )
             )
+        case "setIcon":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String else { return nil }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .setIcon(
+                    nodeInternalID: nodeInternalID,
+                    library: payload["library"] as? String ?? OpenGraphiteIconMarkup.defaultLibrary,
+                    name: payload["name"] as? String ?? OpenGraphiteIconMarkup.defaultName,
+                    source: payload["source"] as? String ?? OpenGraphiteIconMarkup.defaultSource,
+                    expectedOldValues: payload["previousValues"] as? [String: String] ?? [:]
+                )
+            )
         case "setTextContent":
             guard let nodeInternalID = payload["nodeInternalID"] as? String else { return nil }
             return HTMLObjectEdit(
@@ -1922,6 +2015,11 @@ final class EditorStore: ObservableObject {
         case let .setAttribute(nodeInternalID, name, _, expectedOldValue):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
             return (node.attributes[name] ?? "") == expectedOldValue
+        case let .setIcon(nodeInternalID, _, _, _, expectedOldValues):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return expectedOldValues.allSatisfy { key, value in
+                (node.attributes[key] ?? "") == value
+            }
         case let .setTextContent(nodeInternalID, _, expectedOldValue):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
             return (node.textContent ?? "") == expectedOldValue
@@ -1970,6 +2068,9 @@ final class EditorStore: ObservableObject {
         case let .setAttribute(nodeInternalID, name, value, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .settingAttribute(name: name, value: value, forNodeID: nodeInternalID, contract: contract)
+        case let .setIcon(nodeInternalID, library, name, source, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .settingIcon(library: library, name: name, source: source, forNodeID: nodeInternalID, contract: contract)
         case let .setTextContent(nodeInternalID, text, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .settingTextContent(text, forNodeID: nodeInternalID, contract: contract)
@@ -2010,6 +2111,23 @@ final class EditorStore: ObservableObject {
         try? String(contentsOf: pageURL, encoding: .utf8)
     }
 
+    /// 論理名（日本語）: ディスクHTML置換要求発行関数
+    /// 処理概要: 保存済み HTML を読み直し、選択中 WebView へ document replacement として反映します。
+    ///
+    /// - Parameters:
+    ///   - target: 置換対象 HTML。
+    ///   - selectedNodeID: 置換後に維持する選択 node ID。
+    private func requestDocumentReplacementFromDisk(for target: HTMLSyncTarget, selectedNodeID: String?) {
+        guard let html = readHTMLFromDisk(at: target.htmlURL) else { return }
+        documentReplacementSequence += 1
+        documentReplacementRequest = DocumentReplacementRequest(
+            sequence: documentReplacementSequence,
+            pageURL: target.htmlURL,
+            html: html,
+            selectedNodeID: selectedNodeID
+        )
+    }
+
     /// 論理名（日本語）: キャンバス配置名正規化関数
     /// 処理概要: Inspector 入力の前後空白を除去し、空白のみの名前を空文字に変換します。
     ///
@@ -2017,6 +2135,18 @@ final class EditorStore: ObservableObject {
     /// - Returns: 保存用の配置名。名前なしの場合は空文字。
     private static func normalizedCanvasName(_ name: String) -> String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 論理名（日本語）: アイコン値正規化関数
+    /// 処理概要: Inspector 入力の前後空白を除去し、空の場合は既定値へ置き換えます。
+    ///
+    /// - Parameters:
+    ///   - value: Inspector 入力値。
+    ///   - defaultValue: 空入力時の既定値。
+    /// - Returns: 保存用の icon metadata。
+    private static func normalizedIconValue(_ value: String, defaultValue: String) -> String {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? defaultValue : normalized
     }
 
     /// 論理名（日本語）: 優先Collection解決関数
@@ -2431,6 +2561,9 @@ final class EditorStore: ObservableObject {
             fallbackTextContent: sourceNode?.textContent ?? dictionary["fallbackTextContent"] as? String,
             textSource: sourceNode?.attributes["data-og-text-source"] ?? dictionary["textSource"] as? String,
             i18nKey: sourceNode?.attributes["data-i18n-key"] ?? dictionary["i18nKey"] as? String,
+            iconLibrary: sourceNode?.attributes["data-og-icon-library"] ?? dictionary["iconLibrary"] as? String,
+            iconName: sourceNode?.attributes["data-og-icon-name"] ?? dictionary["iconName"] as? String,
+            iconSource: sourceNode?.attributes["data-og-icon-source"] ?? dictionary["iconSource"] as? String,
             cssVariables: cssVariables,
             isHidden: dictionary["hidden"] as? Bool ?? false,
             isLocked: dictionary["locked"] as? Bool ?? false,
