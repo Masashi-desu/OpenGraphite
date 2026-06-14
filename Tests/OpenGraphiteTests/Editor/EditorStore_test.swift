@@ -501,6 +501,88 @@ struct EditorStoreTests {
         #expect(diskHTML.contains("--og-gap:32px"))
     }
 
+    /// 論理名（日本語）: フォント候補適用テスト
+    /// 概要: フォントブラウザの候補適用で CSS 変数と stylesheet link が HTML 正本へ保存されることを検証します。
+    @Test("フォント候補適用でCSS変数とstylesheetを保存する")
+    func testApplyFontCandidatePersistsCSSVariableAndStylesheet() throws {
+        // コンディション：head と text node を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><head><title>Fixture</title></head><body><Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text">OpenGraphite</Title></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "title",
+                "internalID": "title-node",
+                "tagName": "title",
+                "type": "text",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "title")
+        let candidate = try #require(
+            OpenGraphiteFontLibrary.filteredCandidates(for: .external, query: "roboto")
+                .first { $0.familyName == "Roboto" }
+        )
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：Google Fonts 候補を適用する
+        store.applyFontCandidate(candidate)
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：node の CSS 変数と head の stylesheet link が保存される
+        #expect(store.nodes[0].cssVariables["--og-font-family"] == "\"Roboto\", sans-serif")
+        #expect(diskHTML.contains("--og-font-family:&quot;Roboto&quot;, sans-serif;"))
+        #expect(diskHTML.contains("<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Roboto&amp;display=swap\">"))
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+    }
+
+    /// 論理名（日本語）: ページルートlocaleフォント候補適用テスト
+    /// 概要: Page Inspector の locale font-family 編集でページ root CSS 変数と stylesheet link が保存されることを検証します。
+    @Test("ページルートのlocaleフォント候補適用でCSS変数とstylesheetを保存する")
+    func testApplyPageRootLocaleFontCandidatePersistsCSSVariableAndStylesheet() throws {
+        // コンディション：head と page root node を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><head><title>Fixture</title></head><body><OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" style="--og-font-family-default:system-ui, sans-serif;"></OpenGraphitePage></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：動的 locale suffix を持つ font-family 変数を直接保存する
+        store.updateSelectedPageRootCSSVariable(key: "--og-font-family-fr", value: " \"Merriweather\", serif ")
+
+        // 期待値：動的 locale 変数が契約で拒否されず、page root の mutation として保存される
+        #expect(store.selectedPageRootCSSVariables["--og-font-family-fr"] == "\"Merriweather\", serif")
+        #expect(store.cssMutation?.nodeID == "page")
+        #expect(store.cssMutation?.key == "--og-font-family-fr")
+        #expect(store.cssMutation?.value == "\"Merriweather\", serif")
+
+        let candidate = try #require(
+            OpenGraphiteFontLibrary.filteredCandidates(for: .external, query: "noto sans jp")
+                .first { $0.familyName == "Noto Sans JP" }
+        )
+
+        // 検証内容：Google Fonts 候補を日本語 locale font-family として適用する
+        store.applySelectedPageRootFontCandidate(variableKey: "--og-font-family-ja", candidate: candidate)
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：page root の locale CSS 変数と head の stylesheet link が保存される
+        #expect(store.selectedPageRootCSSVariables["--og-font-family-ja"] == "\"Noto Sans JP\", sans-serif")
+        #expect(diskHTML.contains("--og-font-family-fr:&quot;Merriweather&quot;, serif;"))
+        #expect(diskHTML.contains("--og-font-family-ja:&quot;Noto Sans JP&quot;, sans-serif;"))
+        #expect(diskHTML.contains("https://fonts.googleapis.com/css2?family=Noto+Sans+JP&amp;display=swap"))
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+    }
+
     /// 論理名（日本語）: Inspectorテキストfallback更新テスト
     /// 概要: binding text node の Inspector 更新が HTML 正本の fallback を保存し、WebView 反映 mutation を発行することを検証します。
     @Test("Inspectorのtext更新でfallbackとmutationを更新する")

@@ -184,7 +184,7 @@ struct OpenGraphiteHTMLDocument {
                 guard attribute.name.hasPrefix(prefix) else { return }
                 let locale = String(attribute.name.dropFirst(prefix.count))
                 guard !locale.isEmpty else { return }
-                result[locale] = Self.unescapeAttributeText(attribute.value)
+                result[locale] = attribute.value
             }
             return OpenGraphiteHTMLTextBindingResource(
                 key: key,
@@ -319,7 +319,7 @@ struct OpenGraphiteHTMLDocument {
             )
         }
 
-        if !contract.cssVariableSet.contains(variable) {
+        if !contract.isKnownCSSVariable(variable) {
             return .failure(
                 html: html,
                 diagnostic: OpenGraphiteDiagnostic(
@@ -562,6 +562,52 @@ struct OpenGraphiteHTMLDocument {
         }
 
         sanitized.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+    }
+
+    /// 論理名（日本語）: Stylesheet link追加関数
+    /// 処理概要: 指定 href の stylesheet link が `<head>` に存在しない場合だけ追加します。
+    ///
+    /// - Parameters:
+    ///   - href: 追加する stylesheet href。
+    ///   - contract: runtime 属性除去に使う OpenGraphite 契約。
+    /// - Returns: 更新済み HTML と diagnostics。
+    func ensuringStylesheetLink(
+        href: String,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        let normalizedHref = href.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedHref.isEmpty else {
+            return .failure(
+                html: html,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "empty-stylesheet-href",
+                    message: "stylesheet href は空にできません。",
+                    path: nil,
+                    nodeID: nil
+                )
+            )
+        }
+
+        var sanitized = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let sanitizedDocument = OpenGraphiteHTMLDocument(html: sanitized)
+        guard !sanitizedDocument.containsStylesheetLink(href: normalizedHref) else {
+            return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+        }
+
+        let linkHTML = Self.stylesheetLinkHTML(href: normalizedHref)
+        let tags = sanitizedDocument.parsedTags()
+        if let headTag = tags.first(where: { $0.tagName == "head" }),
+           let headElement = sanitizedDocument.element(for: headTag) {
+            sanitized.insert("\n\(linkHTML)", atOffset: headElement.contentRange.upperBound)
+        } else if let htmlTag = tags.first(where: { $0.tagName == "html" }) {
+            sanitized.insert("\n<head>\n\(linkHTML)</head>\n", atOffset: htmlTag.range.upperBound)
+        } else if let bodyTag = tags.first(where: { $0.tagName == "body" }) {
+            sanitized.insert("<head>\n\(linkHTML)</head>\n", atOffset: bodyTag.range.lowerBound)
+        } else {
+            sanitized = "<head>\n\(linkHTML)</head>\n\(sanitized)"
+        }
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
@@ -1399,7 +1445,7 @@ struct OpenGraphiteHTMLDocument {
                 }
             }
 
-            attributes.append(OpenGraphiteHTMLAttribute(name: name, value: value))
+            attributes.append(OpenGraphiteHTMLAttribute(name: name, value: Self.unescapeAttributeText(value)))
         }
 
         return attributes
@@ -1420,6 +1466,33 @@ struct OpenGraphiteHTMLDocument {
         } else {
             setAttribute(name, value: normalizedValue, in: &attributes)
         }
+    }
+
+    private func containsStylesheetLink(href: String) -> Bool {
+        parsedTags().contains { tag in
+            guard tag.tagName == "link",
+                  let rel = tag.attributeValue(named: "rel"),
+                  let linkHref = tag.attributeValue(named: "href")
+            else {
+                return false
+            }
+            let relTokens = rel
+                .lowercased()
+                .split(whereSeparator: { $0.isWhitespace })
+                .map(String.init)
+            return relTokens.contains("stylesheet") && linkHref == href
+        }
+    }
+
+    private static func stylesheetLinkHTML(href: String) -> String {
+        "    <link rel=\"stylesheet\" href=\"\(escapeAttributeValue(href))\">\n"
+    }
+
+    private static func escapeAttributeValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
     }
 
     private static func isValidDirectionFallback(_ value: String) -> Bool {
@@ -1546,8 +1619,7 @@ struct OpenGraphiteCSSStyle: Equatable {
     /// - Parameter source: HTML 属性内の style 値。
     /// - Returns: CSS style モデル。
     static func parse(_ source: String) -> OpenGraphiteCSSStyle {
-        let declarations = source
-            .split(separator: ";", omittingEmptySubsequences: true)
+        let declarations = splitDeclarations(source)
             .compactMap { item -> OpenGraphiteCSSDeclaration? in
                 let pair = item.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
                 guard pair.count == 2 else { return nil }
@@ -1557,6 +1629,64 @@ struct OpenGraphiteCSSStyle: Equatable {
                 return OpenGraphiteCSSDeclaration(name: name, value: value)
             }
         return OpenGraphiteCSSStyle(declarations: declarations)
+    }
+
+    /// 論理名（日本語）: CSS宣言分割関数
+    /// 処理概要: inline style を quote と括弧の内側を保ったまま CSS 宣言単位へ分割します。
+    ///
+    /// - Parameter source: HTML 属性から取得した inline style 値。
+    /// - Returns: 宣言ごとの文字列。
+    private static func splitDeclarations(_ source: String) -> [String] {
+        var declarations: [String] = []
+        var current = ""
+        var depth = 0
+        var quote: Character?
+
+        func flush() {
+            let declaration = current.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !declaration.isEmpty {
+                declarations.append(declaration)
+            }
+            current = ""
+        }
+
+        for character in source {
+            if let activeQuote = quote {
+                current.append(character)
+                if character == activeQuote {
+                    quote = nil
+                }
+                continue
+            }
+
+            if character == "\"" || character == "'" {
+                quote = character
+                current.append(character)
+                continue
+            }
+
+            if character == "(" {
+                depth += 1
+                current.append(character)
+                continue
+            }
+
+            if character == ")" {
+                depth = max(depth - 1, 0)
+                current.append(character)
+                continue
+            }
+
+            if character == ";" && depth == 0 {
+                flush()
+                continue
+            }
+
+            current.append(character)
+        }
+
+        flush()
+        return declarations
     }
 
     /// 論理名（日本語）: CSS変数設定関数

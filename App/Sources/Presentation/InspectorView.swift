@@ -194,6 +194,18 @@ struct InspectorView: View {
                             TextContentSection(node: node)
 
                             InspectorSection(title: "Typography") {
+                                CSSFontFamilyVariableField(
+                                    key: "--og-font-family",
+                                    value: node.cssVariables["--og-font-family"] ?? "",
+                                    resolvedValue: node.resolvedFontFamily ?? "",
+                                    sampleText: fontPreviewText(for: node)
+                                ) { value in
+                                    store.updateCSSVariable(key: "--og-font-family", value: value)
+                                } onSelectCandidate: { candidate in
+                                    store.applyFontCandidate(candidate)
+                                }
+                                .id("\(node.id)-font-family")
+
                                 InspectorFieldGrid {
                                     CSSNumericUnitVariableField(key: "--og-font-size", value: node.cssVariables["--og-font-size"] ?? "", units: ["px", "rem", "em", "%"]) { value in
                                         store.updateCSSVariable(key: "--og-font-size", value: value)
@@ -335,8 +347,15 @@ struct InspectorView: View {
                     page: page,
                     htmlDocumentContext: store.selectedHTMLDocumentContext,
                     i18nInspection: store.selectedI18nRuntimeInspection,
+                    pageFontVariables: store.selectedPageRootCSSVariables,
                     onOpenI18nRuntime: {
                         store.selectProjectResource(.i18nRuntime)
+                    },
+                    onUpdatePageFontVariable: { key, value in
+                        store.updateSelectedPageRootCSSVariable(key: key, value: value)
+                    },
+                    onSelectPageFontCandidate: { key, candidate in
+                        store.applySelectedPageRootFontCandidate(variableKey: key, candidate: candidate)
                     }
                 ) { x, y, width, height, name, previewContext, htmlDocumentContext in
                     store.updateSelectedHTMLDocumentContext(htmlDocumentContext)
@@ -356,6 +375,15 @@ struct InspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func fontPreviewText(for node: OpenGraphiteNode) -> String {
+        let candidateText = node.textContent ?? node.fallbackTextContent ?? ""
+        let normalizedText = candidateText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedText.isEmpty {
+            return OpenGraphiteFontLibrary.defaultSampleText
+        }
+        return normalizedText
     }
 }
 
@@ -856,13 +884,19 @@ private struct PreviewMockFieldDraft: Identifiable, Equatable {
 /// - `page`: 表示・編集対象のページ。
 /// - `htmlDocumentContext`: HTML 正本の `<html>` attribute と binding metadata。
 /// - `i18nInspection`: 実装資源から検出した i18n runtime 設定。
-/// - `onRecommendI18n`: 推奨 i18n runtime / locale JSON を実装資源へ作成する処理。
+/// - `pageFontVariables`: ページ root node に保存されている locale font-family 変数。
+/// - `onOpenI18nRuntime`: Project 依存性の i18n runtime 選択へ移動する処理。
+/// - `onUpdatePageFontVariable`: ページ root node の font-family 変数を保存する処理。
+/// - `onSelectPageFontCandidate`: フォントブラウザの候補をページ root node へ保存する処理。
 /// - `onCommit`: 有効なキャンバス入力を適用する処理。
 private struct PageInspectorView: View {
     var page: OpenGraphitePage
     var htmlDocumentContext: OpenGraphiteHTMLDocumentContext
     var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var pageFontVariables: [String: String]
     var onOpenI18nRuntime: () -> Void
+    var onUpdatePageFontVariable: (String, String) -> Void
+    var onSelectPageFontCandidate: (String, OpenGraphiteFontCandidate) -> Void
     var onCommit: (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
 
     @State private var nameDraft: String
@@ -887,19 +921,28 @@ private struct PageInspectorView: View {
     ///   - page: 表示・編集対象のページ。
     ///   - htmlDocumentContext: HTML 正本の `<html>` attribute と binding metadata。
     ///   - i18nInspection: 実装資源から検出した i18n runtime 設定。
+    ///   - pageFontVariables: ページ root node に保存されている locale font-family 変数。
     ///   - onOpenI18nRuntime: Project 依存性の i18n runtime 選択へ移動する処理。
+    ///   - onUpdatePageFontVariable: ページ root node の font-family 変数を保存する処理。
+    ///   - onSelectPageFontCandidate: フォントブラウザの候補をページ root node へ保存する処理。
     ///   - onCommit: 有効なキャンバス入力を適用する処理。
     init(
         page: OpenGraphitePage,
         htmlDocumentContext: OpenGraphiteHTMLDocumentContext,
         i18nInspection: OpenGraphiteI18nRuntimeInspection?,
+        pageFontVariables: [String: String],
         onOpenI18nRuntime: @escaping () -> Void,
+        onUpdatePageFontVariable: @escaping (String, String) -> Void,
+        onSelectPageFontCandidate: @escaping (String, OpenGraphiteFontCandidate) -> Void,
         onCommit: @escaping (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
     ) {
         self.page = page
         self.htmlDocumentContext = htmlDocumentContext
         self.i18nInspection = i18nInspection
+        self.pageFontVariables = pageFontVariables
         self.onOpenI18nRuntime = onOpenI18nRuntime
+        self.onUpdatePageFontVariable = onUpdatePageFontVariable
+        self.onSelectPageFontCandidate = onSelectPageFontCandidate
         self.onCommit = onCommit
         _nameDraft = State(initialValue: page.canvas.displayName ?? "")
         _xDraft = State(initialValue: Self.draftText(for: page.canvas.x))
@@ -963,6 +1006,17 @@ private struct PageInspectorView: View {
                     I18nRuntimeSummarySection(
                         inspection: i18nInspection,
                         onOpenProjectResource: onOpenI18nRuntime
+                    )
+                }
+
+                InspectorSection(title: "Locale Typography") {
+                    LocaleTypographyFontSection(
+                        variables: pageFontVariables,
+                        htmlDocumentContext: htmlDocumentContext,
+                        previewContext: page.canvas.previewContext,
+                        i18nInspection: i18nInspection,
+                        onCommit: onUpdatePageFontVariable,
+                        onSelectCandidate: onSelectPageFontCandidate
                     )
                 }
 
@@ -1472,6 +1526,190 @@ private struct PageInspectorView: View {
             }
             return PreviewMockFieldDraft(name: name, value: "", isOverrideEnabled: false)
         }
+    }
+}
+
+/// 論理名（日本語）: Locale別フォント行
+/// 概要: Page Inspector の Locale Typography セクションに表示する font-family 変数行を表します。
+///
+/// プロパティ:
+/// - `id`: SwiftUI の行識別子。
+/// - `title`: 表示名。
+/// - `detail`: 補助情報。
+/// - `variable`: 保存対象の CSS 変数名。
+private struct LocaleTypographyFontEntry: Identifiable, Equatable {
+    var id: String { variable }
+    var title: String
+    var detail: String
+    var variable: String
+}
+
+/// 論理名（日本語）: Locale別タイポグラフィセクション
+/// 概要: ページ root node の default / locale 別 font-family 変数を編集します。
+///
+/// プロパティ:
+/// - `variables`: ページ root node の CSS 変数。
+/// - `htmlDocumentContext`: HTML 正本の `<html>` attribute と binding metadata。
+/// - `previewContext`: Page canvas の preview mock state。
+/// - `i18nInspection`: 実装資源から検出した i18n runtime 設定。
+/// - `onCommit`: CSS 値の直接編集を保存する処理。
+/// - `onSelectCandidate`: フォントブラウザの候補を保存する処理。
+private struct LocaleTypographyFontSection: View {
+    var variables: [String: String]
+    var htmlDocumentContext: OpenGraphiteHTMLDocumentContext
+    var previewContext: OpenGraphitePreviewContext
+    var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var onCommit: (String, String) -> Void
+    var onSelectCandidate: (String, OpenGraphiteFontCandidate) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let activeLocaleLabel {
+                InspectorInfoRow(label: "Active", value: activeLocaleLabel)
+            }
+
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(entry.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Text(entry.detail)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+
+                    CSSFontFamilyVariableField(
+                        key: entry.variable,
+                        value: variables[entry.variable] ?? ""
+                    ) { value in
+                        onCommit(entry.variable, value)
+                    } onSelectCandidate: { candidate in
+                        onSelectCandidate(entry.variable, candidate)
+                    }
+                }
+                .padding(8)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(EditorColumnStyle.separatorColor.opacity(0.7), lineWidth: 1)
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var entries: [LocaleTypographyFontEntry] {
+        var result = [
+            LocaleTypographyFontEntry(
+                title: "Default",
+                detail: "--og-font-family-default",
+                variable: "--og-font-family-default"
+            )
+        ]
+        var seenVariables = Set(result.map(\.variable))
+
+        for locale in localeCandidates {
+            guard let entry = Self.entry(forLocale: locale),
+                  !seenVariables.contains(entry.variable)
+            else {
+                continue
+            }
+            result.append(entry)
+            seenVariables.insert(entry.variable)
+        }
+
+        return result
+    }
+
+    private var localeCandidates: [String] {
+        var locales: [String] = []
+
+        func appendLocale(_ value: String?) {
+            guard let normalized = Self.normalizedLocale(value),
+                  !locales.contains(normalized)
+            else {
+                return
+            }
+            locales.append(normalized)
+        }
+
+        appendLocale(htmlDocumentContext.langValue)
+        if htmlDocumentContext.langSource == .binding {
+            appendLocale(previewContext.fieldMocks[htmlDocumentContext.langField])
+        }
+        if let localeField = i18nInspection?.localeField {
+            appendLocale(previewContext.fieldMocks[localeField])
+        }
+        appendLocale(i18nInspection?.lng.value)
+        appendLocale(i18nInspection?.fallbackLng.value)
+        for resource in i18nInspection?.resources ?? [] {
+            appendLocale(resource.locale)
+        }
+
+        return locales
+    }
+
+    private var activeLocaleLabel: String? {
+        if htmlDocumentContext.langSource == .binding,
+           let normalized = Self.normalizedLocale(previewContext.fieldMocks[htmlDocumentContext.langField]) {
+            return normalized
+        }
+        return Self.normalizedLocale(htmlDocumentContext.langValue)
+            ?? i18nInspection?.localeField.flatMap { Self.normalizedLocale(previewContext.fieldMocks[$0]) }
+    }
+
+    /// 論理名（日本語）: Localeフォント行生成関数
+    /// 処理概要: locale 名を対応する `--og-font-family-<locale>` 変数行へ変換します。
+    ///
+    /// - Parameter locale: locale 名。
+    /// - Returns: 表示行。locale 名が不正な場合は `nil`。
+    private static func entry(forLocale locale: String) -> LocaleTypographyFontEntry? {
+        guard let normalized = normalizedLocale(locale) else { return nil }
+        return LocaleTypographyFontEntry(
+            title: localizedLocaleName(for: normalized),
+            detail: "--og-font-family-\(normalized)",
+            variable: "--og-font-family-\(normalized)"
+        )
+    }
+
+    /// 論理名（日本語）: Locale名正規化関数
+    /// 処理概要: CSS 変数 suffix に使える lowercase locale token へ変換します。
+    ///
+    /// - Parameter locale: 入力 locale 名。
+    /// - Returns: 正規化済み locale。空または不正な場合は `nil`。
+    private static func normalizedLocale(_ locale: String?) -> String? {
+        guard let locale else { return nil }
+        let lowered = locale
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+        let scalars = lowered.unicodeScalars.map { scalar -> Character in
+            let value = scalar.value
+            if (48...57).contains(value) || (97...122).contains(value) {
+                return Character(String(scalar))
+            }
+            return "-"
+        }
+        let normalized = String(scalars)
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    /// 論理名（日本語）: Locale表示名生成関数
+    /// 処理概要: システムの locale 表示名を使い、取得できない場合は token を表示します。
+    ///
+    /// - Parameter locale: 正規化済み locale token。
+    /// - Returns: Inspector 表示用 locale 名。
+    private static func localizedLocaleName(for locale: String) -> String {
+        if let name = Locale.current.localizedString(forIdentifier: locale), !name.isEmpty {
+            return "\(name) (\(locale))"
+        }
+        return locale
     }
 }
 

@@ -89,6 +89,79 @@ enum CSSValueTokenizer {
     }
 }
 
+/// 論理名（日本語）: CSSフォントファミリープリセット
+/// 概要: Inspector のフォント選択 UI で扱う Web 配布向けの font-family 候補を表します。
+///
+/// プロパティ:
+/// - `id`: Picker で使う安定 ID。
+/// - `title`: UI に表示する名称。
+/// - `cssValue`: 正本 HTML に保存する CSS font-family 値。
+struct CSSFontFamilyPreset: Identifiable, Equatable {
+    var id: String
+    var title: String
+    var cssValue: String
+
+    static let unset = CSSFontFamilyPreset(id: "", title: "unset", cssValue: "")
+    static let custom = CSSFontFamilyPreset(id: "custom", title: "Custom", cssValue: "")
+
+    static let presets: [CSSFontFamilyPreset] = [
+        CSSFontFamilyPreset(
+            id: "system-sans",
+            title: "System Sans",
+            cssValue: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+        ),
+        CSSFontFamilyPreset(
+            id: "japanese-sans",
+            title: "Japanese Sans",
+            cssValue: "\"Noto Sans JP\", \"Hiragino Sans\", \"Yu Gothic\", \"YuGothic\", Meiryo, sans-serif"
+        ),
+        CSSFontFamilyPreset(
+            id: "system-serif",
+            title: "System Serif",
+            cssValue: "ui-serif, Georgia, Cambria, \"Times New Roman\", Times, serif"
+        ),
+        CSSFontFamilyPreset(
+            id: "system-mono",
+            title: "System Mono",
+            cssValue: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", monospace"
+        )
+    ]
+
+    static var pickerOptions: [CSSFontFamilyPreset] {
+        [unset] + presets + [custom]
+    }
+
+    /// 論理名（日本語）: CSSフォント選択ID解決関数
+    /// 処理概要: 現在の CSS 値に一致するプリセット ID を返し、候補外の値は Custom として扱います。
+    ///
+    /// - Parameter cssString: 判定する CSS font-family 文字列。
+    /// - Returns: Picker の選択 ID。
+    static func selectionID(for cssString: String) -> String {
+        let normalizedValue = normalized(cssString)
+        guard !normalizedValue.isEmpty else { return unset.id }
+        return presets.first { normalized($0.cssValue) == normalizedValue }?.id ?? custom.id
+    }
+
+    /// 論理名（日本語）: プリセットCSS値取得関数
+    /// 処理概要: Picker の選択 ID に対応する CSS font-family 値を返します。
+    ///
+    /// - Parameter selectionID: Picker の選択 ID。
+    /// - Returns: 保存対象 CSS 値。unset / Custom の場合は空文字、未知の ID の場合は `nil`。
+    static func cssValue(for selectionID: String) -> String? {
+        pickerOptions.first { $0.id == selectionID }?.cssValue
+    }
+
+    /// 論理名（日本語）: CSSフォント値正規化関数
+    /// 処理概要: 前後空白と余分な空白をならし、プリセット照合に使える文字列へ変換します。
+    ///
+    /// - Parameter value: 正規化する CSS font-family 文字列。
+    /// - Returns: 比較用に正規化された文字列。
+    static func normalized(_ value: String) -> String {
+        CSSValueTokenizer.splitWhitespace(value.trimmingCharacters(in: .whitespacesAndNewlines))
+            .joined(separator: " ")
+    }
+}
+
 /// 論理名（日本語）: CSS四辺値
 /// 概要: padding、margin、radius の CSS shorthand を 4 つの編集値として扱います。
 ///

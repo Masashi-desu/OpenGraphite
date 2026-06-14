@@ -3863,7 +3863,7 @@ struct OpenGraphiteAgentCore {
                 }
             }
 
-            for key in node.cssVariables.keys.sorted() where !contract.cssVariableSet.contains(key) {
+            for key in node.cssVariables.keys.sorted() where !contract.isKnownCSSVariable(key) {
                 diagnostics.append(
                     OpenGraphiteDiagnostic(
                         severity: .warning,

@@ -132,6 +132,252 @@ struct CSSStructuredValueTests {
         #expect(functionCSSString == "min(100%,560px)")
     }
 
+    /// 論理名（日本語）: CSSフォントプリセット照合テスト
+    /// 概要: font-family の既知プリセットを現在値から選択状態へ戻せることを検証します。
+    @Test("font-familyプリセットを現在値から照合できる")
+    func testFontFamilyPresetSelectionMatchesKnownValue() {
+        // コンディション：既知プリセットの CSS 値を余分な空白付きで用意する
+        let fontStack = "Inter,  ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+
+        // 検証内容：Picker の選択 ID を解決する
+        let selectionID = CSSFontFamilyPreset.selectionID(for: fontStack)
+
+        // 期待値：System Sans プリセットとして扱われる
+        #expect(selectionID == "system-sans")
+    }
+
+    /// 論理名（日本語）: CSSフォントCustom判定テスト
+    /// 概要: project 固有の font-family 値を固定候補へ丸めず Custom として保持することを検証します。
+    @Test("候補外font-familyはCustomとして扱う")
+    func testFontFamilyPresetSelectionKeepsCustomValue() {
+        // コンディション：Web font や token で使われる任意の CSS 変数参照を用意する
+        let fontStack = "var(--brand-heading-font)"
+
+        // 検証内容：Picker の選択 ID とプリセット保存値を確認する
+        let selectionID = CSSFontFamilyPreset.selectionID(for: fontStack)
+        let presetValue = CSSFontFamilyPreset.cssValue(for: selectionID)
+
+        // 期待値：候補外の値は Custom になり、プリセット値としては解決されない
+        #expect(selectionID == CSSFontFamilyPreset.custom.id)
+        #expect(presetValue == "")
+    }
+
+    /// 論理名（日本語）: Google Fonts候補生成テスト
+    /// 概要: Google Fonts provider の候補が保存用 CSS 値と stylesheet href を持つことを検証します。
+    @Test("Google Fonts候補はCSS値とstylesheet hrefを持つ")
+    func testGoogleFontCandidateProvidesCSSAndStylesheet() throws {
+        // コンディション：External ソースの Google Fonts provider から Roboto 候補を検索する
+        let candidate = try #require(
+            OpenGraphiteFontLibrary.filteredCandidates(for: .external, query: "roboto")
+                .first { $0.familyName == "Roboto" }
+        )
+
+        // 検証内容：候補の保存値と外部 stylesheet を確認する
+        let cssFamily = candidate.cssFamily
+        let stylesheetHref = candidate.stylesheetHref
+
+        // 期待値：`--og-font-family` と HTML head link に使える値が揃っている
+        #expect(candidate.sourceID == .external)
+        #expect(candidate.externalProviderID == .googleFonts)
+        #expect(cssFamily == "\"Roboto\", sans-serif")
+        #expect(stylesheetHref == "https://fonts.googleapis.com/css2?family=Roboto&display=swap")
+    }
+
+    /// 論理名（日本語）: Customフォント候補stylesheet抽出テスト
+    /// 概要: Custom 入力で Google Fonts embed の `<link>` から stylesheet href を抽出できることを検証します。
+    @Test("Customフォント候補はembed linkからstylesheet hrefを抽出できる")
+    func testCustomFontCandidateExtractsStylesheetFromEmbedLink() {
+        // コンディション：Google Fonts の embed から得られる link snippet と CSS font-family を用意する
+        let embedLink = """
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP&amp;display=swap">
+        """
+
+        // 検証内容：Custom 候補へ変換する
+        let candidate = OpenGraphiteFontLibrary.customCandidate(
+            cssFamily: "\"Noto Sans JP\", sans-serif",
+            stylesheetInput: embedLink
+        )
+
+        // 期待値：font-family と stylesheet href が保存処理へ渡せる形で揃う
+        #expect(candidate.sourceID == .customCSS)
+        #expect(candidate.cssFamily == "\"Noto Sans JP\", sans-serif")
+        #expect(candidate.stylesheetHref == "https://fonts.googleapis.com/css2?family=Noto+Sans+JP&display=swap")
+    }
+
+    /// 論理名（日本語）: Google Fonts APIレスポンス変換テスト
+    /// 概要: Developer API の JSON response から External / Google Fonts 候補を生成できることを検証します。
+    @Test("Google Fonts APIレスポンスから候補を生成できる")
+    func testGoogleFontsAPIResponseConvertsToCandidates() throws {
+        // コンディション：Developer API の最小 response を用意する
+        let data = """
+        {
+          "kind": "webfonts#webfontList",
+          "items": [
+            {
+              "family": "Alegreya",
+              "category": "serif",
+              "variants": ["regular", "700"],
+              "subsets": ["latin", "latin-ext"]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        // 検証内容：OpenGraphite の候補へ変換する
+        let candidates = try OpenGraphiteGoogleFontsClient.candidates(from: data)
+        let candidate = try #require(candidates.first)
+
+        // 期待値：External / Google Fonts provider として保存値・stylesheet・検索 tag が揃う
+        #expect(candidate.sourceID == .external)
+        #expect(candidate.externalProviderID == .googleFonts)
+        #expect(candidate.familyName == "Alegreya")
+        #expect(candidate.category == "serif")
+        #expect(candidate.cssFamily == "\"Alegreya\", serif")
+        #expect(candidate.stylesheetHref == "https://fonts.googleapis.com/css2?family=Alegreya&display=swap")
+        #expect(candidate.tags.contains("latin"))
+        #expect(candidate.tags.contains("700"))
+    }
+
+    /// 論理名（日本語）: Google Fonts内蔵候補Genre絞り込みテスト
+    /// 概要: API key がない fallback catalog でも genre filter が機能することを検証します。
+    @Test("Google Fonts内蔵候補をgenreで絞り込める")
+    func testBundledGoogleFontCandidatesCanFilterByGenre() {
+        // コンディション：内蔵 Google Fonts 候補を用意する
+        let candidates = OpenGraphiteFontLibrary.candidates(for: .external)
+
+        // 検証内容：monospace genre で絞り込む
+        let monospaceCandidates = OpenGraphiteFontLibrary.filteredCandidates(
+            candidates,
+            query: "",
+            genreID: .monospace
+        )
+
+        // 期待値：monospace 候補だけが含まれ、sans-serif の Roboto は混入しない
+        #expect(monospaceCandidates.contains { $0.familyName == "Roboto Mono" })
+        #expect(!monospaceCandidates.contains { $0.familyName == "Roboto" })
+    }
+
+    /// 論理名（日本語）: Google Fonts内蔵候補Genre別フォールバック件数テスト
+    /// 概要: API key がない fallback catalog でも各 genre に複数の実用候補が表示されることを検証します。
+    @Test("Google Fonts内蔵候補は各genreで複数候補を返す")
+    func testBundledGoogleFontCandidatesProvideMultipleFallbacksForEachGenre() {
+        // コンディション：内蔵 Google Fonts 候補と表示対象 genre を用意する
+        let candidates = OpenGraphiteFontLibrary.candidates(for: .external)
+        let genreIDs = OpenGraphiteFontGenreID.allCases.filter { $0 != .all }
+
+        // 検証内容：各 genre で絞り込んだ候補数を確認する
+        let underfilledGenreIDs = genreIDs.filter { genreID in
+            OpenGraphiteFontLibrary.filteredCandidates(
+                candidates,
+                query: "",
+                genreID: genreID
+            ).count < 4
+        }
+
+        // 期待値：API key がない状態でも全 genre で複数の人気候補を提示できる
+        #expect(underfilledGenreIDs.isEmpty)
+    }
+
+    /// 論理名（日本語）: フォント候補表示ページングテスト
+    /// 概要: 検索結果自体は全件保持し、UI 表示だけを段階的に制限することを検証します。
+    @Test("フォント候補は検索結果を全件保持して表示だけページングする")
+    func testFontCandidatesKeepFullSearchResultsAndPageDisplayedItems() {
+        // コンディション：API 取得結果相当の多数候補を用意する
+        let candidates = (0..<200).map { index in
+            OpenGraphiteFontLibrary.googleFontCandidate(
+                familyName: "Family \(index)",
+                category: "sans-serif",
+                tags: ["ui"]
+            )
+        }
+
+        // 検証内容：検索結果と初期表示分、Show more 後の表示上限を確認する
+        let filteredCandidates = OpenGraphiteFontLibrary.filteredCandidates(
+            candidates,
+            query: "",
+            genreID: .ui
+        )
+        let firstPageCandidates = OpenGraphiteFontLibrary.displayedCandidates(
+            filteredCandidates,
+            limit: OpenGraphiteFontLibrary.candidateDisplayPageSize
+        )
+        let nextLimit = OpenGraphiteFontLibrary.nextCandidateDisplayLimit(
+            currentLimit: OpenGraphiteFontLibrary.candidateDisplayPageSize,
+            totalCount: filteredCandidates.count
+        )
+        let secondPageCandidates = OpenGraphiteFontLibrary.displayedCandidates(
+            filteredCandidates,
+            limit: nextLimit
+        )
+
+        // 期待値：検索結果は 160 件などで切られず、描画対象だけ 80 件ずつ増える
+        #expect(filteredCandidates.count == 200)
+        #expect(firstPageCandidates.count == 80)
+        #expect(nextLimit == 160)
+        #expect(secondPageCandidates.count == 160)
+    }
+
+    /// 論理名（日本語）: Google Fonts API Genre推定テスト
+    /// 概要: Developer API の category / subsets / axes から genre filter 用 tag を生成できることを検証します。
+    @Test("Google Fonts API候補をmetadata由来genreで絞り込める")
+    func testGoogleFontsAPICandidatesCanFilterByMetadataGenre() throws {
+        // コンディション：variable axis と japanese subset を含む Developer API response を用意する
+        let data = """
+        {
+          "kind": "webfonts#webfontList",
+          "items": [
+            {
+              "family": "Noto Sans JP",
+              "category": "sans-serif",
+              "variants": ["regular", "700"],
+              "subsets": ["japanese", "latin"],
+              "axes": [{"tag": "wght"}]
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let candidates = try OpenGraphiteGoogleFontsClient.candidates(from: data)
+
+        // 検証内容：japanese と variable genre で絞り込む
+        let japaneseCandidates = OpenGraphiteFontLibrary.filteredCandidates(candidates, query: "", genreID: .japanese)
+        let variableCandidates = OpenGraphiteFontLibrary.filteredCandidates(candidates, query: "", genreID: .variable)
+
+        // 期待値：metadata から付与された tag によって該当候補が残る
+        #expect(japaneseCandidates.map(\.familyName) == ["Noto Sans JP"])
+        #expect(variableCandidates.map(\.familyName) == ["Noto Sans JP"])
+    }
+
+    /// 論理名（日本語）: ネイティブフォント候補抽出テスト
+    /// 概要: CSS font-family から generic family を除き、macOS 解決用の family 名だけを抽出することを検証します。
+    @Test("font-familyからネイティブプレビュー候補を抽出できる")
+    func testNativePreviewFamilyNamesIgnoreGenericFamilies() {
+        // コンディション：quoted family と generic family を含む font-family 値を用意する
+        let fontStack = "\"Noto Sans JP\", system-ui, -apple-system, \"Hiragino Sans\", sans-serif"
+
+        // 検証内容：macOS ネイティブ描画で試す family 名を抽出する
+        let familyNames = OpenGraphiteFontLibrary.nativePreviewFamilyNames(for: fontStack)
+
+        // 期待値：quoted family は unquote され、generic family は除外される
+        #expect(familyNames == ["Noto Sans JP", "Hiragino Sans"])
+    }
+
+    /// 論理名（日本語）: computed font-family候補照合テスト
+    /// 概要: DOM の computed style に近い長い font-family stack から既知候補を復元できることを検証します。
+    @Test("computed font-family stackから既知候補を照合できる")
+    func testFontCandidateMatchesComputedFontStack() throws {
+        // コンディション：page root から継承した実効 font-family stack を用意する
+        let fontStack = "\"Noto Sans JP\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+
+        // 検証内容：現在値候補を照合する
+        let candidate = try #require(OpenGraphiteFontLibrary.candidate(matching: fontStack))
+
+        // 期待値：完全一致しない stack でも先頭 family の Google Fonts 候補として扱われる
+        #expect(candidate.familyName == "Noto Sans JP")
+        #expect(candidate.cssFamily == "\"Noto Sans JP\", sans-serif")
+    }
+
     /// 論理名（日本語）: CSS clamp 関数寸法値解析テスト
     /// 概要: `clamp()` の 3 引数を個別に保持し、同じ CSS 値へ戻せることを検証します。
     @Test("clamp関数寸法値を3引数として保持できる")

@@ -90,11 +90,52 @@ function textVariantAttributeForLocale(locale) {
   return `data-og-text-variant-${normalizedLocale}`;
 }
 
+function localeFontVariableNames(locale) {
+  const normalizedLocale = String(locale || "")
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, "-")
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (!normalizedLocale) { return []; }
+  const primaryLocale = normalizedLocale.split("-")[0];
+  const names = [`--og-font-family-${normalizedLocale}`];
+  if (primaryLocale && primaryLocale !== normalizedLocale) {
+    names.push(`--og-font-family-${primaryLocale}`);
+  }
+  if (normalizedLocale === "eng") {
+    names.push("--og-font-family-en");
+  } else if (primaryLocale === "en") {
+    names.push("--og-font-family-eng");
+  }
+  return Array.from(new Set(names));
+}
+
+function applyLocaleFont(locale) {
+  const variableNames = localeFontVariableNames(locale);
+  const pageRoots = document.querySelectorAll('[data-og-type="page"], [data-og-role="page-preview"]');
+  pageRoots.forEach((pageRoot) => {
+    const computedStyle = window.getComputedStyle(pageRoot);
+    let fontFamily = "";
+    for (const variableName of variableNames) {
+      fontFamily = computedStyle.getPropertyValue(variableName).trim();
+      if (fontFamily) { break; }
+    }
+    if (fontFamily) {
+      pageRoot.style.setProperty("--og-active-font-family", fontFamily);
+    } else {
+      pageRoot.style.removeProperty("--og-active-font-family");
+    }
+  });
+}
+
 async function applyI18n() {
   const language = selectedLanguage();
   const resources = await loadLocale(language);
   const variantAttribute = textVariantAttributeForLocale(language);
   document.documentElement.lang = language || fallbackLocale;
+  applyLocaleFont(language || fallbackLocale);
   elementsIncludingTemplateContent(document.documentElement).forEach((element) => {
     const key = element.getAttribute("data-i18n-key");
     if (!key) { return; }

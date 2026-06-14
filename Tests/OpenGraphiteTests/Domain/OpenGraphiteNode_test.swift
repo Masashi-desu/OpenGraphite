@@ -137,4 +137,29 @@ struct OpenGraphiteNodeTests {
         #expect(isBinding == true)
         #expect(sourceLabel == "binding")
     }
+
+    /// 論理名（日本語）: 解決済みフォント保持テスト
+    /// 概要: preview DOM の computed style から得た font-family をノードに保持できることを確認します。
+    @Test("resolved font-familyを保持できる")
+    func testResolvedFontFamily() {
+        // コンディション：inline font-family は未設定だが、computed style でフォントが解決済みのノードを用意する
+        var node = OpenGraphiteNode(
+            id: "hero-lead",
+            tagName: "leadtext",
+            type: "text",
+            layout: nil,
+            role: nil,
+            cssVariables: [:],
+            isHidden: false,
+            isLocked: false,
+            depth: 1
+        )
+        node.resolvedFontFamily = "\"Noto Sans JP\", Inter, sans-serif"
+
+        // 検証内容：解決済み font-family を取得する
+        let resolvedFontFamily = node.resolvedFontFamily
+
+        // 期待値：computed style 由来の font-family が保持される
+        #expect(resolvedFontFamily == "\"Noto Sans JP\", Inter, sans-serif")
+    }
 }

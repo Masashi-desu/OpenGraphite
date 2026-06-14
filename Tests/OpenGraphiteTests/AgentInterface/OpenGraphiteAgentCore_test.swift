@@ -88,6 +88,63 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!html.contains("--og-edit-width"))
     }
 
+    /// 論理名（日本語）: CSSフォントファミリー変数編集テスト
+    /// 概要: node 単位 CSS 変数編集で `--og-font-family` を正本 HTML へ保存できることを確認します。
+    @Test("font-family CSS変数を保存できる")
+    func testSetFontFamilyCSSVariable() throws {
+        // コンディション：text node を持つ HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Title data-og-id="title" data-og-type="text">OpenGraphite</Title>
+            </body></html>
+            """
+        )
+        let fontStack = "\"Noto Sans JP\", \"Hiragino Sans\", sans-serif"
+
+        // 検証内容：title の --og-font-family を更新する
+        let result = try fixture.core.setCSSVariable(
+            "--og-font-family",
+            value: fontStack,
+            nodeID: "title",
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：font-family 値が CSS 変数として保存される
+        #expect(result.updated == true)
+        #expect(result.node?.cssVariables["--og-font-family"] == fontStack)
+        #expect(html.contains("--og-font-family:&quot;Noto Sans JP&quot;, &quot;Hiragino Sans&quot;, sans-serif;"))
+    }
+
+    /// 論理名（日本語）: Stylesheet link追加テスト
+    /// 概要: HTML `<head>` に font stylesheet link を重複なく追加できることを確認します。
+    @Test("font stylesheet linkをheadへ重複なく追加できる")
+    func testEnsureStylesheetLinkAddsUniqueLink() throws {
+        // コンディション：head を持つ HTML と Google Fonts CSS API の href を用意する
+        let contract = OpenGraphiteContract.loadDefault(startingAt: URL(fileURLWithPath: #filePath))
+        let href = "https://fonts.googleapis.com/css2?family=Roboto&display=swap"
+        let html = """
+        <!doctype html>
+        <html><head><title>Fixture</title></head><body></body></html>
+        """
+
+        // 検証内容：stylesheet link を 2 回追加する
+        let first = OpenGraphiteHTMLDocument(html: html)
+            .ensuringStylesheetLink(href: href, contract: contract)
+        let second = OpenGraphiteHTMLDocument(html: first.html)
+            .ensuringStylesheetLink(href: href, contract: contract)
+
+        // 期待値：link は head 内に 1 回だけ追加され、URL は HTML 属性として escape される
+        #expect(first.diagnostics.isEmpty)
+        #expect(first.html.contains("<title>Fixture</title>"))
+        #expect(first.html.contains("<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Roboto&amp;display=swap\">"))
+        #expect(second.html == first.html)
+    }
+
     /// 論理名（日本語）: 不許可属性編集テスト
     /// 概要: `data-og-id` 変更など安定キーを壊す属性編集が拒否されることを確認します。
     @Test("不許可属性編集を拒否する")
@@ -1767,6 +1824,11 @@ struct OpenGraphiteAgentCoreTests {
         #expect(contract.types.contains("frame"))
         #expect(contract.layouts.contains("horizontal"))
         #expect(contract.cssVariables.contains { $0.name == "--og-gap" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "--og-font-family" && $0.category == "text" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "--og-font-family-default" && $0.category == "text" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "--og-active-font-family" && $0.category == "runtime" && !$0.editable })
+        #expect(contract.isKnownCSSVariable("--og-font-family-fr"))
+        #expect(contract.cssVariablePatterns.contains { $0.pattern.contains("--og-font-family") && $0.category == "text" })
     }
 
     /// 論理名（日本語）: Componentsセグメント要約テスト

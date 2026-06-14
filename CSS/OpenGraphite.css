@@ -15,9 +15,19 @@ html {
   min-height: 100%;
   background: var(--og-page-background);
   color: var(--og-text-color);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: var(
+    --og-font-family-default,
+    var(
+      --og-font-family,
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif
+    )
+  );
   text-rendering: optimizeLegibility;
 }
 
@@ -120,10 +130,24 @@ html[data-og-preview-dir] {
 [data-og-type="page"] {
   display: block;
   position: relative;
+  --og-active-font-family: var(--og-font-family-default, var(--og-font-family, inherit));
+}
+
+:where(html:lang(ja), html[data-og-preview-locale|="ja"]) [data-og-type="page"] {
+  --og-active-font-family: var(--og-font-family-ja, var(--og-font-family-default, var(--og-font-family, inherit)));
+}
+
+:where(html:lang(en), html[data-og-preview-locale|="en"]) [data-og-type="page"] {
+  --og-active-font-family: var(--og-font-family-en, var(--og-font-family-default, var(--og-font-family, inherit)));
+}
+
+:where(html:lang(eng), html[data-og-preview-locale="eng"]) [data-og-type="page"] {
+  --og-active-font-family: var(--og-font-family-eng, var(--og-font-family-en, var(--og-font-family-default, var(--og-font-family, inherit))));
 }
 
 [data-og-type="text"] {
   display: block;
+  font-family: var(--og-font-family, var(--og-active-font-family, inherit));
   font-size: var(--og-font-size, inherit);
   font-weight: var(--og-font-weight, inherit);
   line-height: var(--og-line-height, 1.2);
@@ -147,6 +171,7 @@ html[data-og-preview-dir] {
   color: var(--og-foreground, currentColor);
   background: var(--og-background, color-mix(in srgb, currentColor 9%, transparent));
   font: inherit;
+  font-family: var(--og-font-family, var(--og-active-font-family, inherit));
   font-weight: var(--og-font-weight, 650);
   line-height: 1;
   text-decoration: none;

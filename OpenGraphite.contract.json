@@ -94,6 +94,12 @@
     { "name": "--og-border", "category": "appearance", "syntax": "<border-shorthand>", "editable": true },
     { "name": "--og-radius", "category": "appearance", "syntax": "<box-shorthand>", "editable": true },
     { "name": "--og-shadow", "category": "appearance", "syntax": "<box-shadow>", "editable": true },
+    { "name": "--og-font-family", "category": "text", "syntax": "<font-family-list>|var()", "editable": true },
+    { "name": "--og-font-family-default", "category": "text", "syntax": "<font-family-list>|var()", "editable": true },
+    { "name": "--og-font-family-ja", "category": "text", "syntax": "<font-family-list>|var()", "editable": true },
+    { "name": "--og-font-family-en", "category": "text", "syntax": "<font-family-list>|var()", "editable": true },
+    { "name": "--og-font-family-eng", "category": "text", "syntax": "<font-family-list>|var()", "editable": true },
+    { "name": "--og-active-font-family", "category": "runtime", "syntax": "<font-family-list>|var()", "editable": false },
     { "name": "--og-font-size", "category": "text", "syntax": "<length-percentage>", "editable": true },
     { "name": "--og-font-weight", "category": "text", "syntax": "<number>|<font-weight-keyword>", "editable": true },
     { "name": "--og-line-height", "category": "text", "syntax": "<number>|<length-percentage>", "editable": true },
@@ -107,5 +113,8 @@
     { "name": "--og-transform-origin", "category": "transform", "syntax": "<position>", "editable": true },
     { "name": "--og-edit-width", "category": "runtime", "syntax": "<length-percentage>|auto", "editable": false },
     { "name": "--og-edit-min-height", "category": "runtime", "syntax": "<length-percentage>", "editable": false }
+  ],
+  "cssVariablePatterns": [
+    { "pattern": "^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$", "category": "text", "syntax": "<font-family-list>|var()", "editable": true }
   ]
 }

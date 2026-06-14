@@ -174,6 +174,16 @@ final class EditorStore: ObservableObject {
         return try? core.inspectI18n(projectURL: loadedProject.fileURL, pageID: pageID)
     }
 
+    var selectedPageRootCSSVariables: [String: String] {
+        guard let target = currentHTMLSyncTarget(),
+              let html = readHTMLFromDisk(at: target.htmlURL),
+              let rootNode = Self.pageRootNode(in: html)
+        else {
+            return [:]
+        }
+        return rootNode.cssVariables
+    }
+
     var projectI18nRuntimeInspection: OpenGraphiteI18nRuntimeInspection? {
         guard let loadedProject,
               let pageID = projectI18nReferencePageID()
@@ -1305,6 +1315,119 @@ final class EditorStore: ObservableObject {
             value: normalizedValue
         )
         statusMessage = "\(selectedNode.displayID) の \(key) を更新しました。"
+    }
+
+    /// 論理名（日本語）: 選択ページルートCSS変数更新関数
+    /// 処理概要: Page Inspector からページ root node の CSS 変数を更新し、WebView へ反映する mutation を発行します。
+    ///
+    /// - Parameters:
+    ///   - key: 更新する `--og-*` 変数名。
+    ///   - value: Inspector から入力された値。前後空白は除去します。
+    func updateSelectedPageRootCSSVariable(key: String, value: String) {
+        guard let target = currentHTMLSyncTarget(),
+              let diskHTML = readHTMLFromDisk(at: target.htmlURL),
+              let rootNode = Self.pageRootNode(in: diskHTML)
+        else {
+            return
+        }
+        guard !rootNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
+
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expectedOldValue = rootNode.cssVariables[key] ?? ""
+        guard expectedOldValue != normalizedValue else { return }
+
+        let edit = HTMLObjectEdit(
+            target: target,
+            operation: .setCSSVariable(
+                nodeInternalID: rootNode.internalID,
+                key: key,
+                value: normalizedValue,
+                expectedOldValue: expectedOldValue
+            )
+        )
+        guard applyHTMLObjectEdit(edit).updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.internalID == rootNode.internalID }) {
+            if normalizedValue.isEmpty {
+                nodes[index].cssVariables.removeValue(forKey: key)
+            } else {
+                nodes[index].cssVariables[key] = normalizedValue
+            }
+        }
+
+        mutationSequence += 1
+        cssMutation = CSSVariableMutation(
+            sequence: mutationSequence,
+            pageURL: target.htmlURL,
+            nodeID: rootNode.id,
+            key: key,
+            value: normalizedValue
+        )
+        statusMessage = "Page root の \(key) を更新しました。"
+    }
+
+    /// 論理名（日本語）: フォント候補適用関数
+    /// 処理概要: 選択中ノードへ `--og-font-family` を保存し、必要な stylesheet link を HTML 正本へ追加します。
+    ///
+    /// - Parameter candidate: フォントブラウザで選択された候補。
+    func applyFontCandidate(_ candidate: OpenGraphiteFontCandidate) {
+        guard selectedNode?.internalID.isEmpty == false,
+              let target = currentHTMLSyncTarget()
+        else {
+            return
+        }
+        let normalizedCSSFamily = candidate.cssFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateCSSVariable(key: "--og-font-family", value: normalizedCSSFamily)
+
+        ensureFontStylesheet(for: candidate, target: target)
+    }
+
+    /// 論理名（日本語）: 選択ページルートフォント候補適用関数
+    /// 処理概要: Page Inspector で選んだフォント候補を locale 用 CSS 変数へ保存し、必要な stylesheet link を追加します。
+    ///
+    /// - Parameters:
+    ///   - variableKey: 保存先の locale font-family 変数名。
+    ///   - candidate: フォントブラウザで選択された候補。
+    func applySelectedPageRootFontCandidate(variableKey: String, candidate: OpenGraphiteFontCandidate) {
+        guard let target = currentHTMLSyncTarget() else { return }
+        let normalizedCSSFamily = candidate.cssFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateSelectedPageRootCSSVariable(key: variableKey, value: normalizedCSSFamily)
+        ensureFontStylesheet(for: candidate, target: target)
+    }
+
+    /// 論理名（日本語）: フォントstylesheet保証関数
+    /// 処理概要: 外部フォント候補が要求する stylesheet link を HTML `<head>` へ重複なく保存します。
+    ///
+    /// - Parameters:
+    ///   - candidate: stylesheet URL を持つ可能性があるフォント候補。
+    ///   - target: 保存対象 HTML。
+    private func ensureFontStylesheet(for candidate: OpenGraphiteFontCandidate, target: HTMLSyncTarget) {
+        guard let stylesheetHref = candidate.stylesheetHref?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !stylesheetHref.isEmpty
+        else {
+            return
+        }
+        guard let diskHTML = readHTMLFromDisk(at: target.htmlURL) else {
+            lastError = "HTMLを読み込めませんでした。ページを再読み込みしてからもう一度設定してください。"
+            return
+        }
+
+        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
+        let mutation = OpenGraphiteHTMLDocument(html: diskHTML)
+            .ensuringStylesheetLink(href: stylesheetHref, contract: contract)
+        guard mutation.diagnostics.filter({ $0.severity == .error }).isEmpty else {
+            lastError = mutation.diagnostics.first(where: { $0.severity == .error })?.message
+                ?? "font stylesheet の保存に失敗しました。"
+            return
+        }
+        guard mutation.html != diskHTML else { return }
+        guard syncHTML(mutation.html, target: target) else { return }
+        incrementReloadToken(for: target.htmlURL)
+        lastError = nil
+        statusMessage = "\(candidate.familyName) の font stylesheet を追加しました。"
     }
 
     /// 論理名（日本語）: ノード属性更新関数
@@ -2913,7 +3036,7 @@ final class EditorStore: ObservableObject {
         }
 
         let cssVariables = dictionary["cssVariables"] as? [String: String] ?? [:]
-        return OpenGraphiteNode(
+        var node = OpenGraphiteNode(
             id: id,
             internalID: dictionary["internalID"] as? String ?? "",
             tagName: tagName,
@@ -2940,6 +3063,26 @@ final class EditorStore: ObservableObject {
             isLocked: dictionary["locked"] as? Bool ?? false,
             depth: dictionary["depth"] as? Int ?? 0
         )
+        if let resolvedFontFamily = dictionary["resolvedFontFamily"] as? String {
+            let normalizedFontFamily = resolvedFontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !normalizedFontFamily.isEmpty {
+                node.resolvedFontFamily = normalizedFontFamily
+            }
+        }
+        return node
+    }
+
+    /// 論理名（日本語）: ページルートノード抽出関数
+    /// 処理概要: HTML 正本から page root として扱う `data-og-type="page"` または `page-preview` role の node を取得します。
+    ///
+    /// - Parameter html: 対象 HTML 文字列。
+    /// - Returns: ページ root node。見つからない場合は `nil`。
+    private static func pageRootNode(in html: String) -> OpenGraphiteAgentNode? {
+        OpenGraphiteHTMLDocument(html: html)
+            .nodes()
+            .first { node in
+                node.type == "page" || node.role == "page-preview"
+            }
     }
 
     /// 論理名（日本語）: 現在HTML正本ノード索引生成関数

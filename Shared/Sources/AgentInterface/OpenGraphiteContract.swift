@@ -11,6 +11,7 @@ import Foundation
 /// - `editableAttributes`: CLI / MCP が編集できる永続属性。
 /// - `runtimeAttributes`: 正本 HTML に残さない実行時属性。
 /// - `cssVariables`: 既知の `--og-*` CSS 変数定義。
+/// - `cssVariablePatterns`: locale suffix など動的に許可する CSS 変数パターン。
 struct OpenGraphiteContract: Codable, Equatable {
     var version: String
     var types: [String]
@@ -19,6 +20,18 @@ struct OpenGraphiteContract: Codable, Equatable {
     var editableAttributes: [String]
     var runtimeAttributes: [String]
     var cssVariables: [OpenGraphiteCSSVariableContract]
+    var cssVariablePatterns: [OpenGraphiteCSSVariablePatternContract]
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case types
+        case layouts
+        case roles
+        case editableAttributes
+        case runtimeAttributes
+        case cssVariables
+        case cssVariablePatterns
+    }
 
     var typeSet: Set<String> { Set(types) }
     var layoutSet: Set<String> { Set(layouts) }
@@ -30,6 +43,54 @@ struct OpenGraphiteContract: Codable, Equatable {
         Set(cssVariables.filter { $0.category == "runtime" }.map(\.name))
     }
 
+    /// 論理名（日本語）: OpenGraphite契約初期化関数
+    /// 処理概要: JSON ファイルまたは組み込み定義から契約値を保持します。
+    ///
+    /// - Parameters:
+    ///   - version: 契約ファイルのバージョン。
+    ///   - types: 許可済み `data-og-type` の一覧。
+    ///   - layouts: 許可済み `data-og-layout` の一覧。
+    ///   - roles: 既知の `data-og-role` の一覧。
+    ///   - editableAttributes: CLI / MCP が編集できる永続属性。
+    ///   - runtimeAttributes: 正本 HTML に残さない実行時属性。
+    ///   - cssVariables: 既知の `--og-*` CSS 変数定義。
+    ///   - cssVariablePatterns: 動的に許可する CSS 変数パターン。
+    init(
+        version: String,
+        types: [String],
+        layouts: [String],
+        roles: [String],
+        editableAttributes: [String],
+        runtimeAttributes: [String],
+        cssVariables: [OpenGraphiteCSSVariableContract],
+        cssVariablePatterns: [OpenGraphiteCSSVariablePatternContract] = []
+    ) {
+        self.version = version
+        self.types = types
+        self.layouts = layouts
+        self.roles = roles
+        self.editableAttributes = editableAttributes
+        self.runtimeAttributes = runtimeAttributes
+        self.cssVariables = cssVariables
+        self.cssVariablePatterns = cssVariablePatterns
+    }
+
+    /// 論理名（日本語）: OpenGraphite契約デコード初期化関数
+    /// 処理概要: 古い契約 JSON でも読めるように、CSS 変数パターン未定義時は空配列として扱います。
+    ///
+    /// - Parameter decoder: JSON decoder。
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(String.self, forKey: .version)
+        types = try container.decode([String].self, forKey: .types)
+        layouts = try container.decode([String].self, forKey: .layouts)
+        roles = try container.decode([String].self, forKey: .roles)
+        editableAttributes = try container.decode([String].self, forKey: .editableAttributes)
+        runtimeAttributes = try container.decode([String].self, forKey: .runtimeAttributes)
+        cssVariables = try container.decode([OpenGraphiteCSSVariableContract].self, forKey: .cssVariables)
+        cssVariablePatterns = try container.decodeIfPresent([OpenGraphiteCSSVariablePatternContract].self, forKey: .cssVariablePatterns) ?? []
+    }
+
     /// 論理名（日本語）: 編集可能属性判定関数
     /// 処理概要: 契約に列挙された永続 HTML 属性かを判定します。
     ///
@@ -37,6 +98,20 @@ struct OpenGraphiteContract: Codable, Equatable {
     /// - Returns: CLI / MCP / Inspector から編集可能な属性であれば `true`。
     func isEditableAttribute(_ name: String) -> Bool {
         editableAttributeSet.contains(name)
+    }
+
+    /// 論理名（日本語）: CSS変数既知判定関数
+    /// 処理概要: 固定定義または動的パターンに一致する OpenGraphite CSS 変数かを判定します。
+    ///
+    /// - Parameter name: 判定する CSS 変数名。
+    /// - Returns: 契約で扱える CSS 変数であれば `true`。
+    func isKnownCSSVariable(_ name: String) -> Bool {
+        if cssVariableSet.contains(name) {
+            return true
+        }
+        return cssVariablePatterns.contains { pattern in
+            name.range(of: pattern.pattern, options: [.regularExpression]) != nil
+        }
     }
 
     /// 論理名（日本語）: 契約ファイル読み込み関数
@@ -173,6 +248,12 @@ struct OpenGraphiteContract: Codable, Equatable {
             OpenGraphiteCSSVariableContract(name: "--og-border", category: "appearance", syntax: "<border-shorthand>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-radius", category: "appearance", syntax: "<box-shorthand>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-shadow", category: "appearance", syntax: "<box-shadow>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-font-family", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-font-family-default", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-font-family-ja", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-font-family-en", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-font-family-eng", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "--og-active-font-family", category: "runtime", syntax: "<font-family-list>|var()", editable: false),
             OpenGraphiteCSSVariableContract(name: "--og-font-size", category: "text", syntax: "<length-percentage>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-font-weight", category: "text", syntax: "<number>|<font-weight-keyword>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-line-height", category: "text", syntax: "<number>|<length-percentage>", editable: true),
@@ -186,6 +267,14 @@ struct OpenGraphiteContract: Codable, Equatable {
             OpenGraphiteCSSVariableContract(name: "--og-transform-origin", category: "transform", syntax: "<position>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-edit-width", category: "runtime", syntax: "<length-percentage>|auto", editable: false),
             OpenGraphiteCSSVariableContract(name: "--og-edit-min-height", category: "runtime", syntax: "<length-percentage>", editable: false)
+        ],
+        cssVariablePatterns: [
+            OpenGraphiteCSSVariablePatternContract(
+                pattern: #"^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$"#,
+                category: "text",
+                syntax: "<font-family-list>|var()",
+                editable: true
+            )
         ]
     )
 }
@@ -200,6 +289,21 @@ struct OpenGraphiteContract: Codable, Equatable {
 /// - `editable`: 正本 HTML の編集対象として扱うか。
 struct OpenGraphiteCSSVariableContract: Codable, Equatable {
     var name: String
+    var category: String
+    var syntax: String
+    var editable: Bool
+}
+
+/// 論理名（日本語）: OpenGraphite CSS変数パターン契約
+/// 概要: locale suffix など、固定名ではなく正規表現で許可する `--og-*` CSS 変数を表します。
+///
+/// プロパティ:
+/// - `pattern`: CSS 変数名に対する正規表現。
+/// - `category`: text、runtime などの分類。
+/// - `syntax`: 人間と diagnostics 向けの値構文ラベル。
+/// - `editable`: 正本 HTML の編集対象として扱うか。
+struct OpenGraphiteCSSVariablePatternContract: Codable, Equatable {
+    var pattern: String
     var category: String
     var syntax: String
     var editable: Bool

@@ -1047,6 +1047,185 @@ struct CSSEnumVariableField: View {
     }
 }
 
+/// 論理名（日本語）: CSSフォントファミリー変数フィールド
+/// 概要: `font-family` のプリセット選択と任意 CSS 値の直接入力を扱います。
+///
+/// プロパティ:
+/// - `key`: CSS 変数名。
+/// - `value`: 現在の CSS 値。
+/// - `resolvedValue`: `value` が未設定の場合にプレビューへ使う実効 font-family。
+/// - `sampleText`: フォントブラウザのプレビューに表示する文言。
+/// - `onCommit`: 選択または入力確定後の CSS 値を反映する処理。
+struct CSSFontFamilyVariableField: View {
+    var key: String
+    var value: String
+    var resolvedValue: String
+    var sampleText: String
+    var onCommit: (String) -> Void
+    var onSelectCandidate: (OpenGraphiteFontCandidate) -> Void
+
+    @State private var selectionID: String
+    @State private var customValue: String
+    @State private var isBrowserPresented = false
+    @FocusState private var isCustomFocused: Bool
+
+    /// 論理名（日本語）: CSSフォントファミリー変数フィールド初期化関数
+    /// 処理概要: 現在値をプリセット選択または Custom 入力欄の初期状態へ変換します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS 変数名。
+    ///   - value: 現在の CSS 値。
+    ///   - resolvedValue: `value` が未設定の場合にプレビューへ使う実効 font-family。
+    ///   - sampleText: フォントブラウザのプレビューに表示する文言。
+    ///   - onCommit: 選択または入力確定後の CSS 値を反映する処理。
+    ///   - onSelectCandidate: フォントブラウザの候補選択時に呼び出す処理。
+    init(
+        key: String,
+        value: String,
+        resolvedValue: String = "",
+        sampleText: String = OpenGraphiteFontLibrary.defaultSampleText,
+        onCommit: @escaping (String) -> Void,
+        onSelectCandidate: ((OpenGraphiteFontCandidate) -> Void)? = nil
+    ) {
+        self.key = key
+        self.value = value
+        self.resolvedValue = resolvedValue
+        self.sampleText = sampleText
+        self.onCommit = onCommit
+        self.onSelectCandidate = onSelectCandidate ?? { candidate in
+            onCommit(candidate.cssFamily)
+        }
+
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let initialSelectionID = CSSFontFamilyPreset.selectionID(for: normalizedValue)
+        _selectionID = State(initialValue: initialSelectionID)
+        _customValue = State(
+            initialValue: initialSelectionID == CSSFontFamilyPreset.custom.id ? normalizedValue : ""
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                CSSControlHeader(key: key)
+                Button {
+                    isBrowserPresented = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 24, height: 22)
+                }
+                .buttonStyle(.plain)
+                .help("Font library")
+            }
+
+            Picker("", selection: selectionBinding) {
+                ForEach(CSSFontFamilyPreset.pickerOptions) { option in
+                    Text(option.title).tag(option.id)
+                }
+            }
+            .labelsHidden()
+            .controlSize(.small)
+            .frame(maxWidth: .infinity)
+
+            if selectionID == CSSFontFamilyPreset.custom.id {
+                TextField("", text: $customValue)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        EditorColumnStyle.elevatedRowFill,
+                        in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                    )
+                    .focused($isCustomFocused)
+                    .onSubmit(commitCustomValue)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: value) { _, newValue in
+            syncSelection(to: newValue)
+        }
+        .onChange(of: isCustomFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitCustomValue()
+        }
+        .sheet(isPresented: $isBrowserPresented) {
+            OpenGraphiteFontBrowserView(currentValue: browserCurrentValue, sampleText: sampleText) { candidate in
+                applyBrowserCandidate(candidate)
+            }
+        }
+    }
+
+    private var browserCurrentValue: String {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedValue.isEmpty {
+            return normalizedValue
+        }
+        return resolvedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var selectionBinding: Binding<String> {
+        Binding(
+            get: { selectionID },
+            set: applySelection
+        )
+    }
+
+    /// 論理名（日本語）: フォント選択反映関数
+    /// 処理概要: Picker の選択を保存用 CSS 値へ変換し、Custom 選択時は直接入力欄を準備します。
+    ///
+    /// - Parameter nextSelectionID: Picker で選ばれたプリセット ID。
+    private func applySelection(_ nextSelectionID: String) {
+        guard nextSelectionID != selectionID else { return }
+        let previousSelectionID = selectionID
+        selectionID = nextSelectionID
+
+        if nextSelectionID == CSSFontFamilyPreset.custom.id {
+            if customValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                customValue = (CSSFontFamilyPreset.cssValue(for: previousSelectionID) ?? value)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            commitCustomValue()
+            return
+        }
+
+        customValue = ""
+        onCommit(CSSFontFamilyPreset.cssValue(for: nextSelectionID) ?? "")
+    }
+
+    /// 論理名（日本語）: Customフォント値確定関数
+    /// 処理概要: 直接入力された CSS font-family 値を trim して保存処理へ渡します。
+    private func commitCustomValue() {
+        guard selectionID == CSSFontFamilyPreset.custom.id else { return }
+        onCommit(customValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// 論理名（日本語）: フォントブラウザ候補適用関数
+    /// 処理概要: ブラウザで選ばれた候補をローカル UI 状態へ反映し、呼び出し元へ通知します。
+    ///
+    /// - Parameter candidate: 選択されたフォント候補。
+    private func applyBrowserCandidate(_ candidate: OpenGraphiteFontCandidate) {
+        syncSelection(to: candidate.cssFamily)
+        onSelectCandidate(candidate)
+    }
+
+    /// 論理名（日本語）: フォント選択同期関数
+    /// 処理概要: 外部から変わった CSS 値を Picker と Custom 入力欄の状態へ反映します。
+    ///
+    /// - Parameter nextValue: 新しい CSS font-family 値。
+    private func syncSelection(to nextValue: String) {
+        let normalizedValue = nextValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextSelectionID = CSSFontFamilyPreset.selectionID(for: normalizedValue)
+        selectionID = nextSelectionID
+        if nextSelectionID == CSSFontFamilyPreset.custom.id {
+            customValue = normalizedValue
+        } else if !isCustomFocused {
+            customValue = ""
+        }
+    }
+}
+
 /// 論理名（日本語）: CSSコントロールヘッダー
 /// 概要: CSS 変数名を表示します。
 ///

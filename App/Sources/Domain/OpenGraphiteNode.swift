@@ -26,6 +26,7 @@ import Foundation
 /// - `iconName`: `data-og-icon-name` の値。
 /// - `iconSource`: `data-og-icon-source` の値。
 /// - `cssVariables`: inline style から抽出した `--og-*` の値。
+/// - `resolvedFontFamily`: preview DOM の computed style で解決された font-family。
 /// - `isHidden`: `data-og-hidden` による非表示状態。
 /// - `isLocked`: `data-og-locked` によるロック状態。
 /// - `depth`: DOM ツリー上の階層深度。
@@ -52,6 +53,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     var iconName: String?
     var iconSource: String?
     var cssVariables: [String: String]
+    var resolvedFontFamily: String? = nil
     var isHidden: Bool
     var isLocked: Bool
     var depth: Int

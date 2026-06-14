@@ -513,6 +513,44 @@ struct WebCanvasView: NSViewRepresentable {
             const rtlLanguages = new Set(['ar', 'arc', 'dv', 'fa', 'ha', 'he', 'khw', 'ks', 'ku', 'ps', 'ur', 'yi']);
             return rtlLanguages.has(primaryLanguageSubtag(lang)) ? 'rtl' : 'ltr';
           }
+          function localeFontVariableNames(lang) {
+            const normalized = String(lang || '')
+              .trim()
+              .toLowerCase()
+              .replace(/_/g, '-')
+              .replace(/[^a-z0-9-]/g, '-')
+              .replace(/-+/g, '-')
+              .replace(/^-|-$/g, '');
+            if (!normalized) { return []; }
+            const primary = normalized.split('-')[0];
+            const names = [`--og-font-family-${normalized}`];
+            if (primary && primary !== normalized) {
+              names.push(`--og-font-family-${primary}`);
+            }
+            if (normalized === 'eng') {
+              names.push('--og-font-family-en');
+            } else if (primary === 'en') {
+              names.push('--og-font-family-eng');
+            }
+            return Array.from(new Set(names));
+          }
+          function applyLocaleFont(lang) {
+            const variableNames = localeFontVariableNames(lang);
+            const pageRoots = document.querySelectorAll('[data-og-type="page"], [data-og-role="page-preview"]');
+            pageRoots.forEach((pageRoot) => {
+              const computedStyle = window.getComputedStyle(pageRoot);
+              let fontFamily = '';
+              for (const variableName of variableNames) {
+                fontFamily = computedStyle.getPropertyValue(variableName).trim();
+                if (fontFamily) { break; }
+              }
+              if (fontFamily) {
+                pageRoot.style.setProperty('--og-active-font-family', fontFamily);
+              } else {
+                pageRoot.style.removeProperty('--og-active-font-family');
+              }
+            });
+          }
           const fallbackLang = root.getAttribute('lang') || '';
           const langSource = root.getAttribute('data-og-lang-source') || 'literal';
           const langField = root.getAttribute('data-og-lang-field') || '';
@@ -583,6 +621,8 @@ struct WebCanvasView: NSViewRepresentable {
             document.documentElement.removeAttribute('dir');
             delete document.documentElement.dataset.ogPreviewDir;
           }
+          applyLocaleFont(documentContext.lang);
+          window.__OPENGRAPHITE_APPLY_LOCALE_FONT__ = applyLocaleFont;
           window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = Object.freeze(context);
         })();
         """
@@ -1853,6 +1893,14 @@ struct WebCanvasView: NSViewRepresentable {
         return variables;
       }
 
+      function resolvedFontFamily(element) {
+        try {
+          return String(window.getComputedStyle(element).fontFamily || '').trim();
+        } catch (_) {
+          return '';
+        }
+      }
+
       function depth(element) {
         let count = 0;
         let parent = element.parentElement;
@@ -2334,6 +2382,7 @@ struct WebCanvasView: NSViewRepresentable {
           iconName: element.getAttribute('data-og-icon-name') || '',
           iconSource: element.getAttribute('data-og-icon-source') || '',
           cssVariables: cssVariables(element),
+          resolvedFontFamily: resolvedFontFamily(element),
           hidden: element.getAttribute('data-og-hidden') === 'true',
           locked: element.getAttribute('data-og-locked') === 'true',
           depth: depth(element)
@@ -2619,6 +2668,12 @@ struct WebCanvasView: NSViewRepresentable {
           element.style.removeProperty(key);
         } else {
           element.style.setProperty(key, value);
+        }
+        if (key === '--og-font-family-default' || key.indexOf('--og-font-family-') === 0) {
+          const locale = document.documentElement.getAttribute('data-og-preview-locale') || document.documentElement.lang || '';
+          if (typeof window.__OPENGRAPHITE_APPLY_LOCALE_FONT__ === 'function') {
+            window.__OPENGRAPHITE_APPLY_LOCALE_FONT__(locale);
+          }
         }
         collectNodes();
         return true;
