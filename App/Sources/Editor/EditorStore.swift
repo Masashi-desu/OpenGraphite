@@ -582,7 +582,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: プロジェクトオープン関数
-    /// 処理概要: 指定された `.ogp` を読み込み、ページ選択とノード状態を初期化します。
+    /// 処理概要: 指定された `.ogp` を読み込み、Chapter 表示対象とノード状態を初期化します。
     ///
     /// - Parameter url: 読み込む `.ogp` の URL。
     func openProject(at url: URL) {
@@ -593,8 +593,8 @@ final class EditorStore: ObservableObject {
             selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.components.isEmpty ? .components : .pages
             selectedChapterID = project.project.chapters.first?.id
             selectedChapterInternalID = project.project.chapters.first?.internalID
-            selectedPageID = project.project.chapters.first?.pages.first?.id
-            selectedPageInternalID = project.project.chapters.first?.pages.first?.internalID
+            selectedPageID = nil
+            selectedPageInternalID = nil
             selectedCollectionID = initialCollection?.id
             selectedCollectionInternalID = initialCollection?.internalID
             selectedComponentPageID = initialCollection?.components.first?.id
@@ -664,7 +664,7 @@ final class EditorStore: ObservableObject {
             selectedComponentPageInternalID = page?.internalID
         }
         selectedNodeID = nil
-        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
         if let page = selectedPage {
@@ -676,7 +676,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: Chapter選択解除関数
-    /// 処理概要: `nil` 指定時に先頭 Chapter を表示し、ページ選択と DOM ノード一覧をリセットします。
+    /// 処理概要: `nil` 指定時に先頭 Chapter を表示し、HTML カード選択と DOM ノード一覧をリセットします。
     ///
     /// - Parameter id: `nil` の場合のみ先頭 Chapter が表示対象になります。
     func selectChapter(id: String?) {
@@ -686,7 +686,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 内部ID Chapter選択関数
-    /// 処理概要: Chapter 内部 ID で Pages セグメントの表示対象を切り替えます。
+    /// 処理概要: Chapter 内部 ID で Pages セグメントの表示対象を切り替え、HTML カード選択を解除します。
     ///
     /// - Parameter internalID: 選択する Chapter 内部 ID。`nil` の場合は先頭 Chapter が表示対象になります。
     func selectChapter(internalID: String?) {
@@ -697,7 +697,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: Chapter選択共通関数
-    /// 処理概要: 指定 Chapter を Pages セグメントへ反映し、先頭 page を選択します。
+    /// 処理概要: 指定 Chapter を Pages セグメントへ反映し、HTML カードを未選択にします。
     ///
     /// - Parameter chapter: 選択する Chapter。`nil` の場合は未選択状態にします。
     private func selectChapter(_ chapter: OpenGraphiteChapter?) {
@@ -707,10 +707,10 @@ final class EditorStore: ObservableObject {
         selectedCanvasSegment = .pages
         selectedChapterID = chapter?.id
         selectedChapterInternalID = chapter?.internalID
-        selectedPageID = chapter?.pages.first?.id
-        selectedPageInternalID = chapter?.pages.first?.internalID
+        selectedPageID = nil
+        selectedPageInternalID = nil
         selectedNodeID = nil
-        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
 
@@ -754,7 +754,7 @@ final class EditorStore: ObservableObject {
         selectedComponentPageID = collection?.components.first?.id
         selectedComponentPageInternalID = collection?.components.first?.internalID
         selectedNodeID = nil
-        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
 
@@ -765,18 +765,25 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: Pagesセグメント選択関数
-    /// 処理概要: 通常 Pages canvas を表示し、必要に応じて選択 Chapter 内の先頭ページを選択します。
+    /// 処理概要: Pages canvas を表示し、HTML カードが未選択なら Chapter 階層を維持します。
     func selectPagesSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
         selectedProjectResource = nil
         selectedCanvasSegment = .pages
-        if selectedPageInternalID == nil || !selectedChapterPages.contains(where: { $0.internalID == selectedPageInternalID }) {
-            selectedPageID = selectedChapterPages.first?.id
-            selectedPageInternalID = selectedChapterPages.first?.internalID
+        if selectedChapterInternalID == nil
+            || loadedProject?.project.chapters.contains(where: { $0.internalID == selectedChapterInternalID }) != true {
+            let chapter = loadedProject?.project.chapters.first
+            selectedChapterID = chapter?.id
+            selectedChapterInternalID = chapter?.internalID
+        }
+        if let selectedPageInternalID,
+           !selectedChapterPages.contains(where: { $0.internalID == selectedPageInternalID }) {
+            selectedPageID = nil
+            self.selectedPageInternalID = nil
         }
         selectedNodeID = nil
-        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
+        if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
         statusMessage = "Pages を表示しています。"

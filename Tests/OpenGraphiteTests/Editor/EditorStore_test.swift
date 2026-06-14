@@ -114,6 +114,7 @@ struct EditorStoreTests {
         let placementSelectionID = "ogpl:placement-code-viewer-preview:hrbifdygbcig"
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "codeviewer",
@@ -237,6 +238,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -261,6 +263,28 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "ページ選択を解除しました。")
     }
 
+    /// 論理名（日本語）: Project初期Chapter選択テスト
+    /// 概要: Project を開いた直後は先頭 Chapter だけを表示対象にし、HTML カードを自動選択しないことを検証します。
+    @Test("Projectを開いた直後はpageを自動選択しない")
+    func testOpenProjectStartsWithChapterOnlySelection() throws {
+        // コンディション：ページを持つ一時プロジェクトを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+
+        // 検証内容：Project を開く（When）
+        store.openProject(at: fixture.projectURL)
+
+        // 期待値：Chapter は表示対象になるが、page / node は未選択になる（Then）
+        #expect(store.selectedCanvasSegment == .pages)
+        #expect(store.selectedChapterID == "main")
+        #expect(store.selectedChapterPages.map(\.id) == ["home"])
+        #expect(store.selectedPageID == nil)
+        #expect(store.selectedPage == nil)
+        #expect(store.selectedNodeID == nil)
+        #expect(store.nodes.isEmpty)
+    }
+
     /// 論理名（日本語）: Project資源選択テスト
     /// 概要: Project セグメントの実装資源選択が Canvas の表示対象を維持し、通常ページ選択へ戻ると解除されることを確認します。
     @Test("Project資源選択はCanvas選択と分離される")
@@ -270,7 +294,8 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
-        let selectedPageInternalID = try #require(store.selectedPage?.internalID)
+        let selectedPage = try selectFirstPage(in: store)
+        let selectedPageInternalID = selectedPage.internalID
 
         // 検証内容：Project の i18n runtime を選択してからページを再選択する（When）
         store.selectProjectResource(.i18nRuntime)
@@ -297,6 +322,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -318,15 +344,16 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "index.html を表示しています。")
     }
 
-    /// 論理名（日本語）: 同一Chapter再選択時のノード保持テスト
-    /// 概要: Chapters パネルで現在の Chapter を押しても、同じ HTML のレイヤー一覧が空にならないことを検証します。
-    @Test("同じChapterの再選択ではノード一覧を保持する")
-    func testSelectChapterPreservesNodesWhenSelectingSamePageAgain() throws {
+    /// 論理名（日本語）: 同一Chapter再選択時のページ選択解除テスト
+    /// 概要: Chapters パネルで現在の Chapter を押すと、HTML カード未選択へ戻ることを検証します。
+    @Test("同じChapterの再選択ではページ選択を解除する")
+    func testSelectChapterClearsPageSelectionWhenSelectingSameChapter() throws {
         // コンディション：プロジェクトを開き、選択ページの DOM ノード一覧が収集済みの状態を用意する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -341,10 +368,10 @@ struct EditorStoreTests {
         let selectedChapterInternalID = try #require(store.selectedChapter?.internalID)
         store.selectChapter(internalID: selectedChapterInternalID)
 
-        // 期待値：同じ page のノード一覧は保持され、ノード選択だけが解除される（Then）
-        #expect(store.selectedPageID == "home")
+        // 期待値：page と node の選択は解除され、Chapter 階層だけが表示対象になる（Then）
+        #expect(store.selectedPageID == nil)
         #expect(store.selectedNodeID == nil)
-        #expect(store.nodes.map(\.id) == ["title"])
+        #expect(store.nodes.isEmpty)
         #expect(store.statusMessage == "Main を表示しています。")
     }
 
@@ -357,6 +384,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let expectedCanvas = OpenGraphiteCanvas(x: 24, y: -12, width: 390, height: 844)
 
         // When: 選択ページのキャンバス配置を更新する
@@ -384,6 +412,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
 
         // When: 選択ページの配置名とキャンバス配置を更新する
         store.updateSelectedPageCanvas(x: 24, y: -12, width: 390, height: 844, name: " mobile ")
@@ -414,6 +443,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let expectedContext = OpenGraphitePreviewContext(fieldMocks: ["selectedLanguage": "ja"])
 
         // 検証内容：選択ページの Mock State とキャンバス配置を更新する（When）
@@ -451,6 +481,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let originalCanvas = try #require(store.selectedPage?.canvas)
 
         // When: width 0 の不正な配置を適用しようとする
@@ -477,6 +508,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "hero",
@@ -514,6 +546,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -555,6 +588,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
         // 検証内容：動的 locale suffix を持つ font-family 変数を直接保存する
@@ -603,6 +637,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "hero-lead",
@@ -647,6 +682,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "lead",
@@ -736,6 +772,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -827,6 +864,7 @@ struct EditorStoreTests {
         )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "hero-lead",
@@ -990,6 +1028,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "hero",
@@ -1030,6 +1069,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "hero",
@@ -1063,6 +1103,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -1100,6 +1141,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "decorative-icon",
@@ -1141,6 +1183,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "preview-card",
@@ -1180,6 +1223,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
 
         store.syncCurrentHTML("<!doctype html>\n<html><body>first</body></html>")
         store.syncCurrentHTML("<!doctype html>\n<html><body>second</body></html>")
@@ -1218,6 +1262,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let externalHTML = "<!doctype html>\n<html><body><Title data-og-id=\"title\" data-og-type=\"text\">external</Title></body></html>"
         try externalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
 
@@ -1259,6 +1304,7 @@ struct EditorStoreTests {
         )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let initialToken = store.reloadToken(for: downloadsURL)
 
         // 検証内容：非選択ページの HTML を外部プロセス相当で書き換える
@@ -1353,6 +1399,7 @@ struct EditorStoreTests {
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         store.ingestNodePayload([
             [
                 "id": "title",
@@ -1389,6 +1436,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
         let downloadsURL = fixture.publicURL.appendingPathComponent("downloads.html")
         try "<!doctype html>\n<html><body>downloads</body></html>".write(
             to: downloadsURL,
@@ -1428,7 +1476,7 @@ struct EditorStoreTests {
     }
 
     /// 論理名（日本語）: Chapter選択テスト
-    /// 概要: Chapter を切り替えると Pages と選択ページが選択 Chapter 内へ切り替わることを検証します。
+    /// 概要: Chapter を切り替えると Pages 表示対象だけが切り替わり、HTML カードは未選択になることを検証します。
     @Test("Chapter選択で表示対象ページ群を切り替える")
     func testSelectChapterSwitchesVisiblePages() throws {
         // コンディション：2つの Chapter を持つ一時プロジェクトを用意する
@@ -1480,11 +1528,11 @@ struct EditorStoreTests {
         let docsChapterInternalID = try #require(store.loadedProject?.project.chapters[1].internalID)
         store.selectChapter(internalID: docsChapterInternalID)
 
-        // 期待値：表示対象 Pages と選択ページが docs Chapter 内へ切り替わる
+        // 期待値：表示対象 Pages が docs Chapter 内へ切り替わり、page は未選択になる
         #expect(store.selectedChapterID == "docs")
         #expect(store.selectedChapterPages.map(\.id) == ["docs-home"])
-        #expect(store.selectedPageID == "docs-home")
-        #expect(store.selectedPageURL == docsURL)
+        #expect(store.selectedPageID == nil)
+        #expect(store.selectedPageURL == nil)
     }
 
     /// 論理名（日本語）: 複合ノード参照ID生成テスト
@@ -1538,7 +1586,9 @@ struct EditorStoreTests {
         // 検証内容：docs Chapter を内部 ID で選択し、node 参照 payload を生成する
         store.openProject(at: fixture.projectURL)
         let docsChapterInternalID = try #require(store.loadedProject?.project.chapters[1].internalID)
+        let docsPageInternalID = try #require(store.loadedProject?.project.chapters[1].pages.first?.internalID)
         store.selectChapter(internalID: docsChapterInternalID)
+        store.selectPage(internalID: docsPageInternalID)
         let referenceID = store.nodeReferenceID(forNodeID: "hero", nodeInternalID: "node-opaque")
         let payload = try #require(store.nodeReferencePasteboardPayload(
             forNodeID: "hero",
@@ -1771,6 +1821,7 @@ struct EditorStoreTests {
         let componentCollection = try #require(loadedProject.collections.first)
         let componentPage = try #require(loadedProject.components.first)
         store.selectChapter(internalID: docsChapter.internalID)
+        store.selectPage(internalID: docsPage.internalID)
         let docsPageReferenceID = store.selectedPageReferenceID()
         store.selectComponentPage(internalID: componentPage.internalID)
         let componentReferenceID = store.selectedPageReferenceID()
@@ -1784,6 +1835,17 @@ struct EditorStoreTests {
         #expect(store.chapterReferenceID(for: docsChapter) == "ogref:chapter:\(docsChapter.internalID)")
         #expect(docsPageReferenceID == "ogref:page:\(docsChapter.internalID):\(docsPage.internalID)")
         #expect(componentReferenceID == "ogref:component:\(componentCollection.internalID):\(componentPage.internalID)")
+    }
+
+    /// 論理名（日本語）: 先頭ページ選択ヘルパー
+    /// 概要: page 編集系テストで、Chapter 初期表示とは別に明示的な HTML カード選択を作ります。
+    ///
+    /// - Parameter store: page を選択する EditorStore。
+    /// - Returns: 選択した先頭 page。
+    private func selectFirstPage(in store: EditorStore) throws -> OpenGraphitePage {
+        let page = try #require(store.loadedProject?.project.chapters.first?.pages.first)
+        store.selectPage(internalID: page.internalID)
+        return page
     }
 
     /// 論理名（日本語）: locale JSON読込ヘルパー

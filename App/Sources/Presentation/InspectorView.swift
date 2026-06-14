@@ -369,6 +369,12 @@ struct InspectorView: View {
                     )
                 }
                 .id(page.id)
+            } else if store.selectedCanvasSegment == .pages, let chapter = store.selectedChapter {
+                ChapterInspectorView(
+                    chapter: chapter,
+                    referenceID: store.chapterReferenceID(for: chapter)
+                )
+                .id(chapter.internalID)
             } else {
                 InspectorEmptyStateView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -384,6 +390,126 @@ struct InspectorView: View {
             return OpenGraphiteFontLibrary.defaultSampleText
         }
         return normalizedText
+    }
+}
+
+/// 論理名（日本語）: Chapterインスペクタービュー
+/// 概要: HTML カード未選択時に、選択中 Chapter の階層情報を表示します。
+///
+/// プロパティ:
+/// - `chapter`: 表示対象 Chapter。
+/// - `referenceID`: agent 向け Chapter 参照 ID。
+private struct ChapterInspectorView: View {
+    var chapter: OpenGraphiteChapter
+    var referenceID: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ChapterSummaryPanel(chapter: chapter)
+
+                InspectorSection(title: "Context") {
+                    InspectorInfoRow(label: "id", value: chapter.id)
+                    InspectorInfoRow(label: "title", value: chapter.title ?? "-")
+                    InspectorInfoRow(label: "pages", value: "\(chapter.pages.count)")
+                    InspectorInfoRow(label: "reference", value: referenceID ?? "-")
+                }
+
+                InspectorSection(title: "Pages") {
+                    if chapter.pages.isEmpty {
+                        Text("No pages")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(chapter.pages, id: \.internalID) { page in
+                                ChapterPageHierarchyRow(page: page)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 論理名（日本語）: Chapter概要パネル
+/// 概要: Inspector 上部に選択 Chapter のアイコン、表示名、配下 page 数を表示します。
+///
+/// プロパティ:
+/// - `chapter`: 表示対象 Chapter。
+private struct ChapterSummaryPanel: View {
+    var chapter: OpenGraphiteChapter
+
+    var body: some View {
+        HStack(spacing: 10) {
+            OpenGraphiteIconView(icon: .chapterGroup, size: 16)
+                .frame(width: 28, height: 28)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.accentFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(chapter.displayName)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("\(chapter.pages.count) pages")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+    }
+}
+
+/// 論理名（日本語）: Chapter配下ページ行
+/// 概要: Chapter Inspector の Pages セクションで HTML カードの基本配置を表示します。
+///
+/// プロパティ:
+/// - `page`: 表示する HTML page 定義。
+private struct ChapterPageHierarchyRow: View {
+    var page: OpenGraphitePage
+
+    var body: some View {
+        HStack(spacing: 9) {
+            OpenGraphiteIconView(icon: .pageDocument, size: 14)
+                .foregroundStyle(.secondary)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.displayName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(pageDetail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+    }
+
+    private var pageDetail: String {
+        "\(page.path) · \(page.canvas.resolutionLabel) · \(page.canvas.positionLabel)"
     }
 }
 
