@@ -2290,17 +2290,17 @@ private struct I18nRuntimeLiteralField: View {
                 .lineLimit(1)
 
             if isEditable {
-                TextField(placeholder, text: $value)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                            .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
-                    )
-                    .onSubmit(onSubmit)
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.attribute(label),
+                    iconHelp: label,
+                    strokeColor: isInvalid ? Color.red.opacity(0.65) : Color.clear
+                ) {
+                    TextField(placeholder, text: $value)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .onSubmit(onSubmit)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
             } else {
                 Text(readOnlyValue)
                     .font(.caption.monospaced())
@@ -2467,14 +2467,16 @@ private struct OptionalCanvasNameField: View {
                     .lineLimit(1)
             }
 
-            TextField("desktop", text: $text)
-                .textFieldStyle(.plain)
-                .font(.caption.monospaced())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .onSubmit(onSubmit)
-                .frame(minWidth: 0, maxWidth: .infinity)
+            InspectorInputChrome(
+                icon: InspectorParameterIcon.attribute(label),
+                iconHelp: label
+            ) {
+                TextField("desktop", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .onSubmit(onSubmit)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -2627,18 +2629,17 @@ private struct PreviewContextTextField: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
 
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .font(.caption.monospaced())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                        .stroke(isInvalid ? Color.red.opacity(0.65) : Color.clear, lineWidth: 1)
-                )
-                .onSubmit(onSubmit)
-                .frame(minWidth: 0, maxWidth: .infinity)
+            InspectorInputChrome(
+                icon: InspectorParameterIcon.attribute(label),
+                iconHelp: label,
+                strokeColor: isInvalid ? Color.red.opacity(0.65) : Color.clear
+            ) {
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .onSubmit(onSubmit)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -2696,18 +2697,18 @@ private struct PreviewMockStateRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                TextField("value", text: $entry.value)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                            .stroke(entry.isOverrideEnabled ? Color.clear : EditorColumnStyle.separatorColor.opacity(0.7), lineWidth: 1)
-                    )
-                    .opacity(entry.isOverrideEnabled ? 1 : 0.56)
-                    .onSubmit(onSubmit)
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.parameterValue,
+                    iconHelp: entry.name,
+                    strokeColor: entry.isOverrideEnabled ? Color.clear : EditorColumnStyle.separatorColor.opacity(0.7)
+                ) {
+                    TextField("value", text: $entry.value)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .onSubmit(onSubmit)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+                .opacity(entry.isOverrideEnabled ? 1 : 0.56)
             }
             .frame(maxWidth: .infinity)
         }
@@ -2758,18 +2759,17 @@ private struct RequiredCanvasNumberField: View {
                     .minimumScaleFactor(0.72)
             }
 
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(.caption.monospaced())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                        .stroke(fieldStrokeColor, lineWidth: 1)
-                )
-                .onSubmit(onSubmit)
-                .frame(minWidth: 0, maxWidth: .infinity)
+            InspectorInputChrome(
+                icon: InspectorParameterIcon.canvasMetric(label),
+                iconHelp: label,
+                strokeColor: fieldStrokeColor
+            ) {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .onSubmit(onSubmit)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -2898,15 +2898,17 @@ private struct EditableAttributeField: View {
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 86, alignment: .leading)
 
-            TextField("", text: $draft)
-                .textFieldStyle(.plain)
-                .font(.caption.monospaced())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                .focused($isFocused)
-                .onSubmit(commitIfChanged)
-                .frame(minWidth: 0, maxWidth: .infinity)
+            InspectorInputChrome(
+                icon: InspectorParameterIcon.attribute(label),
+                iconHelp: label
+            ) {
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .focused($isFocused)
+                    .onSubmit(commitIfChanged)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
         }
         .frame(maxWidth: .infinity)
         .onChange(of: value) { _, newValue in
@@ -3032,15 +3034,18 @@ private struct CSSVariableField: View {
                 .minimumScaleFactor(0.72)
 
             HStack(spacing: 6) {
-                TextField("", text: $draft)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .focused($isFocused)
-                    .onSubmit(commitIfChanged)
-                    .frame(minWidth: 0, maxWidth: .infinity)
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.cssVariable(key),
+                    iconHelp: key
+                ) {
+                    TextField("", text: $draft)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .focused($isFocused)
+                        .onSubmit(commitIfChanged)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
@@ -3121,15 +3126,18 @@ private struct CSSColorVariableField: View {
                         onPick: commitPickedColor
                     )
 
-                    TextField("", text: $draft)
-                        .textFieldStyle(.plain)
-                        .font(.caption.monospaced())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                        .focused($isFocused)
-                        .onSubmit(commitDraftIfChanged)
-                        .frame(minWidth: 0, maxWidth: .infinity)
+                    InspectorInputChrome(
+                        icon: InspectorParameterIcon.cssVariable(key),
+                        iconHelp: key
+                    ) {
+                        TextField("", text: $draft)
+                            .textFieldStyle(.plain)
+                            .font(.caption.monospaced())
+                            .focused($isFocused)
+                            .onSubmit(commitDraftIfChanged)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity)
                 }
             } else {
                 CSSUnsupportedValueNotice(value: value)

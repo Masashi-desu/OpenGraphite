@@ -47,12 +47,14 @@ struct CSSBoxVariableField: View {
                                 CSSSmallTextField(
                                     label: labels[safe: 0] ?? "T",
                                     text: binding(\.top),
+                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 0] ?? "T", key: key),
                                     showsRelationship: isLinked,
                                     onCommit: commitIfChanged
                                 )
                                 CSSSmallTextField(
                                     label: labels[safe: 1] ?? "R",
                                     text: binding(\.right),
+                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 1] ?? "R", key: key),
                                     showsRelationship: isLinked,
                                     onCommit: commitIfChanged
                                 )
@@ -62,12 +64,14 @@ struct CSSBoxVariableField: View {
                                 CSSSmallTextField(
                                     label: labels[safe: 2] ?? "B",
                                     text: binding(\.bottom),
+                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 2] ?? "B", key: key),
                                     showsRelationship: isLinked,
                                     onCommit: commitIfChanged
                                 )
                                 CSSSmallTextField(
                                     label: labels[safe: 3] ?? "L",
                                     text: binding(\.left),
+                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 3] ?? "L", key: key),
                                     showsRelationship: isLinked,
                                     onCommit: commitIfChanged
                                 )
@@ -172,8 +176,18 @@ struct CSSPairVariableField: View {
             CSSControlHeader(key: key)
             if pairValue.isSupported {
                 HStack(spacing: 6) {
-                    CSSSmallTextField(label: firstLabel, text: $pairValue.first, onCommit: commitIfChanged)
-                    CSSSmallTextField(label: secondLabel, text: $pairValue.second, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: firstLabel,
+                        text: $pairValue.first,
+                        icon: InspectorParameterIcon.cssSubfield(label: firstLabel, key: key),
+                        onCommit: commitIfChanged
+                    )
+                    CSSSmallTextField(
+                        label: secondLabel,
+                        text: $pairValue.second,
+                        icon: InspectorParameterIcon.cssSubfield(label: secondLabel, key: key),
+                        onCommit: commitIfChanged
+                    )
                 }
             } else {
                 CSSUnsupportedValueNotice(value: pairValue.cssString)
@@ -233,15 +247,18 @@ struct CSSNumericUnitVariableField: View {
             CSSControlHeader(key: key)
             if isEditable {
                 HStack(spacing: 6) {
-                    TextField("", text: numberBinding)
-                        .textFieldStyle(.plain)
-                        .font(.caption.monospaced())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                        .focused($isNumberFocused)
-                        .onSubmit(commitIfChanged)
-                        .frame(minWidth: 0, maxWidth: .infinity)
+                    InspectorInputChrome(
+                        icon: InspectorParameterIcon.cssVariable(key),
+                        iconHelp: key
+                    ) {
+                        TextField("", text: numberBinding)
+                            .textFieldStyle(.plain)
+                            .font(.caption.monospaced())
+                            .focused($isNumberFocused)
+                            .onSubmit(commitIfChanged)
+                            .frame(minWidth: 0, maxWidth: .infinity)
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity)
 
                     Picker("", selection: unitBinding) {
                         ForEach(unitOptions, id: \.self) { unit in
@@ -435,6 +452,7 @@ struct CSSDimensionVariableField: View {
                     CSSSmallTextField(
                         label: "Value",
                         text: $dimensionValue.primary,
+                        icon: InspectorParameterIcon.cssVariable(key),
                         unit: $dimensionValue.unit,
                         onCommit: commitIfChanged
                     )
@@ -477,6 +495,7 @@ struct CSSDimensionVariableField: View {
                     CSSSmallTextField(
                         label: dimensionValue.functionArgumentLabels[index],
                         text: functionArgumentBinding(at: index),
+                        icon: InspectorParameterIcon.label(dimensionValue.functionArgumentLabels[index]),
                         onCommit: commitIfChanged
                     )
 
@@ -637,7 +656,12 @@ struct CSSBorderVariableField: View {
 
             if borderValue.isSupported {
                 HStack(spacing: 6) {
-                    CSSSmallTextField(label: "Width", text: $borderValue.width, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: "Width",
+                        text: $borderValue.width,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Width", key: key),
+                        onCommit: commitIfChanged
+                    )
                     Picker("", selection: styleBinding) {
                         ForEach(CSSBorderValue.styles, id: \.self) { style in
                             Text(style).tag(style)
@@ -749,6 +773,7 @@ struct CSSBackgroundVariableField: View {
                     CSSSmallTextField(
                         label: "Angle",
                         text: $backgroundValue.gradient.angle,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Angle", key: key),
                         unitOptions: ["deg", "rad", "turn", "grad"],
                         onCommit: commitIfChanged
                     )
@@ -861,12 +886,32 @@ struct CSSShadowVariableField: View {
 
             if shadowValue.isSupported {
                 HStack(spacing: 6) {
-                    CSSSmallTextField(label: "X", text: $shadowValue.x, onCommit: commitIfChanged)
-                    CSSSmallTextField(label: "Y", text: $shadowValue.y, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: "X",
+                        text: $shadowValue.x,
+                        icon: InspectorParameterIcon.cssSubfield(label: "X", key: key),
+                        onCommit: commitIfChanged
+                    )
+                    CSSSmallTextField(
+                        label: "Y",
+                        text: $shadowValue.y,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Y", key: key),
+                        onCommit: commitIfChanged
+                    )
                 }
                 HStack(spacing: 6) {
-                    CSSSmallTextField(label: "Blur", text: $shadowValue.blur, onCommit: commitIfChanged)
-                    CSSSmallTextField(label: "Spread", text: $shadowValue.spread, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: "Blur",
+                        text: $shadowValue.blur,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Blur", key: key),
+                        onCommit: commitIfChanged
+                    )
+                    CSSSmallTextField(
+                        label: "Spread",
+                        text: $shadowValue.spread,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Spread", key: key),
+                        onCommit: commitIfChanged
+                    )
                 }
                 CSSColorTextField(
                     label: "Color",
@@ -943,10 +988,25 @@ struct CSSFlexVariableField: View {
             CSSControlHeader(key: key)
             if flexValue.isSupported {
                 HStack(spacing: 6) {
-                    CSSSmallTextField(label: "Grow", text: $flexValue.grow, onCommit: commitIfChanged)
-                    CSSSmallTextField(label: "Shrink", text: $flexValue.shrink, onCommit: commitIfChanged)
+                    CSSSmallTextField(
+                        label: "Grow",
+                        text: $flexValue.grow,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Grow", key: key),
+                        onCommit: commitIfChanged
+                    )
+                    CSSSmallTextField(
+                        label: "Shrink",
+                        text: $flexValue.shrink,
+                        icon: InspectorParameterIcon.cssSubfield(label: "Shrink", key: key),
+                        onCommit: commitIfChanged
+                    )
                 }
-                CSSSmallTextField(label: "Basis", text: $flexValue.basis, onCommit: commitIfChanged)
+                CSSSmallTextField(
+                    label: "Basis",
+                    text: $flexValue.basis,
+                    icon: InspectorParameterIcon.cssSubfield(label: "Basis", key: key),
+                    onCommit: commitIfChanged
+                )
             } else {
                 CSSUnsupportedValueNotice(value: flexValue.cssString)
             }
@@ -1129,17 +1189,17 @@ struct CSSFontFamilyVariableField: View {
             .frame(maxWidth: .infinity)
 
             if selectionID == CSSFontFamilyPreset.custom.id {
-                TextField("", text: $customValue)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        EditorColumnStyle.elevatedRowFill,
-                        in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                    )
-                    .focused($isCustomFocused)
-                    .onSubmit(commitCustomValue)
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.cssVariable(key),
+                    iconHelp: key
+                ) {
+                    TextField("", text: $customValue)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .focused($isCustomFocused)
+                        .onSubmit(commitCustomValue)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1250,6 +1310,7 @@ private struct CSSControlHeader: View {
 /// プロパティ:
 /// - `label`: 入力欄ラベル。
 /// - `text`: 入力値 binding。
+/// - `icon`: 入力値の意味を示す左側アイコン。
 /// - `unit`: 値と単位を別 state で持つ場合の単位 binding。
 /// - `unitOptions`: TextField の外側 Picker に出す単位候補。
 /// - `showsRelationship`: 他入力欄と連動していることを示す枠線を表示するか。
@@ -1257,6 +1318,7 @@ private struct CSSControlHeader: View {
 private struct CSSSmallTextField: View {
     var label: String
     @Binding var text: String
+    var icon: InspectorInputIcon?
     var unit: Binding<String>?
     var unitOptions: [String]
     var showsRelationship: Bool
@@ -1270,6 +1332,7 @@ private struct CSSSmallTextField: View {
     /// - Parameters:
     ///   - label: 入力欄ラベル。
     ///   - text: 入力値 binding。
+    ///   - icon: 入力値の意味を示す左側アイコン。
     ///   - unit: 値と単位を別 state で持つ場合の単位 binding。
     ///   - unitOptions: TextField 外側の単位候補。
     ///   - showsRelationship: 他入力欄と連動していることを示す枠線を表示するか。
@@ -1277,6 +1340,7 @@ private struct CSSSmallTextField: View {
     init(
         label: String,
         text: Binding<String>,
+        icon: InspectorInputIcon? = nil,
         unit: Binding<String>? = nil,
         unitOptions: [String] = ["px", "%", "rem", "em", "vw", "vh"],
         showsRelationship: Bool = false,
@@ -1284,6 +1348,7 @@ private struct CSSSmallTextField: View {
     ) {
         self.label = label
         _text = text
+        self.icon = icon
         self.unit = unit
         self.unitOptions = unitOptions
         self.showsRelationship = showsRelationship
@@ -1298,19 +1363,19 @@ private struct CSSSmallTextField: View {
                 .lineLimit(1)
 
             HStack(spacing: 6) {
-                TextField("", text: fieldTextBinding)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                            .stroke(showsRelationship ? Color.accentColor.opacity(0.54) : Color.clear, lineWidth: 1)
-                    )
-                    .focused($isFocused)
-                    .onSubmit(commitText)
-                    .frame(minWidth: 0, maxWidth: .infinity)
+                InspectorInputChrome(
+                    icon: icon,
+                    iconHelp: label,
+                    strokeColor: showsRelationship ? Color.accentColor.opacity(0.54) : Color.clear
+                ) {
+                    TextField("", text: fieldTextBinding)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .focused($isFocused)
+                        .onSubmit(commitText)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity)
 
                 if showsUnitPicker {
                     Picker("", selection: unitSelectionBinding) {
@@ -1566,7 +1631,12 @@ private struct CSSGradientStopField: View {
                     initialColor: .white,
                     onCommit: onCommit
                 )
-                CSSSmallTextField(label: "Position", text: positionBinding, onCommit: onCommit)
+                CSSSmallTextField(
+                    label: "Position",
+                    text: positionBinding,
+                    icon: InspectorParameterIcon.label("Position"),
+                    onCommit: onCommit
+                )
                     .frame(width: 88)
             }
         }
@@ -1602,12 +1672,14 @@ private struct CSSGradientStopField: View {
 /// - `label`: 入力欄ラベル。
 /// - `text`: CSS 色文字列 binding。
 /// - `pickerColor`: ColorPicker 内部状態。
+/// - `icon`: 色文字列入力欄の意味を示す左側アイコン。
 /// - `initialColor`: 未設定時に ColorPicker を開くための初期色。
 /// - `onCommit`: Enter、フォーカスアウト、または色選択時の確定処理。
 private struct CSSColorTextField: View {
     var label: String
     @Binding var text: String
     @Binding var pickerColor: Color
+    var icon: InspectorInputIcon = InspectorParameterIcon.colorValue
     var initialColor: Color
     var onCommit: () -> Void = {}
 
@@ -1628,15 +1700,18 @@ private struct CSSColorTextField: View {
                     onPick: { _ in commitIfValid() }
                 )
 
-                TextField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.caption.monospaced())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-                    .focused($isFocused)
-                    .onSubmit(commitIfValid)
-                    .frame(minWidth: 0, maxWidth: .infinity)
+                InspectorInputChrome(
+                    icon: icon,
+                    iconHelp: label
+                ) {
+                    TextField("", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .focused($isFocused)
+                        .onSubmit(commitIfValid)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity)
