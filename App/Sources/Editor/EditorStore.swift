@@ -862,6 +862,27 @@ final class EditorStore: ObservableObject {
         selectedNodeID = id
     }
 
+    /// 論理名（日本語）: プレビューテキスト編集中payload取り込み関数
+    /// 処理概要: WebView の contenteditable 入力中に届く text payload を選択中 node へ反映し、Inspector 表示を即時同期します。
+    ///
+    /// - Parameter payload: `id` と `text` を含む JavaScript bridge payload。
+    func ingestTextEditingPayload(_ payload: [String: Any]) {
+        guard let id = payload["id"] as? String,
+              !id.isEmpty,
+              id == selectedNodeID,
+              let index = nodes.firstIndex(where: { $0.id == id }),
+              nodes[index].type == "text"
+        else {
+            return
+        }
+
+        let text = payload["text"] as? String ?? ""
+        nodes[index].textContent = text
+        if !nodes[index].isTextBinding {
+            nodes[index].fallbackTextContent = text
+        }
+    }
+
     /// 論理名（日本語）: コンポーネント継承元解決関数
     /// 処理概要: 選択ノードの `data-og-component` または `data-og-source-component` から project 内の master 配置を解決します。
     ///
@@ -1378,42 +1399,96 @@ final class EditorStore: ObservableObject {
         statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
     }
 
-    /// 論理名（日本語）: ノードテキスト内容更新関数
-    /// 処理概要: 選択中 text node の HTML 正本 fallback を更新し、WebView へ反映する mutation を発行します。
+    /// 論理名（日本語）: ノードテキスト内容プレビュー関数
+    /// 処理概要: 選択中 text node の app 内 cache を更新し、永続化せず WebView へ反映する mutation を発行します。
     ///
     /// - Parameters:
-    ///   - value: Inspector から入力されたプレーンテキスト。
-    ///   - expectedNodeID: 入力開始時の node ID。指定時は現在選択と一致する場合だけ保存します。
-    ///   - expectedPageURL: 入力開始時の HTML URL。指定時は現在選択と一致する場合だけ保存します。
-    func updateNodeTextContent(_ value: String, expectedNodeID: String? = nil, expectedPageURL: URL? = nil) {
+    ///   - value: Inspector から入力中のプレーンテキスト。
+    ///   - expectedNodeID: 入力開始時の node ID。指定時は現在選択と一致する場合だけ反映します。
+    ///   - expectedPageURL: 入力開始時の HTML URL。指定時は現在選択と一致する場合だけ反映します。
+    /// - Returns: live 反映対象として受理できた場合は `true`。
+    @discardableResult
+    func previewNodeTextContent(_ value: String, expectedNodeID: String? = nil, expectedPageURL: URL? = nil) -> Bool {
         guard let selectedNodeID,
               let selectedNode,
               selectedNode.type == "text",
               let target = currentHTMLSyncTarget()
         else {
-            return
+            return false
         }
-        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return }
+        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return false }
         if let expectedPageURL {
-            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return }
+            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return false }
+        }
+        guard let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) else {
+            return false
+        }
+
+        let previousActiveValue = nodes[index].textContent ?? ""
+        let previousFallbackValue = selectedNodeTextFallbackValue(nodes[index])
+        let shouldUpdateActiveValue = !nodes[index].isTextBinding || previousActiveValue == previousFallbackValue
+        guard previousFallbackValue != value || (shouldUpdateActiveValue && previousActiveValue != value) else {
+            return true
+        }
+
+        nodes[index].fallbackTextContent = value
+        if shouldUpdateActiveValue {
+            nodes[index].textContent = value
+        }
+
+        publishTextMutation(
+            pageURL: target.htmlURL,
+            nodeID: selectedNode.id,
+            value: value,
+            mode: .fallback
+        )
+        return true
+    }
+
+    /// 論理名（日本語）: ノードテキスト内容更新関数
+    /// 処理概要: 選択中 text node の HTML 正本 fallback を更新し、WebView へ反映する mutation を発行します。
+    ///
+    /// - Parameters:
+    ///   - value: Inspector から確定されたプレーンテキスト。
+    ///   - expectedNodeID: 入力開始時の node ID。指定時は現在選択と一致する場合だけ保存します。
+    ///   - expectedPageURL: 入力開始時の HTML URL。指定時は現在選択と一致する場合だけ保存します。
+    ///   - expectedOldValue: 入力開始時の保存済み fallback。live cache 更新後の確定保存で競合判定に使います。
+    /// - Returns: 保存が成功した、または保存不要だった場合は `true`。
+    @discardableResult
+    func updateNodeTextContent(
+        _ value: String,
+        expectedNodeID: String? = nil,
+        expectedPageURL: URL? = nil,
+        expectedOldValue: String? = nil
+    ) -> Bool {
+        guard let selectedNodeID,
+              let selectedNode,
+              selectedNode.type == "text",
+              let target = currentHTMLSyncTarget()
+        else {
+            return false
+        }
+        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return false }
+        if let expectedPageURL {
+            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return false }
         }
         guard !selectedNode.internalID.isEmpty else {
             reportHTMLObjectEditConflict()
-            return
+            return false
         }
 
-        let expectedOldValue = selectedNodeTextFallbackValue(selectedNode)
-        guard expectedOldValue != value else { return }
+        let resolvedExpectedOldValue = expectedOldValue ?? selectedNodeTextFallbackValue(selectedNode)
+        guard resolvedExpectedOldValue != value else { return true }
 
         let edit = HTMLObjectEdit(
             target: target,
             operation: .setTextContent(
                 nodeInternalID: selectedNode.internalID,
                 text: value,
-                expectedOldValue: expectedOldValue
+                expectedOldValue: resolvedExpectedOldValue
             )
         )
-        guard applyHTMLObjectEdit(edit).updated else { return }
+        guard applyHTMLObjectEdit(edit).updated else { return false }
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             let previousActiveValue = nodes[index].textContent ?? ""
@@ -1424,15 +1499,14 @@ final class EditorStore: ObservableObject {
             }
         }
 
-        textMutationSequence += 1
-        textMutation = NodeTextContentMutation(
-            sequence: textMutationSequence,
+        publishTextMutation(
             pageURL: target.htmlURL,
             nodeID: selectedNode.id,
             value: value,
             mode: .fallback
         )
         statusMessage = "\(selectedNode.displayID) の text を更新しました。"
+        return true
     }
 
     /// 論理名（日本語）: Active Resolvedテキスト編集文脈取得関数
@@ -1459,20 +1533,77 @@ final class EditorStore: ObservableObject {
         return (locale: locale, isEditable: isEditable)
     }
 
+    /// 論理名（日本語）: Active Resolvedテキスト内容プレビュー関数
+    /// 処理概要: 表示中 locale の解決済み text を app 内 cache と WebView へ反映します。locale resource は保存しません。
+    ///
+    /// - Parameters:
+    ///   - value: Inspector から入力中の表示中 locale のプレーンテキスト。
+    ///   - locale: 更新対象 locale。省略時は現在の preview context から解決します。
+    ///   - expectedNodeID: 入力開始時の node ID。指定時は現在選択と一致する場合だけ反映します。
+    ///   - expectedPageURL: 入力開始時の HTML URL。指定時は現在選択と一致する場合だけ反映します。
+    /// - Returns: live 反映対象として受理できた場合は `true`。
+    @discardableResult
+    func previewActiveResolvedTextContent(
+        _ value: String,
+        locale: String? = nil,
+        expectedNodeID: String? = nil,
+        expectedPageURL: URL? = nil
+    ) -> Bool {
+        guard let selectedNodeID,
+              let selectedNode,
+              selectedNode.isTextBinding,
+              let target = currentHTMLSyncTarget()
+        else {
+            return false
+        }
+        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return false }
+        if let expectedPageURL {
+            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return false }
+        }
+
+        let resolvedLocale = Self.nonEmptyTrimmed(locale) ?? activeResolvedTextLocale()
+        guard resolvedLocale != nil else {
+            lastError = "表示中 locale を解決できないため Active Resolved を反映できません。"
+            return false
+        }
+        guard activeResolvedTextEditContext(for: selectedNode)?.isEditable == true else {
+            lastError = "表示中 locale の text resource は編集できません。Project の i18n 設定を確認してください。"
+            return false
+        }
+        guard let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) else {
+            return false
+        }
+        guard nodes[index].textContent != value else {
+            return true
+        }
+
+        nodes[index].textContent = value
+        publishTextMutation(
+            pageURL: target.htmlURL,
+            nodeID: selectedNode.id,
+            value: value,
+            mode: .resolved
+        )
+        lastError = nil
+        return true
+    }
+
     /// 論理名（日本語）: Active Resolvedテキスト内容更新関数
     /// 処理概要: 表示中 locale の i18n resource 値を更新し、WebView へ解決済み表示値の mutation を発行します。
     ///
     /// - Parameters:
-    ///   - value: Inspector から入力された表示中 locale のプレーンテキスト。
+    ///   - value: Inspector から確定された表示中 locale のプレーンテキスト。
     ///   - locale: 更新対象 locale。省略時は現在の preview context から解決します。
     ///   - expectedNodeID: 入力開始時の node ID。指定時は現在選択と一致する場合だけ保存します。
     ///   - expectedPageURL: 入力開始時の HTML URL。指定時は現在選択と一致する場合だけ保存します。
+    /// - Returns: 保存が成功した、または保存不要だった場合は `true`。
+    @discardableResult
     func updateActiveResolvedTextContent(
         _ value: String,
         locale: String? = nil,
         expectedNodeID: String? = nil,
         expectedPageURL: URL? = nil
-    ) {
+    ) -> Bool {
         guard let selectedNodeID,
               let selectedNode,
               selectedNode.isTextBinding,
@@ -1481,21 +1612,21 @@ final class EditorStore: ObservableObject {
               let pageID = selectedPageReferenceID(),
               let target = currentHTMLSyncTarget()
         else {
-            return
+            return false
         }
-        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return }
+        guard expectedNodeID == nil || selectedNodeID == expectedNodeID else { return false }
         if let expectedPageURL {
-            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return }
+            guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return false }
         }
 
         let resolvedLocale = Self.nonEmptyTrimmed(locale) ?? activeResolvedTextLocale()
         guard let resolvedLocale else {
             lastError = "表示中 locale を解決できないため Active Resolved を保存できません。"
-            return
+            return false
         }
         guard activeResolvedTextEditContext(for: selectedNode)?.isEditable == true else {
             lastError = "\(resolvedLocale) の locale JSON は編集できません。Project の i18n 設定を確認してください。"
-            return
+            return false
         }
 
         let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
@@ -1510,15 +1641,13 @@ final class EditorStore: ObservableObject {
             )
             if let error = result.diagnostics.first(where: { $0.severity == .error }) {
                 lastError = error.message
-                return
+                return false
             }
 
             if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
                 nodes[index].textContent = value
             }
-            textMutationSequence += 1
-            textMutation = NodeTextContentMutation(
-                sequence: textMutationSequence,
+            publishTextMutation(
                 pageURL: target.htmlURL,
                 nodeID: selectedNode.id,
                 value: value,
@@ -1528,8 +1657,10 @@ final class EditorStore: ObservableObject {
             statusMessage = result.updated
                 ? "\(selectedNode.displayID) の \(resolvedLocale) text resource を更新しました。"
                 : "\(selectedNode.displayID) の \(resolvedLocale) text resource は変更されていません。"
+            return true
         } catch {
             lastError = "Active Resolved の保存に失敗しました: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -2263,6 +2394,30 @@ final class EditorStore: ObservableObject {
     private func baselineNodeHash(for target: HTMLSyncTarget, nodeInternalID: String) -> String? {
         guard let baselineHTML = lastKnownPageHTMLByURL[target.htmlURL] else { return nil }
         return OpenGraphiteHTMLDocument(html: baselineHTML).elementHTMLHash(forNodeID: nodeInternalID)
+    }
+
+    /// 論理名（日本語）: テキストmutation発行関数
+    /// 処理概要: app 内 cache 上の text 変更を WebView へ反映するための mutation を発行します。
+    ///
+    /// - Parameters:
+    ///   - pageURL: 反映対象 HTML の URL。
+    ///   - nodeID: 反映対象 node の表示 ID。
+    ///   - value: WebView へ渡す text 値。
+    ///   - mode: fallback / resolved の反映モード。
+    private func publishTextMutation(
+        pageURL: URL,
+        nodeID: String,
+        value: String,
+        mode: NodeTextContentMutationMode
+    ) {
+        textMutationSequence += 1
+        textMutation = NodeTextContentMutation(
+            sequence: textMutationSequence,
+            pageURL: pageURL,
+            nodeID: nodeID,
+            value: value,
+            mode: mode
+        )
     }
 
     /// 論理名（日本語）: HTMLオブジェクト編集競合報告関数

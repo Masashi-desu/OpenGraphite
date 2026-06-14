@@ -518,29 +518,65 @@ private struct TextContentSection: View {
 
             if node.isTextBinding {
                 InspectorInfoRow(label: "i18n key", value: node.i18nKey ?? "-")
-                InspectorEditableTextValueBlock(label: "Fallback", value: fallbackText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
-                    store.updateNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
-                }
+                InspectorEditableTextValueBlock(
+                    label: "Fallback",
+                    value: fallbackText,
+                    onPreview: { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                        store.previewNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
+                    },
+                    onCommit: { [nodeID = node.id, pageURL = store.selectedPageURL] value, previousValue in
+                        store.updateNodeTextContent(
+                            value,
+                            expectedNodeID: nodeID,
+                            expectedPageURL: pageURL,
+                            expectedOldValue: previousValue
+                        )
+                    }
+                )
                 .id("\(node.id)-text-fallback")
 
                 if let activeEditContext = store.activeResolvedTextEditContext(for: node),
                    activeEditContext.isEditable {
-                    InspectorEditableTextValueBlock(label: "Active Resolved (\(activeEditContext.locale))", value: activeText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
-                        store.updateActiveResolvedTextContent(
-                            value,
-                            locale: activeEditContext.locale,
-                            expectedNodeID: nodeID,
-                            expectedPageURL: pageURL
-                        )
-                    }
+                    InspectorEditableTextValueBlock(
+                        label: "Active Resolved (\(activeEditContext.locale))",
+                        value: activeText,
+                        onPreview: { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                            store.previewActiveResolvedTextContent(
+                                value,
+                                locale: activeEditContext.locale,
+                                expectedNodeID: nodeID,
+                                expectedPageURL: pageURL
+                            )
+                        },
+                        onCommit: { [nodeID = node.id, pageURL = store.selectedPageURL] value, _ in
+                            store.updateActiveResolvedTextContent(
+                                value,
+                                locale: activeEditContext.locale,
+                                expectedNodeID: nodeID,
+                                expectedPageURL: pageURL
+                            )
+                        }
+                    )
                     .id("\(node.id)-text-active-\(activeEditContext.locale)")
                 } else {
                     InspectorTextValueBlock(label: activeResolvedLabel, value: activeText)
                 }
             } else {
-                InspectorEditableTextValueBlock(label: "Content", value: activeText) { [nodeID = node.id, pageURL = store.selectedPageURL] value in
-                    store.updateNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
-                }
+                InspectorEditableTextValueBlock(
+                    label: "Content",
+                    value: activeText,
+                    onPreview: { [nodeID = node.id, pageURL = store.selectedPageURL] value in
+                        store.previewNodeTextContent(value, expectedNodeID: nodeID, expectedPageURL: pageURL)
+                    },
+                    onCommit: { [nodeID = node.id, pageURL = store.selectedPageURL] value, previousValue in
+                        store.updateNodeTextContent(
+                            value,
+                            expectedNodeID: nodeID,
+                            expectedPageURL: pageURL,
+                            expectedOldValue: previousValue
+                        )
+                    }
+                )
                 .id("\(node.id)-text-content")
             }
         }
@@ -563,33 +599,43 @@ private struct TextContentSection: View {
 }
 
 /// 論理名（日本語）: インスペクターテキスト値編集
-/// 概要: 複数行になり得る text content を編集し、入力停止、フォーカスアウト、適用ボタンで保存します。
+/// 概要: 複数行になり得る text content を編集し、入力中は live 反映、フォーカスアウトと適用ボタンで保存します。
 ///
 /// プロパティ:
 /// - `label`: 値の種類。
 /// - `value`: 現在の text content。
-/// - `onCommit`: 保存時に呼び出す処理。
+/// - `onPreview`: 入力中の app 内 cache 反映時に呼び出す処理。
+/// - `onCommit`: 確定保存時に呼び出す処理。
 private struct InspectorEditableTextValueBlock: View {
     var label: String
     var value: String
-    var onCommit: (String) -> Void
+    var onPreview: (String) -> Void
+    var onCommit: (String, String) -> Bool
 
     @State private var draft: String
-    @State private var pendingCommitTask: Task<Void, Never>?
+    @State private var committedValue: String
     @FocusState private var isFocused: Bool
 
     /// 論理名（日本語）: インスペクターテキスト値編集初期化関数
-    /// 処理概要: 現在値を draft state へコピーし、保存処理を保持します。
+    /// 処理概要: 現在値を draft / 確定済み基準値へコピーし、live 反映処理と保存処理を保持します。
     ///
     /// - Parameters:
     ///   - label: 値の種類。
     ///   - value: 現在の text content。
+    ///   - onPreview: 入力中の app 内 cache 反映時に呼び出す処理。
     ///   - onCommit: 保存時に呼び出す処理。
-    init(label: String, value: String, onCommit: @escaping (String) -> Void) {
+    init(
+        label: String,
+        value: String,
+        onPreview: @escaping (String) -> Void,
+        onCommit: @escaping (String, String) -> Bool
+    ) {
         self.label = label
         self.value = value
+        self.onPreview = onPreview
         self.onCommit = onCommit
         _draft = State(initialValue: value)
+        _committedValue = State(initialValue: value)
     }
 
     var body: some View {
@@ -640,10 +686,11 @@ private struct InspectorEditableTextValueBlock: View {
         .onChange(of: value) { _, newValue in
             guard !isFocused else { return }
             draft = newValue
+            committedValue = newValue
         }
         .onChange(of: draft) { _, _ in
             guard isFocused else { return }
-            scheduleCommitIfChanged()
+            onPreview(draft)
         }
         .onChange(of: isFocused) { _, isFocused in
             guard !isFocused else { return }
@@ -651,42 +698,19 @@ private struct InspectorEditableTextValueBlock: View {
         }
         .onDisappear {
             commitIfChanged()
-            pendingCommitTask?.cancel()
-            pendingCommitTask = nil
         }
     }
 
     private var hasChanges: Bool {
-        draft != value
+        draft != committedValue
     }
 
     /// 論理名（日本語）: インスペクターテキスト値変更時適用関数
-    /// 処理概要: draft が現在値と異なる場合だけ text content 更新を反映します。
+    /// 処理概要: draft が最後に保存できた値と異なる場合だけ text content を確定保存します。
     private func commitIfChanged() {
-        pendingCommitTask?.cancel()
-        pendingCommitTask = nil
         guard hasChanges else { return }
-        onCommit(draft)
-    }
-
-    /// 論理名（日本語）: インスペクターテキスト値自動適用予約関数
-    /// 処理概要: 入力が短時間止まった場合に text content 更新を反映するよう予約します。
-    private func scheduleCommitIfChanged() {
-        pendingCommitTask?.cancel()
-        guard hasChanges else {
-            pendingCommitTask = nil
-            return
-        }
-        pendingCommitTask = Task {
-            do {
-                try await Task.sleep(nanoseconds: 350_000_000)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                commitIfChanged()
-            }
+        if onCommit(draft, committedValue) {
+            committedValue = draft
         }
     }
 }

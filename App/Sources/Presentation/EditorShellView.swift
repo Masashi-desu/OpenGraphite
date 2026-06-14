@@ -760,6 +760,7 @@ private struct CanvasDocumentView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
+            guard !isSelected else { return }
             store.selectPage(internalID: page.internalID)
         }
         .contextMenu {

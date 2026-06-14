@@ -189,7 +189,9 @@ struct EditorStoreTests {
                 "tagName": "leadtext",
                 "type": "text",
                 "textContent": "English active",
-                "fallbackTextContent": "DOM fallback",
+                "fallbackTextContent": "日本語 fallback",
+                "textSource": "binding",
+                "i18nKey": "home.hero.lead",
                 "cssVariables": [String: String](),
                 "depth": 0
             ]
@@ -548,9 +550,97 @@ struct EditorStoreTests {
         #expect(!diskHTML.contains("日本語 fallback"))
     }
 
-    /// 論理名（日本語）: Inspectorテキスト遅延保存対象ガードテスト
-    /// 概要: 入力中の node から選択が移動した後に遅延保存が発火しても、現在選択中の別 node を更新しないことを検証します。
-    @Test("Inspectorの遅延text保存は別選択nodeへ流れない")
+    /// 論理名（日本語）: Inspectorテキストlive反映非永続化テスト
+    /// 概要: Inspector 入力中の text 反映は app 内 cache と WebView mutation に留まり、確定保存まで HTML を更新しないことを検証します。
+    @Test("Inspectorのtext live反映は確定までHTMLへ保存しない")
+    func testPreviewNodeTextContentDoesNotPersistUntilCommit() throws {
+        // コンディション：literal text node を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Lead data-og-id="lead" data-og-internal-id="lead-node" data-og-type="text">Original</Lead>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.ingestNodePayload([
+            [
+                "id": "lead",
+                "internalID": "lead-node",
+                "tagName": "lead",
+                "type": "text",
+                "textContent": "Original",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "lead")
+        let initialDiskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 検証内容：Inspector 入力中の live 反映を app cache へ適用する（When）
+        store.previewNodeTextContent("入力中", expectedNodeID: "lead", expectedPageURL: fixture.htmlURL)
+
+        // 期待値：cache と WebView mutation は更新されるが、HTML 正本はまだ更新されない（Then）
+        #expect(store.nodes[0].textContent == "入力中")
+        #expect(store.nodes[0].fallbackTextContent == "入力中")
+        #expect(store.textMutation?.nodeID == "lead")
+        #expect(store.textMutation?.value == "入力中")
+        #expect(store.textMutation?.mode == .fallback)
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == initialDiskHTML)
+
+        // 検証内容：編集開始時の保存済み値を基準に確定保存する（When）
+        store.updateNodeTextContent(
+            "入力中",
+            expectedNodeID: "lead",
+            expectedPageURL: fixture.htmlURL,
+            expectedOldValue: "Original"
+        )
+
+        // 期待値：確定時だけ HTML 正本が更新される（Then）
+        let committedDiskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(committedDiskHTML.contains(">入力中<"))
+        #expect(!committedDiskHTML.contains(">Original<"))
+    }
+
+    /// 論理名（日本語）: プレビューテキスト編集中同期テスト
+    /// 概要: contenteditable 入力中 payload が選択中 text node の Inspector 表示値へ即時反映されることを検証します。
+    @Test("preview編集中text payloadで選択nodeのactive textを更新する")
+    func testIngestTextEditingPayloadUpdatesSelectedTextNode() throws {
+        // コンディション：binding text node の DOM payload を取り込み、対象 node を選択する（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            [
+                "id": "hero-lead",
+                "internalID": "lead-node",
+                "tagName": "leadtext",
+                "type": "text",
+                "textContent": "Active text",
+                "fallbackTextContent": "Fallback text",
+                "textSource": "binding",
+                "i18nKey": "home.hero.lead",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero-lead")
+
+        // 検証内容：WebView の contenteditable 入力中 payload を取り込む（When）
+        store.ingestTextEditingPayload([
+            "id": "hero-lead",
+            "text": "入力中のpreview text"
+        ])
+
+        // 期待値：active text だけが即時更新され、HTML fallback 表示値は維持される（Then）
+        let node = try #require(store.nodes.first)
+        #expect(node.textContent == "入力中のpreview text")
+        #expect(node.fallbackTextContent == "Fallback text")
+    }
+
+    /// 論理名（日本語）: Inspectorテキスト保存対象ガードテスト
+    /// 概要: 入力中の node から選択が移動した後に保存が発火しても、現在選択中の別 node を更新しないことを検証します。
+    @Test("Inspectorのtext保存は別選択nodeへ流れない")
     func testUpdateNodeTextContentIgnoresStaleSelectionCommit() throws {
         // コンディション：2つの text node を持つ一時プロジェクトを開き、2つ目へ選択を移す
         let fixture = try EditorStoreHistoryFixture()
@@ -586,7 +676,7 @@ struct EditorStoreTests {
         ])
         store.selectNode(id: "lead")
 
-        // 検証内容：title 入力欄由来の古い遅延保存が、lead 選択中に発火した状況を再現する
+        // 検証内容：title 入力欄由来の古い保存が、lead 選択中に発火した状況を再現する
         store.updateNodeTextContent(
             "Stale title",
             expectedNodeID: "title",
@@ -673,10 +763,22 @@ struct EditorStoreTests {
         let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
         let context = try #require(store.activeResolvedTextEditContext(for: store.nodes[0]))
 
-        // 検証内容：Inspector の Active Resolved 入力相当で表示中 locale の text を更新する
+        // 検証内容：Inspector 入力中の Active Resolved live 反映を app cache へ適用する
+        store.previewActiveResolvedTextContent("入力中 ja", locale: context.locale)
+
+        // 期待値：cache と WebView mutation は更新されるが、locale JSON はまだ更新されない
+        let previewResource = try Self.localeJSON(at: localeDirectory.appendingPathComponent("ja.json"))
+        #expect(previewResource["home.hero.lead"] as? String == "現在 ja")
+        #expect(store.nodes[0].textContent == "入力中 ja")
+        #expect(store.nodes[0].fallbackTextContent == "HTML fallback")
+        #expect(store.textMutation?.nodeID == "hero-lead")
+        #expect(store.textMutation?.value == "入力中 ja")
+        #expect(store.textMutation?.mode == .resolved)
+
+        // 検証内容：Inspector の Active Resolved 確定相当で表示中 locale の text を保存する
         store.updateActiveResolvedTextContent("更新 ja", locale: context.locale)
 
-        // 期待値：ja resource だけが更新され、HTML fallback は維持され、resolved text mutation が発行される
+        // 期待値：確定時に ja resource だけが更新され、HTML fallback は維持され、resolved text mutation が発行される
         let updatedResource = try Self.localeJSON(at: localeDirectory.appendingPathComponent("ja.json"))
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         #expect(context.locale == "ja")

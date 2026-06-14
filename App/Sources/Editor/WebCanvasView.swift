@@ -286,6 +286,7 @@ struct WebCanvasView: NSViewRepresentable {
         userContentController.add(context.coordinator, name: "openGraphiteContextMenu")
         userContentController.add(context.coordinator, name: "openGraphiteScrollState")
         userContentController.add(context.coordinator, name: "openGraphiteDocumentChange")
+        userContentController.add(context.coordinator, name: "openGraphiteTextEditing")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowLinks")
         userContentController.add(context.coordinator, name: "openGraphiteStaticFlowHover")
         Self.installUserScripts(
@@ -422,6 +423,7 @@ struct WebCanvasView: NSViewRepresentable {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteContextMenu")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteScrollState")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteDocumentChange")
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteTextEditing")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteStaticFlowLinks")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteStaticFlowHover")
         WebScrollStateRegistry.shared.remove(for: nsView)
@@ -836,6 +838,12 @@ struct WebCanvasView: NSViewRepresentable {
                     } else {
                         reloadCurrentPageFromDisk()
                     }
+                }
+            }
+
+            if message.name == "openGraphiteTextEditing", let payload = message.body as? [String: Any] {
+                Task { @MainActor in
+                    store.ingestTextEditingPayload(payload)
                 }
             }
 
@@ -1811,6 +1819,7 @@ struct WebCanvasView: NSViewRepresentable {
         var editingTextElement = null;
         var editingOriginalText = '';
         var suppressNextClick = false;
+        var clickSequenceStartSelectedID = '';
 
         function installEditorSelectionStyle() {
           if (document.getElementById('opengraphite-editor-selection-style')) { return; }
@@ -2151,15 +2160,22 @@ struct WebCanvasView: NSViewRepresentable {
           return chain.find(canDragElement) || null;
         }
 
-        function textElementForEditing(element) {
+        function textElementForEditing(element, selectedID) {
+          const selectionBaselineID = typeof selectedID === 'string' ? selectedID : currentSelectedID;
           const chain = selectableChainFor(element);
-          const selected = elementInChain(chain, currentSelectedID);
+          const selected = elementInChain(chain, selectionBaselineID);
           if (isTextElement(selected) && !hasLockedAncestor(selected)) {
             return selected;
           }
+          return null;
+        }
 
-          const deepestText = chain.slice().reverse().find((candidate) => isTextElement(candidate));
-          return deepestText && !hasLockedAncestor(deepestText) ? deepestText : null;
+        function editingSelectionBaselineForClick(event) {
+          if (!event || event.detail <= 1) {
+            clickSequenceStartSelectedID = currentSelectedID;
+            return currentSelectedID;
+          }
+          return clickSequenceStartSelectedID;
         }
 
         var staticFlowCollectionFrame = null;
@@ -2386,6 +2402,14 @@ struct WebCanvasView: NSViewRepresentable {
           window.webkit.messageHandlers.openGraphiteDocumentChange.postMessage(edit);
         }
 
+        function notifyTextEditingChange(element) {
+          if (!element) { return; }
+          window.webkit.messageHandlers.openGraphiteTextEditing.postMessage({
+            id: selectionIDForElement(element),
+            text: editablePlainText(element)
+          });
+        }
+
         function editablePlainText(element) {
           if (!element) { return ''; }
           const value = typeof element.innerText === 'string' ? element.innerText : element.textContent || '';
@@ -2410,6 +2434,44 @@ struct WebCanvasView: NSViewRepresentable {
           range.selectNodeContents(element);
           selection.removeAllRanges();
           selection.addRange(range);
+        }
+
+        function caretRangeFromPoint(clientX, clientY) {
+          if (typeof document.caretRangeFromPoint === 'function') {
+            return document.caretRangeFromPoint(clientX, clientY);
+          }
+          if (typeof document.caretPositionFromPoint === 'function') {
+            const position = document.caretPositionFromPoint(clientX, clientY);
+            if (!position) { return null; }
+            const range = document.createRange();
+            range.setStart(position.offsetNode, position.offset);
+            range.collapse(true);
+            return range;
+          }
+          return null;
+        }
+
+        function applyCaretRange(range) {
+          const selection = window.getSelection();
+          if (!selection || !range) { return false; }
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return true;
+        }
+
+        function placeCaretAtEnd(element) {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          range.collapse(false);
+          return applyCaretRange(range);
+        }
+
+        function placeCaretAtPoint(element, clientX, clientY) {
+          const range = caretRangeFromPoint(clientX, clientY);
+          if (range && element.contains(range.startContainer)) {
+            return applyCaretRange(range);
+          }
+          return placeCaretAtEnd(element);
         }
 
         function applyTextEditingMetrics(element) {
@@ -2482,7 +2544,7 @@ struct WebCanvasView: NSViewRepresentable {
           return true;
         }
 
-        function beginTextEditing(element, shouldSelectText) {
+        function beginTextEditing(element, options) {
           if (activeTool !== 'select' || !isTextElement(element) || hasLockedAncestor(element)) {
             return false;
           }
@@ -2491,6 +2553,11 @@ struct WebCanvasView: NSViewRepresentable {
             finishTextEditing(false, false);
           }
 
+          const shouldSelectText = typeof options === 'boolean' ? options : !!(options && options.selectText);
+          const shouldPlaceCaret = !shouldSelectText &&
+            options &&
+            Number.isFinite(options.clientX) &&
+            Number.isFinite(options.clientY);
           const id = selectionIDForElement(element);
           selectNode(id);
           notifySelection(id);
@@ -2504,6 +2571,10 @@ struct WebCanvasView: NSViewRepresentable {
 
           if (shouldSelectText) {
             selectTextContents(element);
+          } else if (shouldPlaceCaret) {
+            placeCaretAtPoint(element, options.clientX, options.clientY);
+          } else {
+            placeCaretAtEnd(element);
           }
           return true;
         }
@@ -3692,6 +3763,11 @@ struct WebCanvasView: NSViewRepresentable {
           finishTextEditing(false);
         }, true);
 
+        document.addEventListener('input', function(event) {
+          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          notifyTextEditingChange(editingTextElement);
+        }, true);
+
         document.addEventListener('paste', function(event) {
           if (!editingTextElement || event.target !== editingTextElement) { return; }
           const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
@@ -3749,6 +3825,16 @@ struct WebCanvasView: NSViewRepresentable {
           if (!element) { return; }
           event.preventDefault();
           event.stopPropagation();
+          const textElement = textElementForEditing(element, editingSelectionBaselineForClick(event));
+          if (textElement) {
+            suppressNextClick = false;
+            beginTextEditing(textElement, {
+              selectText: false,
+              clientX: event.clientX,
+              clientY: event.clientY
+            });
+            return;
+          }
           const id = nextSelectionIDForClick(element);
           selectNode(id);
           notifySelection(id);
@@ -3760,7 +3846,7 @@ struct WebCanvasView: NSViewRepresentable {
           if (activeTool !== 'select') { return; }
           const element = editableElementFromTarget(event.target);
           if (!element) { return; }
-          const textElement = textElementForEditing(element);
+          const textElement = textElementForEditing(element, clickSequenceStartSelectedID);
           if (!textElement) { return; }
           event.preventDefault();
           event.stopPropagation();

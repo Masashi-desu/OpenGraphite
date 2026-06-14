@@ -378,6 +378,8 @@ OpenGraphite MCP server は少なくとも次の tool を公開する。
 
 MCP の write tool は OpenGraphite app に直接命令しない。リポジトリ上の正本ファイルを更新し、app は外部ファイル変更同期で表示を追従する。
 
+これは app 内操作の同期経路とは別の境界である。OpenGraphite app 内で発生した編集は、保存完了や外部ファイル変更通知を待たず、app cache の現在値として Canvas、Layers、Inspector、Project 依存性ビューなどの複数 surface へ即時同期する。永続化は cache 上の編集を正本ファイルへ確定する処理であり、app 内表示を一致させるための transport として扱わない。
+
 `pageID` と `componentID` は同時指定できない。Pages HTML を編集する場合は `pageID`、Collection 内 component master HTML を編集する場合は `componentID` を指定する。
 
 ## External Synchronization
