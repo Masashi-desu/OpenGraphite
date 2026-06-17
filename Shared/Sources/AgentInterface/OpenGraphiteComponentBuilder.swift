@@ -378,7 +378,7 @@ struct OpenGraphiteComponentBuilder {
     }
 
     /// 論理名（日本語）: root style統合関数
-    /// 処理概要: instance source の inline style を展開 root の style へ追加します。
+    /// 処理概要: legacy instance source の inline style を展開 root の style へ追加します。
     private func mergeRootStyle(_ style: String, into html: String) -> String {
         guard let firstTag = regexMatches(pattern: #"(?is)<[A-Za-z][\w:-]*\b[^>]*>"#, in: html).first,
               let tagRange = Range(firstTag.range(at: 0), in: html)
@@ -399,7 +399,7 @@ struct OpenGraphiteComponentBuilder {
     }
 
     /// 論理名（日本語）: style結合関数
-    /// 処理概要: component master と instance の inline style を余分な区切りなしで結合します。
+    /// 処理概要: legacy component master と instance の inline style を余分な区切りなしで結合します。
     private func mergedStyle(_ baseStyle: String, _ overrideStyle: String) -> String {
         [baseStyle, overrideStyle]
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " ;\n\t")) }

@@ -117,8 +117,9 @@ struct OpenGraphiteHTMLDocument {
     /// 論理名（日本語）: ノード一覧抽出関数
     /// 処理概要: HTML を軽量に走査し、`data-og-id` を持つ開始タグを OpenGraphite ノードへ変換します。
     ///
+    /// - Parameter companionCSS: HTML と同名の design value 正本 CSS。未指定時は legacy inline style だけを読みます。
     /// - Returns: DOM 出現順の OpenGraphite agent node 一覧。
-    func nodes() -> [OpenGraphiteAgentNode] {
+    func nodes(companionCSS: OpenGraphiteCompanionCSSDocument? = nil) -> [OpenGraphiteAgentNode] {
         var nodeStack: [(depth: Int, id: String)] = []
         return parsedTags().compactMap { tag in
             while let last = nodeStack.last, last.depth >= tag.depth {
@@ -129,14 +130,21 @@ struct OpenGraphiteHTMLDocument {
                 return nil
             }
 
+            let internalID = tag.attributeValue(named: "data-og-internal-id") ?? ""
+            let inlineVariables = OpenGraphiteCSSStyle.parse(tag.attributeValue(named: "style") ?? "").ogVariables()
+            let companionVariables = companionCSS?.cssVariables(forNodeInternalID: internalID) ?? [:]
+            let cssVariables = companionCSS == nil || companionVariables.isEmpty
+                ? inlineVariables
+                : inlineVariables.merging(companionVariables) { _, companionValue in companionValue }
+
             let node = OpenGraphiteAgentNode(
                 id: id,
-                internalID: tag.attributeValue(named: "data-og-internal-id") ?? "",
+                internalID: internalID,
                 tagName: tag.tagName,
                 type: tag.attributeValue(named: "data-og-type") ?? "",
                 layout: tag.emptyNilAttribute(named: "data-og-layout"),
                 role: tag.emptyNilAttribute(named: "data-og-role"),
-                cssVariables: OpenGraphiteCSSStyle.parse(tag.attributeValue(named: "style") ?? "").ogVariables(),
+                cssVariables: cssVariables,
                 hidden: tag.attributeValue(named: "data-og-hidden") == "true",
                 locked: tag.attributeValue(named: "data-og-locked") == "true",
                 depth: tag.depth,
@@ -292,7 +300,7 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: CSS変数設定関数
-    /// 処理概要: 一意な `data-og-internal-id` を持つノードの inline style に `--og-*` CSS 変数を設定します。
+    /// 処理概要: legacy HTML の inline style に残る `--og-*` CSS 変数を設定します。
     ///
     /// - Parameters:
     ///   - variable: 更新する CSS 変数名。
@@ -1012,6 +1020,29 @@ struct OpenGraphiteHTMLDocument {
         return result
     }
 
+    /// 論理名（日本語）: OpenGraphite design style削除関数
+    /// 処理概要: companion CSS 正本へ移す `--og-*` 宣言を HTML inline style から除去します。
+    ///
+    /// - Returns: `--og-*` 宣言を取り除いた HTML。
+    func removingOpenGraphiteStyleVariables() -> String {
+        var result = html
+        for tag in parsedTags().reversed() {
+            var attributes = tag.attributes
+            guard let styleIndex = attributes.firstIndex(where: { $0.name == "style" }) else { continue }
+            var style = OpenGraphiteCSSStyle.parse(attributes[styleIndex].value)
+            let originalStyle = style
+            style.declarations.removeAll { $0.name.hasPrefix("--og-") }
+            guard style != originalStyle else { continue }
+            if style.declarations.isEmpty {
+                attributes.remove(at: styleIndex)
+            } else {
+                attributes[styleIndex].value = style.serialized()
+            }
+            result.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        }
+        return result
+    }
+
     private static let voidElementNames: Set<String> = [
         "area",
         "base",
@@ -1606,7 +1637,7 @@ struct OpenGraphiteHTMLAttribute: Equatable {
 }
 
 /// 論理名（日本語）: OpenGraphite CSS style
-/// 概要: inline style の CSS 宣言を順序付きで保持し、`--og-*` 変数の更新に使います。
+/// 概要: CSS 宣言を順序付きで保持し、legacy inline style と companion CSS rule body の解析に使います。
 ///
 /// プロパティ:
 /// - `declarations`: CSS 宣言の順序付き一覧。
@@ -1614,7 +1645,7 @@ struct OpenGraphiteCSSStyle: Equatable {
     var declarations: [OpenGraphiteCSSDeclaration]
 
     /// 論理名（日本語）: CSS style解析関数
-    /// 処理概要: inline style 文字列を宣言一覧へ分解します。
+    /// 処理概要: CSS 宣言文字列を宣言一覧へ分解します。
     ///
     /// - Parameter source: HTML 属性内の style 値。
     /// - Returns: CSS style モデル。
@@ -1632,9 +1663,9 @@ struct OpenGraphiteCSSStyle: Equatable {
     }
 
     /// 論理名（日本語）: CSS宣言分割関数
-    /// 処理概要: inline style を quote と括弧の内側を保ったまま CSS 宣言単位へ分割します。
+    /// 処理概要: CSS 宣言文字列を quote と括弧の内側を保ったまま宣言単位へ分割します。
     ///
-    /// - Parameter source: HTML 属性から取得した inline style 値。
+    /// - Parameter source: CSS 宣言文字列。
     /// - Returns: 宣言ごとの文字列。
     private static func splitDeclarations(_ source: String) -> [String] {
         var declarations: [String] = []
@@ -1726,7 +1757,7 @@ struct OpenGraphiteCSSStyle: Equatable {
     }
 
     /// 論理名（日本語）: CSS style直列化関数
-    /// 処理概要: CSS 宣言一覧を HTML 属性内へ戻す文字列に変換します。
+    /// 処理概要: CSS 宣言一覧を declaration list 文字列に変換します。
     ///
     /// - Returns: `name:value;` 形式の style 文字列。
     func serialized() -> String {
@@ -1735,7 +1766,7 @@ struct OpenGraphiteCSSStyle: Equatable {
 }
 
 /// 論理名（日本語）: OpenGraphite CSS宣言
-/// 概要: inline style 内の単一 CSS 宣言を表します。
+/// 概要: CSS source 内の単一 CSS 宣言を表します。
 ///
 /// プロパティ:
 /// - `name`: CSS property または custom property 名。

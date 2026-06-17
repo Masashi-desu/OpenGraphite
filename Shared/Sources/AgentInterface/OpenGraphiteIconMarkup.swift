@@ -112,12 +112,11 @@ enum OpenGraphiteIconMarkup {
                 diagnostics: []
             )
         case "cdn":
-            let url = "\(lucideStaticCDNBaseURL)/\(normalizedName).svg"
             return OpenGraphiteIconMarkupResult(
                 library: normalizedLibrary,
                 name: normalizedName,
                 source: normalizedSource,
-                html: #"<span data-og-icon-mask="true" style="--og-icon-url:url('\#(url)');" aria-hidden="true"></span>"#,
+                html: #"<span data-og-icon-mask="true" aria-hidden="true"></span>"#,
                 diagnostics: []
             )
         case "library":
@@ -189,6 +188,24 @@ enum OpenGraphiteIconMarkup {
         )
     }
 
+    /// 論理名（日本語）: アイコンCSS変数生成関数
+    /// 処理概要: icon node の描画に必要な companion CSS 変数を metadata から生成します。
+    ///
+    /// - Parameters:
+    ///   - library: 正規化済み icon library。
+    ///   - name: 正規化済み icon name。
+    ///   - source: 正規化済み icon source。
+    /// - Returns: icon node に保存する CSS 変数。不要な場合は空辞書。
+    static func cssVariables(library: String, name: String, source: String) -> [String: String] {
+        guard normalizeLibrary(library) == "lucide",
+              normalizeSource(source) == "cdn",
+              isValidName(normalizeName(name))
+        else {
+            return ["--og-icon-url": ""]
+        }
+        return ["--og-icon-url": "url('\(lucideStaticCDNBaseURL)/\(normalizeName(name)).svg')"]
+    }
+
     /// 論理名（日本語）: アイコンIDベース正規化関数
     /// 処理概要: icon name から `data-og-id` に使う安定した base ID を作ります。
     ///
@@ -226,7 +243,7 @@ enum OpenGraphiteIconMarkup {
         width: String?,
         height: String?
     ) -> [(name: String, value: String)] {
-        var attributes: [(name: String, value: String)] = [
+        let attributes: [(name: String, value: String)] = [
             ("data-og-id", id),
             ("data-og-internal-id", internalID),
             ("data-og-type", "icon"),
@@ -235,16 +252,6 @@ enum OpenGraphiteIconMarkup {
             ("data-og-icon-source", source)
         ]
 
-        let styleDeclarations = [
-            ("--og-width", width?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""),
-            ("--og-height", height?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
-        ]
-            .filter { !$0.1.isEmpty }
-            .map { "\($0.0):\($0.1);" }
-            .joined(separator: " ")
-        if !styleDeclarations.isEmpty {
-            attributes.append(("style", styleDeclarations))
-        }
         return attributes
     }
 

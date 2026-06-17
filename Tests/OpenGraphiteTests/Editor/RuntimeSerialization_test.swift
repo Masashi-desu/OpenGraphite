@@ -119,6 +119,123 @@ struct RuntimeSerializationTests {
         #expect(payload["variant"] as? String == "English slot title")
     }
 
+    /// 論理名（日本語）: runtime component error解除テスト
+    /// 概要: 一度 master 未解決になった instance でも、後続の component HTML 注入で error 属性が解除されることを検証します。
+    @Test("runtimeは後続のmaster解決でmissing-master errorを解除する")
+    func testRuntimeClearsMissingMasterErrorAfterLaterResolution() async throws {
+        // Given: master がまだ無い状態で component instance を含む page を WebView に読み込む
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let runtimeSource = try runtimeJavaScriptSource()
+        let componentHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <Card data-og-id="card-master" data-og-type="frame" data-og-component="card" data-og-component-kind="master" data-og-part="root">
+              <CardTitle data-og-id="card-title" data-og-type="text" data-og-slot="title">Fallback title</CardTitle>
+            </Card>
+          </body>
+        </html>
+        """
+        let pageHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <og-instance data-og-id="card-instance" data-og-type="frame" data-og-component="card" data-og-internal-id="card-instance-internal">
+              <span slot="title">Resolved title</span>
+            </og-instance>
+          </body>
+        </html>
+        """
+
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(runtimeSource)
+
+        // When: 先に空 registry で未解決状態を作り、その後 master HTML を注入して再描画する
+        let value = try await webView.evaluateJavaScript(
+            """
+            (() => {
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments([]);
+            const before = document.querySelector('og-instance').getAttribute('data-og-component-error') || '';
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(Self.javaScriptLiteral(componentHTML))]);
+            const instance = document.querySelector('og-instance');
+            const generated = document.querySelector('[data-og-generated="true"]');
+            return {
+              before: before,
+              after: instance.getAttribute('data-og-component-error') || '',
+              generatedText: generated ? generated.textContent.trim() : ''
+            };
+            })();
+            """
+        )
+        let payload = try #require(value as? [String: Any])
+
+        // Then: 旧 error は残らず、生成 DOM が表示される
+        #expect(payload["before"] as? String == "missing-master")
+        #expect(payload["after"] as? String == "")
+        #expect(payload["generatedText"] as? String == "Resolved title")
+    }
+
+    /// 論理名（日本語）: 複数instanceのcomponent internal ID保持テスト
+    /// 概要: component runtime が複数 instance の生成 DOM に master の `data-og-internal-id` を残すことを検証します。
+    @Test("runtimeは複数instanceでmaster internal IDを保持する")
+    func testRuntimePreservesMasterInternalIDsAcrossMultipleInstances() async throws {
+        // コンディション：同じ component を参照する複数 instance と internal ID 付き master を WebView に読み込むとき（Given）
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let runtimeSource = try runtimeJavaScriptSource()
+        let componentHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <Card data-og-id="card-master" data-og-internal-id="card-root-internal" data-og-type="frame" data-og-component="card" data-og-component-kind="master" data-og-part="root">
+              <CardTitle data-og-id="card-title" data-og-internal-id="card-title-internal" data-og-type="text" data-og-slot="title">Fallback title</CardTitle>
+            </Card>
+          </body>
+        </html>
+        """
+        let pageHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <og-instance data-og-id="first-card" data-og-type="frame" data-og-component="card" data-og-internal-id="first-card-instance">
+              <span slot="title">First</span>
+            </og-instance>
+            <og-instance data-og-id="second-card" data-og-type="frame" data-og-component="card" data-og-internal-id="second-card-instance">
+              <span slot="title">Second</span>
+            </og-instance>
+          </body>
+        </html>
+        """
+
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(runtimeSource)
+
+        // 検証内容：runtime で component を展開し、生成 root / child の ID と internal ID を読む（When）
+        let value = try await webView.evaluateJavaScript(
+            """
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(Self.javaScriptLiteral(componentHTML))]);
+            (() => {
+              const roots = Array.from(document.querySelectorAll('[data-og-generated="true"][data-og-source-id="card-master"]'));
+              const titles = Array.from(document.querySelectorAll('[data-og-generated="true"][data-og-source-id="card-title"]'));
+              return {
+                rootIDs: roots.map((node) => node.getAttribute('data-og-id') || ''),
+                rootInternalIDs: roots.map((node) => node.getAttribute('data-og-internal-id') || ''),
+                titleIDs: titles.map((node) => node.getAttribute('data-og-id') || ''),
+                titleInternalIDs: titles.map((node) => node.getAttribute('data-og-internal-id') || '')
+              };
+            })();
+            """
+        )
+        let payload = try #require(value as? [String: Any])
+
+        // 期待値：表示用 data-og-id は instance ごとに一意になり、design CSS 用 internal ID は master と同じ値を保つ（Then）
+        #expect(payload["rootIDs"] as? [String] == ["first-card", "second-card"])
+        #expect(payload["rootInternalIDs"] as? [String] == ["card-root-internal", "card-root-internal"])
+        #expect(payload["titleIDs"] as? [String] == ["first-card-card-title", "second-card-card-title"])
+        #expect(payload["titleInternalIDs"] as? [String] == ["card-title-internal", "card-title-internal"])
+    }
+
     /// 論理名（日本語）: 実装runtime一時HTML復元テスト
     /// 概要: 実装 i18n runtime が解決済み text を DOM へ反映しても、保存HTMLにはfallbackが残ることを検証します。
     @Test("runtimeは実装runtimeの一時text HTMLを保存時にfallbackへ戻す")

@@ -8,6 +8,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `CSS/OpenGraphite.css`: distributable CSS library for `data-og-*` and `--og-*`
 - `OpenGraphite.contract.json`: machine-readable `data-og-*` and `--og-*` contract
 - `public/OpenGraphite.runtime.js`: optional runtime that expands `<og-instance>` component references in the browser
+- `public/*.css`: companion CSS files that hold page-specific design values for same-named HTML files
 - `Scripts/ogkiln`: CLI for repository-backed inspection, validation, and node-level HTML edits
 - `MCP/OpenGraphite/server.mjs`: OpenGraphite MCP server backed by `ogkiln`
 - `SampleProject/OpenGraphiteSample.ogp`: sample project file
@@ -20,26 +21,29 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 
 ## Model
 
-HTML is the canonical document.
+HTML is the canonical structure and reference document. Editable design values live in the same-named companion CSS file.
 
 ```html
 <HeroSection
   data-og-id="hero"
   data-og-type="frame"
   data-og-layout="vertical"
-  data-og-role="landing-hero"
-  style="
-    --og-gap:32px;
-    --og-padding:64px;
-    --og-radius:24px;
-  ">
+  data-og-internal-id="hero-node">
   <MainTitle data-og-id="title" data-og-type="text">
     OpenGraphite
   </MainTitle>
 </HeroSection>
 ```
 
-OpenGraphite does not use class names as the style source of truth. Tag names represent semantic components, `data-og-*` stores editor metadata, CSS variables store design values, and `OpenGraphite.css` provides the rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`. Component canvases can also contain `data-og-role="component-placement"` nodes that reference another component node and display multiple preview states side by side while keeping edits synchronized to the source component. Placement-specific preview mocks live in the `.ogp` canvas `previewContext`, not in the source HTML.
+```css
+[data-og-internal-id="hero-node"] {
+  --og-gap: 32px;
+  --og-padding: 64px;
+  --og-radius: 24px;
+}
+```
+
+OpenGraphite does not use class names as the editable style source of truth. Tag names represent semantic components, `data-og-*` stores structure and reference metadata, companion CSS stores design values, and `OpenGraphite.css` provides the shared rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`. Component canvases can also contain `data-og-role="component-placement"` nodes that reference another component node and display multiple preview states side by side while keeping edits synchronized to the source component. Placement-specific preview mocks live in the `.ogp` canvas `previewContext`, not in the source HTML.
 
 ## Build
 
@@ -107,7 +111,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln node copy SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id d9778be9a854 --target b01aee52375f --position append --id-prefix copy-
 ```
 
-`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css` plus non-HTML public assets into the output directory.
+`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory.
 
 The OpenGraphite MCP server exposes the same repository-backed operations over stdio:
 
@@ -200,11 +204,11 @@ When launched without that environment variable, Open Sample Project treats the 
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
-- Inspector editing for common `--og-*` CSS variables with direct HTML write-back
+- Inspector editing for common `--og-*` CSS variables with companion CSS write-back
 
 ## Standalone HTML
 
-`public/index.html` references `../CSS/OpenGraphite.css` and can be opened directly in a browser from the repository checkout.
+`public/index.html` references `../CSS/OpenGraphite.css`, `public/index.css`, and shared component CSS, so it can be opened directly in a browser from the repository checkout.
 
 ## Development Rules
 

@@ -1,6 +1,6 @@
 # OpenGraphite MCP Specification
 
-OpenGraphite MCP server は stdio JSON-RPC server として動作し、AI client に OpenGraphite project (`.ogp`) の resources と tools を公開する。server 名は `OpenGraphite` とする。
+OpenGraphite MCP server は stdio JSON-RPC server として動作し、AI client に OpenGraphite project (`.ogp`) の resources と tools を公開する。server 名は `OpenGraphite` とする。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本として扱う。
 
 ## Runtime
 
@@ -8,7 +8,7 @@ OpenGraphite MCP server は stdio JSON-RPC server として動作し、AI client
 node MCP/OpenGraphite/server.mjs
 ```
 
-write tool は OpenGraphite app に直接命令しない。すべて `Scripts/ogkiln` へ委譲し、CLI と MCP が同じ validation / diagnostics / write path を共有する。
+write tool は OpenGraphite app に直接命令しない。すべて `Scripts/ogkiln` へ委譲し、CLI と MCP が同じ validation / diagnostics / HTML / companion CSS write path を共有する。
 
 ## Project Scope
 
@@ -16,7 +16,7 @@ MCP tool の対象 project は常に `projectPath` で指定する。`projectPat
 
 page / component canvas / node を対象にする tool は、`pageID` または `componentID` のどちらか一方で対象 HTML を指定する。コピーされた値は `ogref:<type>:...` 形式で、`pageID` は `ogref:page:<chapterInternalID>:<pageInternalID>`、`componentID` は `ogref:component:<collectionInternalID>:<componentInternalID>` を指す。node 対象 tool の `id` は `data-og-internal-id` または `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>` / `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を受け取る。typed node 参照を使う場合は `pageID` / `componentID` を省略でき、raw node ID の場合はどちらか一方が必要である。両方を同時に渡す呼び出しは invalid である。
 
-MCP は HTML path を直接書き換える tool を提供しない。`.ogp` にない既存 HTML は `add_project_page` または `add_project_component` で可視リストへ追加し、新規 HTML は `create_project_page` または `create_project_component` で作成と登録を同時に行う。配布用の静的 HTML が必要な場合は `build_project` で `<og-instance>` を component master から展開した出力を作る。
+MCP は HTML path を直接書き換える tool を提供しない。`.ogp` にない既存 HTML は `add_project_page` または `add_project_component` で可視リストへ追加し、新規 HTML は `create_project_page` または `create_project_component` で HTML と同名 companion CSS の作成と登録を同時に行う。配布用の静的 HTML が必要な場合は `build_project` で `<og-instance>` を component master から展開した出力を作る。
 
 ## Resources
 
@@ -58,8 +58,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `screenshot_node` | page または component canvas 内の node を切り抜いた PNG に保存する | `screenshot node` |
 | `query_nodes` | id / type / role / tag / text で node を検索する | `node query` |
 | `get_node` | `data-og-internal-id` で node を取得する | `node get` |
-| `set_css_variable` | node の `--og-*` CSS variable を設定する | `node style set` |
-| `remove_css_variable` | node の `--og-*` CSS variable を削除する | `node style remove` |
+| `set_css_variable` | node の companion CSS `--og-*` variable を設定する | `node style set` |
+| `remove_css_variable` | node の companion CSS `--og-*` variable を削除する | `node style remove` |
 | `set_node_attribute` | editable `data-og-*` 属性を設定する | `node attr set` |
 | `remove_node_attribute` | editable `data-og-*` 属性を削除する | `node attr remove` |
 | `set_text_content` | node の中身を escaped text に置換する | `node text set` |

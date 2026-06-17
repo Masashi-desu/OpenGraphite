@@ -1,0 +1,259 @@
+[data-og-component="docs-navigation"][data-og-variant~="collapsed"] {
+        width: 40px !important;
+        height: 40px !important;
+        min-width: 40px !important;
+        min-height: 40px !important;
+        max-width: 40px !important;
+        padding: 0 !important;
+        overflow: visible !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0 !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-hidden~="collapsed"] {
+        display: none !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"] {
+        display: block !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-layout="vertical"],
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-layout="horizontal"] {
+        display: flex !important;
+      }
+
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-type="button"],
+      [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        [data-og-state-visible~="collapsed"][data-og-type="icon"] {
+        display: inline-flex !important;
+      }
+
+      [data-og-id="docs-left-column"]:has(
+          [data-og-component="docs-navigation"][data-og-variant~="collapsed"]
+        ) {
+        --og-width: 40px !important;
+        --og-min-width: 40px !important;
+        --og-max-width: 40px !important;
+        --og-flex: 0 0 40px !important;
+        width: 40px !important;
+        min-width: 40px !important;
+        max-width: 40px !important;
+        flex: 0 0 40px !important;
+      }
+
+[data-og-internal-id="ef8e793c1658"] {
+  --og-gap:0;
+  --og-padding:30px clamp(24px,5vw,52px) 76px;
+  --og-background:#08090a;
+  --og-foreground:#f4f6f7;
+  --og-font-family-default:'Inter','Noto Sans JP',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --og-font-family-ja:'Noto Sans JP','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --og-font-family-eng:'Noto Sans','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  min-height:100vh;
+}
+
+[data-og-internal-id="b6fad7f280fb"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#08090a;
+  --og-foreground:#dfe3e6;
+  --og-border:1px solid #4b535b;
+}
+
+[data-og-internal-id="docsnavhomelabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="f643c144d6ee"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#08090a;
+  --og-foreground:#dfe3e6;
+  --og-border:1px solid #4b535b;
+}
+
+[data-og-internal-id="docsnavdownloadslabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="b61ca0c3c3e9"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#f5f7f8;
+  --og-foreground:#08090a;
+  --og-border:1px solid #f5f7f8;
+}
+
+[data-og-internal-id="docsnavdocslabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="f1b9d3a7c284"] {
+  --og-width:min(100%,1180px);
+  --og-margin:0 auto;
+  --og-min-height:calc(100vh - 118px);
+  --og-flex:1 1 auto;
+  --og-gap:0;
+  --og-padding:34px 0 0;
+  --og-align:stretch;
+}
+
+[data-og-internal-id="e39d02540b80"] {
+  --og-width:100%;
+  --og-margin:0;
+  --og-gap:34px;
+  --og-align:stretch;
+  --og-padding:54px 0 48px;
+  border-bottom:1px solid #30363d;
+  overflow:hidden;
+}
+
+[data-og-internal-id="5aa878848f7f"] {
+  --og-gap:22px;
+  --og-width:100%;
+  --og-max-width:100%;
+}
+
+[data-og-internal-id="28082dd7e38a"] {
+  --og-foreground:#aeb6bd;
+  --og-font-size:12px;
+  --og-letter-spacing:0;
+  --og-font-weight:760;
+  text-transform:uppercase;
+}
+
+[data-og-internal-id="1fb37cc0de50"] {
+  --og-font-size:58px;
+  --og-font-weight:850;
+  --og-line-height:1.02;
+  --og-letter-spacing:0;
+  --og-max-width:100%;
+  overflow-wrap:anywhere;
+}
+
+[data-og-internal-id="eb1860ea5f51"] {
+  --og-font-size:19px;
+  --og-line-height:1.72;
+  --og-foreground:#b8c0c7;
+  --og-max-width:100%;
+}
+
+[data-og-internal-id="docsheroissuegrid"] {
+  --og-width:100%;
+  --og-gap:0;
+  --og-align:stretch;
+  border-top:1px solid #30363d;
+  border-bottom:1px solid #30363d;
+}
+
+[data-og-internal-id="docsheroissueir"] {
+  --og-flex:1 1 0;
+  --og-gap:12px;
+  --og-padding:22px 24px 22px 0;
+  border-right:1px solid #30363d;
+}
+
+[data-og-internal-id="docsheroissueirlabel"] {
+  --og-foreground:#818b94;
+  --og-font-size:11px;
+  --og-letter-spacing:0;
+  --og-font-weight:760;
+  text-transform:uppercase;
+}
+
+[data-og-internal-id="docsheroissueirtext"] {
+  --og-font-size:18px;
+  --og-font-weight:780;
+  --og-line-height:1.32;
+}
+
+[data-og-internal-id="docsheroissueagent"] {
+  --og-flex:1 1 0;
+  --og-gap:12px;
+  --og-padding:22px 24px;
+  border-right:1px solid #30363d;
+}
+
+[data-og-internal-id="docsheroissueagentlabel"] {
+  --og-foreground:#818b94;
+  --og-font-size:11px;
+  --og-letter-spacing:0;
+  --og-font-weight:760;
+  text-transform:uppercase;
+}
+
+[data-og-internal-id="docsheroissueagenttext"] {
+  --og-font-size:18px;
+  --og-font-weight:780;
+  --og-line-height:1.32;
+}
+
+[data-og-internal-id="docsheroissuereview"] {
+  --og-flex:1 1 0;
+  --og-gap:12px;
+  --og-padding:22px 0 22px 24px;
+}
+
+[data-og-internal-id="docsheroissuereviewlabel"] {
+  --og-foreground:#818b94;
+  --og-font-size:11px;
+  --og-letter-spacing:0;
+  --og-font-weight:760;
+  text-transform:uppercase;
+}
+
+[data-og-internal-id="docsheroissuereviewtext"] {
+  --og-font-size:18px;
+  --og-font-weight:780;
+  --og-line-height:1.32;
+}
+
+[data-og-internal-id="docscontentlayout1"] {
+  --og-width:100%;
+  --og-gap:38px;
+  --og-align:flex-start;
+  --og-padding:34px 0 0;
+}
+
+[data-og-internal-id="docsleftcolumn1"] {
+  --og-width:min(100%,280px);
+  --og-flex:0 0 280px;
+  --og-gap:0;
+}
+
+[data-og-internal-id="docsmaincolumn1"] {
+  --og-flex:1 1 0;
+  --og-min-width:0;
+  --og-gap:0;
+}
+
+[data-og-internal-id="docsarticle001"] {
+  --og-flex:1 1 0;
+  --og-gap:0;
+  --og-min-width:0;
+}
+
+[data-og-internal-id="docsspecmcp01"] {
+  border-bottom:1px solid #30363d;
+}
+
+[data-og-internal-id="docsspecmcp01"] > [data-og-generated="true"] {
+  border-bottom:1px solid #30363d;
+}
+
+[data-og-id="docs-spec-mcp-interface"][data-og-internal-id] {
+  border-bottom:1px solid #30363d;
+}
+
+@media (max-width: 760px) {
+  [data-og-internal-id="ef8e793c1658"] {
+    --og-padding: 24px;
+  }
+}

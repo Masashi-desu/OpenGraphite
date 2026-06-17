@@ -206,12 +206,6 @@ function copyGeneratedSlotsBack(instance) {
     stripRuntimeAttributes(sourceNode);
   });
 
-  const generatedRoot = Array.from(instance.children).find((child) => {
-    return child.getAttribute("data-og-generated") === "true";
-  });
-  if (generatedRoot && generatedRoot.getAttribute("style")) {
-    instance.setAttribute("style", generatedRoot.getAttribute("style"));
-  }
 }
 
 function restoreInstanceSource(instance) {
@@ -327,6 +321,7 @@ function renderInstances(registry) {
       instance.setAttribute("data-og-component-error", "missing-master");
       return;
     }
+    instance.removeAttribute("data-og-component-error");
 
     const hostID = attributeValue(instance, "data-og-id") ||
       attributeValue(instance, "data-og-host-id") ||

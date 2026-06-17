@@ -177,7 +177,10 @@ final class EditorStore: ObservableObject {
     var selectedPageRootCSSVariables: [String: String] {
         guard let target = currentHTMLSyncTarget(),
               let html = readHTMLFromDisk(at: target.htmlURL),
-              let rootNode = Self.pageRootNode(in: html)
+              let rootNode = Self.pageRootNode(
+                in: html,
+                companionCSS: try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
+              )
         else {
             return [:]
         }
@@ -1333,7 +1336,10 @@ final class EditorStore: ObservableObject {
     func updateSelectedPageRootCSSVariable(key: String, value: String) {
         guard let target = currentHTMLSyncTarget(),
               let diskHTML = readHTMLFromDisk(at: target.htmlURL),
-              let rootNode = Self.pageRootNode(in: diskHTML)
+              let rootNode = Self.pageRootNode(
+                in: diskHTML,
+                companionCSS: try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
+              )
         else {
             return
         }
@@ -2256,10 +2262,15 @@ final class EditorStore: ObservableObject {
         }
 
         let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? edit.target.htmlURL)
+        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: edit.target.htmlURL)
         let document = OpenGraphiteHTMLDocument(html: diskHTML)
-        guard objectEditBaselineMatches(edit.operation, in: document) else {
+        guard objectEditBaselineMatches(edit.operation, in: document, companionCSS: companionCSS) else {
             reportHTMLObjectEditConflict()
             return .failed
+        }
+
+        if let cssResult = applyCompanionCSSObjectEditIfNeeded(edit, diskHTML: diskHTML, contract: contract) {
+            return cssResult
         }
 
         let mutation = mutationResult(for: edit.operation, html: diskHTML, contract: contract)
@@ -2303,13 +2314,19 @@ final class EditorStore: ObservableObject {
             else {
                 return nil
             }
+            let expectedOldValue = cssVariableBaselineValues(
+                for: nodeInternalID,
+                keys: [key],
+                target: target,
+                fallback: [key: payload["previousValue"] as? String ?? ""]
+            )[key] ?? ""
             return HTMLObjectEdit(
                 target: target,
                 operation: .setCSSVariable(
                     nodeInternalID: nodeInternalID,
                     key: key,
                     value: payload["value"] as? String ?? "",
-                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                    expectedOldValue: expectedOldValue
                 )
             )
         case "setCSSVariables":
@@ -2318,12 +2335,18 @@ final class EditorStore: ObservableObject {
             else {
                 return nil
             }
+            let expectedOldValues = cssVariableBaselineValues(
+                for: nodeInternalID,
+                keys: Array(values.keys),
+                target: target,
+                fallback: payload["previousValues"] as? [String: String] ?? [:]
+            )
             return HTMLObjectEdit(
                 target: target,
                 operation: .setCSSVariables(
                     nodeInternalID: nodeInternalID,
                     values: values,
-                    expectedOldValues: payload["previousValues"] as? [String: String] ?? [:]
+                    expectedOldValues: expectedOldValues
                 )
             )
         case "setAttribute":
@@ -2425,6 +2448,31 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: CSS変数baseline値取得関数
+    /// 処理概要: DOM payload の inline style 旧値ではなく、ディスク上 HTML と companion CSS の正本値を編集基準にします。
+    ///
+    /// - Parameters:
+    ///   - nodeInternalID: 対象 node の `data-og-internal-id`。
+    ///   - keys: 取得する CSS 変数名。
+    ///   - target: 保存対象 HTML。
+    ///   - fallback: 正本から読めない場合に使う payload 由来の旧値。
+    /// - Returns: CSS 変数名ごとの baseline 値。
+    private func cssVariableBaselineValues(
+        for nodeInternalID: String,
+        keys: [String],
+        target: HTMLSyncTarget,
+        fallback: [String: String]
+    ) -> [String: String] {
+        guard let html = readHTMLFromDisk(at: target.htmlURL) else { return fallback }
+        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
+        let sourceNode = OpenGraphiteHTMLDocument(html: html)
+            .nodes(companionCSS: companionCSS)
+            .first { $0.internalID == nodeInternalID }
+        return keys.reduce(into: [String: String]()) { result, key in
+            result[key] = sourceNode?.cssVariables[key] ?? fallback[key] ?? ""
+        }
+    }
+
     /// 論理名（日本語）: オブジェクト編集基準一致判定関数
     /// 処理概要: 対象 node の旧値または subtree hash が最新ディスク HTML と一致するか確認します。
     ///
@@ -2432,13 +2480,17 @@ final class EditorStore: ObservableObject {
     ///   - operation: 検証する編集操作。
     ///   - document: 最新ディスク HTML document。
     /// - Returns: 競合がない場合は `true`。
-    private func objectEditBaselineMatches(_ operation: HTMLObjectEditOperation, in document: OpenGraphiteHTMLDocument) -> Bool {
+    private func objectEditBaselineMatches(
+        _ operation: HTMLObjectEditOperation,
+        in document: OpenGraphiteHTMLDocument,
+        companionCSS: OpenGraphiteCompanionCSSDocument?
+    ) -> Bool {
         switch operation {
         case let .setCSSVariable(nodeInternalID, key, _, expectedOldValue):
-            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            guard let node = document.nodes(companionCSS: companionCSS).first(where: { $0.internalID == nodeInternalID }) else { return false }
             return (node.cssVariables[key] ?? "") == expectedOldValue
         case let .setCSSVariables(nodeInternalID, _, expectedOldValues):
-            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            guard let node = document.nodes(companionCSS: companionCSS).first(where: { $0.internalID == nodeInternalID }) else { return false }
             return expectedOldValues.allSatisfy { key, value in
                 (node.cssVariables[key] ?? "") == value
             }
@@ -2462,6 +2514,75 @@ final class EditorStore: ObservableObject {
         case let .moveNode(nodeInternalID, targetInternalID, _, baselineNodeHash):
             guard document.elementHTMLHash(forNodeID: targetInternalID) != nil else { return false }
             return nodeHashMatches(baselineNodeHash, nodeInternalID: nodeInternalID, in: document)
+        }
+    }
+
+    /// 論理名（日本語）: Agent coreオブジェクト編集適用関数
+    /// 処理概要: CSS 変数や icon 更新を Editor 専用 HTML mutation ではなく AgentCore の正本保存経路へ通します。
+    ///
+    /// - Parameters:
+    ///   - edit: 適用する object edit。
+    ///   - diskHTML: 編集前の最新ディスク HTML。
+    ///   - contract: 検証に使う OpenGraphite 契約。
+    /// - Returns: CSS 編集として処理した場合は保存結果。それ以外は `nil`。
+    private func applyCompanionCSSObjectEditIfNeeded(
+        _ edit: HTMLObjectEdit,
+        diskHTML: String,
+        contract: OpenGraphiteContract
+    ) -> HTMLObjectEditResult? {
+        do {
+            let core = OpenGraphiteAgentCore(contract: contract)
+            var lastResult: OpenGraphiteEditResult?
+            switch edit.operation {
+            case let .setCSSVariable(nodeInternalID, key, value, _):
+                lastResult = try core.setCSSVariable(
+                    key,
+                    value: value,
+                    nodeID: nodeInternalID,
+                    htmlURL: edit.target.htmlURL
+                )
+            case let .setCSSVariables(nodeInternalID, values, _):
+                for key in values.keys.sorted() {
+                    lastResult = try core.setCSSVariable(
+                        key,
+                        value: values[key] ?? "",
+                        nodeID: nodeInternalID,
+                        htmlURL: edit.target.htmlURL
+                    )
+                }
+            case let .setIcon(nodeInternalID, library, name, source, _):
+                lastResult = try core.setIcon(
+                    library: library,
+                    name: name,
+                    source: source,
+                    nodeID: nodeInternalID,
+                    htmlURL: edit.target.htmlURL
+                )
+            default:
+                return nil
+            }
+
+            if lastResult?.diagnostics.contains(where: { $0.severity == .error }) == true {
+                lastError = "変更の保存に失敗しました。ページを再読み込みしてからもう一度設定してください。"
+                return .failed
+            }
+
+            if let html = readHTMLFromDisk(at: edit.target.htmlURL) {
+                lastKnownPageHTMLByURL[edit.target.htmlURL] = html
+                var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
+                history.recordSync(html: html)
+                syncHistories[edit.target.htmlURL] = history
+                updateHistoryAvailability()
+            }
+
+            statusMessage = "\(OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL).lastPathComponent) と同期しました。"
+            return HTMLObjectEditResult(
+                updated: lastResult?.updated ?? false,
+                requiresReload: edit.operation.requiresWebViewReload
+            )
+        } catch {
+            lastError = "CSSの同期に失敗しました: \(error.localizedDescription)"
+            return .failed
         }
     }
 
@@ -3042,7 +3163,10 @@ final class EditorStore: ObservableObject {
             return nil
         }
 
-        let cssVariables = dictionary["cssVariables"] as? [String: String] ?? [:]
+        var cssVariables = sourceNode?.cssVariables ?? [:]
+        for (key, value) in dictionary["cssVariables"] as? [String: String] ?? [:] {
+            cssVariables[key] = value
+        }
         var node = OpenGraphiteNode(
             id: id,
             internalID: dictionary["internalID"] as? String ?? "",
@@ -3080,15 +3204,20 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ページルートノード抽出関数
-    /// 処理概要: HTML 正本から page root として扱う `data-og-type="page"` または `page-preview` role の node を取得します。
+    /// 処理概要: HTML 正本から page root として扱う `data-og-type="page"` の node を取得します。
     ///
-    /// - Parameter html: 対象 HTML 文字列。
+    /// - Parameters:
+    ///   - html: 対象 HTML 文字列。
+    ///   - companionCSS: HTML と同名の design value 正本 CSS。
     /// - Returns: ページ root node。見つからない場合は `nil`。
-    private static func pageRootNode(in html: String) -> OpenGraphiteAgentNode? {
+    private static func pageRootNode(
+        in html: String,
+        companionCSS: OpenGraphiteCompanionCSSDocument? = nil
+    ) -> OpenGraphiteAgentNode? {
         OpenGraphiteHTMLDocument(html: html)
-            .nodes()
+            .nodes(companionCSS: companionCSS)
             .first { node in
-                node.type == "page" || node.role == "page-preview"
+                node.type == "page"
             }
     }
 
@@ -3102,8 +3231,9 @@ final class EditorStore: ObservableObject {
         else {
             return [:]
         }
+        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
         return OpenGraphiteHTMLDocument(html: html)
-            .nodes()
+            .nodes(companionCSS: companionCSS)
             .reduce(into: [:]) { result, node in
                 guard !node.internalID.isEmpty else { return }
                 result[node.internalID] = node

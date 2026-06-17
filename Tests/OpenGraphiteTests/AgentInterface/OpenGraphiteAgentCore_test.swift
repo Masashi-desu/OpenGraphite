@@ -7,20 +7,27 @@ import Testing
 @Suite("Agentインターフェース関連のテストスイート")
 struct OpenGraphiteAgentCoreTests {
     /// 論理名（日本語）: ページグラフ抽出テスト
-    /// 概要: HTML から `data-og-id` ノードと CSS 変数を抽出できることを検証します。
-    @Test("HTMLからpage graphを抽出できる")
+    /// 概要: HTML と companion CSS から `data-og-id` ノードと CSS 変数を抽出できることを検証します。
+    @Test("HTMLとcompanion CSSからpage graphを抽出できる")
     func testPageGraphExtractsNodes() throws {
-        // コンディション：OpenGraphite 契約に沿った HTML を一時ファイルへ用意する
+        // コンディション：OpenGraphite 契約に沿った HTML と companion CSS を一時ファイルへ用意する
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
         try fixture.writeHTML(
             """
             <!doctype html>
             <html><body>
-              <Hero data-og-id="hero" data-og-type="frame" data-og-layout="horizontal" style="--og-gap:24px;">
+              <Hero data-og-id="hero" data-og-type="frame" data-og-layout="horizontal">
                 <Title data-og-id="title" data-og-type="text">OpenGraphite</Title>
               </Hero>
             </body></html>
+            """
+        )
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero"] {
+              --og-gap: 24px;
+            }
             """
         )
 
@@ -79,13 +86,16 @@ struct OpenGraphiteAgentCoreTests {
         // 検証内容：hero の --og-gap を更新する
         let result = try fixture.core.setCSSVariable("--og-gap", value: "32px", nodeID: "hero", htmlURL: fixture.htmlURL)
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：CSS 変数は更新され、runtime 状態は削除される
+        // 期待値：CSS 変数は companion CSS へ保存され、runtime 状態と inline design value は HTML から削除される
         #expect(result.updated == true)
         #expect(result.node?.cssVariables["--og-gap"] == "32px")
-        #expect(html.contains("--og-gap:32px;"))
+        #expect(css.contains("--og-gap: 32px;"))
         #expect(!html.contains("data-og-selected"))
+        #expect(!html.contains("--og-gap"))
         #expect(!html.contains("--og-edit-width"))
+        #expect(!css.contains("--og-edit-width"))
     }
 
     /// 論理名（日本語）: CSSフォントファミリー変数編集テスト
@@ -113,11 +123,13 @@ struct OpenGraphiteAgentCoreTests {
             htmlURL: fixture.htmlURL
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：font-family 値が CSS 変数として保存される
+        // 期待値：font-family 値が companion CSS の CSS 変数として保存される
         #expect(result.updated == true)
         #expect(result.node?.cssVariables["--og-font-family"] == fontStack)
-        #expect(html.contains("--og-font-family:&quot;Noto Sans JP&quot;, &quot;Hiragino Sans&quot;, sans-serif;"))
+        #expect(!html.contains("--og-font-family"))
+        #expect(css.contains("--og-font-family: \"Noto Sans JP\", \"Hiragino Sans\", sans-serif;"))
     }
 
     /// 論理名（日本語）: Stylesheet link追加テスト
@@ -205,17 +217,26 @@ struct OpenGraphiteAgentCoreTests {
     /// 概要: `data-og-type="icon"` と Lucide の page-side metadata が contract validation を通ることを確認します。
     @Test("LucideアイコンノードをHTML契約として扱える")
     func testValidateAcceptsLucideIconNode() throws {
-        // コンディション：inline Lucide SVG を保持する icon node を用意する（Given）
+        // コンディション：inline Lucide SVG と companion CSS を保持する icon node を用意する（Given）
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
         try fixture.writeHTML(
             """
             <!doctype html>
             <html><body>
-              <Icon data-og-id="decorative-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline" style="--og-width:24px; --og-height:24px; --og-stroke-width:2;">
+              <Icon data-og-id="decorative-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
               </Icon>
             </body></html>
+            """
+        )
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="decorative-icon"] {
+              --og-width: 24px;
+              --og-height: 24px;
+              --og-stroke-width: 2;
+            }
             """
         )
 
@@ -295,6 +316,7 @@ struct OpenGraphiteAgentCoreTests {
             htmlURL: fixture.htmlURL
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
         // 期待値：新規 icon node が挿入され、Lucide static CDN 参照を保持する（Then）
         #expect(result.updated == true)
@@ -304,9 +326,11 @@ struct OpenGraphiteAgentCoreTests {
         #expect(result.insertedNodes?.first?.attributes["data-og-icon-source"] == "cdn")
         #expect(html.contains("data-og-internal-id="))
         #expect(html.contains("data-og-icon-mask=\"true\""))
-        #expect(html.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
-        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
-        #expect(html.contains("--og-width:24px; --og-height:24px;"))
+        #expect(!html.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
+        #expect(!html.contains("--og-"))
+        #expect(css.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(css.contains("--og-width: 24px;"))
+        #expect(css.contains("--og-height: 24px;"))
     }
 
     /// 論理名（日本語）: Placement Mock Stateデコードテスト
@@ -357,8 +381,8 @@ struct OpenGraphiteAgentCoreTests {
             <!doctype html>
             <html><body>
               <Page data-og-id="page" data-og-type="page">
-                <Button data-og-id="download-button" data-og-type="button" data-og-role="primary-button">Download</Button>
-                <Button data-og-id="docs-button" data-og-type="button" data-og-role="secondary-button">Docs</Button>
+                <Button data-og-id="download-button" data-og-type="button">Download</Button>
+                <Button data-og-id="docs-button" data-og-type="button">Docs</Button>
               </Page>
             </body></html>
             """
@@ -575,7 +599,7 @@ struct OpenGraphiteAgentCoreTests {
         )
         let headerHTML = """
               <Header data-og-id="site-header" data-og-type="frame" data-og-layout="horizontal">
-                <Button data-og-id="nav-home" data-og-type="button" data-og-role="secondary-button">Home</Button>
+                <Button data-og-id="nav-home" data-og-type="button">Home</Button>
               </Header>
             """
 
@@ -634,13 +658,13 @@ struct OpenGraphiteAgentCoreTests {
 
         // 検証内容：hero の前後と footer の子へ HTML 断片を挿入する
         _ = try fixture.core.insertHTML(
-            "<Eyebrow data-og-id=\"eyebrow\" data-og-type=\"text\" data-og-role=\"eyebrow\">Intro</Eyebrow>",
+            "<Eyebrow data-og-id=\"eyebrow\" data-og-type=\"text\">Intro</Eyebrow>",
             anchorNodeID: "hero",
             position: .before,
             htmlURL: fixture.htmlURL
         )
         _ = try fixture.core.insertHTML(
-            "<CTA data-og-id=\"cta\" data-og-type=\"button\" data-og-role=\"primary-button\">Start</CTA>",
+            "<CTA data-og-id=\"cta\" data-og-type=\"button\">Start</CTA>",
             anchorNodeID: "hero",
             position: .after,
             htmlURL: fixture.htmlURL
@@ -1249,7 +1273,14 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeHTML(
             """
             <!doctype html>
-            <html><body><Hero data-og-id="hero" data-og-type="frame" style="--og-gap:24px;"></Hero></body></html>
+            <html><body><Hero data-og-id="hero" data-og-type="frame"></Hero></body></html>
+            """
+        )
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero"] {
+              --og-gap: 24px;
+            }
             """
         )
         try fixture.writeProject(to: projectURL)
@@ -1283,11 +1314,14 @@ struct OpenGraphiteAgentCoreTests {
             stderr: { stderr += $0 }
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：`.ogp` 経由の編集だけが成功し、直接 HTML 指定はエラーになる
+        // 期待値：`.ogp` 経由の編集だけが成功し、直接 HTML 指定はエラーになり、値は companion CSS に残る
         #expect(successCode == 0)
         #expect(rejectedCode == 2)
-        #expect(html.contains("--og-gap:32px;"))
+        #expect(!html.contains("--og-gap"))
+        #expect(css.contains("--og-gap: 32px;"))
+        #expect(!css.contains("40px"))
         #expect(stderr.contains(".ogp"))
     }
 
@@ -1351,12 +1385,23 @@ struct OpenGraphiteAgentCoreTests {
             <!doctype html>
             <html><body>
               <Icon data-og-id="target-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="cdn">
-                <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/circle.svg');" aria-hidden="true"></span>
+                <span data-og-icon-mask="true" aria-hidden="true"></span>
               </Icon>
               <Icon data-og-id="sibling-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-open" data-og-icon-source="cdn">
-                <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');" aria-hidden="true"></span>
+                <span data-og-icon-mask="true" aria-hidden="true"></span>
               </Icon>
             </body></html>
+            """
+        )
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="target-icon"] {
+              --og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/circle.svg');
+            }
+
+            [data-og-internal-id="sibling-icon"] {
+              --og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');
+            }
             """
         )
         try fixture.writeProject(to: projectURL)
@@ -1378,13 +1423,15 @@ struct OpenGraphiteAgentCoreTests {
             stderr: { stderr += $0 }
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：対象 icon は更新され、対象外 icon の CDN mask URL は保持される（Then）
+        // 期待値：対象 icon は更新され、対象外 icon の CDN mask URL は companion CSS に保持される（Then）
         #expect(code == 0)
         #expect(stderr.isEmpty)
         #expect(stdout.contains("\"updated\" : true"))
-        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
-        #expect(html.contains("--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');"))
+        #expect(!html.contains("--og-icon-url"))
+        #expect(css.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(css.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');"))
     }
 
     /// 論理名（日本語）: CLI typed node参照解決テスト
@@ -1398,7 +1445,14 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeHTML(
             """
             <!doctype html>
-            <html><body><Hero data-og-id="hero" data-og-type="frame" style="--og-gap:24px;"></Hero></body></html>
+            <html><body><Hero data-og-id="hero" data-og-type="frame"></Hero></body></html>
+            """
+        )
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero"] {
+              --og-gap: 24px;
+            }
             """
         )
         try fixture.writeProject(to: projectURL)
@@ -1420,12 +1474,14 @@ struct OpenGraphiteAgentCoreTests {
             stderr: { stderr += $0 }
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：typed node 参照から page と node が解決され、対象 HTML が更新される
+        // 期待値：typed node 参照から page と node が解決され、companion CSS が更新される
         #expect(code == 0)
         #expect(stderr.isEmpty)
         #expect(stdout.contains("\"updated\" : true"))
-        #expect(html.contains("--og-gap:40px;"))
+        #expect(!html.contains("--og-gap"))
+        #expect(css.contains("--og-gap: 40px;"))
     }
 
     /// 論理名（日本語）: CLIページ配置名更新テスト
@@ -2030,6 +2086,26 @@ private struct AgentInterfaceFixture {
     ///   - url: 書き込み先 URL。
     func writeHTML(_ html: String, to url: URL) throws {
         try Self.htmlWithInternalIDs(html).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: Companion CSS書き込み関数
+    /// 処理概要: fixture の HTML と同名の companion CSS へ指定文字列を書き込みます。
+    ///
+    /// - Parameter css: 書き込む CSS。
+    func writeCompanionCSS(_ css: String) throws {
+        try css.write(
+            to: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// 論理名（日本語）: Companion CSS読込関数
+    /// 処理概要: fixture の HTML と同名の companion CSS を読み込みます。
+    ///
+    /// - Returns: companion CSS の全文。
+    func readCompanionCSS() throws -> String {
+        try String(contentsOf: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL), encoding: .utf8)
     }
 
     /// 論理名（日本語）: テストHTML内部ID補完関数

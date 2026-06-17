@@ -31,12 +31,14 @@ OpenGraphite app の中では、読み込み済み project / HTML / resource か
 OpenGraphite は、意味、編集情報、デザイン値、描画規則、project metadata を分離します。
 
 - タグ名は、人間が読める意味やコンポーネント名を担う。
-- `data-og-*` は、エディタが安全に解釈する構造、種別、役割を担う。
-- `--og-*` は、編集可能なデザイン値を担う。
-- CSS は、app 内描画とブラウザ描画を一致させる規則を担う。
+- `data-og-*` は、エディタが安全に解釈する構造、種別、参照を担う。
+- HTML と同名の companion CSS は、編集可能なデザイン値を担う。
+- `OpenGraphite.css` は、app 内描画とブラウザ描画を一致させる共有規則を担う。
 - `.ogp` は、source files の複製ではなく、プロジェクト解決、一覧、キャンバス配置、preview metadata を担う。
 
-class 名はスタイルの正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と `--og-*` です。
+HTML には構造と参照のパラメータだけを残します。`data-og-role` や `data-og-variant` のうち純粋に見た目を選ぶ値は companion CSS の selector で表し、`component-placement` のように editor / runtime が参照として解釈する値だけを HTML に残します。
+
+class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として使えますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と companion CSS 上の `--og-*` です。
 
 詳細な属性、CSS 値、runtime、build、preview mock、text resource の境界は [SourceOfTruthContract.md](SourceOfTruthContract.md) に定義します。
 
@@ -48,7 +50,7 @@ class 名はスタイルの正本にしません。class は Web 実装上の補
 
 ## Reference Principle
 
-component instance は master の構造を共有し、差分は明示された slot、配置 override、または runtime / locale resource として source に保持します。生成 DOM は正本ではありません。
+component instance は master の構造を共有し、差分は明示された slot、page companion CSS 上の instance override、または runtime / locale resource として source に保持します。生成 DOM は正本ではありません。
 
 同じ考え方で、component placement の表示 clone も正本ではありません。clone を直接分岐編集するのではなく、保存対象を参照元 node、placement host の表示枠 override、または preview mock metadata へ分けます。
 
@@ -58,7 +60,7 @@ component instance は master の構造を共有し、差分は明示された s
 
 OpenGraphite は HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が source HTML / CSS / JS を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。
 
-描画規則は class ではなく `data-og-*` と CSS 変数を中心に記述します。app 内描画とブラウザ描画の差分は、できるだけ CSS と runtime contract 側で説明できるようにします。
+描画規則は class ではなく `data-og-*` と CSS 変数を中心に記述します。ページ固有の見た目は同名 companion CSS に置き、app 内描画とブラウザ描画の差分は、できるだけ CSS と runtime contract 側で説明できるようにします。
 
 ## Editor Principle
 
@@ -68,7 +70,7 @@ OpenGraphite のエディタは、source files の上に編集体験を重ねる
 - `[data-og-id]` を持つ node を Layers に反映する。
 - 選択状態を Canvas、Layers、Inspector で同期する。
 - app 内編集は永続化前に cache へ反映し、同じ値を表示するすべての経路へ即時同期する。
-- Inspector の編集を DOM と source file へ反映する。
+- Inspector の design value 編集を companion CSS へ、構造や参照の編集を HTML へ反映する。
 - HTML 内の自然なスクロールやブラウザ挙動をできるだけ尊重する。
 
 OpenGraphite 独自の機能を追加する場合も、最終的に Web 標準ファイルに説明可能な形で落ちることを優先します。
@@ -87,8 +89,8 @@ OpenGraphite 独自の機能を追加する場合も、最終的に Web 標準�
 実装判断で迷った場合は、次の順で優先します。
 
 1. 編集後の source files が、そのまま Web 成果物として読めるか。
-2. デザイン値が CSS 変数として明示されているか。
-3. エディタ用メタデータが `data-og-*` として source 上に保持されているか。
+2. デザイン値が同名 companion CSS の CSS 変数として明示されているか。
+3. エディタ用の構造・参照メタデータが `data-og-*` として source HTML 上に保持されているか。
 4. `.ogp` が source の複製ではなく、プロジェクト管理情報に留まっているか。
 5. app 内で同じ値を表示する複数経路が、永続化前の cache 現在値で同期しているか。
 6. 公開リポジトリへ置いてもユーザー固有情報を含まないか。

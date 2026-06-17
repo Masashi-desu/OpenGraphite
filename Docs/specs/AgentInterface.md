@@ -1,6 +1,6 @@
 # OpenGraphite Agent Interface
 
-OpenGraphite の AI 協業インターフェースは、リポジトリ上の HTML / CSS / `.ogp` を正本として扱う。AI、CLI、MCP は同じファイルを読み、同じ検証契約を通して、可能な限り node 単位の小さな編集操作として変更する。編集対象 HTML は必ず `.ogp` の `chapters[].pages[]` または `collections[].components[]` でユーザーが認知できる状態にしてから扱う。
+OpenGraphite の AI 協業インターフェースは、リポジトリ上の HTML / companion CSS / `.ogp` を正本として扱う。AI、CLI、MCP は同じファイルを読み、同じ検証契約を通して、可能な限り node 単位の小さな編集操作として変更する。編集対象 HTML は必ず `.ogp` の `chapters[].pages[]` または `collections[].components[]` でユーザーが認知できる状態にしてから扱う。
 
 参考にする先行事例は Pencil / OpenPencil だが、OpenGraphite は `.pen` の JSON IR ではなく HTML を編集対象にする。Pencil CLI は headless editor と interactive MCP tool shell を提供し、`batch_design` で insert / update / delete / move / copy / replace を扱う。OpenPencil も headless CLI、query、MCP server、export を同じ engine 上に置く。OpenGraphite ではこれを `ogkiln`、OpenGraphite MCP server、`OpenGraphiteHTMLDocument` core、`OpenGraphite.contract.json` の組み合わせへ読み替える。
 
@@ -12,7 +12,7 @@ OpenGraphite の AI 協業インターフェースは、リポジトリ上の HT
 
 - `ogkiln`: 人間、CI、MCP server が同じ挙動を再現できる CLI。
 - OpenGraphite MCP server: AI クライアントが構造化 resource / tool として OpenGraphite リポジトリを読むための stdio MCP server。
-- `OpenGraphite.contract.json`: `data-og-*`、`--og-*`、type、layout、role、runtime 属性の機械可読な契約。
+- `OpenGraphite.contract.json`: `data-og-*`、`--og-*`、type、layout、HTML に残せる role、runtime 属性の機械可読な契約。
 - OpenGraphite app: 正本ファイルを `WKWebView` に表示し、外部変更を検出して Canvas、Layers、Inspector へ同期する UI。
 
 MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であり、MCP の write tool は `ogkiln` または同じ core 実装と同等の validation / diagnostics を必ず通す。
@@ -178,6 +178,8 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 
 `data-og-role="component-placement"` を持つ placement host は component canvas の graph に通常 node として含める。`parentID` は DOM 上の親 OpenGraphite node を返し、`.ogp` の page / component card としては扱わない。placement が表示のために生成した clone とその descendants は `data-og-placement-generated="true"` を持つ runtime-only DOM であり、graph / Layers / node edit の対象から除外する。Chapter / Pages HTML に placement host が存在する場合、project validation は `component-placement-outside-collection` error を返す。
 
+`cssVariables` は source HTML の inline style ではなく、HTML と同名の companion CSS から抽出した `--og-*` である。互換的な旧 HTML を読む場合だけ inline style を fallback として扱えるが、companion CSS が存在する source では inline design value は validation error になる。
+
 ```json
 {
   "schemaVersion": "0.1",
@@ -189,7 +191,7 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
       "tagName": "herosection",
       "type": "frame",
       "layout": "horizontal",
-      "role": "landing-hero",
+      "role": null,
       "cssVariables": {
         "--og-gap": "44px"
       },
@@ -260,9 +262,7 @@ ogkiln node get SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofm
 ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap --value 32px
 ogkiln node style set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --var --og-padding --value 48px
 ogkiln node style remove SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap
-ogkiln node attr set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --name data-og-role --value card
 ogkiln node attr set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --name data-og-part --value root
-ogkiln node attr remove SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --name data-og-role
 ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
 ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Reusable card'
 ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 72222bd6f11e --position prepend --html '<Header data-og-id="site-header" data-og-type="frame"></Header>'
@@ -280,6 +280,7 @@ write operation は次の制約を持つ。
 - 対象 node は一意な `data-og-internal-id` で解決できること。
 - `data-og-id` が重複している場合は失敗すること。
 - `data-og-internal-id` が重複している場合は失敗すること。
+- `node style set/remove` は対象 HTML と同名の companion CSS を更新し、HTML inline `style` を作らないこと。
 - `--og-*` 以外の CSS 変数を `node style set` で更新しないこと。
 - `data-og-selected` と `data-og-editing` は正本 HTML へ残さないこと。
 - `data-og-internal-id` は内部不変 ID のため、通常の `node attr set` では変更しないこと。
@@ -311,7 +312,7 @@ Pencil / OpenPencil の design document 操作は OpenGraphite では次のよ�
 
 | Pencil / OpenPencil | OpenGraphite |
 | --- | --- |
-| `.pen` JSON IR | HTML 正本 + `data-og-*` metadata + `--og-*` CSS variables |
+| `.pen` JSON IR | HTML 構造正本 + `data-og-*` metadata + companion CSS の `--og-*` variables |
 | node `id` | `data-og-internal-id`（表示 ID は `data-og-id`） |
 | `get_editor_state` | `project inspect` + `page graph --page-id` / `page graph --component-id` |
 | `batch_get` / tree / find / query | `node query` / `node get` |

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 論理名（日本語）: アイコンCDN依存性
-/// 概要: HTML 内の CDN 参照 icon node を provider/package/version 単位で集約した依存情報です。
+/// 概要: HTML と companion CSS 内の CDN 参照 icon node を provider/package/version 単位で集約した依存情報です。
 ///
 /// プロパティ:
 /// - `library`: `data-og-icon-library` の値。
@@ -37,7 +37,7 @@ struct OpenGraphiteIconCDNDependency: Equatable, Hashable, Identifiable {
 }
 
 /// 論理名（日本語）: アイコンCDN依存性検出器
-/// 概要: OpenGraphite HTML から `data-og-icon-source="cdn"` の icon node を検出し、依存性一覧向けに集約します。
+/// 概要: OpenGraphite HTML と companion CSS から `data-og-icon-source="cdn"` の icon node を検出し、依存性一覧向けに集約します。
 enum OpenGraphiteIconCDNDependencyScanner {
     /// 論理名（日本語）: 読み込み済みprojectからのアイコンCDN依存性検出関数
     /// 処理概要: Project が保持する page と component master HTML を読み、CDN icon 依存を集約します。
@@ -46,12 +46,14 @@ enum OpenGraphiteIconCDNDependencyScanner {
     /// - Returns: provider/package/version ごとに集約された CDN icon 依存性。
     static func dependencies(for loadedProject: LoadedOpenGraphiteProject) -> [OpenGraphiteIconCDNDependency] {
         var seenHTMLURLs: Set<URL> = []
-        let htmlDocuments = loadedProject.project.allPages.compactMap { page -> String? in
+        let sources = loadedProject.project.allPages.compactMap { page -> DependencySource? in
             let htmlURL = loadedProject.htmlURL(for: page).standardizedFileURL
             guard seenHTMLURLs.insert(htmlURL).inserted else { return nil }
-            return try? String(contentsOf: htmlURL, encoding: .utf8)
+            guard let html = try? String(contentsOf: htmlURL, encoding: .utf8) else { return nil }
+            let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: htmlURL)
+            return DependencySource(html: html, companionCSS: companionCSS)
         }
-        return dependencies(in: htmlDocuments)
+        return dependencies(in: sources)
     }
 
     /// 論理名（日本語）: HTML文字列からのアイコンCDN依存性検出関数
@@ -60,15 +62,26 @@ enum OpenGraphiteIconCDNDependencyScanner {
     /// - Parameter htmlDocuments: 走査対象 HTML 文字列。
     /// - Returns: 集約済み CDN icon 依存性。
     static func dependencies(in htmlDocuments: [String]) -> [OpenGraphiteIconCDNDependency] {
+        dependencies(in: htmlDocuments.map { DependencySource(html: $0, companionCSS: nil) })
+    }
+
+    private static func dependencies(in sources: [DependencySource]) -> [OpenGraphiteIconCDNDependency] {
         var buckets: [DependencyKey: DependencyBucket] = [:]
 
-        for html in htmlDocuments {
+        for source in sources {
+            let html = source.html
             for match in iconNodeMatches(in: html) {
                 guard let tagRange = Range(match.range(at: 0), in: html) else { continue }
                 let tag = String(html[tagRange])
                 let library = normalizedAttribute("data-og-icon-library", in: tag) ?? "lucide"
                 let iconName = normalizedAttribute("data-og-icon-name", in: tag)
-                let context = String(html[tagRange.lowerBound..<contextEndIndex(from: tagRange.upperBound, in: html)])
+                let internalID = attribute("data-og-internal-id", in: tag)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let iconURL = internalID.flatMap { source.companionCSS?.cssVariables(forNodeInternalID: $0)["--og-icon-url"] } ?? ""
+                let context = [
+                    String(html[tagRange.lowerBound..<contextEndIndex(from: tagRange.upperBound, in: html)]),
+                    iconURL
+                ].joined(separator: "\n")
                 let descriptor = cdnDescriptor(library: library, context: context)
                 let key = DependencyKey(
                     library: library,
@@ -123,6 +136,11 @@ enum OpenGraphiteIconCDNDependencyScanner {
     private struct DependencyBucket {
         var usedCount = 0
         var iconNames: Set<String> = []
+    }
+
+    private struct DependencySource {
+        var html: String
+        var companionCSS: OpenGraphiteCompanionCSSDocument?
     }
 
     private struct CDNDescriptor {

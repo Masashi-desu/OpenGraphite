@@ -1,6 +1,6 @@
 # ogkiln CLI Specification
 
-`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は正本だが、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` または `collections[].components[]` に明示された HTML だけに限定する。
+`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本であり、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` または `collections[].components[]` に明示された HTML と対応 CSS だけに限定する。
 
 ## Principles
 
@@ -9,8 +9,8 @@
 - `.ogp` にない既存 HTML を編集したい場合は、先に `project page add` または `project component add` で可視リストに追加する。
 - 新規 HTML を配置したい場合は、`project page create` または `project component create` で HTML 作成と `.ogp` 登録を一体で行う。
 - page は `--page-id`、component は `--component-id`、node は `--id` で指定する。コピーされた参照 ID は `ogref:<type>:...` 形式で、`ogref:node` / `ogref:component-node` を `--id` に渡した場合は対象 page / component canvas もそこから解決できる。raw `data-og-internal-id` を使う node edit 系コマンドは `--page-id` と `--component-id` のどちらも受け付けるが、同時指定は invalid である。
-- write operation は書き込み前に candidate HTML を validation し、`error` diagnostic がある場合はファイルを書き換えない。
-- runtime state は正本 HTML から取り除く。対象は `OpenGraphite.contract.json` の `runtimeAttributes` と `editable:false` の `--og-*` CSS variables。
+- write operation は書き込み前に candidate HTML / companion CSS を validation し、`error` diagnostic がある場合はファイルを書き換えない。
+- runtime state は正本 HTML から取り除く。対象は `OpenGraphite.contract.json` の `runtimeAttributes` と runtime-only CSS variables。
 - 出力は JSON を基本とし、MCP server はこの JSON をそのまま tool result として返せる。
 
 ## Project Commands
@@ -25,7 +25,7 @@ ogkiln build <project.ogp|current> --output <dir>
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
 
-`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css と `htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。
+`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。
 
 ## Page Management
 
@@ -97,7 +97,7 @@ ogkiln node text set <project.ogp|current> [--page-id <page-id>|--component-id <
 ogkiln node text set <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <id> --text-file <text-file>
 ```
 
-`node style set/remove` は `--og-*` だけを扱う。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-internal-id` は変更しない。component placement の mock injection は HTML 属性ではなく `.ogp` の `previewContext.placementMocks` に保存するため、`node attr set/remove` では扱わない。
+`node style set/remove` は `--og-*` だけを扱い、対象 HTML と同名の companion CSS にある `[data-og-internal-id="..."]` rule を更新する。HTML inline `style` は作らない。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-internal-id` は変更しない。component placement の mock injection は HTML 属性ではなく `.ogp` の `previewContext.placementMocks` に保存するため、`node attr set/remove` では扱わない。
 
 `node text set` は text として保存する。HTML 断片を入れる操作ではないため、`<`、`>`、`&` は escape する。
 

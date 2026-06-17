@@ -1,0 +1,219 @@
+[data-og-internal-id="a40992e00b6c"] {
+  --og-gap:0;
+  --og-padding:30px 52px 76px;
+  --og-background:#08090a;
+  --og-foreground:#f4f6f7;
+  --og-font-family-default:'Inter','Noto Sans JP',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --og-font-family-ja:'Noto Sans JP','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --og-font-family-eng:'Noto Sans','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  min-height:100vh;
+}
+
+[data-og-internal-id="60447086753d"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#08090a;
+  --og-foreground:#dfe3e6;
+  --og-border:1px solid #4b535b;
+}
+
+[data-og-internal-id="downloadsnavhomelabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="f6d325d312e5"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#f5f7f8;
+  --og-foreground:#08090a;
+  --og-border:1px solid #f5f7f8;
+}
+
+[data-og-internal-id="downloadsnavdownloadslabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="b991bf4b9a72"] {
+  --og-padding:10px 14px;
+  --og-radius:4px;
+  --og-background:#08090a;
+  --og-foreground:#dfe3e6;
+  --og-border:1px solid #4b535b;
+}
+
+[data-og-internal-id="downloadsnavdocslabel"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="c6d8b2e4a119"] {
+  --og-width:min(100%,1180px);
+  --og-margin:0 auto;
+  --og-min-height:calc(100vh - 118px);
+  --og-flex:1 1 auto;
+  --og-gap:28px;
+  --og-padding:34px 0 0;
+}
+
+[data-og-internal-id="407e00b97947"] {
+  --og-width:100%;
+  --og-margin:0;
+  --og-gap:24px;
+  --og-padding:46px 0 52px;
+  border-bottom:1px solid #30363d;
+  overflow:hidden;
+}
+
+[data-og-internal-id="f3e07d64565c"] {
+  --og-foreground:#aeb6bd;
+  --og-letter-spacing:0;
+  --og-font-size:13px;
+  --og-font-weight:760;
+  text-transform:uppercase;
+}
+
+[data-og-internal-id="5a88d2410af2"] {
+  --og-font-size:56px;
+  --og-font-weight:840;
+  --og-line-height:1.02;
+  --og-letter-spacing:0;
+  --og-max-width:100%;
+  overflow-wrap:anywhere;
+}
+
+[data-og-internal-id="539c456bb9d2"] {
+  --og-font-size:20px;
+  --og-line-height:1.72;
+  --og-foreground:#b8c0c7;
+  --og-max-width:100%;
+}
+
+[data-og-internal-id="downloadsactions20260613"] {
+  --og-gap:10px;
+  --og-align:flex-start;
+  --og-padding:4px 0 0;
+  --og-width:100%;
+}
+
+[data-og-internal-id="downloadsprima20260613"] {
+  --og-width:min(100%,280px);
+  --og-padding:15px 22px;
+  --og-radius:4px;
+  --og-background:#f5f7f8;
+  --og-foreground:#08090a;
+  --og-border:1px solid #f5f7f8;
+}
+
+[data-og-internal-id="downloadsprilabel20260613"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="downloadssecond20260613"] {
+  --og-width:min(100%,280px);
+  --og-padding:15px 22px;
+  --og-radius:4px;
+  --og-background:#111315;
+  --og-foreground:#f5f7f8;
+  --og-border:1px solid #4b535b;
+}
+
+[data-og-internal-id="downloadsseclabel20260613"] {
+  --og-line-height:1;
+}
+
+[data-og-internal-id="installstepsanchor20260613"] {
+  --og-width:100%;
+  --og-height:0;
+}
+
+[data-og-internal-id="f5006a99d3f7"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-internal-id="downloadclone20260613"] {
+  --og-width:min(100%,500px);
+  --og-font-size:14px;
+  --og-line-height:1.75;
+  --og-foreground:#dfe3e6;
+  --og-background:#0d0f10;
+  --og-padding:20px;
+  --og-radius:4px;
+  --og-border:1px solid #30363d;
+  --og-font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+
+[data-og-internal-id="5f12745d7a10"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-internal-id="82a86f279000"] {
+  --og-width:min(100%,500px);
+  --og-font-size:14px;
+  --og-line-height:1.75;
+  --og-foreground:#dfe3e6;
+  --og-background:#0d0f10;
+  --og-padding:20px;
+  --og-radius:4px;
+  --og-border:1px solid #30363d;
+  --og-font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+
+[data-og-internal-id="downloadsample20260613"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-internal-id="downloadsamplecode20260613"] {
+  --og-width:min(100%,500px);
+  --og-font-size:14px;
+  --og-line-height:1.75;
+  --og-foreground:#dfe3e6;
+  --og-background:#0d0f10;
+  --og-padding:20px;
+  --og-radius:4px;
+  --og-border:1px solid #30363d;
+  --og-font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+
+[data-og-internal-id="f5006a99d3f7"] > [data-og-generated="true"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-internal-id="5f12745d7a10"] > [data-og-generated="true"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-internal-id="downloadsample20260613"] > [data-og-generated="true"] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-id="repository-section"][data-og-internal-id] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-id="build-section"][data-og-internal-id] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+[data-og-id="sample-section"][data-og-internal-id] {
+  --og-width:100%;
+  --og-margin:0;
+}
+
+@media (max-width: 760px) {
+  [data-og-internal-id="a40992e00b6c"] {
+    --og-padding: 24px;
+  }
+}

@@ -19,7 +19,7 @@ struct EditorStoreTests {
                 "tagName": "herosection",
                 "type": "frame",
                 "layout": "horizontal",
-                "role": "landing-hero",
+                "role": "component-placement",
                 "componentID": "site-header",
                 "componentKind": "",
                 "sourceComponentID": "site-header",
@@ -43,7 +43,7 @@ struct EditorStoreTests {
         #expect(store.nodes.count == 1)
         #expect(store.nodes[0].id == "hero")
         #expect(store.nodes[0].layout == "horizontal")
-        #expect(store.nodes[0].role == "landing-hero")
+        #expect(store.nodes[0].role == "component-placement")
         #expect(store.nodes[0].componentID == "site-header")
         #expect(store.nodes[0].sourceComponentID == "site-header")
         #expect(store.nodes[0].sourceInstanceID == "header-instance")
@@ -107,10 +107,17 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-          <CodeViewer data-og-id="codeviewer" data-og-internal-id="hrbifdygbcig" data-og-type="frame" style="--og-gap:9px;"></CodeViewer>
-          <og-placement data-og-id="placement-code-viewer-preview" data-og-internal-id="placement-node" data-og-type="frame" data-og-role="component-placement" data-og-source-node-internal-id="hrbifdygbcig"></og-placement>
+          <CodeViewer data-og-id="codeviewer" data-og-internal-id="hrbifdygbcig" data-og-type="frame"></CodeViewer>
+          <og-placement data-og-id="placement-code-viewer-preview" data-og-internal-id="placement-node" data-og-type="frame" data-og-role="component-placement" data-og-source-component-internal-id="component-main" data-og-source-node-internal-id="hrbifdygbcig"></og-placement>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hrbifdygbcig"] {
+              --og-gap: 9px;
+            }
+            """
+        )
         let placementSelectionID = "ogpl:placement-code-viewer-preview:hrbifdygbcig"
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
@@ -156,9 +163,12 @@ struct EditorStoreTests {
         #expect(store.selectedNode?.displayID == "codeviewer")
         #expect(store.selectedNode?.editTargetNodeID == "codeviewer")
         #expect(store.selectedNode?.isPlacementGenerated == true)
+        #expect(store.lastError == nil)
         #expect(store.cssMutation?.nodeID == placementSelectionID)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
-        #expect(diskHTML.contains("--og-gap:24px"))
+        let diskCSS = try fixture.readCompanionCSS()
+        #expect(!diskHTML.contains("--og-gap"))
+        #expect(diskCSS.contains("--og-gap: 24px;"))
     }
 
     /// 論理名（日本語）: DOM payload fallback補完テスト
@@ -504,8 +514,15 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              --og-gap: 16px;
+            }
+            """
+        )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
@@ -530,7 +547,9 @@ struct EditorStoreTests {
         #expect(store.cssMutation?.key == "--og-gap")
         #expect(store.cssMutation?.value == "32px")
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
-        #expect(diskHTML.contains("--og-gap:32px"))
+        let diskCSS = try fixture.readCompanionCSS()
+        #expect(!diskHTML.contains("--og-gap"))
+        #expect(diskCSS.contains("--og-gap: 32px;"))
     }
 
     /// 論理名（日本語）: フォント候補適用テスト
@@ -567,10 +586,12 @@ struct EditorStoreTests {
         // 検証内容：Google Fonts 候補を適用する
         store.applyFontCandidate(candidate)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
 
         // 期待値：node の CSS 変数と head の stylesheet link が保存される
         #expect(store.nodes[0].cssVariables["--og-font-family"] == "\"Roboto\", sans-serif")
-        #expect(diskHTML.contains("--og-font-family:&quot;Roboto&quot;, sans-serif;"))
+        #expect(!diskHTML.contains("--og-font-family"))
+        #expect(diskCSS.contains("--og-font-family: \"Roboto\", sans-serif;"))
         #expect(diskHTML.contains("<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Roboto&amp;display=swap\">"))
         #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
     }
@@ -584,8 +605,15 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><head><title>Fixture</title></head><body><OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" style="--og-font-family-default:system-ui, sans-serif;"></OpenGraphitePage></body></html>
+        <html><head><title>Fixture</title></head><body><OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page"></OpenGraphitePage></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="page-node"] {
+              --og-font-family-default: system-ui, sans-serif;
+            }
+            """
+        )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
@@ -608,11 +636,14 @@ struct EditorStoreTests {
         // 検証内容：Google Fonts 候補を日本語 locale font-family として適用する
         store.applySelectedPageRootFontCandidate(variableKey: "--og-font-family-ja", candidate: candidate)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
 
         // 期待値：page root の locale CSS 変数と head の stylesheet link が保存される
         #expect(store.selectedPageRootCSSVariables["--og-font-family-ja"] == "\"Noto Sans JP\", sans-serif")
-        #expect(diskHTML.contains("--og-font-family-fr:&quot;Merriweather&quot;, serif;"))
-        #expect(diskHTML.contains("--og-font-family-ja:&quot;Noto Sans JP&quot;, sans-serif;"))
+        #expect(!diskHTML.contains("--og-font-family-fr"))
+        #expect(!diskHTML.contains("--og-font-family-ja"))
+        #expect(diskCSS.contains("--og-font-family-fr: \"Merriweather\", serif;"))
+        #expect(diskCSS.contains("--og-font-family-ja: \"Noto Sans JP\", sans-serif;"))
         #expect(diskHTML.contains("https://fonts.googleapis.com/css2?family=Noto+Sans+JP&amp;display=swap"))
         #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
     }
@@ -1024,8 +1055,15 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              --og-gap: 16px;
+            }
+            """
+        )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
@@ -1040,18 +1078,21 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "hero")
-        try """
-        <!doctype html>
-        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:24px;"></Hero></body></html>
-        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              --og-gap: 24px;
+            }
+            """
+        )
 
         // 検証内容：古い Store 状態をもとに CSS 値を更新しようとする
         store.updateCSSVariable(key: "--og-gap", value: "32px")
-        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
 
         // 期待値：agent 相当の 24px は上書きされず、再設定を促す簡易エラーが表示される
-        #expect(diskHTML.contains("--og-gap:24px"))
-        #expect(!diskHTML.contains("--og-gap:32px"))
+        #expect(diskCSS.contains("--og-gap: 24px;"))
+        #expect(!diskCSS.contains("--og-gap: 32px;"))
         #expect(store.cssMutation == nil)
         #expect(store.lastError == "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。")
     }
@@ -1065,8 +1106,15 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame" style="--og-gap:16px;"></Hero></body></html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              --og-gap: 16px;
+            }
+            """
+        )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
@@ -1159,13 +1207,15 @@ struct EditorStoreTests {
         // 検証内容：Inspector 相当で source/name を更新する（When）
         store.updateIcon(library: "lucide", name: "star", source: "cdn")
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
 
         // 期待値：ディスク HTML と Store node が更新され、WebView 置換要求が発行される（Then）
         #expect(store.nodes[0].iconName == "star")
         #expect(store.nodes[0].iconSource == "cdn")
         #expect(diskHTML.contains("data-og-icon-name=\"star\""))
         #expect(diskHTML.contains("data-og-icon-mask=\"true\""))
-        #expect(diskHTML.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
+        #expect(!diskHTML.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
+        #expect(diskCSS.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
         #expect(store.documentReplacementRequest?.html == diskHTML)
         #expect(store.documentReplacementRequest?.selectedNodeID == "decorative-icon")
     }
@@ -1395,8 +1445,15 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><body><Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text" style="--og-gap:8px;">title</Title></body></html>
+        <html><body><Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text">title</Title></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="title-node"] {
+              --og-gap: 8px;
+            }
+            """
+        )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
@@ -1916,6 +1973,26 @@ private struct EditorStoreHistoryFixture {
         )
         let data = try JSONEncoder().encode(project)
         try data.write(to: projectURL)
+    }
+
+    /// 論理名（日本語）: Companion CSS書き込み関数
+    /// 処理概要: fixture の HTML と同名の companion CSS へ指定文字列を書き込みます。
+    ///
+    /// - Parameter css: 書き込む CSS。
+    func writeCompanionCSS(_ css: String) throws {
+        try css.write(
+            to: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// 論理名（日本語）: Companion CSS読込関数
+    /// 処理概要: fixture の HTML と同名の companion CSS を読み込みます。
+    ///
+    /// - Returns: companion CSS の全文。
+    func readCompanionCSS() throws -> String {
+        try String(contentsOf: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL), encoding: .utf8)
     }
 
     /// 論理名（日本語）: fixture削除関数

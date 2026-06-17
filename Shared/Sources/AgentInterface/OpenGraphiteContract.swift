@@ -168,14 +168,7 @@ struct OpenGraphiteContract: Codable, Equatable {
         types: ["page", "frame", "text", "button", "image", "icon"],
         layouts: ["vertical", "horizontal", "absolute"],
         roles: [
-            "page-preview",
-            "landing-hero",
-            "primary-button",
-            "secondary-button",
-            "card",
-            "eyebrow",
-            "component-placement",
-            "muted"
+            "component-placement"
         ],
         editableAttributes: [
             "data-og-type",

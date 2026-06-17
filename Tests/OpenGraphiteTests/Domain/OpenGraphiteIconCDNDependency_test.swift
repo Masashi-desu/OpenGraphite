@@ -3,7 +3,7 @@ import Testing
 @testable import OpenGraphite
 
 /// 論理名（日本語）: アイコンCDN依存性テストスイート
-/// 概要: HTML の `data-og-icon-source="cdn"` を Project Dependencies 向けに集約できることを確認します。
+/// 概要: HTML の `data-og-icon-source="cdn"` と companion CSS の CDN URL を Project Dependencies 向けに集約できることを確認します。
 @Suite("アイコンCDN依存性テストスイート")
 struct OpenGraphiteIconCDNDependencyTests {
     /// 論理名（日本語）: CDNアイコン集約テスト
@@ -13,10 +13,10 @@ struct OpenGraphiteIconCDNDependencyTests {
         // Given: CDN / inline / library source が混在した HTML を用意する
         let html = """
         <Icon data-og-id="star" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="star" data-og-icon-source="cdn">
-          <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');" aria-hidden="true"></span>
+          <span data-og-icon-mask="true" aria-hidden="true"></span>
         </Icon>
         <Icon data-og-id="open" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-open" data-og-icon-source="cdn">
-          <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/panel-left-open.svg');" aria-hidden="true"></span>
+          <span data-og-icon-mask="true" aria-hidden="true"></span>
         </Icon>
         <Icon data-og-id="inline" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline"></Icon>
         <Icon data-og-id="runtime" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="square" data-og-icon-source="library"></Icon>
@@ -60,12 +60,21 @@ struct OpenGraphiteIconCDNDependencyTests {
         try """
         <!doctype html>
         <html><body>
-          <Icon data-og-id="close" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-close" data-og-icon-source="cdn">
-            <span data-og-icon-mask="true" style="--og-icon-url:url('https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/panel-left-close.svg');" aria-hidden="true"></span>
+          <Icon data-og-id="close" data-og-internal-id="close-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-close" data-og-icon-source="cdn">
+            <span data-og-icon-mask="true" aria-hidden="true"></span>
           </Icon>
         </body></html>
         """.write(
             to: componentDirectoryURL.appendingPathComponent("design-system.html"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        [data-og-internal-id="close-node"] {
+          --og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@0.468.0/icons/panel-left-close.svg');
+        }
+        """.write(
+            to: componentDirectoryURL.appendingPathComponent("design-system.css"),
             atomically: true,
             encoding: .utf8
         )

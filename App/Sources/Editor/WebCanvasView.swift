@@ -536,7 +536,7 @@ struct WebCanvasView: NSViewRepresentable {
           }
           function applyLocaleFont(lang) {
             const variableNames = localeFontVariableNames(lang);
-            const pageRoots = document.querySelectorAll('[data-og-type="page"], [data-og-role="page-preview"]');
+            const pageRoots = document.querySelectorAll('[data-og-type="page"]');
             pageRoots.forEach((pageRoot) => {
               const computedStyle = window.getComputedStyle(pageRoot);
               let fontFamily = '';
@@ -714,7 +714,14 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           function inlinePlacementVariable(host, name) {
-            return String((host && host.style && host.style.getPropertyValue(name)) || '').trim();
+            if (!host) { return ''; }
+            const inlineValue = String((host.style && host.style.getPropertyValue(name)) || '').trim();
+            if (inlineValue) { return inlineValue; }
+            try {
+              return String(window.getComputedStyle(host).getPropertyValue(name) || '').trim();
+            } catch (_) {
+              return '';
+            }
           }
 
           function applyPlacementFrameSizing(clone, host) {
@@ -1408,7 +1415,7 @@ struct WebCanvasView: NSViewRepresentable {
         private static let previewReadinessRetryInterval: TimeInterval = 1.0 / 60.0
         private static let previewReadinessScript = """
         (function() {
-          const page = document.querySelector('[data-og-role="page-preview"], [data-og-type="page"]');
+          const page = document.querySelector('[data-og-type="page"]');
           if (!document.body || !page) { return false; }
           const bodyStyle = window.getComputedStyle(document.body);
           const pageStyle = window.getComputedStyle(page);
@@ -1963,13 +1970,12 @@ struct WebCanvasView: NSViewRepresentable {
           const used = new Set();
           let changed = false;
           allEditableNodes().forEach((element) => {
-            if (isPlacementGeneratedElement(element)) { return; }
+            // Generated component DOM keeps master internal IDs so companion CSS styles every instance.
+            if (isPlacementGeneratedElement(element) || isRuntimeGeneratedNode(element)) { return; }
             const current = (element.getAttribute('data-og-internal-id') || '').trim();
             if (!current || used.has(current)) {
               element.setAttribute('data-og-internal-id', randomInternalID(used));
-              if (!isRuntimeGeneratedNode(element)) {
-                changed = true;
-              }
+              changed = true;
             } else {
               used.add(current);
             }

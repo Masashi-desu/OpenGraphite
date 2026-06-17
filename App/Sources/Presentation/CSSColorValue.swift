@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 /// 論理名（日本語）: CSS色値
-/// 概要: Inspector の ColorPicker と HTML inline style の CSS 色文字列を相互変換する値です。
+/// 概要: Inspector の ColorPicker と CSS source の色文字列を相互変換する値です。
 ///
 /// プロパティ:
 /// - `red`: sRGB の赤成分。0.0 から 1.0 の範囲で保持します。
@@ -34,7 +34,7 @@ struct CSSColorValue: Equatable {
     /// 論理名（日本語）: CSS文字列初期化関数
     /// 処理概要: HEX、rgb()、rgba() の CSS 色文字列を sRGB 成分へ変換します。
     ///
-    /// - Parameter cssString: HTML inline style から取得した CSS 色文字列。
+    /// - Parameter cssString: CSS source から取得した CSS 色文字列。
     init?(cssString: String) {
         let trimmed = cssString.trimmingCharacters(in: .whitespacesAndNewlines)
 

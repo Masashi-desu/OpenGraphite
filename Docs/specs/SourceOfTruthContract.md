@@ -21,12 +21,12 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則を分�
 | 領域 | 責務 | 例 |
 | --- | --- | --- |
 | タグ名 | 意味、コンポーネント名 | `HeroSection`, `MainTitle`, `PrimaryButton` |
-| `data-og-*` | エディタが扱う構造、種別、役割 | `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role` |
-| CSS 変数 | デザイン値 | `--og-gap`, `--og-padding`, `--og-radius`, `--og-background` |
-| `OpenGraphite.css` | アプリ内描画とブラウザ描画を一致させる規則 | `[data-og-layout="vertical"]` |
+| `data-og-*` | エディタが扱う構造、種別、参照 | `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-component` |
+| companion CSS | ページ / component 固有のデザイン値 | `[data-og-internal-id="hero"] { --og-gap: 32px; }` |
+| `OpenGraphite.css` | アプリ内描画とブラウザ描画を一致させる共有規則 | `[data-og-layout="vertical"]` |
 | `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置 | `htmlRoot`, `chapters`, `collections`, `canvas` |
 
-class 名はスタイルの正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と `--og-*` です。
+class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は HTML の `data-og-*` と同名 companion CSS の `--og-*` です。
 
 ## In-App Cache Synchronization Contract
 
@@ -62,31 +62,34 @@ OpenGraphite が編集可能な node は、表示用の `data-og-id` と、内�
   data-og-id="hero"
   data-og-type="frame"
   data-og-layout="vertical"
-  data-og-role="landing-hero"
-  style="
-    --og-gap:32px;
-    --og-padding:64px;
-    --og-radius:24px;
-  ">
+  data-og-internal-id="hero-node">
   <MainTitle data-og-id="title" data-og-type="text">
     OpenGraphite
   </MainTitle>
 </HeroSection>
 ```
 
-この契約では、タグ名は人間が読める意味を持ち、`data-og-*` はエディタが安全に解釈できるメタデータを持ち、CSS 変数はデザイン編集の入出力になります。
+```css
+[data-og-internal-id="hero-node"] {
+  --og-gap: 32px;
+  --og-padding: 64px;
+  --og-radius: 24px;
+}
+```
+
+この契約では、タグ名は人間が読める意味を持ち、HTML の `data-og-*` はエディタが安全に解釈できる構造・参照メタデータを持ち、同名 companion CSS の CSS 変数はデザイン編集の入出力になります。
 
 ## CSS Value Editing Contract
 
-OpenGraphite は、編集可能なデザイン値を `--og-*` CSS 変数として source HTML の inline style に保持します。Inspector は複合値を UI 上で分解して表示しますが、正本としては標準的な CSS 値を保持します。
+OpenGraphite は、編集可能なデザイン値を `--og-*` CSS 変数として HTML と同名の companion CSS に保持します。`public/index.html` の companion は `public/index.css`、`public/docs.html` の companion は `public/docs.css`、component canvas の companion は `_components/<name>.css` です。HTML には `OpenGraphite.css` と companion CSS への stylesheet 参照だけを残します。
 
-たとえば `--og-padding:14px 20px` は Inspector では top / right / bottom / left として編集できますが、保存時は `--og-padding` の CSS shorthand へ戻します。`--og-width:min(100%,560px)`、`--og-background:linear-gradient(...)`、`--og-border:1px solid rgba(...)`、`--og-shadow:0 18px 44px rgba(...)` も同様に、Inspector 側で parse / edit / serialize し、HTML には CSS として読める値を残します。
+たとえば `--og-padding:14px 20px` は Inspector では top / right / bottom / left として編集できますが、保存時は対象 node の `[data-og-internal-id="..."]` rule にある `--og-padding` の CSS shorthand へ戻します。`--og-width:min(100%,560px)`、`--og-background:linear-gradient(...)`、`--og-border:1px solid rgba(...)`、`--og-shadow:0 18px 44px rgba(...)` も同様に、Inspector 側で parse / edit / serialize し、companion CSS には標準 CSS として読める値を残します。
 
 locale 別の typography は翻訳リソースではなく page root node の CSS 変数として扱います。標準フォントは `--og-font-family-default`、locale 別標準は `--og-font-family-<locale>`（例: `--og-font-family-ja`, `--og-font-family-eng`, `--og-font-family-en-us`）に保存し、text node の `--og-font-family` は個別要素だけの明示 override として扱います。外部 Web font が必要な場合、読み込みは HTML `<head>` の stylesheet link に残します。
 
 `--og-padding-top`、`--og-border-color`、`--og-shadow-blur` のような個別編集用の分解変数は、現行契約では正本にしません。CSS として特殊すぎる独自表現は避け、一般的な shorthand、長さ、色、`min()` / `max()` / `clamp()`、`linear-gradient()` などを優先して扱います。
 
-Inspector が通常 UI として編集できない CSS 値は、無理に代替入力欄へ落とし込まず編集対象にしません。OpenGraphite はリポジトリの正本 HTML / CSS と同期してプレビューすることを目的にし、OpenGraphite 経由ではない編集や他ライブラリの CSS も許容します。OpenGraphite.css の編集契約に入らない値は、ブラウザ表示ではそのまま反映されますが、編集は別経路で行う前提です。
+Inspector が通常 UI として編集できない CSS 値は、無理に代替入力欄へ落とし込まず編集対象にしません。OpenGraphite はリポジトリの正本 HTML / CSS と同期してプレビューすることを目的にし、OpenGraphite 経由ではない編集や他ライブラリの CSS も許容します。`OpenGraphite.css` の編集契約に入らない値は、ブラウザ表示ではそのまま反映されますが、編集は別経路で行う前提です。HTML の inline `style` に editable design value を残すことは、companion CSS が存在する source では validation error です。
 
 ## `data-og-*` Attribute Contract
 
@@ -98,7 +101,7 @@ Inspector が通常 UI として編集できない CSS 値は、無理に代替�
 | `data-og-internal-id` | 必須 | 表示名や役割から独立した内部不変 ID。AI 向け参照IDの node 部分に使う。 | `a4e19c02f6b8` |
 | `data-og-type` | 必須 | OpenGraphite が扱うプリミティブ種別。タグ名の意味ではなく、編集・描画の基本カテゴリを表す。 | `page`, `frame`, `text`, `button`, `image`, `icon` |
 | `data-og-layout` | 任意 | 子要素の配置方法。主に `page` と `frame` に付与し、`OpenGraphite.css` がレイアウト規則へ変換する。 | `vertical`, `horizontal`, `absolute` |
-| `data-og-role` | 任意 | コンポーネントの役割や見た目のバリアント。ID ではなく、CSS ライブラリが解釈する意味上の役割として扱う。 | `page-preview`, `landing-hero`, `primary-button`, `secondary-button`, `card`, `eyebrow`, `muted`, `component-placement` |
+| `data-og-role` | 任意 | editor / runtime が構造参照として解釈する役割。純粋に見た目を選ぶ role は companion CSS selector で表す。 | `component-placement` |
 | `data-og-component` | 任意 | component master または `<og-instance>` が参照する component ID。 | `site-header`, `feature-card` |
 | `data-og-component-kind` | 任意 | Collection 内 component HTML で master subtree を示す印。通常は master root にだけ付ける。 | `master` |
 | `data-og-source-component-internal-id` | 任意 | component placement が参照する component canvas の内部 ID。 | `3bgx6phkz3jv5` |
@@ -159,16 +162,23 @@ Layers の行、Inspector の表示、Canvas の選択は `data-og-id` を使い
   data-og-icon-library="lucide"
   data-og-icon-name="circle"
   data-og-icon-source="inline"
-  style="--og-width:24px; --og-height:24px;">
+  data-og-internal-id="icon-node">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
     <circle cx="12" cy="12" r="10"></circle>
   </svg>
 </Icon>
 ```
 
+```css
+[data-og-internal-id="icon-node"] {
+  --og-width: 24px;
+  --og-height: 24px;
+}
+```
+
 `data-og-icon-source="inline"` は、配布 HTML が CDN や JavaScript runtime なしで icon を描画できる形です。`cdn` は `lucide-static` の SVG URL を CSS mask として保持し、`library` は実装側 icon loader など、静的に解決できる外部資源を使うための metadata として予約します。どの方式でも `data-og-icon-library` と `data-og-icon-name` は人間とAIが icon の出自を追跡するために残します。
 
-Icon のサイズは既存の `--og-width` / `--og-height`、色は `--og-foreground`、Lucide 系の線幅は `--og-stroke-width` を使います。CDN source の mask 子要素は非編集の `--og-icon-url` に SVG URL を保持し、親 icon node の `--og-foreground` を `currentColor` として描画します。
+Icon のサイズは companion CSS 上の `--og-width` / `--og-height`、色は `--og-foreground`、Lucide 系の線幅は `--og-stroke-width` を使います。CDN source の mask 子要素は構造だけを持ち、非編集の `--og-icon-url` は親 icon node の companion CSS rule に保持します。mask は親 icon node の `--og-foreground` を `currentColor` として描画します。
 
 ### `data-og-layout`
 
@@ -182,9 +192,9 @@ Icon のサイズは既存の `--og-width` / `--og-height`、色は `--og-foregr
 
 ### `data-og-role`
 
-`data-og-role` は、同じ `data-og-type` の中で役割や見た目のバリアントを示します。たとえば `data-og-type="button"` に `data-og-role="primary-button"` を付けることで、意味はボタンのまま主要ボタンとして描画できます。
+`data-og-role` は、同じ `data-og-type` の中で editor / runtime が構造として解釈する役割だけを示します。現行契約で HTML に残す role は `component-placement` です。
 
-`data-og-role` は一意 ID ではありません。複数ノードが同じ role を共有できます。現在の `OpenGraphite.css` は単一の role 文字列を前提にしています。
+`page-preview`、`landing-hero`、`primary-button`、`card`、`eyebrow`、`muted` のように見た目を選ぶだけの role は HTML に残しません。必要な見た目は companion CSS の `[data-og-internal-id="..."]`、component selector、または page-local selector へ移します。
 
 ## Reference And Slot Contract
 
@@ -208,7 +218,7 @@ component master は Collection 内の source file に通常の OpenGraphite nod
 </og-instance>
 ```
 
-`data-og-slot` は `text` に限りません。`frame` を含む、`data-og-slot` を持つ master node は instance 側の同名 `slot` content で置換できます。instance が固有に持つのは slot content であり、slot target node 自体の `data-og-layout`、`data-og-role`、`--og-*` などは master 由来です。slot target node の構造や style を instance ごとに分岐させたい場合は、root の instance style override、別 variant、別 master、または slot 内に置く子構造で表現します。
+`data-og-slot` は `text` に限りません。`frame` を含む、`data-og-slot` を持つ master node は instance 側の同名 `slot` content で置換できます。instance が固有に持つのは slot content であり、slot target node 自体の `data-og-layout`、CSS 変数などは master 由来です。slot target node の構造や見た目を instance ごとに分岐させたい場合は、page companion CSS 上の instance override selector、別 variant、別 master、または slot 内に置く子構造で表現します。
 
 instance 側の slot content は、軽い text の場合は `<span slot="title">...</span>` のように直接渡せます。複数 node や OpenGraphite node を渡す場合は、標準 `template` を使って source content を保持します。
 
@@ -230,7 +240,7 @@ instance 側の slot content は、軽い text の場合は `<span slot="title">
 
 component placement は、Collection 内の component canvas にある既存 component node を、同じ component canvas 上へ別状態で並べるための永続 HTML node です。Chapter / Pages には配置できず、公開 page の構造ではなく編集用の表示です。`.ogp` の page / component card ではなく、通常の OpenGraphite node と同じ DOM 階層に置きます。表示用に生成された clone は直接編集対象にしません。
 
-placement host は `data-og-role="component-placement"` を持つ `frame` として表します。`data-og-source-component-internal-id` は参照元 component canvas、`data-og-source-node-internal-id` は参照元 node を指します。現在の実装では、参照元 component は placement が置かれている component canvas と一致し、参照元 node は同じ component HTML 内に存在する必要があります。placement host は Layers 上で開閉できる参照表示として扱い、内部に表示される clone node は選択できますが実体を持ちません。clone node への Inspector / Canvas 編集は同じ `data-og-internal-id` を持つ参照元 component node に保存され、全 placement に同期されます。placement 側に明示した `--og-*` は、その placement だけの表示枠 override として扱います。
+placement host は `data-og-role="component-placement"` を持つ `frame` として表します。`data-og-source-component-internal-id` は参照元 component canvas、`data-og-source-node-internal-id` は参照元 node を指します。現在の実装では、参照元 component は placement が置かれている component canvas と一致し、参照元 node は同じ component HTML 内に存在する必要があります。placement host は Layers 上で開閉できる参照表示として扱い、内部に表示される clone node は選択できますが実体を持ちません。clone node への Inspector / Canvas 編集は同じ `data-og-internal-id` を持つ参照元 component node に保存され、全 placement に同期されます。placement 側に明示した `--og-*` は、component companion CSS 上の placement host rule として保存し、その placement だけの表示枠 override として扱います。
 
 `data-og-placement-mode` は、placement host が表示したい代表状態を source HTML 上で説明する metadata です。clone 内の node は `data-og-state-hidden` / `data-og-state-visible` に空白区切りの mode token を持てます。たとえば `collapsed` mode の placement では、`data-og-state-hidden="collapsed"` を持つ node は非表示になり、通常は `data-og-hidden="true"` の `data-og-state-visible="collapsed"` node は preview 上だけ表示されます。これは editor preview と `ogkiln screenshot` が同じ HTML / CSS 契約から別状態を再現するための永続 metadata であり、公開 page runtime の一時状態ではありません。
 
@@ -246,7 +256,7 @@ placement host は `data-og-role="component-placement"` を持つ `frame` とし
 </og-placement>
 ```
 
-placement に `--og-width` / `--og-height` などの明示 override がない場合、表示フレームは参照先 component node の標準サイズ、CSS 変数、内容の自然な bounds に従います。placement に同名 CSS 変数を明示した場合は、`<og-instance>` の `style` override と同じく、その placement だけが参照先 root の標準サイズを上書きします。component master の `--og-width` は標準サイズであり、instance または placement 側の `--og-width` は個別配置の override です。
+placement に `--og-width` / `--og-height` などの明示 override がない場合、表示フレームは参照先 component node の標準サイズ、CSS 変数、内容の自然な bounds に従います。placement に同名 CSS 変数を明示した場合は、その placement だけが参照先 root の標準サイズを上書きします。component master の `--og-width` は component CSS の標準サイズであり、instance override は page CSS、placement override は component CSS の placement host rule に保存します。
 
 placement 単位の mock injection は HTML ではなく、`.ogp` の canvas `previewContext.placementMocks` へ保存します。HTML は component / placement が持つ構造、参照、標準サイズ、個別デザイン override を正本として持ち、`.ogp` は preview のためだけに注入する runtime parameter を持ちます。`placementMocks` の key は placement host の `data-og-internal-id` を推奨し、互換的に `data-og-id` でも解決できます。
 
@@ -345,9 +355,9 @@ component runtime は `<og-instance>` を表示時に展開するため、次の
 
 ## Rendering Contract
 
-`OpenGraphite.css` は app 内の `WKWebView` と通常ブラウザの両方で同じ見た目を作るための共有ライブラリです。
+`OpenGraphite.css` は app 内の `WKWebView` と通常ブラウザの両方で同じ基本描画を作るための共有ライブラリです。ページ固有の spacing、色、typography、border、shadow などは同名 companion CSS が担います。
 
-描画規則は class ではなく `data-og-*` と CSS 変数を中心に記述します。
+共有描画規則は class ではなく `data-og-type` / `data-og-layout` と CSS 変数の fallback を中心に記述します。
 
 ```css
 [data-og-layout="vertical"] {
@@ -361,13 +371,13 @@ component runtime は `<og-instance>` を表示時に展開するため、次の
 
 ## Editor Behavior Contract
 
-OpenGraphite のエディタは、HTML の上に編集体験を重ねる薄いレイヤーです。
+OpenGraphite のエディタは、HTML / companion CSS の上に編集体験を重ねる薄いレイヤーです。
 
-- `WKWebView` で対象 HTML を直接表示する。
+- `WKWebView` で対象 HTML と companion CSS を直接表示する。
 - `[data-og-id]` を持つノードを Layers に反映する。
 - 選択状態をキャンバス、Layers、Inspector で同期する。
 - app 内編集を cache の現在値へ反映し、同じ値を表示する複数 surface へ永続化前に同期する。
-- Inspector の編集を DOM と source file へ反映する。
+- Inspector の design value 編集を companion CSS へ、構造・参照編集を HTML へ反映する。
 - HTML 内の自然なスクロールやブラウザ挙動をできるだけ尊重する。
 
 OpenGraphite 独自の機能を追加する場合も、最終的に HTML と CSS に説明可能な形で落ちることを優先します。

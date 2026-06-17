@@ -15,7 +15,7 @@ struct OpenGraphiteNodeTests {
             tagName: "herosection",
             type: "frame",
             layout: "vertical",
-            role: "landing-hero",
+            role: "component-placement",
             cssVariables: [:],
             isHidden: false,
             isLocked: false,
@@ -26,7 +26,7 @@ struct OpenGraphiteNodeTests {
         let detailLine = node.detailLine
 
         // 期待値：type、layout、role が区切り文字付きで並ぶ
-        #expect(detailLine == "frame · vertical · landing-hero")
+        #expect(detailLine == "frame · vertical · component-placement")
     }
 
     /// 論理名（日本語）: ノード状態表示テスト

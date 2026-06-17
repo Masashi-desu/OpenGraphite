@@ -10,7 +10,7 @@ import Foundation
 /// - `type`: `data-og-type`。
 /// - `layout`: `data-og-layout`。
 /// - `role`: `data-og-role`。
-/// - `cssVariables`: inline style 内の `--og-*` 変数。
+/// - `cssVariables`: companion CSS または legacy inline style 内の `--og-*` 変数。
 /// - `hidden`: `data-og-hidden` 状態。
 /// - `locked`: `data-og-locked` 状態。
 /// - `depth`: DOM 階層深度。
@@ -1182,6 +1182,29 @@ struct OpenGraphiteAgentCore {
             )
         }
 
+        let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: url)
+        if fileManager.fileExists(atPath: companionCSSURL.path), !overwrite {
+            return OpenGraphitePageWriteResult(
+                schemaVersion: Self.schemaVersion,
+                created: false,
+                path: url.path,
+                graph: nil,
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "companion-css-file-exists",
+                        message: "\(companionCSSURL.path) は既に存在します。上書きする場合は --overwrite を指定してください。",
+                        path: companionCSSURL.path,
+                        nodeID: nil
+                    )
+                ]
+            )
+        }
+
+        let companionStylesheetPath = Self.relativePath(
+            from: url.deletingLastPathComponent(),
+            to: companionCSSURL
+        )
         let rawHTML = """
         <!doctype html>
         <html lang="\(Self.escapeAttribute(lang))">
@@ -1190,6 +1213,7 @@ struct OpenGraphiteAgentCore {
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>\(Self.escapeText(title))</title>
             <link rel="stylesheet" href="\(Self.escapeAttribute(stylesheetPath))">
+            <link rel="stylesheet" href="\(Self.escapeAttribute(companionStylesheetPath))">
           </head>
           <body>
         \(bodyHTML.trimmingCharacters(in: .newlines))
@@ -1199,7 +1223,14 @@ struct OpenGraphiteAgentCore {
         let html = OpenGraphiteHTMLDocument(html: rawHTML).ensuringInternalIDs()
 
         let document = OpenGraphiteHTMLDocument(html: html)
-        let diagnostics = validate(nodes: document.nodes(), tags: document.parsedTags(), path: url.path)
+        let companionCSS = OpenGraphiteCompanionCSSDocument(css: "")
+        let diagnostics = validate(
+            nodes: document.nodes(companionCSS: companionCSS),
+            tags: document.parsedTags(),
+            path: url.path,
+            companionCSSURL: companionCSSURL,
+            companionCSSExists: true
+        )
         guard !diagnostics.contains(where: { $0.severity == .error }) else {
             return OpenGraphitePageWriteResult(
                 schemaVersion: Self.schemaVersion,
@@ -1212,6 +1243,7 @@ struct OpenGraphiteAgentCore {
 
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try html.write(to: url, atomically: true, encoding: .utf8)
+        try companionCSS.write(forHTMLURL: url)
         let graph = try pageGraph(at: url)
         return OpenGraphitePageWriteResult(
             schemaVersion: Self.schemaVersion,
@@ -1230,12 +1262,19 @@ struct OpenGraphiteAgentCore {
     func pageGraph(at url: URL) throws -> OpenGraphitePageGraph {
         let html = try String(contentsOf: url, encoding: .utf8)
         let document = OpenGraphiteHTMLDocument(html: html)
-        let nodes = document.nodes()
+        let companionCSS = try OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: url)
+        let nodes = document.nodes(companionCSS: companionCSS)
         return OpenGraphitePageGraph(
             schemaVersion: Self.schemaVersion,
             pageURL: url.path,
             nodes: nodes,
-            diagnostics: validate(nodes: nodes, tags: document.parsedTags(), path: url.path)
+            diagnostics: validate(
+                nodes: nodes,
+                tags: document.parsedTags(),
+                path: url.path,
+                companionCSSURL: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: url),
+                companionCSSExists: companionCSS != nil
+            )
         )
     }
 
@@ -1750,7 +1789,7 @@ struct OpenGraphiteAgentCore {
     }
 
     /// 論理名（日本語）: CSS変数ファイル更新関数
-    /// 処理概要: HTML ファイル内の指定 node に CSS 変数を設定し、成功時に同じファイルへ書き戻します。
+    /// 処理概要: 指定 node の CSS 変数を companion CSS へ保存し、HTML から runtime / design style を除去します。
     ///
     /// - Parameters:
     ///   - variable: 更新する CSS 変数。
@@ -1761,13 +1800,13 @@ struct OpenGraphiteAgentCore {
     func setCSSVariable(_ variable: String, value: String, nodeID: String, htmlURL: URL) throws -> OpenGraphiteEditResult {
         let normalizedNodeID = resolvedNodeID(nodeID)
         let html = try String(contentsOf: htmlURL, encoding: .utf8)
-        let mutation = OpenGraphiteHTMLDocument(html: html).settingCSSVariable(
+        return try persistCompanionCSSVariable(
             variable,
             value: value,
-            forNodeID: normalizedNodeID,
-            contract: contract
+            nodeID: normalizedNodeID,
+            html: html,
+            htmlURL: htmlURL
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
     }
 
     /// 論理名（日本語）: プロジェクトページCSS変数更新関数
@@ -1859,7 +1898,16 @@ struct OpenGraphiteAgentCore {
             forNodeID: normalizedNodeID,
             contract: contract
         )
-        return try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
+        let result = try persistMutation(mutation, htmlURL: htmlURL, nodeID: normalizedNodeID)
+        guard !result.diagnostics.contains(where: { $0.severity == .error }) else {
+            return result
+        }
+        let variables = OpenGraphiteIconMarkup.cssVariables(
+            library: result.node?.attributes["data-og-icon-library"] ?? library,
+            name: result.node?.attributes["data-og-icon-name"] ?? name,
+            source: result.node?.attributes["data-og-icon-source"] ?? source
+        )
+        return try persistCompanionCSSVariables(variables, nodeID: normalizedNodeID, htmlURL: htmlURL, baseResult: result)
     }
 
     /// 論理名（日本語）: プロジェクトページアイコン更新関数
@@ -1999,9 +2047,10 @@ struct OpenGraphiteAgentCore {
         } else {
             displayID = uniqueDisplayID(base: OpenGraphiteIconMarkup.defaultDisplayIDBase(name: name), existingIDs: existingIDs)
         }
+        let iconInternalID = uniqueInternalID(existingIDs: Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.internalID)))
         let icon = OpenGraphiteIconMarkup.elementHTML(
             id: displayID,
-            internalID: uniqueInternalID(existingIDs: Set(OpenGraphiteHTMLDocument(html: html).nodes().map(\.internalID))),
+            internalID: iconInternalID,
             library: library,
             name: name,
             source: source,
@@ -2027,12 +2076,19 @@ struct OpenGraphiteAgentCore {
             position: position,
             contract: contract
         )
-        return try persistMutation(
+        let result = try persistMutation(
             mutation,
             htmlURL: htmlURL,
             nodeID: resolvedAnchorNodeID,
             insertedNodeIDsBeforeMutation: beforeIDs
         )
+        guard !result.diagnostics.contains(where: { $0.severity == .error }) else {
+            return result
+        }
+        var variables = OpenGraphiteIconMarkup.cssVariables(library: icon.library, name: icon.name, source: icon.source)
+        variables["--og-width"] = width ?? "24px"
+        variables["--og-height"] = height ?? "24px"
+        return try persistCompanionCSSVariables(variables, nodeID: iconInternalID, htmlURL: htmlURL, baseResult: result)
     }
 
     /// 論理名（日本語）: プロジェクトページアイコン挿入関数
@@ -3639,10 +3695,13 @@ struct OpenGraphiteAgentCore {
         }
 
         let candidateDocument = OpenGraphiteHTMLDocument(html: mutation.html)
+        let companionCSS = try OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: htmlURL)
         let candidateDiagnostics = validate(
-            nodes: candidateDocument.nodes(),
+            nodes: candidateDocument.nodes(companionCSS: companionCSS),
             tags: candidateDocument.parsedTags(),
-            path: htmlURL.path
+            path: htmlURL.path,
+            companionCSSURL: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            companionCSSExists: companionCSS != nil
         )
         let allDiagnostics = mutation.diagnostics.map { withPath($0, path: htmlURL.path) } + candidateDiagnostics
         guard !candidateDiagnostics.contains(where: { $0.severity == .error }) else {
@@ -3667,6 +3726,212 @@ struct OpenGraphiteAgentCore {
         )
     }
 
+    /// 論理名（日本語）: Companion CSS変数保存関数
+    /// 処理概要: CSS 変数編集を HTML から分離し、同名 companion CSS と sanitization 済み HTML に保存します。
+    private func persistCompanionCSSVariable(
+        _ variable: String,
+        value: String,
+        nodeID: String,
+        html: String,
+        htmlURL: URL
+    ) throws -> OpenGraphiteEditResult {
+        guard variable.hasPrefix("--og-") else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "invalid-css-variable",
+                        message: "\(variable) は --og-* CSS 変数ではありません。",
+                        path: htmlURL.path,
+                        nodeID: nodeID
+                    )
+                ],
+                insertedNodes: nil
+            )
+        }
+        guard contract.isKnownCSSVariable(variable) else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "unknown-css-variable",
+                        message: "\(variable) は OpenGraphite.contract.json に定義されていません。",
+                        path: htmlURL.path,
+                        nodeID: nodeID
+                    )
+                ],
+                insertedNodes: nil
+            )
+        }
+        guard !contract.runtimeCSSVariableSet.contains(variable) else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "runtime-css-variable",
+                        message: "\(variable) は正本 CSS へ保存できない実行時 CSS 変数です。",
+                        path: htmlURL.path,
+                        nodeID: nodeID
+                    )
+                ],
+                insertedNodes: nil
+            )
+        }
+
+        let runtimeSanitizedHTML = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let legacyDocument = OpenGraphiteHTMLDocument(html: runtimeSanitizedHTML)
+        let sanitizedHTML = legacyDocument.removingOpenGraphiteStyleVariables()
+        let document = OpenGraphiteHTMLDocument(html: sanitizedHTML)
+        let matches = document.nodes().filter { $0.internalID == nodeID }
+        let nodeDiagnostics = uniqueNodeDiagnostics(matches: matches, id: nodeID, path: htmlURL.path)
+        guard nodeDiagnostics.isEmpty else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: nodeDiagnostics,
+                insertedNodes: nil
+            )
+        }
+
+        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: htmlURL)
+        migrateLegacyOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS)
+        companionCSS.setCSSVariable(variable, value: value, forNodeInternalID: nodeID)
+        let candidateNodes = document.nodes(companionCSS: companionCSS)
+        let candidateDiagnostics = validate(
+            nodes: candidateNodes,
+            tags: document.parsedTags(),
+            path: htmlURL.path,
+            companionCSSURL: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            companionCSSExists: true
+        )
+        guard !candidateDiagnostics.contains(where: { $0.severity == .error }) else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: nil,
+                diagnostics: candidateDiagnostics,
+                insertedNodes: nil
+            )
+        }
+
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL)
+        let previousCSS = (try? String(contentsOf: cssURL, encoding: .utf8)) ?? ""
+        let htmlChanged = sanitizedHTML != html
+        let cssChanged = companionCSS.css != previousCSS
+        if htmlChanged {
+            try sanitizedHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
+        }
+        if cssChanged {
+            try companionCSS.write(forHTMLURL: htmlURL)
+        }
+
+        let graph = try pageGraph(at: htmlURL)
+        return OpenGraphiteEditResult(
+            schemaVersion: Self.schemaVersion,
+            updated: htmlChanged || cssChanged,
+            path: htmlURL.path,
+            node: graph.nodes.first { $0.internalID == nodeID },
+            diagnostics: graph.diagnostics,
+            insertedNodes: nil
+        )
+    }
+
+    /// 論理名（日本語）: Companion CSS複数変数保存関数
+    /// 処理概要: HTML mutation 後に派生する icon などの CSS 変数を同名 companion CSS へ保存します。
+    private func persistCompanionCSSVariables(
+        _ variables: [String: String],
+        nodeID: String,
+        htmlURL: URL,
+        baseResult: OpenGraphiteEditResult
+    ) throws -> OpenGraphiteEditResult {
+        guard !variables.isEmpty else { return baseResult }
+        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: htmlURL)
+        let html = try String(contentsOf: htmlURL, encoding: .utf8)
+        let runtimeSanitizedHTML = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let legacyDocument = OpenGraphiteHTMLDocument(html: runtimeSanitizedHTML)
+        let sanitizedHTML = legacyDocument.removingOpenGraphiteStyleVariables()
+        migrateLegacyOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS)
+        for key in variables.keys.sorted() {
+            companionCSS.setCSSVariable(key, value: variables[key] ?? "", forNodeInternalID: nodeID)
+        }
+
+        let document = OpenGraphiteHTMLDocument(html: sanitizedHTML)
+        let candidateNodes = document.nodes(companionCSS: companionCSS)
+        let candidateDiagnostics = validate(
+            nodes: candidateNodes,
+            tags: document.parsedTags(),
+            path: htmlURL.path,
+            companionCSSURL: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            companionCSSExists: true
+        )
+        guard !candidateDiagnostics.contains(where: { $0.severity == .error }) else {
+            return OpenGraphiteEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: htmlURL.path,
+                node: candidateNodes.first { $0.internalID == nodeID },
+                diagnostics: candidateDiagnostics,
+                insertedNodes: baseResult.insertedNodes
+            )
+        }
+
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL)
+        let previousCSS = (try? String(contentsOf: cssURL, encoding: .utf8)) ?? ""
+        let htmlChanged = sanitizedHTML != html
+        let cssChanged = companionCSS.css != previousCSS
+        if htmlChanged {
+            try sanitizedHTML.write(to: htmlURL, atomically: true, encoding: .utf8)
+        }
+        if cssChanged {
+            try companionCSS.write(forHTMLURL: htmlURL)
+        }
+
+        let graph = try pageGraph(at: htmlURL)
+        return OpenGraphiteEditResult(
+            schemaVersion: Self.schemaVersion,
+            updated: baseResult.updated || htmlChanged || cssChanged,
+            path: htmlURL.path,
+            node: graph.nodes.first { $0.internalID == nodeID } ?? baseResult.node,
+            diagnostics: graph.diagnostics,
+            insertedNodes: baseResult.insertedNodes
+        )
+    }
+
+    /// 論理名（日本語）: Legacy inline design value移行関数
+    /// 処理概要: HTML inline style に残る `--og-*` を既存 companion CSS の値を上書きしない形で移します。
+    ///
+    /// - Parameters:
+    ///   - document: legacy inline style を含み得る HTML 文書。
+    ///   - companionCSS: 追記先の companion CSS 文書。
+    private func migrateLegacyOpenGraphiteCSSVariables(
+        from document: OpenGraphiteHTMLDocument,
+        into companionCSS: inout OpenGraphiteCompanionCSSDocument
+    ) {
+        for node in document.nodes() {
+            guard !node.internalID.isEmpty else { continue }
+            let existingVariables = companionCSS.cssVariables(forNodeInternalID: node.internalID)
+            for key in node.cssVariables.keys.sorted()
+                where !contract.runtimeCSSVariableSet.contains(key) && existingVariables[key] == nil {
+                companionCSS.setCSSVariable(key, value: node.cssVariables[key] ?? "", forNodeInternalID: node.internalID)
+            }
+        }
+    }
+
     private func persistMutation(
         _ mutation: OpenGraphiteHTMLMutationResult,
         htmlURL: URL,
@@ -3686,10 +3951,13 @@ struct OpenGraphiteAgentCore {
         }
 
         let candidateDocument = OpenGraphiteHTMLDocument(html: mutation.html)
+        let companionCSS = try OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: htmlURL)
         let candidateDiagnostics = validate(
-            nodes: candidateDocument.nodes(),
+            nodes: candidateDocument.nodes(companionCSS: companionCSS),
             tags: candidateDocument.parsedTags(),
-            path: htmlURL.path
+            path: htmlURL.path,
+            companionCSSURL: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL),
+            companionCSSExists: companionCSS != nil
         )
         let allDiagnostics = mutation.diagnostics.map { withPath($0, path: htmlURL.path) } + candidateDiagnostics
         guard !candidateDiagnostics.contains(where: { $0.severity == .error }) else {
@@ -3731,7 +3999,9 @@ struct OpenGraphiteAgentCore {
     private func validate(
         nodes: [OpenGraphiteAgentNode],
         tags: [OpenGraphiteHTMLTag],
-        path: String
+        path: String,
+        companionCSSURL: URL? = nil,
+        companionCSSExists: Bool = false
     ) -> [OpenGraphiteDiagnostic] {
         var diagnostics: [OpenGraphiteDiagnostic] = []
         let groupedIDs = Dictionary(grouping: nodes, by: \.id)
@@ -3780,6 +4050,19 @@ struct OpenGraphiteAgentCore {
                         severity: .error,
                         code: "runtime-attribute-persisted",
                         message: "\(attribute.name) は正本 HTML に残せない実行時属性です。",
+                        path: path,
+                        nodeID: tag.attributeValue(named: "data-og-id")
+                    )
+                )
+            }
+            if companionCSSExists,
+               let style = tag.attributeValue(named: "style"),
+               !OpenGraphiteCSSStyle.parse(style).ogVariables().isEmpty {
+                diagnostics.append(
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "html-design-style-persisted",
+                        message: "design value は HTML inline style ではなく companion CSS に保存します。",
                         path: path,
                         nodeID: tag.attributeValue(named: "data-og-id")
                     )
