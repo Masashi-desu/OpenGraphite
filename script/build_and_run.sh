@@ -9,9 +9,13 @@ DERIVED_DATA="$ROOT_DIR/build/DerivedData"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/$APP_NAME.app"
 SAMPLE_PROJECT_PATH="$ROOT_DIR/SampleProject/OpenGraphiteSample.ogp"
 
+OG_APP_NAME="$APP_NAME"
+OG_BUNDLE_ID="$BUNDLE_ID"
+source "$ROOT_DIR/Scripts/open_graphite_process.sh"
+
 cd "$ROOT_DIR"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+stop_running_open_graphite
 
 xcodegen generate
 xcodebuild \
@@ -26,7 +30,7 @@ xcodebuild \
 "$ROOT_DIR/Scripts/sign_local_app.sh" "$APP_BUNDLE"
 
 open_app() {
-  /usr/bin/open -n \
+  /usr/bin/open \
     --env "OPENGRAPHITE_SAMPLE_PROJECT_PATH=$SAMPLE_PROJECT_PATH" \
     "$APP_BUNDLE"
 }
@@ -49,8 +53,7 @@ case "$MODE" in
     ;;
   --verify|verify)
     open_app
-    sleep 1
-    pgrep -x "$APP_NAME" >/dev/null
+    wait_for_single_open_graphite
     ;;
   *)
     echo "usage: $0 [run|--debug|--logs|--telemetry|--verify]" >&2

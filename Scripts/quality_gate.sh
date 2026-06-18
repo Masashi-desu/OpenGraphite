@@ -2,7 +2,17 @@
 
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OG_APP_NAME="OpenGraphite"
+OG_BUNDLE_ID="dev.opengraphite.OpenGraphite"
+source "$ROOT_DIR/Scripts/open_graphite_process.sh"
+
+cd "$ROOT_DIR"
+
+if [[ "$(open_graphite_process_count)" != "0" ]]; then
+  echo "==> stop running OpenGraphite before tests"
+  stop_running_open_graphite
+fi
 
 echo "==> xcodegen generate"
 xcodegen generate
