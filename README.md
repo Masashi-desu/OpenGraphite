@@ -205,6 +205,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
 - Inspector editing for common CSS design properties with companion CSS write-back
+- Inspector editing for CSS animation and scroll-driven animation timeline declarations
 
 ## Standalone HTML
 

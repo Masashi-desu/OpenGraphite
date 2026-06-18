@@ -245,6 +245,52 @@ struct OpenGraphiteComponentSource: Equatable, Identifiable {
     }
 }
 
+/// 論理名（日本語）: 親アニメーションCSS宣言
+/// 概要: 選択中ノードに効く親オブジェクトの animation / timeline declaration を Inspector に表示するための行データです。
+///
+/// プロパティ:
+/// - `key`: CSS property 名。
+/// - `value`: CSS property の値。
+struct OpenGraphiteAppliedAnimationDeclaration: Equatable, Identifiable {
+    var key: String
+    var value: String
+
+    var id: String {
+        key
+    }
+}
+
+/// 論理名（日本語）: 適用親アニメーション文脈
+/// 概要: 選択中ノードの祖先から見つかった、適用元として表示する animation / timeline 情報をまとめます。
+///
+/// プロパティ:
+/// - `nodeID`: 親オブジェクトの選択 ID。
+/// - `nodeInternalID`: 親オブジェクトの `data-og-internal-id`。
+/// - `displayID`: Inspector に表示する親オブジェクト ID。
+/// - `tagName`: 親オブジェクトの tag name。
+/// - `declarations`: 表示する CSS declaration 一覧。
+/// - `matchedTimelineNames`: 選択ノードの `animation-timeline` と一致した named timeline。
+struct OpenGraphiteAppliedAnimationContext: Equatable, Identifiable {
+    var nodeID: String
+    var nodeInternalID: String
+    var displayID: String
+    var tagName: String
+    var declarations: [OpenGraphiteAppliedAnimationDeclaration]
+    var matchedTimelineNames: [String] = []
+
+    var id: String {
+        nodeID
+    }
+
+    var sourceLabel: String {
+        let normalizedDisplayID = displayID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedDisplayID.isEmpty {
+            return tagName
+        }
+        return normalizedDisplayID
+    }
+}
+
 /// 論理名（日本語）: CSS宣言変更要求
 /// 概要: Inspector で編集された CSS declaration の値を WebView 側 DOM へ反映するための mutation です。
 ///

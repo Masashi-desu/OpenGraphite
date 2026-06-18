@@ -56,6 +56,95 @@ struct EditorStoreTests {
         #expect(store.nodes[0].isLocked == true)
     }
 
+    /// 論理名（日本語）: 親Timeline文脈解決テスト
+    /// 概要: 選択ノードの祖先にある view timeline declaration を Inspector 表示用 context として取得できることを確認します。
+    @Test("親timeline contextをInspector用に解決できる")
+    func testSelectedAppliedParentAnimationContextFindsNearestTimelineParent() throws {
+        // コンディション：timeline provider の子に component instance がある DOM payload を用意する（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            [
+                "id": "principle-list",
+                "internalID": "d3386fbce50b",
+                "tagName": "principlelist",
+                "type": "frame",
+                "cssVariables": [
+                    "view-timeline-name": "--home-principles",
+                    "view-timeline-axis": "block"
+                ],
+                "depth": 0
+            ],
+            [
+                "id": "principles-heading",
+                "internalID": "9617db163b8c",
+                "tagName": "og-instance",
+                "type": "frame",
+                "cssVariables": [String: String](),
+                "depth": 1
+            ]
+        ])
+
+        // 検証内容：子ノードを選択し、適用元の親 animation context を取得する（When）
+        store.selectNode(id: "principles-heading")
+        let context = try #require(store.selectedAppliedParentAnimationContext)
+
+        // 期待値：子自身ではなく親の timeline declaration が表示用 context になる（Then）
+        #expect(context.nodeID == "principle-list")
+        #expect(context.nodeInternalID == "d3386fbce50b")
+        #expect(context.declarations.map(\.key) == ["view-timeline-name", "view-timeline-axis"])
+        #expect(context.declarations.map(\.value) == ["--home-principles", "block"])
+    }
+
+    /// 論理名（日本語）: NamedTimeline一致祖先優先テスト
+    /// 概要: 選択ノードの `animation-timeline` が named timeline を参照している場合、一致する祖先 provider を優先することを確認します。
+    @Test("named animation-timelineは一致する祖先timelineを優先する")
+    func testSelectedAppliedParentAnimationContextPrioritizesMatchedTimelineProvider() throws {
+        // コンディション：近い親には通常 animation、上位祖先には参照先 timeline provider がある（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            [
+                "id": "principles",
+                "internalID": "principles-node",
+                "tagName": "principlesection",
+                "type": "frame",
+                "cssVariables": [
+                    "view-timeline-name": "--home-principles",
+                    "view-timeline-axis": "block"
+                ],
+                "depth": 0
+            ],
+            [
+                "id": "principle-item",
+                "internalID": "principle-item-node",
+                "tagName": "principleitem",
+                "type": "frame",
+                "cssVariables": [
+                    "animation-name": "fade-up"
+                ],
+                "depth": 1
+            ],
+            [
+                "id": "principle-title",
+                "internalID": "principle-title-node",
+                "tagName": "principletitle",
+                "type": "text",
+                "cssVariables": [
+                    "animation-timeline": "--home-principles"
+                ],
+                "depth": 2
+            ]
+        ])
+
+        // 検証内容：named timeline を参照する子ノードを選択する（When）
+        store.selectNode(id: "principle-title")
+        let context = try #require(store.selectedAppliedParentAnimationContext)
+
+        // 期待値：近い通常 animation 親ではなく、参照名に一致する timeline provider が選ばれる（Then）
+        #expect(context.nodeID == "principles")
+        #expect(context.matchedTimelineNames == ["--home-principles"])
+        #expect(context.declarations.map(\.key) == ["view-timeline-name", "view-timeline-axis"])
+    }
+
     /// 論理名（日本語）: Placement選択維持テスト
     /// 概要: component placement host を選択した場合、参照元 component node へ解決せず placement 自体を選択状態にすることを確認します。
     @Test("placement選択はplacement node自体を維持する")
@@ -1252,7 +1341,17 @@ struct EditorStoreTests {
             ("flex", "1 1 0"),
             ("position", "sticky"),
             ("left", "clamp(12px,4vw,48px)"),
-            ("z-index", "10")
+            ("z-index", "10"),
+            ("animation-name", "reveal-card"),
+            ("animation-duration", "1ms"),
+            ("animation-timeline", "view(inline 20% 80%)"),
+            ("animation-range-start", "entry 0%"),
+            ("animation-range-end", "cover 70%"),
+            ("timeline-scope", "--hero-scroll"),
+            ("scroll-timeline-name", "--hero-scroll"),
+            ("scroll-timeline-axis", "inline"),
+            ("view-timeline-name", "--hero-view"),
+            ("view-timeline-inset", "20% 80%")
         ]
 
         // 検証内容：各 CSS 値を Store に適用する

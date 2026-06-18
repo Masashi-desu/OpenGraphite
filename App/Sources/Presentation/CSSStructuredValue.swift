@@ -1115,6 +1115,249 @@ struct CSSFlexValue: Equatable {
     }
 }
 
+/// 論理名（日本語）: CSS animation-timeline値種別
+/// 概要: Scroll-driven Animations の `animation-timeline` を Inspector で編集するための表示モードです。
+///
+/// 定義内容:
+/// - `empty`: 未指定。
+/// - `auto`: document timeline。
+/// - `none`: timeline なし。
+/// - `scroll`: anonymous scroll progress timeline。
+/// - `view`: anonymous view progress timeline。
+/// - `named`: named scroll / view timeline。
+/// - `custom`: 複数 timeline や未分解値などの直接編集。
+enum CSSAnimationTimelineKind: String, CaseIterable {
+    case empty
+    case auto
+    case none
+    case scroll
+    case view
+    case named
+    case custom
+}
+
+/// 論理名（日本語）: CSS animation-timeline値
+/// 概要: `animation-timeline` の代表的な scroll-driven animation 値を編集状態として扱います。
+///
+/// プロパティ:
+/// - `kind`: timeline 値の種別。
+/// - `scroller`: `scroll()` の scroller 引数。
+/// - `scrollAxis`: `scroll()` の axis 引数。
+/// - `viewAxis`: `view()` の axis 引数。
+/// - `viewInsetStart`: `view()` の開始 inset。
+/// - `viewInsetEnd`: `view()` の終了 inset。
+/// - `name`: named timeline の dashed ident。
+/// - `customValue`: 通常 UI で分解しない値。
+struct CSSAnimationTimelineValue: Equatable {
+    var kind: CSSAnimationTimelineKind
+    var scroller: String
+    var scrollAxis: String
+    var viewAxis: String
+    var viewInsetStart: String
+    var viewInsetEnd: String
+    var name: String
+    var customValue: String
+
+    /// 論理名（日本語）: CSS animation-timeline値初期化関数
+    /// 処理概要: 各編集値を trim し、不足時は CSS の既定値に近い Inspector 初期値を入れます。
+    ///
+    /// - Parameters:
+    ///   - kind: timeline 値の種別。
+    ///   - scroller: `scroll()` の scroller 引数。
+    ///   - scrollAxis: `scroll()` の axis 引数。
+    ///   - viewAxis: `view()` の axis 引数。
+    ///   - viewInsetStart: `view()` の開始 inset。
+    ///   - viewInsetEnd: `view()` の終了 inset。
+    ///   - name: named timeline の dashed ident。
+    ///   - customValue: 通常 UI で分解しない値。
+    init(
+        kind: CSSAnimationTimelineKind = .empty,
+        scroller: String = "nearest",
+        scrollAxis: String = "block",
+        viewAxis: String = "block",
+        viewInsetStart: String = "",
+        viewInsetEnd: String = "",
+        name: String = "",
+        customValue: String = ""
+    ) {
+        self.kind = kind
+        self.scroller = Self.scrollers.contains(scroller) ? scroller : "nearest"
+        self.scrollAxis = Self.axes.contains(scrollAxis) ? scrollAxis : "block"
+        self.viewAxis = Self.axes.contains(viewAxis) ? viewAxis : "block"
+        self.viewInsetStart = viewInsetStart.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.viewInsetEnd = viewInsetEnd.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.customValue = customValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 論理名（日本語）: CSS animation-timeline文字列初期化関数
+    /// 処理概要: `auto`、`none`、named timeline、`scroll()`、`view()` を構造化し、複数値などは custom として保持します。
+    ///
+    /// - Parameter cssString: CSS `animation-timeline` 値。
+    init(cssString: String) {
+        let trimmed = cssString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            self.init()
+            return
+        }
+
+        let lowercasedValue = trimmed.lowercased()
+        if lowercasedValue == "auto" {
+            self.init(kind: .auto)
+            return
+        }
+        if lowercasedValue == "none" {
+            self.init(kind: .none)
+            return
+        }
+        if CSSValueTokenizer.splitCommas(trimmed).count > 1 {
+            self.init(kind: .custom, customValue: trimmed)
+            return
+        }
+        if trimmed.hasPrefix("--"), CSSEditingSupport.isSimpleToken(trimmed) {
+            self.init(kind: .named, name: trimmed)
+            return
+        }
+        if let body = Self.functionBody(named: "scroll", in: trimmed),
+           let scrollValue = Self.scrollValue(from: body) {
+            self = scrollValue
+            return
+        }
+        if let body = Self.functionBody(named: "view", in: trimmed),
+           let viewValue = Self.viewValue(from: body) {
+            self = viewValue
+            return
+        }
+
+        self.init(kind: .custom, customValue: trimmed)
+    }
+
+    var cssString: String {
+        switch kind {
+        case .empty:
+            return ""
+        case .auto:
+            return "auto"
+        case .none:
+            return "none"
+        case .scroll:
+            let parts = [
+                scroller == "nearest" ? "" : scroller,
+                scrollAxis == "block" ? "" : scrollAxis
+            ].filter { !$0.isEmpty }
+            return parts.isEmpty ? "scroll()" : "scroll(\(parts.joined(separator: " ")))"
+        case .view:
+            let parts = [
+                viewAxis == "block" ? "" : viewAxis,
+                viewInsetStart,
+                viewInsetEnd
+            ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            return parts.isEmpty ? "view()" : "view(\(parts.joined(separator: " ")))"
+        case .named:
+            return name.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .custom:
+            return customValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    static let scrollers = ["nearest", "root", "self"]
+    static let axes = ["block", "inline", "x", "y"]
+
+    /// 論理名（日本語）: animation-timelineモード補正関数
+    /// 処理概要: UI の Picker で種別が変わったときに、種別ごとの既定編集値を補います。
+    mutating func prepareForSelectedKind() {
+        switch kind {
+        case .scroll:
+            if !Self.scrollers.contains(scroller) {
+                scroller = "nearest"
+            }
+            if !Self.axes.contains(scrollAxis) {
+                scrollAxis = "block"
+            }
+        case .view:
+            if !Self.axes.contains(viewAxis) {
+                viewAxis = "block"
+            }
+        case .named:
+            if name.isEmpty, customValue.hasPrefix("--"), CSSEditingSupport.isSimpleToken(customValue) {
+                name = customValue
+            }
+        case .custom:
+            if customValue.isEmpty {
+                customValue = cssString
+            }
+        case .empty, .auto, .none:
+            break
+        }
+    }
+
+    /// 論理名（日本語）: CSS関数本文抽出関数
+    /// 処理概要: 指定名の CSS 関数値から括弧内本文を取り出します。
+    ///
+    /// - Parameters:
+    ///   - name: 関数名。
+    ///   - value: CSS 値。
+    /// - Returns: 関数本文。関数名が違う場合は nil。
+    private static func functionBody(named name: String, in value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = "\(name)("
+        guard trimmed.lowercased().hasPrefix(prefix), trimmed.hasSuffix(")") else {
+            return nil
+        }
+
+        let start = trimmed.index(trimmed.startIndex, offsetBy: prefix.count)
+        let end = trimmed.index(before: trimmed.endIndex)
+        return String(trimmed[start..<end])
+    }
+
+    /// 論理名（日本語）: scroll関数値変換関数
+    /// 処理概要: `scroll()` の任意順 scroller / axis 引数を Inspector 状態へ変換します。
+    ///
+    /// - Parameter body: `scroll()` の括弧内本文。
+    /// - Returns: 構造化した timeline 値。未知 token がある場合は nil。
+    private static func scrollValue(from body: String) -> CSSAnimationTimelineValue? {
+        var scroller = "nearest"
+        var axis = "block"
+        for token in CSSValueTokenizer.splitWhitespace(body) {
+            let normalizedToken = token.lowercased()
+            if scrollers.contains(normalizedToken) {
+                scroller = normalizedToken
+            } else if axes.contains(normalizedToken) {
+                axis = normalizedToken
+            } else {
+                return nil
+            }
+        }
+        return CSSAnimationTimelineValue(kind: .scroll, scroller: scroller, scrollAxis: axis)
+    }
+
+    /// 論理名（日本語）: view関数値変換関数
+    /// 処理概要: `view()` の axis / inset 引数を Inspector 状態へ変換します。
+    ///
+    /// - Parameter body: `view()` の括弧内本文。
+    /// - Returns: 構造化した timeline 値。inset が 3 token 以上ある場合は nil。
+    private static func viewValue(from body: String) -> CSSAnimationTimelineValue? {
+        var axis = "block"
+        var insets: [String] = []
+        for token in CSSValueTokenizer.splitWhitespace(body) {
+            let normalizedToken = token.lowercased()
+            if axes.contains(normalizedToken) {
+                axis = normalizedToken
+            } else {
+                insets.append(token)
+            }
+        }
+        guard insets.count <= 2 else { return nil }
+        return CSSAnimationTimelineValue(
+            kind: .view,
+            viewAxis: axis,
+            viewInsetStart: insets[safe: 0] ?? "",
+            viewInsetEnd: insets[safe: 1] ?? ""
+        )
+    }
+}
+
 private enum CSSEditingSupport {
     /// 論理名（日本語）: 単純CSSトークン判定関数
     /// 処理概要: Inspector の通常 UI で 1 欄として安全に扱える CSS token か判定します。

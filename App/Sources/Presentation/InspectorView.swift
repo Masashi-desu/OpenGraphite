@@ -124,28 +124,15 @@ struct InspectorView: View {
                             }
                             .id("\(node.id)-position")
 
-                            VStack(alignment: .leading, spacing: 8) {
-                                CSSDimensionVariableField(key: "left", value: node.cssVariables["left"] ?? "") { value in
-                                    store.updateCSSVariable(key: "left", value: value)
-                                }
-                                .id("\(node.id)-left")
-
-                                CSSDimensionVariableField(key: "top", value: node.cssVariables["top"] ?? "") { value in
-                                    store.updateCSSVariable(key: "top", value: value)
-                                }
-                                .id("\(node.id)-top")
-
-                                CSSDimensionVariableField(key: "right", value: node.cssVariables["right"] ?? "") { value in
-                                    store.updateCSSVariable(key: "right", value: value)
-                                }
-                                .id("\(node.id)-right")
-
-                                CSSDimensionVariableField(key: "bottom", value: node.cssVariables["bottom"] ?? "") { value in
-                                    store.updateCSSVariable(key: "bottom", value: value)
-                                }
-                                .id("\(node.id)-bottom")
+                            CSSInsetVariableGroup(
+                                idPrefix: node.id,
+                                top: node.cssVariables["top"] ?? "",
+                                right: node.cssVariables["right"] ?? "",
+                                bottom: node.cssVariables["bottom"] ?? "",
+                                left: node.cssVariables["left"] ?? ""
+                            ) { key, value in
+                                store.updateCSSVariable(key: key, value: value)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
 
                             CSSVariableField(key: "z-index", value: node.cssVariables["z-index"] ?? "") { value in
                                 store.updateCSSVariable(key: "z-index", value: value)
@@ -360,6 +347,17 @@ struct InspectorView: View {
                                 }
                                 .id("\(node.id)-scale-y")
                             }
+                        }
+
+                        AnimationInspectorSection(node: node) { key, value in
+                            store.updateCSSVariable(key: key, value: value)
+                        }
+
+                        ScrollTimelineInspectorSection(
+                            node: node,
+                            appliedParentContext: store.selectedAppliedParentAnimationContext
+                        ) { key, value in
+                            store.updateCSSVariable(key: key, value: value)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -774,6 +772,274 @@ private struct TextContentSection: View {
             return "Active Resolved (\(locale))"
         }
         return "Active Resolved"
+    }
+}
+
+/// 論理名（日本語）: Animationインスペクターセクション
+/// 概要: 選択ノードの CSS animation longhand / shorthand declaration を編集します。
+///
+/// プロパティ:
+/// - `node`: 表示対象の選択ノード。
+/// - `onUpdate`: CSS declaration 更新時に呼び出す処理。
+private struct AnimationInspectorSection: View {
+    var node: OpenGraphiteNode
+    var onUpdate: (String, String) -> Void
+
+    var body: some View {
+        InspectorSection(title: "Animation") {
+            CSSVariableField(key: "animation-name", value: value("animation-name")) { value in
+                onUpdate("animation-name", value)
+            }
+            .id("\(node.id)-animation-name")
+
+            InspectorFieldGrid {
+                CSSVariableField(key: "animation-duration", value: value("animation-duration")) { value in
+                    onUpdate("animation-duration", value)
+                }
+                .id("\(node.id)-animation-duration")
+
+                CSSVariableField(key: "animation-delay", value: value("animation-delay")) { value in
+                    onUpdate("animation-delay", value)
+                }
+                .id("\(node.id)-animation-delay")
+            }
+
+            CSSVariableField(key: "animation-timing-function", value: value("animation-timing-function")) { value in
+                onUpdate("animation-timing-function", value)
+            }
+            .id("\(node.id)-animation-timing-function")
+
+            InspectorFieldGrid {
+                CSSVariableField(key: "animation-iteration-count", value: value("animation-iteration-count")) { value in
+                    onUpdate("animation-iteration-count", value)
+                }
+                .id("\(node.id)-animation-iteration-count")
+
+                CSSEnumVariableField(
+                    key: "animation-fill-mode",
+                    value: value("animation-fill-mode"),
+                    options: ["none", "forwards", "backwards", "both"]
+                ) { value in
+                    onUpdate("animation-fill-mode", value)
+                }
+                .id("\(node.id)-animation-fill-mode")
+            }
+
+            InspectorFieldGrid {
+                CSSEnumVariableField(
+                    key: "animation-direction",
+                    value: value("animation-direction"),
+                    options: ["normal", "reverse", "alternate", "alternate-reverse"]
+                ) { value in
+                    onUpdate("animation-direction", value)
+                }
+                .id("\(node.id)-animation-direction")
+
+                CSSEnumVariableField(
+                    key: "animation-play-state",
+                    value: value("animation-play-state"),
+                    options: ["running", "paused"]
+                ) { value in
+                    onUpdate("animation-play-state", value)
+                }
+                .id("\(node.id)-animation-play-state")
+            }
+
+            CSSVariableField(key: "animation", value: value("animation")) { value in
+                onUpdate("animation", value)
+            }
+            .id("\(node.id)-animation")
+        }
+    }
+
+    private func value(_ key: String) -> String {
+        node.cssVariables[key] ?? ""
+    }
+}
+
+/// 論理名（日本語）: Scroll Timelineインスペクターセクション
+/// 概要: CSS Scroll-driven Animations の timeline、range、named timeline declaration を編集します。
+///
+/// プロパティ:
+/// - `node`: 表示対象の選択ノード。
+/// - `appliedParentContext`: 選択ノードに効く親側 animation / timeline declaration。
+/// - `onUpdate`: CSS declaration 更新時に呼び出す処理。
+private struct ScrollTimelineInspectorSection: View {
+    var node: OpenGraphiteNode
+    var appliedParentContext: OpenGraphiteAppliedAnimationContext?
+    var onUpdate: (String, String) -> Void
+
+    var body: some View {
+        InspectorSection(title: "Scroll Timeline") {
+            if let appliedParentContext {
+                AppliedParentAnimationContextPanel(context: appliedParentContext)
+            }
+
+            CSSAnimationTimelineVariableField(key: "animation-timeline", value: value("animation-timeline")) { value in
+                onUpdate("animation-timeline", value)
+            }
+            .id("\(node.id)-animation-timeline")
+
+            InspectorFieldGrid {
+                CSSVariableField(key: "animation-range-start", value: value("animation-range-start")) { value in
+                    onUpdate("animation-range-start", value)
+                }
+                .id("\(node.id)-animation-range-start")
+
+                CSSVariableField(key: "animation-range-end", value: value("animation-range-end")) { value in
+                    onUpdate("animation-range-end", value)
+                }
+                .id("\(node.id)-animation-range-end")
+            }
+
+            CSSVariableField(key: "animation-range", value: value("animation-range")) { value in
+                onUpdate("animation-range", value)
+            }
+            .id("\(node.id)-animation-range")
+
+            CSSVariableField(key: "timeline-scope", value: value("timeline-scope")) { value in
+                onUpdate("timeline-scope", value)
+            }
+            .id("\(node.id)-timeline-scope")
+
+            InspectorFieldGrid {
+                CSSVariableField(key: "scroll-timeline-name", value: value("scroll-timeline-name")) { value in
+                    onUpdate("scroll-timeline-name", value)
+                }
+                .id("\(node.id)-scroll-timeline-name")
+
+                CSSEnumVariableField(
+                    key: "scroll-timeline-axis",
+                    value: value("scroll-timeline-axis"),
+                    options: CSSAnimationTimelineValue.axes
+                ) { value in
+                    onUpdate("scroll-timeline-axis", value)
+                }
+                .id("\(node.id)-scroll-timeline-axis")
+            }
+
+            CSSVariableField(key: "scroll-timeline", value: value("scroll-timeline")) { value in
+                onUpdate("scroll-timeline", value)
+            }
+            .id("\(node.id)-scroll-timeline")
+
+            InspectorFieldGrid {
+                CSSVariableField(key: "view-timeline-name", value: value("view-timeline-name")) { value in
+                    onUpdate("view-timeline-name", value)
+                }
+                .id("\(node.id)-view-timeline-name")
+
+                CSSEnumVariableField(
+                    key: "view-timeline-axis",
+                    value: value("view-timeline-axis"),
+                    options: CSSAnimationTimelineValue.axes
+                ) { value in
+                    onUpdate("view-timeline-axis", value)
+                }
+                .id("\(node.id)-view-timeline-axis")
+            }
+
+            CSSVariableField(key: "view-timeline-inset", value: value("view-timeline-inset")) { value in
+                onUpdate("view-timeline-inset", value)
+            }
+            .id("\(node.id)-view-timeline-inset")
+
+            CSSVariableField(key: "view-timeline", value: value("view-timeline")) { value in
+                onUpdate("view-timeline", value)
+            }
+            .id("\(node.id)-view-timeline")
+        }
+    }
+
+    private func value(_ key: String) -> String {
+        node.cssVariables[key] ?? ""
+    }
+}
+
+/// 論理名（日本語）: 適用親アニメーション表示パネル
+/// 概要: 選択ノードの祖先に設定されている animation / timeline declaration を読み取り専用で表示します。
+///
+/// プロパティ:
+/// - `context`: 表示する親オブジェクトの animation context。
+private struct AppliedParentAnimationContextPanel: View {
+    var context: OpenGraphiteAppliedAnimationContext
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "arrow.up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 18, height: 18)
+                    .background(EditorColumnStyle.accentFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Applied Parent")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(parentDetail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(context.declarations) { declaration in
+                    AppliedParentAnimationDeclarationRow(declaration: declaration)
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
+        )
+    }
+
+    private var parentDetail: String {
+        let base = "\(context.sourceLabel) · \(context.tagName)"
+        guard !context.matchedTimelineNames.isEmpty else {
+            return base
+        }
+        return "\(base) · \(context.matchedTimelineNames.joined(separator: ", "))"
+    }
+}
+
+/// 論理名（日本語）: 適用親アニメーション宣言行
+/// 概要: 親オブジェクトから見つかった CSS declaration を狭幅でも崩れにくい縦積みで表示します。
+///
+/// プロパティ:
+/// - `declaration`: 表示する CSS declaration。
+private struct AppliedParentAnimationDeclarationRow: View {
+    var declaration: OpenGraphiteAppliedAnimationDeclaration
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(declaration.key)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            Text(declaration.value)
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
     }
 }
 
@@ -3001,7 +3267,7 @@ private struct LayoutModePicker: View {
 }
 
 /// 論理名（日本語）: インスペクターフィールドグリッド
-/// 概要: CSS declaration 入力欄を二列グリッドで配置する汎用コンテナです。
+/// 概要: CSS declaration 入力欄を Inspector 幅に応じて一列から複数列へ畳む汎用コンテナです。
 ///
 /// プロパティ:
 /// - `content`: グリッド内に表示する SwiftUI content。
@@ -3009,8 +3275,7 @@ private struct InspectorFieldGrid<Content: View>: View {
     @ViewBuilder var content: Content
 
     private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8)
+        GridItem(.adaptive(minimum: InspectorLayoutMetrics.fieldGridMinimumWidth), spacing: 8)
     ]
 
     var body: some View {

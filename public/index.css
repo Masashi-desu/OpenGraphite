@@ -219,6 +219,12 @@
   background:#111315;
   color:#f4f6f7;
   border:1px solid #30363d;
+  animation-name:og-home-card-entry;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 8% cover 36%;
 }
 
 [data-og-internal-id="0da96bf67932"] {
@@ -226,12 +232,20 @@
   background:#15181b;
   color:#f4f6f7;
   border:1px solid #3b424a;
+  animation-name:og-home-card-entry;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 14% cover 44%;
 }
 
 [data-og-internal-id="d3386fbce50b"] {
   width:100%;
   gap:0;
   padding:42px 0 0;
+  view-timeline-name:--home-principles;
+  view-timeline-axis:block;
 }
 
 [data-og-internal-id="9617db163b8c"] {
@@ -250,38 +264,94 @@
   align-items:stretch;
   padding:28px 0 0;
   justify-content:center;
+  position:relative;
+}
+
+[data-og-internal-id="3tdqz10hz3xf9"]::before {
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  top:28px;
+  height:1px;
+  background:#f5f7f8;
+  opacity:0.86;
+  transform:scaleX(0.08);
+  transform-origin:left center;
+  animation-name:og-home-rail-fill;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:--home-principles;
+  animation-range:entry 16% cover 82%;
 }
 
 [data-og-internal-id="3kt6lw6bszr4p"] {
+  flex:1 1 0;
+  min-width:0;
   padding:18px 0;
   font-size:15px;
   font-weight:720;
   color:#f5f7f8;
+  text-align:center;
   border-top:1px solid #30363d;
+  animation-name:og-home-workflow-step;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:--home-principles;
+  animation-range:entry 18% cover 38%;
 }
 
 [data-og-internal-id="1koz1kry5rdoe"] {
+  flex:1 1 0;
+  min-width:0;
   padding:18px 0;
   font-size:15px;
   font-weight:720;
   color:#f5f7f8;
+  text-align:center;
   border-top:1px solid #30363d;
+  animation-name:og-home-workflow-step;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:--home-principles;
+  animation-range:entry 30% cover 50%;
 }
 
 [data-og-internal-id="9zezl6gmyt4f"] {
+  flex:1 1 0;
+  min-width:0;
   padding:18px 0;
   font-size:15px;
   font-weight:720;
   color:#f5f7f8;
+  text-align:center;
   border-top:1px solid #30363d;
+  animation-name:og-home-workflow-step;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:--home-principles;
+  animation-range:entry 42% cover 62%;
 }
 
 [data-og-internal-id="2q1sneyat7j3i"] {
+  flex:1 1 0;
+  min-width:0;
   padding:18px 0;
   font-size:15px;
   font-weight:720;
   color:#f5f7f8;
+  text-align:center;
   border-top:1px solid #30363d;
+  animation-name:og-home-workflow-step;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:--home-principles;
+  animation-range:entry 54% cover 76%;
 }
 
 [data-og-internal-id="514d2ab22594"] > [data-og-generated="true"] {
@@ -338,10 +408,115 @@
   margin:0;
   gap:16px;
   padding:0 0 18px;
+  animation-name:og-home-section-heading;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 6% cover 34%;
+}
+
+[data-og-id="principle-source"][data-og-internal-id] {
+  animation-name:og-home-principle-entry;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 8% cover 42%;
+}
+
+[data-og-id="principle-agent"][data-og-internal-id] {
+  animation-name:og-home-principle-entry;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 8% cover 42%;
 }
 
 [data-og-id="principle-runtime"][data-og-internal-id] {
   border-bottom:1px solid #30363d;
+  animation-name:og-home-principle-entry;
+  animation-duration:1ms;
+  animation-timing-function:linear;
+  animation-fill-mode:both;
+  animation-timeline:view(block);
+  animation-range:entry 8% cover 42%;
+}
+
+@keyframes og-home-card-entry {
+  from {
+    opacity:0.42;
+    transform:translateY(18px);
+    border-color:#30363d;
+  }
+  to {
+    opacity:1;
+    transform:translateY(0);
+    border-color:#4b535b;
+  }
+}
+
+@keyframes og-home-section-heading {
+  from {
+    opacity:0.5;
+    transform:translateY(16px);
+  }
+  to {
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+
+@keyframes og-home-principle-entry {
+  from {
+    opacity:0.54;
+    transform:translateY(18px);
+  }
+  to {
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+
+@keyframes og-home-rail-fill {
+  from {
+    opacity:0.18;
+    transform:scaleX(0.08);
+  }
+  to {
+    opacity:0.86;
+    transform:scaleX(1);
+  }
+}
+
+@keyframes og-home-workflow-step {
+  from {
+    color:#818b94;
+    transform:translateY(10px);
+  }
+  to {
+    color:#f5f7f8;
+    transform:translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-og-internal-id="d9778be9a854"],
+  [data-og-internal-id="0da96bf67932"],
+  [data-og-id="principles-heading"][data-og-internal-id],
+  [data-og-id="principle-source"][data-og-internal-id],
+  [data-og-id="principle-agent"][data-og-internal-id],
+  [data-og-id="principle-runtime"][data-og-internal-id],
+  [data-og-internal-id="3kt6lw6bszr4p"],
+  [data-og-internal-id="1koz1kry5rdoe"],
+  [data-og-internal-id="9zezl6gmyt4f"],
+  [data-og-internal-id="2q1sneyat7j3i"],
+  [data-og-internal-id="3tdqz10hz3xf9"]::before {
+    animation:none;
+    opacity:1;
+    transform:none;
+  }
 }
 
 @media (max-width: 760px) {

@@ -9,64 +9,117 @@ struct EditorShellView: View {
     @SceneStorage("editorShell.isInspectorVisible") private var isInspectorVisible = true
 
     var body: some View {
-        ZStack(alignment: .top) {
-            CanvasPaneView(
+        GeometryReader { geometry in
+            let columnLayout = EditorShellColumnLayout(
+                availableWidth: geometry.size.width,
                 isSidebarVisible: isSidebarVisible,
                 isInspectorVisible: isInspectorVisible
             )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            EditorCanvasSeparator(
-                isSidebarVisible: isSidebarVisible,
-                isInspectorVisible: isInspectorVisible
-            )
-            .padding(.top, EditorOverlayMetrics.topChromeHeight)
-            .zIndex(5)
+            ZStack(alignment: .top) {
+                CanvasPaneView(
+                    isSidebarVisible: isSidebarVisible,
+                    isInspectorVisible: isInspectorVisible,
+                    sidebarWidth: columnLayout.sidebarWidth,
+                    inspectorWidth: columnLayout.inspectorWidth
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if isSidebarVisible {
-                EditorOverlayColumn(
-                    width: EditorOverlayMetrics.sidebarWidth,
-                    edge: .leading
-                ) {
-                    SidebarView()
-                }
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-                    .zIndex(10)
-            }
+                EditorCanvasSeparator(
+                    sidebarWidth: columnLayout.visibleSidebarWidth,
+                    inspectorWidth: columnLayout.visibleInspectorWidth
+                )
+                .padding(.top, EditorOverlayMetrics.topChromeHeight)
+                .zIndex(5)
 
-            if isInspectorVisible {
-                EditorOverlayColumn(
-                    width: EditorOverlayMetrics.inspectorWidth,
-                    edge: .trailing
-                ) {
-                    InspectorView()
-                }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                    .zIndex(10)
-            }
-
-            EditorTopChromeView(
-                isSidebarVisible: isSidebarVisible,
-                isInspectorVisible: isInspectorVisible,
-                onToggleSidebar: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        isSidebarVisible.toggle()
+                if isSidebarVisible {
+                    EditorOverlayColumn(
+                        width: columnLayout.sidebarWidth,
+                        edge: .leading
+                    ) {
+                        SidebarView()
                     }
-                },
-                onToggleInspector: {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        isInspectorVisible.toggle()
-                    }
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                        .zIndex(10)
                 }
-            )
-            .zIndex(30)
+
+                if isInspectorVisible {
+                    EditorOverlayColumn(
+                        width: columnLayout.inspectorWidth,
+                        edge: .trailing
+                    ) {
+                        InspectorView()
+                    }
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .zIndex(10)
+                }
+
+                EditorTopChromeView(
+                    isSidebarVisible: isSidebarVisible,
+                    isInspectorVisible: isInspectorVisible,
+                    sidebarWidth: columnLayout.sidebarWidth,
+                    inspectorWidth: columnLayout.inspectorWidth,
+                    onToggleSidebar: {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isSidebarVisible.toggle()
+                        }
+                    },
+                    onToggleInspector: {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isInspectorVisible.toggle()
+                        }
+                    }
+                )
+                .zIndex(30)
+            }
+            .ignoresSafeArea(.container, edges: .top)
         }
-        .ignoresSafeArea(.container, edges: .top)
+    }
+}
+
+/// 論理名（日本語）: エディターシェルカラムレイアウト
+/// 概要: ウインドウ幅に応じた Sidebar / Inspector の実表示幅を解決します。
+///
+/// プロパティ:
+/// - `sidebarWidth`: 左カラムの幅。
+/// - `inspectorWidth`: 右 Inspector の幅。
+private struct EditorShellColumnLayout {
+    var sidebarWidth: CGFloat
+    var inspectorWidth: CGFloat
+    private var isSidebarVisible: Bool
+    private var isInspectorVisible: Bool
+
+    /// 論理名（日本語）: エディターシェルカラムレイアウト初期化関数
+    /// 処理概要: 表示中の左カラム幅を考慮して Inspector の幅を決めます。
+    ///
+    /// - Parameters:
+    ///   - availableWidth: 現在のウインドウ幅。
+    ///   - isSidebarVisible: 左カラムが表示中か。
+    ///   - isInspectorVisible: 右 Inspector が表示中か。
+    init(availableWidth: CGFloat, isSidebarVisible: Bool, isInspectorVisible: Bool) {
+        self.isSidebarVisible = isSidebarVisible
+        self.isInspectorVisible = isInspectorVisible
+        sidebarWidth = EditorOverlayMetrics.sidebarWidth
+        let leadingWidth = isSidebarVisible ? sidebarWidth : 0
+        inspectorWidth = isInspectorVisible
+            ? InspectorLayoutMetrics.resolvedWidth(
+                availableWindowWidth: availableWidth,
+                leadingColumnWidth: leadingWidth
+            )
+            : 0
+    }
+
+    var visibleSidebarWidth: CGFloat {
+        isSidebarVisible ? sidebarWidth : 0
+    }
+
+    var visibleInspectorWidth: CGFloat {
+        isInspectorVisible ? inspectorWidth : 0
     }
 }
 
 /// 論理名（日本語）: エディターオーバーレイカラム
-/// 概要: Sidebar/Inspector をウインドウ全高の固定幅サーフェスとして Canvas 上に重ねます。
+/// 概要: Sidebar/Inspector を指定幅の全高サーフェスとして Canvas 上に重ねます。
 ///
 /// プロパティ:
 /// - `width`: カラム幅。
@@ -86,6 +139,7 @@ private struct EditorOverlayColumn<Content: View>: View {
             content
                 .frame(width: width)
                 .frame(maxHeight: .infinity, alignment: .top)
+                .clipped()
                 .background(EditorColumnBackground())
                 .overlay(alignment: dividerAlignment) {
                     Divider()
@@ -114,6 +168,8 @@ private struct EditorOverlayColumn<Content: View>: View {
 private struct EditorTopChromeView: View {
     var isSidebarVisible: Bool
     var isInspectorVisible: Bool
+    var sidebarWidth: CGFloat
+    var inspectorWidth: CGFloat
     var onToggleSidebar: () -> Void
     var onToggleInspector: () -> Void
 
@@ -132,6 +188,7 @@ private struct EditorTopChromeView: View {
             .padding(.leading, EditorOverlayMetrics.trafficLightReservedWidth)
             .padding(.trailing, EditorOverlayMetrics.chromeControlInset)
             .frame(width: leadingChromeWidth, alignment: .leading)
+            .clipped()
 
             HStack(spacing: 8) {
                 EditorProjectSummaryView()
@@ -154,6 +211,7 @@ private struct EditorTopChromeView: View {
             .padding(.leading, EditorOverlayMetrics.chromeControlInset)
             .padding(.trailing, EditorOverlayMetrics.chromeControlInset)
             .frame(width: trailingChromeWidth, alignment: .trailing)
+            .clipped()
         }
         .frame(height: EditorOverlayMetrics.topChromeHeight)
         .background {
@@ -171,11 +229,11 @@ private struct EditorTopChromeView: View {
     }
 
     private var leadingChromeWidth: CGFloat {
-        isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : EditorOverlayMetrics.collapsedLeadingChromeWidth
+        isSidebarVisible ? sidebarWidth : EditorOverlayMetrics.collapsedLeadingChromeWidth
     }
 
     private var trailingChromeWidth: CGFloat {
-        isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : EditorOverlayMetrics.collapsedTrailingChromeWidth
+        isInspectorVisible ? inspectorWidth : EditorOverlayMetrics.collapsedTrailingChromeWidth
     }
 }
 
@@ -296,15 +354,15 @@ private struct EditorProjectSummaryView: View {
 /// - `isSidebarVisible`: 左カラムが表示中か。
 /// - `isInspectorVisible`: 右カラムが表示中か。
 private struct EditorCanvasSeparator: View {
-    var isSidebarVisible: Bool
-    var isInspectorVisible: Bool
+    var sidebarWidth: CGFloat
+    var inspectorWidth: CGFloat
 
     var body: some View {
         Rectangle()
             .fill(EditorColumnStyle.separatorColor)
             .frame(height: 1)
-            .padding(.leading, isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : 0)
-            .padding(.trailing, isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : 0)
+            .padding(.leading, sidebarWidth)
+            .padding(.trailing, inspectorWidth)
     }
 }
 
@@ -394,6 +452,8 @@ private struct CanvasPaneView: View {
     @EnvironmentObject private var store: EditorStore
     var isSidebarVisible: Bool
     var isInspectorVisible: Bool
+    var sidebarWidth: CGFloat
+    var inspectorWidth: CGFloat
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -457,8 +517,8 @@ private struct CanvasPaneView: View {
 
     private var overlayAvoidance: CanvasOverlayAvoidance {
         CanvasOverlayAvoidance(
-            leading: isSidebarVisible ? EditorOverlayMetrics.sidebarWidth : 0,
-            trailing: isInspectorVisible ? EditorOverlayMetrics.inspectorWidth : 0,
+            leading: isSidebarVisible ? sidebarWidth : 0,
+            trailing: isInspectorVisible ? inspectorWidth : 0,
             top: EditorOverlayMetrics.topChromeHeight
         )
     }

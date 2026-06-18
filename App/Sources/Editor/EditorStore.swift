@@ -262,6 +262,11 @@ final class EditorStore: ObservableObject {
         return componentSource(for: selectedNode)
     }
 
+    var selectedAppliedParentAnimationContext: OpenGraphiteAppliedAnimationContext? {
+        guard let selectedNode else { return nil }
+        return appliedParentAnimationContext(for: selectedNode)
+    }
+
     /// 論理名（日本語）: Chapter参照ID生成関数
     /// 処理概要: `.ogp` 内で Chapter を一意に指す agent 向け参照 ID を返します。
     ///
@@ -919,6 +924,33 @@ final class EditorStore: ObservableObject {
             return nil
         }
         return componentSource(componentID: componentID, in: loadedProject)
+    }
+
+    /// 論理名（日本語）: 適用親アニメーション文脈解決関数
+    /// 処理概要: 選択ノードの祖先を近い順にたどり、Inspector に表示する親側 animation / timeline declaration を取得します。
+    ///
+    /// - Parameter node: 表示中の選択ノード。
+    /// - Returns: 親側の animation / timeline context。該当する祖先がない場合は `nil`。
+    private func appliedParentAnimationContext(for node: OpenGraphiteNode) -> OpenGraphiteAppliedAnimationContext? {
+        guard let selectedIndex = nodes.firstIndex(where: { $0.id == node.id }) else {
+            return nil
+        }
+
+        let ancestors = Self.ancestorNodes(in: nodes, selectedIndex: selectedIndex)
+        let requestedTimelineNames = Self.dashedIdentifiers(in: node.cssVariables["animation-timeline"] ?? "")
+        if !requestedTimelineNames.isEmpty,
+           let matchedAncestor = ancestors.first(where: { ancestor in
+               !Self.timelineProviderNames(in: ancestor.cssVariables).isDisjoint(with: requestedTimelineNames)
+           }) {
+            let matchedNames = Self.timelineProviderNames(in: matchedAncestor.cssVariables)
+                .intersection(requestedTimelineNames)
+                .sorted()
+            return Self.animationContext(for: matchedAncestor, matchedTimelineNames: matchedNames)
+        }
+
+        return ancestors.lazy.compactMap { ancestor in
+            Self.animationContext(for: ancestor)
+        }.first
     }
 
     /// 論理名（日本語）: コンポーネント継承元表示関数
@@ -3186,6 +3218,153 @@ final class EditorStore: ObservableObject {
         case .redo:
             return "\(pageURL.lastPathComponent) の変更をやり直して同期しました。"
         }
+    }
+
+    private static let animationContextPropertyOrder = [
+        "animation-name",
+        "animation-duration",
+        "animation-delay",
+        "animation-timing-function",
+        "animation-iteration-count",
+        "animation-fill-mode",
+        "animation-direction",
+        "animation-play-state",
+        "animation",
+        "animation-timeline",
+        "animation-range-start",
+        "animation-range-end",
+        "animation-range",
+        "timeline-scope",
+        "scroll-timeline-name",
+        "scroll-timeline-axis",
+        "scroll-timeline",
+        "view-timeline-name",
+        "view-timeline-axis",
+        "view-timeline-inset",
+        "view-timeline"
+    ]
+
+    private static let timelineProviderPropertyKeys = [
+        "timeline-scope",
+        "scroll-timeline-name",
+        "scroll-timeline",
+        "view-timeline-name",
+        "view-timeline"
+    ]
+
+    /// 論理名（日本語）: 祖先ノード一覧生成関数
+    /// 処理概要: WebView 由来の DOM 順 `nodes` と `depth` から、選択ノードの祖先を近い順に復元します。
+    ///
+    /// - Parameters:
+    ///   - nodes: DOM 順に並んだ編集ノード一覧。
+    ///   - selectedIndex: 選択ノードの index。
+    /// - Returns: 選択ノードの祖先一覧。親から root に向かう順序です。
+    private static func ancestorNodes(in nodes: [OpenGraphiteNode], selectedIndex: Int) -> [OpenGraphiteNode] {
+        guard nodes.indices.contains(selectedIndex) else { return [] }
+        var requiredDepth = nodes[selectedIndex].depth - 1
+        guard requiredDepth >= 0 else { return [] }
+
+        var ancestors: [OpenGraphiteNode] = []
+        for index in stride(from: selectedIndex - 1, through: 0, by: -1) {
+            let candidate = nodes[index]
+            if candidate.depth == requiredDepth {
+                ancestors.append(candidate)
+                requiredDepth -= 1
+
+                if requiredDepth < 0 {
+                    break
+                }
+            }
+        }
+        return ancestors
+    }
+
+    /// 論理名（日本語）: アニメーション文脈生成関数
+    /// 処理概要: 対象ノードが持つ animation / timeline declaration を Inspector 表示用 context へ変換します。
+    ///
+    /// - Parameters:
+    ///   - node: 表示元になる祖先ノード。
+    ///   - matchedTimelineNames: 選択ノードの `animation-timeline` と一致した named timeline。
+    /// - Returns: 表示する CSS declaration がある場合は context。空の場合は `nil`。
+    private static func animationContext(
+        for node: OpenGraphiteNode,
+        matchedTimelineNames: [String] = []
+    ) -> OpenGraphiteAppliedAnimationContext? {
+        let declarations = animationContextPropertyOrder.compactMap { key -> OpenGraphiteAppliedAnimationDeclaration? in
+            guard let value = node.cssVariables[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty
+            else {
+                return nil
+            }
+            return OpenGraphiteAppliedAnimationDeclaration(key: key, value: value)
+        }
+        guard !declarations.isEmpty else { return nil }
+        return OpenGraphiteAppliedAnimationContext(
+            nodeID: node.id,
+            nodeInternalID: node.internalID,
+            displayID: node.displayID,
+            tagName: node.tagName,
+            declarations: declarations,
+            matchedTimelineNames: matchedTimelineNames
+        )
+    }
+
+    /// 論理名（日本語）: Timeline提供名抽出関数
+    /// 処理概要: named scroll / view timeline を提供する CSS declaration から dashed ident を抽出します。
+    ///
+    /// - Parameter cssVariables: ノードが持つ CSS declaration。
+    /// - Returns: `--name` 形式の timeline 名一覧。
+    private static func timelineProviderNames(in cssVariables: [String: String]) -> Set<String> {
+        timelineProviderPropertyKeys.reduce(into: Set<String>()) { names, key in
+            names.formUnion(dashedIdentifiers(in: cssVariables[key] ?? ""))
+        }
+    }
+
+    /// 論理名（日本語）: CSS dashed ident抽出関数
+    /// 処理概要: CSS 値から `--timeline-name` のような dashed ident を抽出します。
+    ///
+    /// - Parameter value: CSS property の文字列表現。
+    /// - Returns: 見つかった dashed ident の集合。
+    private static func dashedIdentifiers(in value: String) -> Set<String> {
+        var identifiers = Set<String>()
+        var index = value.startIndex
+
+        while index < value.endIndex {
+            let nextIndex = value.index(after: index)
+            guard value[index] == "-", nextIndex < value.endIndex, value[nextIndex] == "-" else {
+                index = nextIndex
+                continue
+            }
+
+            var endIndex = value.index(after: nextIndex)
+            while endIndex < value.endIndex, isCSSIdentifierCharacter(value[endIndex]) {
+                endIndex = value.index(after: endIndex)
+            }
+
+            let identifier = String(value[index..<endIndex])
+            if identifier.count > 2 {
+                identifiers.insert(identifier)
+            }
+            index = endIndex
+        }
+
+        return identifiers
+    }
+
+    /// 論理名（日本語）: CSS識別子文字判定関数
+    /// 処理概要: timeline 名の簡易抽出で、英数字、hyphen、underscore を識別子の構成文字として扱います。
+    ///
+    /// - Parameter character: 判定する 1 文字。
+    /// - Returns: CSS dashed ident の一部として扱う場合は `true`。
+    private static func isCSSIdentifierCharacter(_ character: Character) -> Bool {
+        guard character.unicodeScalars.count == 1,
+              let scalar = character.unicodeScalars.first
+        else {
+            return false
+        }
+        return CharacterSet.alphanumerics.contains(scalar)
+            || character == "-"
+            || character == "_"
     }
 
     /// 論理名（日本語）: ノード辞書変換関数

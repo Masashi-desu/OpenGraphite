@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// 論理名（日本語）: エディターオーバーレイメトリクス
-/// 概要: 全面 Canvas に重ねる左右カラムの幅とタイトルバー余白をまとめます。
+/// 概要: 全面 Canvas に重ねる左右カラムの基準幅とタイトルバー余白をまとめます。
 ///
 /// 定義内容:
 /// - `sidebarWidth`: 左カラムの固定幅。
-/// - `inspectorWidth`: 右カラムの固定幅。
+/// - `inspectorWidth`: 右カラムの基準幅。実際の表示幅はウインドウ幅に応じて縮小します。
 /// - `topChromeHeight`: Pencil 風の一段ヘッダー高さ。
 /// - `chromeControlInset`: 上部ヘッダー内ボタンの水平余白。
 /// - `columnTopGap`: 上部ヘッダーとカラム先頭要素の間隔。
@@ -15,7 +15,7 @@ import SwiftUI
 /// - `trafficLightReservedWidth`: macOS の traffic light と重ならないための左側予約幅。
 enum EditorOverlayMetrics {
     static let sidebarWidth: CGFloat = 296
-    static let inspectorWidth: CGFloat = 368
+    static let inspectorWidth: CGFloat = InspectorLayoutMetrics.preferredWidth
     static let topChromeHeight: CGFloat = 50
     static let chromeControlInset: CGFloat = 11
     static let columnTopGap: CGFloat = 10

@@ -147,6 +147,50 @@ struct CSSStructuredValueTests {
         #expect(functionCSSString == "min(100%,560px)")
     }
 
+    /// 論理名（日本語）: CSS animation-timeline解析テスト
+    /// 概要: Scroll-driven Animations の anonymous scroll/view timeline 値を Inspector 用状態へ分解できることを検証します。
+    @Test("animation-timelineのscroll/view関数を解析して保持できる")
+    func testAnimationTimelineFunctionValuesRoundTrip() {
+        // コンディション：scroll() と view() の代表的な timeline 値を用意する
+        let scrollValue = CSSAnimationTimelineValue(cssString: "scroll(root x)")
+        let viewValue = CSSAnimationTimelineValue(cssString: "view(inline 20% 80%)")
+
+        // 検証内容：分解された状態と再直列化結果を確認する
+        let scrollCSSString = scrollValue.cssString
+        let viewCSSString = viewValue.cssString
+
+        // 期待値：scroller、axis、inset を保持し、CSS 値へ戻せる
+        #expect(scrollValue.kind == .scroll)
+        #expect(scrollValue.scroller == "root")
+        #expect(scrollValue.scrollAxis == "x")
+        #expect(scrollCSSString == "scroll(root x)")
+        #expect(viewValue.kind == .view)
+        #expect(viewValue.viewAxis == "inline")
+        #expect(viewValue.viewInsetStart == "20%")
+        #expect(viewValue.viewInsetEnd == "80%")
+        #expect(viewCSSString == "view(inline 20% 80%)")
+    }
+
+    /// 論理名（日本語）: CSS animation-timeline名前付き値テスト
+    /// 概要: named timeline と複数 timeline 値を通常 UI と Custom 値に分けて保持することを検証します。
+    @Test("animation-timelineのnamedと複数値を分類できる")
+    func testAnimationTimelineNamedAndCustomValues() {
+        // コンディション：named timeline と複数 timeline の CSS 値を用意する
+        let namedValue = CSSAnimationTimelineValue(cssString: "--hero-scroll")
+        let customValue = CSSAnimationTimelineValue(cssString: "--hero-scroll, view(block)")
+
+        // 検証内容：分類と再直列化結果を確認する
+        let namedCSSString = namedValue.cssString
+        let customCSSString = customValue.cssString
+
+        // 期待値：単一 dashed ident は named、複数値は Custom として保持される
+        #expect(namedValue.kind == .named)
+        #expect(namedValue.name == "--hero-scroll")
+        #expect(namedCSSString == "--hero-scroll")
+        #expect(customValue.kind == .custom)
+        #expect(customCSSString == "--hero-scroll, view(block)")
+    }
+
     /// 論理名（日本語）: CSSフォントプリセット照合テスト
     /// 概要: font-family の既知プリセットを現在値から選択状態へ戻せることを検証します。
     @Test("font-familyプリセットを現在値から照合できる")

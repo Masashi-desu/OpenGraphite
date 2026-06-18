@@ -41,52 +41,7 @@ struct CSSBoxVariableField: View {
 
             if boxValue.isSupported {
                 InspectorLinkedParameterGroup(isActive: isLinked) {
-                    HStack(alignment: .center, spacing: 8) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                CSSSmallTextField(
-                                    label: labels[safe: 0] ?? "T",
-                                    text: binding(\.top),
-                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 0] ?? "T", key: key),
-                                    showsRelationship: isLinked,
-                                    onCommit: commitIfChanged
-                                )
-                                CSSSmallTextField(
-                                    label: labels[safe: 1] ?? "R",
-                                    text: binding(\.right),
-                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 1] ?? "R", key: key),
-                                    showsRelationship: isLinked,
-                                    onCommit: commitIfChanged
-                                )
-                            }
-
-                            HStack(spacing: 6) {
-                                CSSSmallTextField(
-                                    label: labels[safe: 2] ?? "B",
-                                    text: binding(\.bottom),
-                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 2] ?? "B", key: key),
-                                    showsRelationship: isLinked,
-                                    onCommit: commitIfChanged
-                                )
-                                CSSSmallTextField(
-                                    label: labels[safe: 3] ?? "L",
-                                    text: binding(\.left),
-                                    icon: InspectorParameterIcon.cssSubfield(label: labels[safe: 3] ?? "L", key: key),
-                                    showsRelationship: isLinked,
-                                    onCommit: commitIfChanged
-                                )
-                            }
-                        }
-
-                        InspectorLinkedParameterButton(
-                            isOn: isLinked,
-                            label: "\(key) の四辺連動",
-                            activeHelp: "四辺の連動を解除",
-                            inactiveHelp: "四辺を同じ値で連動",
-                            action: toggleLinkedValues
-                        )
-                        .padding(.top, 15)
-                    }
+                    boxControlLayout
                 }
             } else {
                 CSSUnsupportedValueNotice(value: boxValue.cssString)
@@ -112,6 +67,117 @@ struct CSSBoxVariableField: View {
                 }
             }
         )
+    }
+
+    private var boxControlLayout: some View {
+        Group {
+            if usesCornerLayout {
+                cornerControlLayout
+            } else if usesEdgeLayout {
+                edgeControlLayout
+            } else {
+                fallbackControlLayout
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var edgeControlLayout: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            boxTextField(label: topLabel, keyPath: \.top)
+
+            HStack(alignment: .bottom, spacing: 6) {
+                boxTextField(label: leftLabel, keyPath: \.left)
+
+                linkButton
+                    .padding(.bottom, 1)
+
+                boxTextField(label: rightLabel, keyPath: \.right)
+            }
+
+            boxTextField(label: bottomLabel, keyPath: \.bottom)
+        }
+    }
+
+    private var cornerControlLayout: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                boxTextField(label: topLabel, keyPath: \.top)
+                boxTextField(label: rightLabel, keyPath: \.right)
+            }
+
+            HStack(alignment: .top, spacing: 6) {
+                boxTextField(label: leftLabel, keyPath: \.left)
+                boxTextField(label: bottomLabel, keyPath: \.bottom)
+            }
+
+            linkButton
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var fallbackControlLayout: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            boxTextField(label: topLabel, keyPath: \.top)
+            boxTextField(label: rightLabel, keyPath: \.right)
+            boxTextField(label: bottomLabel, keyPath: \.bottom)
+            boxTextField(label: leftLabel, keyPath: \.left)
+
+            linkButton
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    private var linkButton: some View {
+        InspectorLinkedParameterButton(
+            isOn: isLinked,
+            label: "\(key) の四辺連動",
+            activeHelp: "四辺の連動を解除",
+            inactiveHelp: "四辺を同じ値で連動",
+            action: toggleLinkedValues
+        )
+    }
+
+    private func boxTextField(label: String, keyPath: WritableKeyPath<CSSBoxValue, String>) -> some View {
+        CSSSmallTextField(
+            label: label,
+            text: binding(keyPath),
+            icon: InspectorParameterIcon.cssSubfield(label: label, key: key),
+            showsRelationship: isLinked,
+            onCommit: commitIfChanged
+        )
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .clipped()
+    }
+
+    private var topLabel: String {
+        labels[safe: 0] ?? "T"
+    }
+
+    private var rightLabel: String {
+        labels[safe: 1] ?? "R"
+    }
+
+    private var bottomLabel: String {
+        labels[safe: 2] ?? "B"
+    }
+
+    private var leftLabel: String {
+        labels[safe: 3] ?? "L"
+    }
+
+    private var usesEdgeLayout: Bool {
+        normalizedLabels == ["T", "R", "B", "L"]
+    }
+
+    private var usesCornerLayout: Bool {
+        normalizedLabels == ["TL", "TR", "BR", "BL"]
+    }
+
+    private var normalizedLabels: [String] {
+        labels.map { label in
+            label.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        }
     }
 
     /// 論理名（日本語）: CSS四辺連動切替関数
@@ -209,6 +275,55 @@ struct CSSPairVariableField: View {
     }
 }
 
+/// 論理名（日本語）: CSS位置オフセット変数グループ
+/// 概要: `top`、`right`、`bottom`、`left` を実際の辺位置に合わせた十字配置で編集します。
+///
+/// プロパティ:
+/// - `idPrefix`: 入力欄 identity の接頭辞。
+/// - `top`: `top` の現在値。
+/// - `right`: `right` の現在値。
+/// - `bottom`: `bottom` の現在値。
+/// - `left`: `left` の現在値。
+/// - `onCommit`: CSS property 名と値を反映する処理。
+struct CSSInsetVariableGroup: View {
+    var idPrefix: String
+    var top: String
+    var right: String
+    var bottom: String
+    var left: String
+    var onCommit: (String, String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            dimensionField(key: "top", value: top)
+
+            HStack(alignment: .top, spacing: 8) {
+                dimensionField(key: "left", value: left)
+                dimensionField(key: "right", value: right)
+            }
+
+            dimensionField(key: "bottom", value: bottom)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 論理名（日本語）: CSS位置オフセット入力生成関数
+    /// 処理概要: 指定 CSS property の dimension 入力を生成し、狭幅では割り当て領域でクリップします。
+    ///
+    /// - Parameters:
+    ///   - key: CSS property 名。
+    ///   - value: 現在値。
+    /// - Returns: 指定 property の入力欄。
+    private func dimensionField(key: String, value: String) -> some View {
+        CSSDimensionVariableField(key: key, value: value) { nextValue in
+            onCommit(key, nextValue)
+        }
+        .id("\(idPrefix)-\(key)")
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+        .clipped()
+    }
+}
+
 /// 論理名（日本語）: CSS数値単位変数フィールド
 /// 概要: 数値と単位を分けて CSS 値を編集します。
 ///
@@ -268,7 +383,7 @@ struct CSSNumericUnitVariableField: View {
                     }
                     .labelsHidden()
                     .controlSize(.small)
-                    .frame(width: 82)
+                    .frame(width: InspectorLayoutMetrics.compactPickerWidth)
                 }
             } else {
                 CSSUnsupportedValueNotice(value: numericValue.cssString)
@@ -1061,13 +1176,8 @@ struct CSSEnumVariableField: View {
 
     var body: some View {
         if isEditable {
-            HStack(spacing: 8) {
-                Text(key)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 112, alignment: .leading)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+            VStack(alignment: .leading, spacing: 5) {
+                CSSControlHeader(key: key)
                 Picker("", selection: selectedBinding) {
                     Text("unset").tag("")
                     ForEach(options, id: \.self) { option in
@@ -1078,7 +1188,7 @@ struct CSSEnumVariableField: View {
                 .controlSize(.small)
                 .frame(minWidth: 0, maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .onChange(of: value) { _, newValue in
                 selectedValue = newValue
             }
@@ -1104,6 +1214,263 @@ struct CSSEnumVariableField: View {
     private var isEditable: Bool {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedValue.isEmpty || options.contains(normalizedValue)
+    }
+}
+
+/// 論理名（日本語）: CSS animation-timeline変数フィールド
+/// 概要: Scroll-driven Animations の `animation-timeline` を anonymous scroll/view timeline、named timeline、custom 値として編集します。
+///
+/// プロパティ:
+/// - `key`: CSS 変数名。
+/// - `value`: 現在の CSS 値。
+/// - `onCommit`: serialize 後の CSS 値を反映する処理。
+struct CSSAnimationTimelineVariableField: View {
+    var key: String
+    var value: String
+    var onCommit: (String) -> Void
+
+    @State private var timelineValue: CSSAnimationTimelineValue
+
+    /// 論理名（日本語）: CSS animation-timeline変数フィールド初期化関数
+    /// 処理概要: 現在値を timeline UI 状態へ分類します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS 変数名。
+    ///   - value: 現在の CSS 値。
+    ///   - onCommit: serialize 後の CSS 値を反映する処理。
+    init(key: String, value: String, onCommit: @escaping (String) -> Void) {
+        self.key = key
+        self.value = value
+        self.onCommit = onCommit
+        _timelineValue = State(initialValue: CSSAnimationTimelineValue(cssString: value))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CSSControlHeader(key: key)
+
+            HStack(spacing: 8) {
+                Text("Type")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 36, alignment: .leading)
+
+                Picker("", selection: kindBinding) {
+                    Text("unset").tag(CSSAnimationTimelineKind.empty)
+                    Text("auto").tag(CSSAnimationTimelineKind.auto)
+                    Text("none").tag(CSSAnimationTimelineKind.none)
+                    Text("scroll").tag(CSSAnimationTimelineKind.scroll)
+                    Text("view").tag(CSSAnimationTimelineKind.view)
+                    Text("named").tag(CSSAnimationTimelineKind.named)
+                    Text("custom").tag(CSSAnimationTimelineKind.custom)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity)
+
+            switch timelineValue.kind {
+            case .empty, .auto, .none:
+                EmptyView()
+            case .scroll:
+                scrollTimelineControls
+            case .view:
+                viewTimelineControls
+            case .named:
+                CSSPlainSmallTextField(
+                    label: "Name",
+                    text: $timelineValue.name,
+                    icon: InspectorParameterIcon.label("Name"),
+                    onCommit: commitIfChanged
+                )
+            case .custom:
+                CSSPlainSmallTextField(
+                    label: "Value",
+                    text: $timelineValue.customValue,
+                    icon: InspectorParameterIcon.cssVariable(key),
+                    onCommit: commitIfChanged
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: value) { _, newValue in
+            timelineValue = CSSAnimationTimelineValue(cssString: newValue)
+        }
+    }
+
+    private var scrollTimelineControls: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Scroller")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Picker("", selection: scrollerBinding) {
+                    ForEach(CSSAnimationTimelineValue.scrollers, id: \.self) { scroller in
+                        Text(scroller).tag(scroller)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Axis")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Picker("", selection: scrollAxisBinding) {
+                    ForEach(CSSAnimationTimelineValue.axes, id: \.self) { axis in
+                        Text(axis).tag(axis)
+                    }
+                }
+                .labelsHidden()
+                .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var viewTimelineControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Axis")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: viewAxisBinding) {
+                        ForEach(CSSAnimationTimelineValue.axes, id: \.self) { axis in
+                            Text(axis).tag(axis)
+                        }
+                    }
+                    .labelsHidden()
+                    .controlSize(.small)
+                }
+                Spacer(minLength: 0)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                CSSSmallTextField(
+                    label: "Inset Start",
+                    text: $timelineValue.viewInsetStart,
+                    icon: InspectorParameterIcon.label("Position"),
+                    onCommit: commitIfChanged
+                )
+                CSSSmallTextField(
+                    label: "Inset End",
+                    text: $timelineValue.viewInsetEnd,
+                    icon: InspectorParameterIcon.label("Position"),
+                    onCommit: commitIfChanged
+                )
+            }
+        }
+    }
+
+    private var kindBinding: Binding<CSSAnimationTimelineKind> {
+        Binding(
+            get: { timelineValue.kind },
+            set: { newValue in
+                if newValue == .custom,
+                   timelineValue.customValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    timelineValue.customValue = timelineValue.cssString
+                }
+                timelineValue.kind = newValue
+                timelineValue.prepareForSelectedKind()
+                if newValue == .named || newValue == .custom {
+                    return
+                }
+                commitIfChanged()
+            }
+        )
+    }
+
+    private var scrollerBinding: Binding<String> {
+        Binding(
+            get: { timelineValue.scroller },
+            set: { newValue in
+                timelineValue.scroller = newValue
+                commitIfChanged()
+            }
+        )
+    }
+
+    private var scrollAxisBinding: Binding<String> {
+        Binding(
+            get: { timelineValue.scrollAxis },
+            set: { newValue in
+                timelineValue.scrollAxis = newValue
+                commitIfChanged()
+            }
+        )
+    }
+
+    private var viewAxisBinding: Binding<String> {
+        Binding(
+            get: { timelineValue.viewAxis },
+            set: { newValue in
+                timelineValue.viewAxis = newValue
+                commitIfChanged()
+            }
+        )
+    }
+
+    /// 論理名（日本語）: CSS animation-timeline値変更時適用関数
+    /// 処理概要: timeline UI 状態を CSS 値へ serialize し、変更がある場合だけ反映します。
+    private func commitIfChanged() {
+        let nextValue = timelineValue.cssString.trimmingCharacters(in: .whitespacesAndNewlines)
+        timelineValue = CSSAnimationTimelineValue(cssString: nextValue)
+        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(nextValue)
+    }
+}
+
+/// 論理名（日本語）: CSSプレーン小型テキストフィールド
+/// 概要: dashed ident や複数 CSS 値を単位分離せず、そのまま編集する短い入力欄です。
+///
+/// プロパティ:
+/// - `label`: 入力欄ラベル。
+/// - `text`: 入力値 binding。
+/// - `icon`: 入力値の意味を示す左側アイコン。
+/// - `onCommit`: Enter またはフォーカスアウト時の確定処理。
+private struct CSSPlainSmallTextField: View {
+    var label: String
+    @Binding var text: String
+    var icon: InspectorInputIcon?
+    var onCommit: () -> Void = {}
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            InspectorInputChrome(
+                icon: icon,
+                iconHelp: label
+            ) {
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .focused($isFocused)
+                    .onSubmit(commitText)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
+        }
+        .frame(minWidth: 0, maxWidth: .infinity)
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitText()
+        }
+    }
+
+    /// 論理名（日本語）: CSSプレーン入力確定関数
+    /// 処理概要: 入力値を trim して binding へ戻し、呼び出し元の確定処理を実行します。
+    private func commitText() {
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        onCommit()
     }
 }
 

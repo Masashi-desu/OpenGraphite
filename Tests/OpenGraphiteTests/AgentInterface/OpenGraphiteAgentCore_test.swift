@@ -1936,6 +1936,12 @@ struct OpenGraphiteAgentCoreTests {
         #expect(contract.cssVariables.contains { $0.name == "font-family" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-font-family-default" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-active-font-family" && $0.category == "runtime" && !$0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "animation-name" && $0.category == "animation" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "animation-timeline" && $0.category == "scroll-animation" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "animation-range-start" && $0.category == "scroll-animation" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "timeline-scope" && $0.category == "scroll-animation" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "scroll-timeline-name" && $0.category == "scroll-animation" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "view-timeline-name" && $0.category == "scroll-animation" && $0.editable })
         #expect(contract.isKnownCSSVariable("--og-font-family-fr"))
         #expect(contract.cssVariablePatterns.contains { $0.pattern.contains("font-family") && $0.category == "text" })
     }
