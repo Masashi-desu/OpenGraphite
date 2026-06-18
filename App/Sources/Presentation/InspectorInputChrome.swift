@@ -88,10 +88,14 @@ enum InspectorParameterIcon {
     /// - Returns: パラメータの意味を表すアイコン。
     static func cssVariable(_ key: String) -> InspectorInputIcon {
         switch key {
-        case "--og-x", "--og-scale-x":
+        case "left", "right", "--og-scale-x":
             return InspectorInputIcon(.lucide("move-horizontal", fallbackSystemName: "arrow.left.and.right"))
-        case "--og-y", "--og-scale-y":
+        case "top", "bottom", "--og-scale-y":
             return InspectorInputIcon(.lucide("move-vertical", fallbackSystemName: "arrow.up.and.down"))
+        case "position":
+            return InspectorInputIcon(.lucide("map-pin", fallbackSystemName: "mappin"))
+        case "z-index":
+            return InspectorInputIcon(.lucide("layers", fallbackSystemName: "square.3.layers.3d"))
         case "width", "min-width", "max-width":
             return InspectorInputIcon(.lucide("ruler", fallbackSystemName: "ruler"))
         case "height", "min-height":

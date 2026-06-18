@@ -11,7 +11,7 @@ OpenGraphite 固有 CSS custom property のうち、標準 CSS property へ寄�
 
 ## スコープ
 
-- 対象: `--og-x` / `--og-y`、`--og-scale-x` / `--og-scale-y`、`--og-object-fit`、`--og-stroke-width` の標準 CSS 化。
+- 対象: `--og-scale-x` / `--og-scale-y`、`--og-object-fit`、`--og-stroke-width` の標準 CSS 化。
 - 対象外: `data-og-*` による構造参照、component instance 参照、runtime-only helper、locale font custom property、icon URL helper。
 
 ## 人間側の意思決定
@@ -20,19 +20,13 @@ OpenGraphite 固有 CSS custom property のうち、標準 CSS property へ寄�
 
 ## 直列タスク
 
-1. CSS-STANDARD-SECOND-001: position helper の標準 CSS 化
-   - 人間判断: 必要 - `--og-x` / `--og-y` を `left` / `top` として扱うか、writing mode を考慮した logical inset として扱うかを決める。
-   - 内容: `data-og-layout="absolute"` の配置値を標準 CSS property で保存し、drag / paste / companion CSS / screenshot renderer / validation が同じ値を読むようにする。
-   - 完了条件: 新規作成、drag 移動、companion CSS 保存、agent graph、build output が同じ position 値を標準 CSS property として扱う。
-   - 確認方法: `./Scripts/quality_gate.sh`、sample project の absolute layout drag、`ogkiln validate`、OpenGraphite.app の UI 確認。
-
-2. CSS-STANDARD-SECOND-002: scale helper の標準 CSS 化
+1. CSS-STANDARD-SECOND-002: scale helper の標準 CSS 化
    - 人間判断: 必要 - `--og-scale-x` / `--og-scale-y` を CSS `scale` property へ写すか、既存 `transform` 合成の一部として扱うかを決める。
    - 内容: flip / reorder / drag animation が依存する scale helper と、永続化される design value を分離または統合する。
    - 完了条件: ユーザー編集の scale と runtime animation の一時 transform が衝突せず、永続値が標準 CSS として保存される。
    - 確認方法: `./Scripts/quality_gate.sh`、flip 操作、reorder animation、sample project の preview 確認。
 
-3. CSS-STANDARD-SECOND-003: media と icon helper の標準 CSS 化
+2. CSS-STANDARD-SECOND-003: media と icon helper の標準 CSS 化
    - 人間判断: 必要 - `--og-object-fit` を親 node の `object-fit` に置くか子 media selector に置くか、`--og-stroke-width` を SVG `stroke-width` と CSS cascade のどちらで扱うかを決める。
    - 内容: image / icon の描画実体と編集対象 node の境界を保ったまま、保存先を標準 CSS property へ移す。
    - 完了条件: image object-fit、Lucide icon stroke width、CDN icon mask の表示が標準 CSS property から再現され、agent graph と Inspector が同じ値を扱う。

@@ -798,6 +798,12 @@ struct WebCanvasView: NSViewRepresentable {
             "gap",
             "align-items",
             "justify-content",
+            "position",
+            "left",
+            "top",
+            "right",
+            "bottom",
+            "z-index",
             "color",
             "background",
             "border",
@@ -815,8 +821,6 @@ struct WebCanvasView: NSViewRepresentable {
             "--og-muted-color",
             "--og-accent",
             "--og-accent-foreground",
-            "--og-x",
-            "--og-y",
             "--og-object-fit",
             "--og-stroke-width",
             "--og-icon-url",
@@ -1954,6 +1958,12 @@ struct WebCanvasView: NSViewRepresentable {
         'gap',
         'align-items',
         'justify-content',
+        'position',
+        'left',
+        'top',
+        'right',
+        'bottom',
+        'z-index',
         'color',
         'background',
         'border',
@@ -1971,8 +1981,6 @@ struct WebCanvasView: NSViewRepresentable {
         '--og-muted-color',
         '--og-accent',
         '--og-accent-foreground',
-        '--og-x',
-        '--og-y',
         '--og-object-fit',
         '--og-stroke-width',
         '--og-icon-url',
@@ -2981,8 +2989,8 @@ struct WebCanvasView: NSViewRepresentable {
         function applyClickPositionIfNeeded(element, parent, event) {
           if (!parent || parent.getAttribute('data-og-layout') !== 'absolute') { return; }
           const parentRect = parent.getBoundingClientRect();
-          element.style.setProperty('--og-x', pixelString(event.clientX - parentRect.left));
-          element.style.setProperty('--og-y', pixelString(event.clientY - parentRect.top));
+          element.style.setProperty('left', pixelString(event.clientX - parentRect.left));
+          element.style.setProperty('top', pixelString(event.clientY - parentRect.top));
         }
 
         function placeCreatedElement(event) {
@@ -3367,8 +3375,8 @@ struct WebCanvasView: NSViewRepresentable {
           const deltaY = event.clientY - drag.startClientY;
           const nextX = drag.startX + deltaX;
           const nextY = drag.startY + deltaY;
-          drag.element.style.setProperty('--og-x', pixelString(nextX));
-          drag.element.style.setProperty('--og-y', pixelString(nextY));
+          drag.element.style.setProperty('left', pixelString(nextX));
+          drag.element.style.setProperty('top', pixelString(nextY));
           drag.didMove = true;
         }
 
@@ -3483,11 +3491,11 @@ struct WebCanvasView: NSViewRepresentable {
               selectedID: selectedID,
               startClientX: pendingDrag.startClientX,
               startClientY: pendingDrag.startClientY,
-              startX: dragStartValue(element, '--og-x', element.offsetLeft || 0),
-              startY: dragStartValue(element, '--og-y', element.offsetTop || 0),
+              startX: dragStartValue(element, 'left', element.offsetLeft || 0),
+              startY: dragStartValue(element, 'top', element.offsetTop || 0),
               previousValues: {
-                '--og-x': element.style.getPropertyValue('--og-x') || '',
-                '--og-y': element.style.getPropertyValue('--og-y') || ''
+                'left': element.style.getPropertyValue('left') || '',
+                'top': element.style.getPropertyValue('top') || ''
               },
               didMove: false
             };
@@ -3567,8 +3575,8 @@ struct WebCanvasView: NSViewRepresentable {
             nodeID: drag.selectedID,
             nodeInternalID: nodeInternalID(drag.element),
             values: {
-              '--og-x': drag.element.style.getPropertyValue('--og-x') || '',
-              '--og-y': drag.element.style.getPropertyValue('--og-y') || ''
+              'left': drag.element.style.getPropertyValue('left') || '',
+              'top': drag.element.style.getPropertyValue('top') || ''
             },
             previousValues: drag.previousValues || {}
           });

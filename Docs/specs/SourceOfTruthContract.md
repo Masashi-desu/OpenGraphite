@@ -186,7 +186,7 @@ Icon のサイズは companion CSS 上の `width` / `height`、色は `color`、
 
 - `vertical`: 子要素を縦方向に並べる。
 - `horizontal`: 子要素を横方向に並べる。
-- `absolute`: 子要素を `--og-x` と `--og-y` で配置する。
+- `absolute`: 子要素を `position:absolute` と標準 CSS の `left` / `top` / `right` / `bottom` で配置する。
 
 `data-og-layout` は主に `page` と `frame` に付与します。layout を持つノードでは、`gap`、`align-items`、`justify-content`、`padding` などの標準 CSS property が配置のデザイン値になります。
 

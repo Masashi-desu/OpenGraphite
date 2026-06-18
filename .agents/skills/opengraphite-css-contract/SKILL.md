@@ -87,9 +87,7 @@ component 参照では、master を component canvas HTML に置き、page 側�
 
 - `vertical`: `display:flex`、column direction、`--og-align` default `stretch`、`--og-justify` default `flex-start`、`--og-gap` default `0`。
 - `horizontal`: `display:flex`、row direction、`--og-align` default `center`、`--og-justify` default `flex-start`、`--og-gap` default `0`。
-- `absolute`: parent が positioned block になり、直接の `data-og-type` child は `--og-x` と `--og-y` で absolutely positioned になる。
-
-inline の `--og-x` または `--og-y` を持つ要素には、`OpenGraphite.css` が relative positioning と `left` / `top` offset も付ける。
+- `absolute`: parent が positioned block になり、直接の `data-og-type` child は標準 CSS の `left` / `top` / `right` / `bottom` で absolutely positioned になる。
 
 画面幅 760px 以下では、horizontal layout は vertical に積まれ、button は full width になり、`page-preview` は `--og-padding:24px` を使う。
 
@@ -110,7 +108,7 @@ box / layout の共通 variable:
 - `--og-flex`
 - `--og-margin`, `--og-padding`
 - `--og-gap`, `--og-align`, `--og-justify`
-- `--og-x`, `--og-y`
+- `position`, `left`, `top`, `right`, `bottom`, `z-index`
 
 appearance variable:
 
@@ -214,7 +212,7 @@ absolute placement:
   <Badge
     data-og-id="badge"
     data-og-type="text"
-    style="--og-x:24px; --og-y:32px;">
+    style="left:24px; top:32px;">
     New
   </Badge>
 </Canvas>
@@ -269,7 +267,7 @@ component instance:
 3. layout が child だけでなく parent の `data-og-layout` に付いているか確認する。
 4. inline variable が valid な CSS declaration で、semicolon で終わっているか確認する。
 5. image / video sizing では、media element を `data-og-type="image"` wrapper の直接 child に置く。
-6. absolute layout では、parent に `data-og-layout="absolute"` を付け、直接 child element に `--og-x` / `--og-y` を設定する。
+6. absolute layout では、parent に `data-og-layout="absolute"` を付け、直接 child element に `left` / `top` などの標準 CSS inset property を設定する。
 7. horizontal layout や button の形が変わる場合は、760px 以下の responsive behavior を確認する。
 8. `<og-instance>` では、page に valid な `rel="opengraphite-components"` link があり、runtime expansion を使う場合は `OpenGraphite.runtime.js` が読み込まれ、master 側に一致する `data-og-component` と `data-og-component-kind="master"` があることを確認する。
 9. runtime preview は正しいが deployment output が違う場合は、`ogkiln build <project.ogp|current> --output <dir>` を確認し、生成された static HTML を inspect する。

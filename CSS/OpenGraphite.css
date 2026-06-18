@@ -58,8 +58,6 @@ html[data-og-preview-dir] {
   --og-scale-x: 1;
   --og-scale-y: 1;
   transform-origin: center;
-  --og-x: auto;
-  --og-y: auto;
   gap: 0;
   align-items: stretch;
   justify-content: flex-start;
@@ -68,8 +66,6 @@ html[data-og-preview-dir] {
   box-sizing: border-box;
   transform: scale(var(--og-scale-x), var(--og-scale-y));
   position: relative;
-  left: var(--og-x);
-  top: var(--og-y);
 }
 
 [data-og-type="frame"],
@@ -210,10 +206,10 @@ html[data-og-preview-dir] {
   position: relative;
 }
 
-[data-og-layout="absolute"] > [data-og-type] {
+:where([data-og-layout="absolute"]) > [data-og-type] {
   position: absolute;
-  left: var(--og-x);
-  top: var(--og-y);
+  left: 0;
+  top: 0;
 }
 
 [data-og-selected="true"] {

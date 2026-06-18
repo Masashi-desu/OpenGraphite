@@ -132,6 +132,53 @@ struct OpenGraphiteAgentCoreTests {
         #expect(css.contains("font-family: \"Noto Sans JP\", \"Hiragino Sans\", sans-serif;"))
     }
 
+    /// 論理名（日本語）: CSS位置宣言編集テスト
+    /// 概要: position と inset 系の標準 CSS property を node 単位で保存できることを確認します。
+    @Test("標準CSSのpositionとinsetを保存できる")
+    func testSetStandardPositionCSSVariables() throws {
+        // コンディション：absolute layout の child node を持つ HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body>
+              <Canvas data-og-id="canvas" data-og-type="frame" data-og-layout="absolute">
+                <Badge data-og-id="badge" data-og-type="text">New</Badge>
+              </Canvas>
+            </body></html>
+            """
+        )
+
+        // 検証内容：badge の position と left / top / z-index を更新する
+        let positionResult = try fixture.core.setCSSVariable(
+            "position",
+            value: "absolute",
+            nodeID: "badge",
+            htmlURL: fixture.htmlURL
+        )
+        let leftResult = try fixture.core.setCSSVariable("left", value: "24px", nodeID: "badge", htmlURL: fixture.htmlURL)
+        let topResult = try fixture.core.setCSSVariable("top", value: "32px", nodeID: "badge", htmlURL: fixture.htmlURL)
+        let zIndexResult = try fixture.core.setCSSVariable("z-index", value: "3", nodeID: "badge", htmlURL: fixture.htmlURL)
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
+
+        // 期待値：位置指定が標準 CSS declaration として companion CSS に保存される
+        #expect(positionResult.updated == true)
+        #expect(positionResult.node?.cssVariables["position"] == "absolute")
+        #expect(leftResult.node?.cssVariables["left"] == "24px")
+        #expect(topResult.node?.cssVariables["top"] == "32px")
+        #expect(zIndexResult.node?.cssVariables["z-index"] == "3")
+        #expect(!html.contains("position"))
+        #expect(!html.contains("left"))
+        #expect(!html.contains("top"))
+        #expect(!html.contains("z-index"))
+        #expect(css.contains("position: absolute;"))
+        #expect(css.contains("left: 24px;"))
+        #expect(css.contains("top: 32px;"))
+        #expect(css.contains("z-index: 3;"))
+    }
+
     /// 論理名（日本語）: Stylesheet link追加テスト
     /// 概要: HTML `<head>` に font stylesheet link を重複なく追加できることを確認します。
     @Test("font stylesheet linkをheadへ重複なく追加できる")
@@ -1880,6 +1927,12 @@ struct OpenGraphiteAgentCoreTests {
         #expect(contract.types.contains("frame"))
         #expect(contract.layouts.contains("horizontal"))
         #expect(contract.cssVariables.contains { $0.name == "gap" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "position" && $0.category == "position" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "left" && $0.category == "position" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "top" && $0.category == "position" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "right" && $0.category == "position" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "bottom" && $0.category == "position" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "z-index" && $0.category == "position" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "font-family" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-font-family-default" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-active-font-family" && $0.category == "runtime" && !$0.editable })

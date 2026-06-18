@@ -115,17 +115,42 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Position") {
-                            InspectorFieldGrid {
-                                CSSNumericUnitVariableField(key: "--og-x", value: node.cssVariables["--og-x"] ?? "", units: ["px", "%", "rem", "em"]) { value in
-                                    store.updateCSSVariable(key: "--og-x", value: value)
-                                }
-                                .id("\(node.id)-x")
-
-                                CSSNumericUnitVariableField(key: "--og-y", value: node.cssVariables["--og-y"] ?? "", units: ["px", "%", "rem", "em"]) { value in
-                                    store.updateCSSVariable(key: "--og-y", value: value)
-                                }
-                                .id("\(node.id)-y")
+                            CSSEnumVariableField(
+                                key: "position",
+                                value: node.cssVariables["position"] ?? "",
+                                options: ["static", "relative", "absolute", "fixed", "sticky"]
+                            ) { value in
+                                store.updateCSSVariable(key: "position", value: value)
                             }
+                            .id("\(node.id)-position")
+
+                            VStack(alignment: .leading, spacing: 8) {
+                                CSSDimensionVariableField(key: "left", value: node.cssVariables["left"] ?? "") { value in
+                                    store.updateCSSVariable(key: "left", value: value)
+                                }
+                                .id("\(node.id)-left")
+
+                                CSSDimensionVariableField(key: "top", value: node.cssVariables["top"] ?? "") { value in
+                                    store.updateCSSVariable(key: "top", value: value)
+                                }
+                                .id("\(node.id)-top")
+
+                                CSSDimensionVariableField(key: "right", value: node.cssVariables["right"] ?? "") { value in
+                                    store.updateCSSVariable(key: "right", value: value)
+                                }
+                                .id("\(node.id)-right")
+
+                                CSSDimensionVariableField(key: "bottom", value: node.cssVariables["bottom"] ?? "") { value in
+                                    store.updateCSSVariable(key: "bottom", value: value)
+                                }
+                                .id("\(node.id)-bottom")
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            CSSVariableField(key: "z-index", value: node.cssVariables["z-index"] ?? "") { value in
+                                store.updateCSSVariable(key: "z-index", value: value)
+                            }
+                            .id("\(node.id)-z-index")
                         }
 
                         InspectorSection(title: "Dimensions") {

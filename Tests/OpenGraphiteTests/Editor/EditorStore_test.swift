@@ -1249,7 +1249,10 @@ struct EditorStoreTests {
             ("width", "min(100%,560px)"),
             ("padding", "14px 20px"),
             ("background", "linear-gradient(135deg,#ffffff 0%,#e9fbf5 54%,#fff3d6 100%)"),
-            ("flex", "1 1 0")
+            ("flex", "1 1 0"),
+            ("position", "sticky"),
+            ("left", "clamp(12px,4vw,48px)"),
+            ("z-index", "10")
         ]
 
         // 検証内容：各 CSS 値を Store に適用する
@@ -1730,6 +1733,102 @@ struct EditorStoreTests {
         #expect(store.selectedComponentPageID == "design-system")
         #expect(store.selectedNodeID == "feature-card-master")
         #expect(store.statusMessage == "feature-card の component master を表示しています。")
+    }
+
+    /// 論理名（日本語）: Runtime展開Component CSS同期テスト
+    /// 概要: ページ上の runtime 展開済み component node が、component source CSS を Inspector 表示値と保存先として使うことを確認します。
+    @Test("展開component nodeはsource CSSをInspector値と保存先に使う")
+    func testGeneratedComponentNodeUsesComponentSourceCSS() throws {
+        // コンディション：component master と page instance を持つ一時プロジェクトを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components")
+        let componentURL = componentDirectory.appendingPathComponent("design-system.html")
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try """
+        <!doctype html>
+        <html><body>
+        <SiteHeader data-og-id="site-header-master" data-og-type="frame" data-og-layout="horizontal" data-og-component="site-header" data-og-component-kind="master" data-og-internal-id="site-header-node"></SiteHeader>
+        </body></html>
+        """.write(to: componentURL, atomically: true, encoding: .utf8)
+        try """
+        [data-og-internal-id="site-header-node"] {
+          position: sticky;
+          top: 0;
+          padding: 24px 0 18px;
+          background: #08090a;
+          z-index: 30;
+        }
+        """.write(
+            to: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: componentURL),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        <!doctype html>
+        <html><body>
+        <Page data-og-id="page" data-og-type="page" data-og-internal-id="page-node">
+          <og-instance data-og-id="site-header" data-og-type="frame" data-og-component="site-header" data-og-internal-id="site-header-instance"></og-instance>
+        </Page>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(name: "Desktop", x: 1120, y: 0, width: 1180, height: 1900)
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+
+        // 検証内容：runtime 展開後の component node payload を取り込み、CSS を更新する（When）
+        store.ingestNodePayload([
+            [
+                "id": "site-header",
+                "internalID": "site-header-node",
+                "tagName": "siteheader",
+                "type": "frame",
+                "layout": "horizontal",
+                "sourceComponentID": "site-header",
+                "sourceInstanceID": "site-header",
+                "cssVariables": [String: String](),
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: "site-header")
+        store.updateCSSVariable(key: "top", value: "12px")
+
+        // 期待値：Inspector 用 node は component CSS を表示し、編集結果も component companion CSS へ保存される（Then）
+        let selectedNode = try #require(store.selectedNode)
+        let componentCSS = try String(
+            contentsOf: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: componentURL),
+            encoding: .utf8
+        )
+        #expect(selectedNode.cssVariables["position"] == "sticky")
+        #expect(selectedNode.cssVariables["background"] == "#08090a")
+        #expect(selectedNode.cssVariables["z-index"] == "30")
+        #expect(store.selectedNode?.cssVariables["top"] == "12px")
+        #expect(componentCSS.contains("top: 12px;"))
+        #expect(store.cssMutation?.pageURL == fixture.htmlURL)
+        #expect(!FileManager.default.fileExists(atPath: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL).path))
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: 静的フロー元ホバー取り込みテスト

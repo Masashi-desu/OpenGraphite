@@ -1285,7 +1285,8 @@ final class EditorStore: ObservableObject {
     func updateCSSVariable(key: String, value: String) {
         guard let selectedNodeID,
               let selectedNode,
-              let target = currentHTMLSyncTarget()
+              let displayTarget = currentHTMLSyncTarget(),
+              let editTarget = cssEditTarget(for: selectedNode)
         else {
             return
         }
@@ -1302,7 +1303,7 @@ final class EditorStore: ObservableObject {
         }
 
         let edit = HTMLObjectEdit(
-            target: target,
+            target: editTarget,
             operation: .setCSSVariable(
                 nodeInternalID: selectedNode.internalID,
                 key: key,
@@ -1323,7 +1324,7 @@ final class EditorStore: ObservableObject {
         mutationSequence += 1
         cssMutation = CSSVariableMutation(
             sequence: mutationSequence,
-            pageURL: target.htmlURL,
+            pageURL: displayTarget.htmlURL,
             nodeID: selectedNode.id,
             key: key,
             value: normalizedValue
@@ -2198,6 +2199,35 @@ final class EditorStore: ObservableObject {
     private func currentHTMLSyncTarget() -> HTMLSyncTarget? {
         guard let selectedPage else { return nil }
         return htmlSyncTarget(for: selectedPage, segment: selectedCanvasSegment)
+    }
+
+    /// 論理名（日本語）: CSS編集対象HTML同期先取得関数
+    /// 処理概要: runtime 展開された component instance 内 node は component master の HTML/CSS を保存先にし、それ以外は現在表示中 HTML を保存先にします。
+    ///
+    /// - Parameter node: CSS declaration を編集する選択ノード。
+    /// - Returns: CSS declaration の保存対象。解決できない場合は `nil`。
+    private func cssEditTarget(for node: OpenGraphiteNode) -> HTMLSyncTarget? {
+        if node.isRuntimeComponentGenerated,
+           let source = componentSource(for: node),
+           let componentTarget = htmlSyncTarget(forComponentSource: source) {
+            return componentTarget
+        }
+        return currentHTMLSyncTarget()
+    }
+
+    /// 論理名（日本語）: Component source同期先取得関数
+    /// 処理概要: Inspector が解決した component master 情報から、該当 component canvas の HTML 同期対象を取得します。
+    ///
+    /// - Parameter source: component master の場所を表す情報。
+    /// - Returns: component canvas の同期対象。project から解決できない場合は `nil`。
+    private func htmlSyncTarget(forComponentSource source: OpenGraphiteComponentSource) -> HTMLSyncTarget? {
+        guard let loadedProject,
+              let collection = loadedProject.project.collections.first(where: { $0.internalID == source.collectionInternalID }),
+              let componentPage = collection.components.first(where: { $0.internalID == source.componentPageInternalID })
+        else {
+            return nil
+        }
+        return htmlSyncTarget(for: componentPage, segment: .components)
     }
 
     /// 論理名（日本語）: HTML同期対象検証関数
@@ -3233,22 +3263,48 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 現在HTML正本ノード索引生成関数
-    /// 処理概要: Inspector の fallback text 表示に使うため、表示中 HTML 正本を `data-og-internal-id` で引ける辞書へ変換します。
+    /// 処理概要: Inspector の fallback text と CSS 表示に使うため、表示中 HTML と component source HTML の正本 node を `data-og-internal-id` で引ける辞書へ変換します。
     ///
-    /// - Returns: 現在の HTML 正本に含まれるノードの内部 ID 索引。
+    /// - Returns: 現在の HTML と component source HTML に含まれるノードの内部 ID 索引。
     private func sourceNodesByInternalIDForCurrentTarget() -> [String: OpenGraphiteAgentNode] {
         guard let target = currentHTMLSyncTarget(),
               let html = readHTMLFromDisk(at: target.htmlURL)
         else {
             return [:]
         }
-        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
         let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
-        return OpenGraphiteHTMLDocument(html: html)
+        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
+        var sourceNodes = componentSourceNodesByInternalID(contract: contract)
+        OpenGraphiteHTMLDocument(html: html)
             .nodes(companionCSS: companionCSS, contract: contract)
-            .reduce(into: [:]) { result, node in
+            .forEach { node in
                 guard !node.internalID.isEmpty else { return }
-                result[node.internalID] = node
+                sourceNodes[node.internalID] = node
             }
+        return sourceNodes
+    }
+
+    /// 論理名（日本語）: Component sourceノード索引生成関数
+    /// 処理概要: project に登録された component canvas HTML と companion CSS を読み、runtime 展開後 node の Inspector 表示に使う正本 node 索引を作ります。
+    ///
+    /// - Parameter contract: CSS declaration の編集契約。
+    /// - Returns: component source に含まれる node の内部 ID 索引。
+    private func componentSourceNodesByInternalID(contract: OpenGraphiteContract) -> [String: OpenGraphiteAgentNode] {
+        guard let loadedProject else { return [:] }
+        var sourceNodes: [String: OpenGraphiteAgentNode] = [:]
+        for collection in loadedProject.project.collections {
+            for componentPage in collection.components {
+                let componentURL = loadedProject.htmlURL(for: componentPage)
+                guard let html = readHTMLFromDisk(at: componentURL) else { continue }
+                let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: componentURL)
+                OpenGraphiteHTMLDocument(html: html)
+                    .nodes(companionCSS: companionCSS, contract: contract)
+                    .forEach { node in
+                        guard !node.internalID.isEmpty else { return }
+                        sourceNodes[node.internalID] = node
+                    }
+            }
+        }
+        return sourceNodes
     }
 }

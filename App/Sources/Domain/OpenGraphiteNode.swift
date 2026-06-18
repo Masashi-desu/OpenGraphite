@@ -170,6 +170,12 @@ struct OpenGraphiteNode: Identifiable, Hashable {
         return componentID
     }
 
+    /// 論理名（日本語）: Runtime component生成ノード判定
+    /// 概要: `<og-instance>` runtime が component master から展開した node で、placement preview clone ではない場合に `true` を返します。
+    var isRuntimeComponentGenerated: Bool {
+        sourceComponentID != nil && sourceInstanceID != nil && !isPlacementGenerated
+    }
+
     var detailLine: String {
         var parts = [type]
         if let layout, !layout.isEmpty {
