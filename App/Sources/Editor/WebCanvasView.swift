@@ -680,8 +680,8 @@ struct WebCanvasView: NSViewRepresentable {
             root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
               const active = button.getAttribute('data-code-viewer-tab') === mode;
               button.setAttribute('aria-pressed', active ? 'true' : 'false');
-              button.style.setProperty('--og-background', active ? '#858892' : '#343438');
-              button.style.setProperty('--og-border', active ? '1px solid #858892' : '1px solid transparent');
+              button.style.setProperty('background', active ? '#858892' : '#343438');
+              button.style.setProperty('border', active ? '1px solid #858892' : '1px solid transparent');
             });
           }
 
@@ -725,13 +725,13 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           function applyPlacementFrameSizing(clone, host) {
-            clone.style.setProperty('--og-margin', '0');
-            if (inlinePlacementVariable(host, '--og-width')) {
-              clone.style.setProperty('--og-width', '100%');
-              clone.style.setProperty('--og-max-width', 'none');
+            clone.style.setProperty('margin', '0');
+            if (inlinePlacementVariable(host, 'width')) {
+              clone.style.setProperty('width', '100%');
+              clone.style.setProperty('max-width', 'none');
             }
-            if (inlinePlacementVariable(host, '--og-height')) {
-              clone.style.setProperty('--og-height', '100%');
+            if (inlinePlacementVariable(host, 'height')) {
+              clone.style.setProperty('height', '100%');
             }
           }
 
@@ -786,6 +786,47 @@ struct WebCanvasView: NSViewRepresentable {
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
         private static let nodeReferencePasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.node-reference+json")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
+        private static let openGraphiteStyleKeys: Set<String> = [
+            "width",
+            "height",
+            "min-width",
+            "min-height",
+            "max-width",
+            "flex",
+            "margin",
+            "padding",
+            "gap",
+            "align-items",
+            "justify-content",
+            "color",
+            "background",
+            "border",
+            "border-radius",
+            "box-shadow",
+            "font-family",
+            "font-size",
+            "font-weight",
+            "line-height",
+            "letter-spacing",
+            "text-align",
+            "transform-origin",
+            "--og-page-background",
+            "--og-text-color",
+            "--og-muted-color",
+            "--og-accent",
+            "--og-accent-foreground",
+            "--og-x",
+            "--og-y",
+            "--og-object-fit",
+            "--og-stroke-width",
+            "--og-icon-url",
+            "--og-scale-x",
+            "--og-scale-y",
+            "--og-font-family-default",
+            "--og-font-family-ja",
+            "--og-font-family-en",
+            "--og-font-family-eng"
+        ]
         private static let webKitErrorDomain = "WebKitErrorDomain"
         private static let frameLoadInterruptedErrorCode = 102
 
@@ -1166,10 +1207,10 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         @MainActor
-        /// 論理名（日本語）: CSS変数mutation反映関数
-        /// 処理概要: CSS 変数 mutation を DOM へ適用し、成功時に HTML をディスクへ同期します。
+        /// 論理名（日本語）: CSS宣言mutation反映関数
+        /// 処理概要: CSS declaration mutation を DOM へ適用し、成功時に HTML をディスクへ同期します。
         ///
-        /// - Parameter mutation: 反映対象の CSS 変数 mutation。
+        /// - Parameter mutation: 反映対象の CSS declaration mutation。
         func applyMutation(_ mutation: CSSVariableMutation) {
             guard let webView else { return }
             lastAppliedMutationSequence = mutation.sequence
@@ -1186,7 +1227,7 @@ struct WebCanvasView: NSViewRepresentable {
                 guard let self else { return }
                 Task { @MainActor in
                     if let error {
-                        self.store.reportWebError("CSS変数の反映に失敗しました: \(error.localizedDescription)")
+                        self.store.reportWebError("CSS宣言の反映に失敗しました: \(error.localizedDescription)")
                         return
                     }
 
@@ -1473,9 +1514,9 @@ struct WebCanvasView: NSViewRepresentable {
             addMenuItem("参照IDをコピー", command: "copyReferenceID", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("HTMLとしてコピー", command: "copyHTML", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("テキストとしてコピー", command: "copyText", to: copyOptions, enabled: selectedID != nil)
-            addMenuItem("CSS変数としてコピー", command: "copyCSSVariables", to: copyOptions, enabled: selectedID != nil)
+            addMenuItem("CSS宣言としてコピー", command: "copyCSSVariables", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("HTMLをここに貼り付け", command: "pasteHere", to: copyOptions, enabled: selectedID != nil && hasPasteContent)
-            addMenuItem("CSS変数を貼り付け", command: "pasteCSSVariables", to: copyOptions, enabled: canMutateSelection && hasCSSVariableContent)
+            addMenuItem("CSS宣言を貼り付け", command: "pasteCSSVariables", to: copyOptions, enabled: canMutateSelection && hasCSSVariableContent)
             let copyOptionsItem = NSMenuItem(title: "コピー/貼り付けオプション", action: nil, keyEquivalent: "")
             copyOptionsItem.submenu = copyOptions
             menu.addItem(copyOptionsItem)
@@ -1630,13 +1671,13 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: 選択内容コピー関数
-        /// 処理概要: 選択中 DOM の HTML、テキスト、参照 ID、CSS 変数を pasteboard へ書き込みます。
+        /// 処理概要: 選択中 DOM の HTML、テキスト、参照 ID、CSS declaration を pasteboard へ書き込みます。
         ///
         /// - Parameters:
         ///   - includeHTML: HTML をコピー対象に含めるか。
         ///   - includeText: テキストをコピー対象に含めるか。
         ///   - includeReferenceID: テキスト欄貼り付け用に複合参照 ID をコピー対象に含めるか。
-        ///   - includeCSSVariables: CSS 変数をコピー対象に含めるか。
+        ///   - includeCSSVariables: CSS declaration をコピー対象に含めるか。
         private func copySelection(
             includeHTML: Bool,
             includeText: Bool,
@@ -1782,10 +1823,10 @@ struct WebCanvasView: NSViewRepresentable {
             return nil
         }
 
-        /// 論理名（日本語）: CSS変数pasteboard payload取得関数
-        /// 処理概要: pasteboard から OpenGraphite 専用形式の CSS 変数 JSON を読み取ります。
+        /// 論理名（日本語）: CSS宣言pasteboard payload取得関数
+        /// 処理概要: pasteboard から OpenGraphite 専用形式の CSS 宣言 JSON を読み取ります。
         ///
-        /// - Returns: `--og-*` だけを含む CSS 変数 payload。空の場合は `nil`。
+        /// - Returns: OpenGraphite 編集対象 CSS 宣言だけを含む payload。空の場合は `nil`。
         private func cssVariablesPasteboardPayload() -> [String: String]? {
             let pasteboard = NSPasteboard.general
             guard let json = pasteboard.string(forType: Self.cssVariablesPasteboardType),
@@ -1796,9 +1837,25 @@ struct WebCanvasView: NSViewRepresentable {
             }
 
             let variables = object.filter { key, value in
-                key.hasPrefix("--og-") && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                Self.isOpenGraphiteStyleKey(key) && !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
             return variables.isEmpty ? nil : variables
+        }
+
+        /// 論理名（日本語）: OpenGraphite CSS宣言キー判定関数
+        /// 処理概要: pasteboard の CSS 宣言が OpenGraphite の編集対象かどうかを判定します。
+        ///
+        /// - Parameter key: CSS property または custom property 名。
+        /// - Returns: 編集対象であれば `true`。
+        private static func isOpenGraphiteStyleKey(_ key: String) -> Bool {
+            let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            if openGraphiteStyleKeys.contains(normalized) {
+                return true
+            }
+            return normalized.range(
+                of: #"^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$"#,
+                options: [.regularExpression]
+            ) != nil
         }
 
         /// 論理名（日本語）: レイヤー候補
@@ -1885,6 +1942,52 @@ struct WebCanvasView: NSViewRepresentable {
           (document.head || document.documentElement).appendChild(style);
         }
 
+      const openGraphiteStyleKeys = new Set([
+        'width',
+        'height',
+        'min-width',
+        'min-height',
+        'max-width',
+        'flex',
+        'margin',
+        'padding',
+        'gap',
+        'align-items',
+        'justify-content',
+        'color',
+        'background',
+        'border',
+        'border-radius',
+        'box-shadow',
+        'font-family',
+        'font-size',
+        'font-weight',
+        'line-height',
+        'letter-spacing',
+        'text-align',
+        'transform-origin',
+        '--og-page-background',
+        '--og-text-color',
+        '--og-muted-color',
+        '--og-accent',
+        '--og-accent-foreground',
+        '--og-x',
+        '--og-y',
+        '--og-object-fit',
+        '--og-stroke-width',
+        '--og-icon-url',
+        '--og-scale-x',
+        '--og-scale-y',
+        '--og-font-family-default',
+        '--og-font-family-ja',
+        '--og-font-family-en',
+        '--og-font-family-eng'
+      ]);
+
+      function isOpenGraphiteStyleKey(key) {
+        return openGraphiteStyleKeys.has(key) || /^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key);
+      }
+
       function cssVariables(element) {
         const style = element.getAttribute('style') || '';
         const variables = {};
@@ -1893,7 +1996,7 @@ struct WebCanvasView: NSViewRepresentable {
           if (index <= 0) { return; }
           const key = part.slice(0, index).trim();
           const value = part.slice(index + 1).trim();
-          if (key.indexOf('--og-') === 0 && value.length > 0) {
+          if (isOpenGraphiteStyleKey(key) && value.length > 0) {
             variables[key] = value;
           }
         });
@@ -2806,8 +2909,8 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function applyDefaultBoxStyles(element, width, height) {
-          element.style.setProperty('--og-width', width);
-          element.style.setProperty('--og-height', height);
+          element.style.setProperty('width', width);
+          element.style.setProperty('height', height);
         }
 
         function lucideInlineSVG(name) {
@@ -2845,14 +2948,14 @@ struct WebCanvasView: NSViewRepresentable {
           element.setAttribute('data-og-internal-id', newInternalID());
           element.setAttribute('data-og-type', 'frame');
           element.setAttribute('data-og-layout', 'vertical');
-          element.style.setProperty('--og-gap', '0');
-          element.style.setProperty('--og-padding', '0');
+          element.style.setProperty('gap', '0');
+          element.style.setProperty('padding', '0');
           return element;
         }
 
         function createTextElement() {
           const element = textElementFromString('Text');
-          element.style.setProperty('--og-font-size', '16px');
+          element.style.setProperty('font-size', '16px');
           return element;
         }
 
@@ -2862,8 +2965,8 @@ struct WebCanvasView: NSViewRepresentable {
           element.setAttribute('data-og-internal-id', newInternalID());
           element.setAttribute('data-og-type', 'frame');
           applyDefaultBoxStyles(element, '120px', '80px');
-          element.style.setProperty('--og-background', 'color-mix(in srgb, currentColor 12%, transparent)');
-          element.style.setProperty('--og-border', '1px solid color-mix(in srgb, currentColor 28%, transparent)');
+          element.style.setProperty('background', 'color-mix(in srgb, currentColor 12%, transparent)');
+          element.style.setProperty('border', '1px solid color-mix(in srgb, currentColor 28%, transparent)');
           return element;
         }
 
@@ -3604,8 +3707,8 @@ struct WebCanvasView: NSViewRepresentable {
             frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => nodeInternalID(node)))));
             frame.setAttribute('data-og-type', 'frame');
             frame.setAttribute('data-og-layout', 'vertical');
-            frame.style.setProperty('--og-gap', '0');
-            frame.style.setProperty('--og-padding', '0');
+            frame.style.setProperty('gap', '0');
+            frame.style.setProperty('padding', '0');
             element.before(frame);
             frame.append(element);
             edit = {
@@ -3642,7 +3745,7 @@ struct WebCanvasView: NSViewRepresentable {
             const values = {};
             const previousValues = {};
             Object.entries(payload || {}).forEach(([key, value]) => {
-              if (key.indexOf('--og-') !== 0) { return; }
+              if (!isOpenGraphiteStyleKey(key)) { return; }
               previousValues[key] = element.style.getPropertyValue(key) || '';
               values[key] = value || '';
               if ((value || '').trim().length === 0) {

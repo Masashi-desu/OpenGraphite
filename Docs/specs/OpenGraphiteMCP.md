@@ -58,8 +58,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `screenshot_node` | page または component canvas 内の node を切り抜いた PNG に保存する | `screenshot node` |
 | `query_nodes` | id / type / role / tag / text で node を検索する | `node query` |
 | `get_node` | `data-og-internal-id` で node を取得する | `node get` |
-| `set_css_variable` | node の companion CSS `--og-*` variable を設定する | `node style set` |
-| `remove_css_variable` | node の companion CSS `--og-*` variable を削除する | `node style remove` |
+| `set_css_variable` | node の companion CSS declaration を設定する | `node style set` |
+| `remove_css_variable` | node の companion CSS declaration を削除する | `node style remove` |
 | `set_node_attribute` | editable `data-og-*` 属性を設定する | `node attr set` |
 | `remove_node_attribute` | editable `data-og-*` 属性を削除する | `node attr remove` |
 | `set_text_content` | node の中身を escaped text に置換する | `node text set` |

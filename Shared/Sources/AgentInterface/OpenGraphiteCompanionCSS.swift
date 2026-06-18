@@ -51,29 +51,33 @@ struct OpenGraphiteCompanionCSSDocument: Equatable {
         try css.write(to: cssURL, atomically: true, encoding: .utf8)
     }
 
-    /// 論理名（日本語）: Node CSS変数抽出関数
-    /// 処理概要: `data-og-internal-id` selector に保存された `--og-*` 宣言を cascade 順に辞書化します。
+    /// 論理名（日本語）: Node CSS宣言抽出関数
+    /// 処理概要: `data-og-internal-id` selector に保存された編集対象 CSS 宣言を cascade 順に辞書化します。
     ///
     /// - Parameter internalID: 対象 node の `data-og-internal-id`。
-    /// - Returns: 対象 node の CSS 変数。
-    func cssVariables(forNodeInternalID internalID: String) -> [String: String] {
+    ///   - contract: 抽出対象の CSS 宣言を定義する OpenGraphite 契約。
+    /// - Returns: 対象 node の CSS 宣言。
+    func cssVariables(
+        forNodeInternalID internalID: String,
+        contract: OpenGraphiteContract = .builtIn
+    ) -> [String: String] {
         let normalizedID = internalID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedID.isEmpty else { return [:] }
         var result: [String: String] = [:]
         for rule in Self.rules(in: css) where Self.selector(rule.selector, matchesInternalID: normalizedID) {
             let style = OpenGraphiteCSSStyle.parse(rule.body)
-            for (key, value) in style.ogVariables() {
+            for (key, value) in style.openGraphiteDeclarations(contract: contract) {
                 result[key] = value
             }
         }
         return result
     }
 
-    /// 論理名（日本語）: Node CSS変数設定関数
-    /// 処理概要: `data-og-internal-id` selector の rule に CSS 変数を設定し、空値なら削除します。
+    /// 論理名（日本語）: Node CSS宣言設定関数
+    /// 処理概要: `data-og-internal-id` selector の rule に CSS 宣言を設定し、空値なら削除します。
     ///
     /// - Parameters:
-    ///   - name: 更新する CSS 変数名。
+    ///   - name: 更新する CSS property または custom property 名。
     ///   - value: CSS 値。空の場合は削除。
     ///   - internalID: 対象 node の `data-og-internal-id`。
     mutating func setCSSVariable(_ name: String, value: String, forNodeInternalID internalID: String) {

@@ -81,44 +81,44 @@ struct InspectorInputChrome<Content: View>: View {
 /// 論理名（日本語）: インスペクターパラメータアイコン
 /// 概要: Inspector の編集可能パラメータ名や入力ラベルから意味を示すアイコンを選びます。
 enum InspectorParameterIcon {
-    /// 論理名（日本語）: CSS変数アイコン判定関数
-    /// 処理概要: `--og-*` CSS 変数名に対応する入力アイコンを返します。
+    /// 論理名（日本語）: CSSパラメータアイコン判定関数
+    /// 処理概要: CSS property 名または OpenGraphite 予約 custom property 名に対応する入力アイコンを返します。
     ///
-    /// - Parameter key: CSS 変数名。
-    /// - Returns: 変数の意味を表すアイコン。
+    /// - Parameter key: CSS property または OpenGraphite 予約 custom property 名。
+    /// - Returns: パラメータの意味を表すアイコン。
     static func cssVariable(_ key: String) -> InspectorInputIcon {
         switch key {
         case "--og-x", "--og-scale-x":
             return InspectorInputIcon(.lucide("move-horizontal", fallbackSystemName: "arrow.left.and.right"))
         case "--og-y", "--og-scale-y":
             return InspectorInputIcon(.lucide("move-vertical", fallbackSystemName: "arrow.up.and.down"))
-        case "--og-width", "--og-min-width", "--og-max-width":
+        case "width", "min-width", "max-width":
             return InspectorInputIcon(.lucide("ruler", fallbackSystemName: "ruler"))
-        case "--og-height", "--og-min-height":
+        case "height", "min-height":
             return InspectorInputIcon(.lucide("ruler", fallbackSystemName: "ruler"))
-        case "--og-font-family":
+        case "font-family":
             return InspectorInputIcon(.lucide("type", fallbackSystemName: "textformat"))
-        case "--og-font-size":
+        case "font-size":
             return InspectorInputIcon(.lucide("text-cursor-input", fallbackSystemName: "textformat.size"))
-        case "--og-font-weight":
+        case "font-weight":
             return InspectorInputIcon(.lucide("bold", fallbackSystemName: "bold"))
-        case "--og-line-height":
+        case "line-height":
             return InspectorInputIcon(.lucide("list-collapse", fallbackSystemName: "line.3.horizontal"))
-        case "--og-letter-spacing":
+        case "letter-spacing":
             return InspectorInputIcon(.lucide("case-sensitive", fallbackSystemName: "textformat.abc"))
         case "--og-stroke-width":
             return InspectorInputIcon(.lucide("circle", fallbackSystemName: "circle"))
-        case "--og-foreground":
+        case "color":
             return InspectorInputIcon(.lucide("palette", fallbackSystemName: "paintpalette"))
-        case "--og-background":
+        case "background":
             return InspectorInputIcon(.lucide("paint-bucket", fallbackSystemName: "paintbrush"))
-        case "--og-border":
+        case "border":
             return InspectorInputIcon(.lucide("square", fallbackSystemName: "square"))
-        case "--og-shadow":
+        case "box-shadow":
             return InspectorInputIcon(.lucide("sun", fallbackSystemName: "sun.min"))
-        case "--og-flex":
+        case "flex":
             return InspectorInputIcon(.lucide("stretch-horizontal", fallbackSystemName: "arrow.left.and.right"))
-        case "--og-transform-origin":
+        case "transform-origin":
             return InspectorInputIcon(.lucide("crosshair", fallbackSystemName: "scope"))
         default:
             return InspectorInputIcon(.lucide("settings-2", fallbackSystemName: "slider.horizontal.3"))
@@ -135,25 +135,25 @@ enum InspectorParameterIcon {
     static func cssSubfield(label: String, key: String) -> InspectorInputIcon {
         let normalizedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch key {
-        case "--og-gap":
+        case "gap":
             return normalizedLabel == "row"
                 ? InspectorInputIcon(.lucide("move-vertical", fallbackSystemName: "arrow.up.and.down"))
                 : InspectorInputIcon(.lucide("move-horizontal", fallbackSystemName: "arrow.left.and.right"))
-        case "--og-padding", "--og-margin":
+        case "padding", "margin":
             return edgeIcon(for: normalizedLabel)
-        case "--og-radius":
+        case "border-radius":
             return cornerIcon(for: normalizedLabel)
-        case "--og-border":
+        case "border":
             return InspectorInputIcon(.lucide("circle", fallbackSystemName: "circle"))
-        case "--og-background":
+        case "background":
             return normalizedLabel == "angle"
                 ? InspectorInputIcon(.lucide("rotate-cw", fallbackSystemName: "arrow.clockwise"))
                 : colorValue
-        case "--og-shadow":
+        case "box-shadow":
             return shadowIcon(for: normalizedLabel)
-        case "--og-flex":
+        case "flex":
             return flexIcon(for: normalizedLabel)
-        case "--og-transform-origin":
+        case "transform-origin":
             return axisIcon(for: normalizedLabel)
         default:
             return labelIcon(normalizedLabel)

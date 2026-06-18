@@ -852,8 +852,8 @@ struct OgkilnCLI {
       ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
       ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json
       ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --json
-      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <--og-var> --value <css-value>
-      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <--og-var>
+      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property> --value <css-value>
+      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property>
       ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr> --value <value>
       ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr>
       ogkiln node icon set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <lucide-name> [--library lucide] [--source <inline|cdn|library>]

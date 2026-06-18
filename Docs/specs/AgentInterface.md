@@ -12,7 +12,7 @@ OpenGraphite の AI 協業インターフェースは、リポジトリ上の HT
 
 - `ogkiln`: 人間、CI、MCP server が同じ挙動を再現できる CLI。
 - OpenGraphite MCP server: AI クライアントが構造化 resource / tool として OpenGraphite リポジトリを読むための stdio MCP server。
-- `OpenGraphite.contract.json`: `data-og-*`、`--og-*`、type、layout、HTML に残せる role、runtime 属性の機械可読な契約。
+- `OpenGraphite.contract.json`: `data-og-*`、編集対象 CSS 宣言、type、layout、HTML に残せる role、runtime 属性の機械可読な契約。
 - OpenGraphite app: 正本ファイルを `WKWebView` に表示し、外部変更を検出して Canvas、Layers、Inspector へ同期する UI。
 
 MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であり、MCP の write tool は `ogkiln` または同じ core 実装と同等の validation / diagnostics を必ず通す。
@@ -178,7 +178,7 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 
 `data-og-role="component-placement"` を持つ placement host は component canvas の graph に通常 node として含める。`parentID` は DOM 上の親 OpenGraphite node を返し、`.ogp` の page / component card としては扱わない。placement が表示のために生成した clone とその descendants は `data-og-placement-generated="true"` を持つ runtime-only DOM であり、graph / Layers / node edit の対象から除外する。Chapter / Pages HTML に placement host が存在する場合、project validation は `component-placement-outside-collection` error を返す。
 
-`cssVariables` は source HTML の inline style ではなく、HTML と同名の companion CSS から抽出した `--og-*` である。互換的な旧 HTML を読む場合だけ inline style を fallback として扱えるが、companion CSS が存在する source では inline design value は validation error になる。
+`cssVariables` は source HTML の inline style ではなく、HTML と同名の companion CSS から抽出した編集対象 CSS 宣言である。互換的な旧 HTML を読む場合だけ inline style を fallback として扱えるが、companion CSS が存在する source では inline design value は validation error になる。
 
 ```json
 {
@@ -193,7 +193,7 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
       "layout": "horizontal",
       "role": null,
       "cssVariables": {
-        "--og-gap": "44px"
+        "gap": "44px"
       },
       "hidden": false,
       "locked": false,
@@ -215,7 +215,7 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 
 `parentID` は最も近い OpenGraphite ancestor の `data-og-id` である。HTML に通常の `div` や `span` が挟まっても、AI は OpenGraphite node graph 上の親子関係として扱える。`textContent` は node subtree 内のタグを除いたプレーンテキストであり、検索と確認に使う。
 
-component placement は `data-og-source-component-internal-id` と `data-og-source-node-internal-id` で参照元を保持する。project validation は source component が現在の component canvas と一致し、source node が同じ component HTML 内に存在することを検証する。AI が placement の preview 状態を変える場合は `.ogp` の `canvas.previewContext.placementMocks[placementInternalID]` を編集する。placement host は開閉可能な参照表示であり、内部に表示される clone node は実体を持たない。clone node を選択して編集する場合、保存対象は同じ `data-og-internal-id` を持つ参照元 component node であり、agent 向け参照 ID も `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を指す。placement host の `--og-*` は、その placement 側の表示枠 override として編集する。
+component placement は `data-og-source-component-internal-id` と `data-og-source-node-internal-id` で参照元を保持する。project validation は source component が現在の component canvas と一致し、source node が同じ component HTML 内に存在することを検証する。AI が placement の preview 状態を変える場合は `.ogp` の `canvas.previewContext.placementMocks[placementInternalID]` を編集する。placement host は開閉可能な参照表示であり、内部に表示される clone node は実体を持たない。clone node を選択して編集する場合、保存対象は同じ `data-og-internal-id` を持つ参照元 component node であり、agent 向け参照 ID も `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を指す。placement host の companion CSS declaration は、その placement 側の表示枠 override として編集する。
 
 ## Diagnostics
 
@@ -259,9 +259,9 @@ ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
 ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --type button --text-contains Docs --json
 ogkiln node query SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --type frame --json
 ogkiln node get SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:kl1xxsgkiuue:3aefceddb042 --json
-ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap --value 32px
-ogkiln node style set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --var --og-padding --value 48px
-ogkiln node style remove SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap
+ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap --value 32px
+ogkiln node style set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --var padding --value 48px
+ogkiln node style remove SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap
 ogkiln node attr set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --name data-og-part --value root
 ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
 ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Reusable card'
@@ -281,7 +281,7 @@ write operation は次の制約を持つ。
 - `data-og-id` が重複している場合は失敗すること。
 - `data-og-internal-id` が重複している場合は失敗すること。
 - `node style set/remove` は対象 HTML と同名の companion CSS を更新し、HTML inline `style` を作らないこと。
-- `--og-*` 以外の CSS 変数を `node style set` で更新しないこと。
+- `node style set` は `OpenGraphite.contract.json` にある編集対象 CSS 宣言だけを更新すること。
 - `data-og-selected` と `data-og-editing` は正本 HTML へ残さないこと。
 - `data-og-internal-id` は内部不変 ID のため、通常の `node attr set` では変更しないこと。
 - 許可済み永続属性は `OpenGraphite.contract.json` の `editableAttributes` に従うこと。
@@ -312,7 +312,7 @@ Pencil / OpenPencil の design document 操作は OpenGraphite では次のよ�
 
 | Pencil / OpenPencil | OpenGraphite |
 | --- | --- |
-| `.pen` JSON IR | HTML 構造正本 + `data-og-*` metadata + companion CSS の `--og-*` variables |
+| `.pen` JSON IR | HTML 構造正本 + `data-og-*` metadata + companion CSS の node-scoped CSS declarations |
 | node `id` | `data-og-internal-id`（表示 ID は `data-og-id`） |
 | `get_editor_state` | `project inspect` + `page graph --page-id` / `page graph --component-id` |
 | `batch_get` / tree / find / query | `node query` / `node get` |

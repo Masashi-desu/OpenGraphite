@@ -5,8 +5,8 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 ## Artifacts
 
 - `OpenGraphite.app`: macOS SwiftUI app generated from `project.yml`
-- `CSS/OpenGraphite.css`: distributable CSS library for `data-og-*` and `--og-*`
-- `OpenGraphite.contract.json`: machine-readable `data-og-*` and `--og-*` contract
+- `CSS/OpenGraphite.css`: distributable CSS library for `data-og-*`, standard design properties, and reserved `--og-*` helpers
+- `OpenGraphite.contract.json`: machine-readable `data-og-*` and editable CSS declaration contract
 - `public/OpenGraphite.runtime.js`: optional runtime that expands `<og-instance>` component references in the browser
 - `public/*.css`: companion CSS files that hold page-specific design values for same-named HTML files
 - `Scripts/ogkiln`: CLI for repository-backed inspection, validation, and node-level HTML edits
@@ -16,7 +16,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `project.yml`: XcodeGen source of truth
 - `Docs/Architecture.md`: design notes
 - `Docs/specs/DesignPhilosophy.md`: design philosophy and decision principles
-- `Docs/specs/SourceOfTruthContract.md`: cross-cutting source-of-truth contract for `data-og-*`, `--og-*`, CSS, runtime, preview, and resources
+- `Docs/specs/SourceOfTruthContract.md`: cross-cutting source-of-truth contract for `data-og-*`, editable CSS declarations, runtime, preview, and resources
 - `Docs/specs/AgentInterface.md`: CLI, MCP, JSON graph, and external-sync contract
 
 ## Model
@@ -37,9 +37,9 @@ HTML is the canonical structure and reference document. Editable design values l
 
 ```css
 [data-og-internal-id="hero-node"] {
-  --og-gap: 32px;
-  --og-padding: 64px;
-  --og-radius: 24px;
+  gap: 32px;
+  padding: 64px;
+  border-radius: 24px;
 }
 ```
 
@@ -103,7 +103,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --type button --text-contains Docs --json
 ./Scripts/ogkiln node get SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:kl1xxsgkiuue:3aefceddb042 --json
-./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var --og-gap --value 32px
+./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap --value 32px
 ./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Availability-ready card'
 ./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
 ./Scripts/ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 72222bd6f11e --position prepend --html '<Header data-og-id="site-header" data-og-type="frame"></Header>'
@@ -204,7 +204,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
-- Inspector editing for common `--og-*` CSS variables with companion CSS write-back
+- Inspector editing for common CSS design properties with companion CSS write-back
 
 ## Standalone HTML
 

@@ -148,8 +148,8 @@ enum OpenGraphiteIconMarkup {
     ///   - library: icon library。
     ///   - name: icon name。
     ///   - source: icon source。
-    ///   - width: `--og-width`。空の場合は省略。
-    ///   - height: `--og-height`。空の場合は省略。
+    ///   - width: `width`。空の場合は省略。
+    ///   - height: `height`。空の場合は省略。
     ///   - nodeID: diagnostics に付与する node ID。
     /// - Returns: 正規化済み metadata と icon node HTML。
     static func elementHTML(
@@ -188,14 +188,14 @@ enum OpenGraphiteIconMarkup {
         )
     }
 
-    /// 論理名（日本語）: アイコンCSS変数生成関数
-    /// 処理概要: icon node の描画に必要な companion CSS 変数を metadata から生成します。
+    /// 論理名（日本語）: アイコンCSS custom property生成関数
+    /// 処理概要: icon node の描画に必要な companion CSS custom property を metadata から生成します。
     ///
     /// - Parameters:
     ///   - library: 正規化済み icon library。
     ///   - name: 正規化済み icon name。
     ///   - source: 正規化済み icon source。
-    /// - Returns: icon node に保存する CSS 変数。不要な場合は空辞書。
+    /// - Returns: icon node に保存する CSS custom property。不要な場合は空辞書。
     static func cssVariables(library: String, name: String, source: String) -> [String: String] {
         guard normalizeLibrary(library) == "lucide",
               normalizeSource(source) == "cdn",

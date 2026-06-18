@@ -20,7 +20,7 @@
 TODO 文書は次の分類に置く。
 
 1. `Editor/`: SwiftUI editor、`.ogp` project loading、WKWebView canvas bridge、layers、selection、inspector、HTML write-back など editor 実行経路の TODO。
-2. `WebAssets/`: `CSS/OpenGraphite.css`、`public/index.html`、`SampleProject`、`data-og-*` / `--og-*` rendering contract など web deliverable と sample の TODO。
+2. `WebAssets/`: `CSS/OpenGraphite.css`、`public/index.html`、`SampleProject`、`data-og-*` / CSS rendering contract など web deliverable と sample の TODO。
 3. `Release/`: `project.yml` / XcodeGen、build/test scripts、DMG/notarization、配布手順など release と project operation の TODO。
 4. `Other/`: 上記 3 分類に直接属さない運用 TODO。
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 論理名（日本語）: OpenGraphite契約定義
-/// 概要: `data-og-*`、`--og-*`、type、layout、role の機械可読な編集契約を表します。
+/// 概要: `data-og-*`、編集可能 CSS 宣言、type、layout、role の機械可読な編集契約を表します。
 ///
 /// プロパティ:
 /// - `version`: 契約ファイルのバージョン。
@@ -10,8 +10,8 @@ import Foundation
 /// - `roles`: 既知の `data-og-role` の一覧。
 /// - `editableAttributes`: CLI / MCP が編集できる永続属性。
 /// - `runtimeAttributes`: 正本 HTML に残さない実行時属性。
-/// - `cssVariables`: 既知の `--og-*` CSS 変数定義。
-/// - `cssVariablePatterns`: locale suffix など動的に許可する CSS 変数パターン。
+/// - `cssVariables`: 既知の編集可能 CSS 宣言定義。標準 CSS property と OpenGraphite 固有 custom property を含む。
+/// - `cssVariablePatterns`: locale suffix など動的に許可する CSS custom property パターン。
 struct OpenGraphiteContract: Codable, Equatable {
     var version: String
     var types: [String]
@@ -53,8 +53,8 @@ struct OpenGraphiteContract: Codable, Equatable {
     ///   - roles: 既知の `data-og-role` の一覧。
     ///   - editableAttributes: CLI / MCP が編集できる永続属性。
     ///   - runtimeAttributes: 正本 HTML に残さない実行時属性。
-    ///   - cssVariables: 既知の `--og-*` CSS 変数定義。
-    ///   - cssVariablePatterns: 動的に許可する CSS 変数パターン。
+    ///   - cssVariables: 既知の編集可能 CSS 宣言定義。
+    ///   - cssVariablePatterns: 動的に許可する CSS custom property パターン。
     init(
         version: String,
         types: [String],
@@ -100,11 +100,11 @@ struct OpenGraphiteContract: Codable, Equatable {
         editableAttributeSet.contains(name)
     }
 
-    /// 論理名（日本語）: CSS変数既知判定関数
-    /// 処理概要: 固定定義または動的パターンに一致する OpenGraphite CSS 変数かを判定します。
+    /// 論理名（日本語）: CSS宣言既知判定関数
+    /// 処理概要: 固定定義または動的パターンに一致する OpenGraphite 編集対象 CSS 宣言かを判定します。
     ///
-    /// - Parameter name: 判定する CSS 変数名。
-    /// - Returns: 契約で扱える CSS 変数であれば `true`。
+    /// - Parameter name: 判定する CSS property または custom property 名。
+    /// - Returns: 契約で扱える CSS 宣言であれば `true`。
     func isKnownCSSVariable(_ name: String) -> Bool {
         if cssVariableSet.contains(name) {
             return true
@@ -223,41 +223,41 @@ struct OpenGraphiteContract: Codable, Equatable {
             OpenGraphiteCSSVariableContract(name: "--og-muted-color", category: "theme", syntax: "<color>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-accent", category: "theme", syntax: "<color>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-accent-foreground", category: "theme", syntax: "<color>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-width", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-height", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-min-width", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-min-height", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-max-width", category: "box", syntax: "<length-percentage>|none|min()|max()|clamp()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-flex", category: "layout", syntax: "<flex-shorthand>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-margin", category: "layout", syntax: "<box-shorthand>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-padding", category: "layout", syntax: "<box-shorthand>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-gap", category: "layout", syntax: "<length-percentage>{1,2}", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-align", category: "layout", syntax: "<align-items>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-justify", category: "layout", syntax: "<justify-content>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "width", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "height", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "min-width", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "min-height", category: "box", syntax: "<length-percentage>|auto|min()|max()|clamp()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "max-width", category: "box", syntax: "<length-percentage>|none|min()|max()|clamp()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "flex", category: "layout", syntax: "<flex-shorthand>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "margin", category: "layout", syntax: "<box-shorthand>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "padding", category: "layout", syntax: "<box-shorthand>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "gap", category: "layout", syntax: "<length-percentage>{1,2}", editable: true),
+            OpenGraphiteCSSVariableContract(name: "align-items", category: "layout", syntax: "<align-items>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "justify-content", category: "layout", syntax: "<justify-content>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-x", category: "position", syntax: "<length-percentage>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-y", category: "position", syntax: "<length-percentage>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-foreground", category: "appearance", syntax: "<color>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-background", category: "appearance", syntax: "<color>|<image>|linear-gradient()", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-border", category: "appearance", syntax: "<border-shorthand>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-radius", category: "appearance", syntax: "<box-shorthand>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-shadow", category: "appearance", syntax: "<box-shadow>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-font-family", category: "text", syntax: "<font-family-list>|var()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "color", category: "appearance", syntax: "<color>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "background", category: "appearance", syntax: "<color>|<image>|linear-gradient()", editable: true),
+            OpenGraphiteCSSVariableContract(name: "border", category: "appearance", syntax: "<border-shorthand>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "border-radius", category: "appearance", syntax: "<box-shorthand>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "box-shadow", category: "appearance", syntax: "<box-shadow>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "font-family", category: "text", syntax: "<font-family-list>|var()", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-font-family-default", category: "text", syntax: "<font-family-list>|var()", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-font-family-ja", category: "text", syntax: "<font-family-list>|var()", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-font-family-en", category: "text", syntax: "<font-family-list>|var()", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-font-family-eng", category: "text", syntax: "<font-family-list>|var()", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-active-font-family", category: "runtime", syntax: "<font-family-list>|var()", editable: false),
-            OpenGraphiteCSSVariableContract(name: "--og-font-size", category: "text", syntax: "<length-percentage>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-font-weight", category: "text", syntax: "<number>|<font-weight-keyword>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-line-height", category: "text", syntax: "<number>|<length-percentage>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-letter-spacing", category: "text", syntax: "<length>|normal", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-text-align", category: "text", syntax: "<text-align>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "font-size", category: "text", syntax: "<length-percentage>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "font-weight", category: "text", syntax: "<number>|<font-weight-keyword>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "line-height", category: "text", syntax: "<number>|<length-percentage>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "letter-spacing", category: "text", syntax: "<length>|normal", editable: true),
+            OpenGraphiteCSSVariableContract(name: "text-align", category: "text", syntax: "<text-align>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-object-fit", category: "media", syntax: "<object-fit>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-stroke-width", category: "icon", syntax: "<number>|<length>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-icon-url", category: "icon", syntax: "url()", editable: false),
             OpenGraphiteCSSVariableContract(name: "--og-scale-x", category: "transform", syntax: "<number>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-scale-y", category: "transform", syntax: "<number>", editable: true),
-            OpenGraphiteCSSVariableContract(name: "--og-transform-origin", category: "transform", syntax: "<position>", editable: true),
+            OpenGraphiteCSSVariableContract(name: "transform-origin", category: "transform", syntax: "<position>", editable: true),
             OpenGraphiteCSSVariableContract(name: "--og-edit-width", category: "runtime", syntax: "<length-percentage>|auto", editable: false),
             OpenGraphiteCSSVariableContract(name: "--og-edit-min-height", category: "runtime", syntax: "<length-percentage>", editable: false)
         ],
@@ -272,11 +272,11 @@ struct OpenGraphiteContract: Codable, Equatable {
     )
 }
 
-/// 論理名（日本語）: OpenGraphite CSS変数契約
-/// 概要: 単一の `--og-*` CSS 変数について、カテゴリ、値構文、編集可否を表します。
+/// 論理名（日本語）: OpenGraphite CSS宣言契約
+/// 概要: 単一の編集可能 CSS property または custom property について、カテゴリ、値構文、編集可否を表します。
 ///
 /// プロパティ:
-/// - `name`: CSS 変数名。
+/// - `name`: CSS property または custom property 名。
 /// - `category`: theme、layout、appearance などの分類。
 /// - `syntax`: 人間と diagnostics 向けの値構文ラベル。
 /// - `editable`: 正本 HTML の編集対象として扱うか。
@@ -287,11 +287,11 @@ struct OpenGraphiteCSSVariableContract: Codable, Equatable {
     var editable: Bool
 }
 
-/// 論理名（日本語）: OpenGraphite CSS変数パターン契約
-/// 概要: locale suffix など、固定名ではなく正規表現で許可する `--og-*` CSS 変数を表します。
+/// 論理名（日本語）: OpenGraphite CSS宣言パターン契約
+/// 概要: locale suffix など、固定名ではなく正規表現で許可する CSS custom property を表します。
 ///
 /// プロパティ:
-/// - `pattern`: CSS 変数名に対する正規表現。
+/// - `pattern`: CSS property または custom property 名に対する正規表現。
 /// - `category`: text、runtime などの分類。
 /// - `syntax`: 人間と diagnostics 向けの値構文ラベル。
 /// - `editable`: 正本 HTML の編集対象として扱うか。

@@ -6,8 +6,8 @@ OpenGraphite treats HTML as the editable source of truth. The `.ogp` file stores
 
 - Tag names express semantic component names.
 - `data-og-*` attributes store editor-facing structure and roles.
-- CSS variables store design values such as spacing, radius, size, and colors.
-- `CSS/OpenGraphite.css` interprets `data-og-*` and `--og-*` values in both the app canvas and the browser.
+- Companion CSS stores design values such as spacing, radius, size, and colors as standard CSS properties.
+- `CSS/OpenGraphite.css` interprets `data-og-*`, editable CSS declarations, and reserved helper custom properties in both the app canvas and the browser.
 
 ## Runtime Flow
 
@@ -16,6 +16,6 @@ OpenGraphite treats HTML as the editable source of truth. The `.ogp` file stores
 3. `WKWebView` loads the HTML file directly from disk.
 4. A small bridge script enumerates `[data-og-id]` nodes and sends them to SwiftUI.
 5. Layers select nodes by `data-og-id`.
-6. Inspector CSS variable edits update the DOM and serialize the HTML back to the same file.
+6. Inspector CSS edits update the DOM and serialize companion CSS changes back to the same-named CSS file.
 
 The editor does not generate a separate export copy. The opened HTML is the file that changes.

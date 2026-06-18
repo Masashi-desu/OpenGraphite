@@ -171,7 +171,7 @@ enum OpenGraphiteFontGenreID: String, CaseIterable, Identifiable {
 /// - `externalProviderID`: External ソース内の provider。External 以外では `nil`。
 /// - `familyName`: フォントファミリー名。
 /// - `category`: sans-serif / serif などの分類。
-/// - `cssFamily`: `--og-font-family` に保存する CSS 値。
+/// - `cssFamily`: `font-family` に保存する CSS 値。
 /// - `stylesheetHref`: 選択時に HTML `<head>` へ追加する stylesheet。不要な場合は `nil`。
 /// - `tags`: 検索用補助語。
 struct OpenGraphiteFontCandidate: Identifiable, Equatable {
@@ -835,7 +835,7 @@ private struct OpenGraphiteGoogleFontsAxis: Decodable {
 /// 概要: 情報ソースを選び、その中のフォント候補を検索・プレビュー・適用する小窓です。
 ///
 /// プロパティ:
-/// - `currentValue`: 現在の `--og-font-family` 値。
+/// - `currentValue`: 現在の `font-family` 値。
 /// - `sampleText`: プレビューに表示する文言。
 /// - `onSelect`: 選択確定時に呼び出す処理。
 struct OpenGraphiteFontBrowserView: View {
@@ -861,7 +861,7 @@ struct OpenGraphiteFontBrowserView: View {
     /// 処理概要: 現在値から初期ソースと選択候補を推定します。
     ///
     /// - Parameters:
-    ///   - currentValue: 現在の `--og-font-family` 値。
+    ///   - currentValue: 現在の `font-family` 値。
     ///   - sampleText: プレビューに表示する文言。
     ///   - onSelect: 選択確定時に呼び出す処理。
     init(
@@ -1034,7 +1034,7 @@ struct OpenGraphiteFontBrowserView: View {
 
     private var directCSSFamilyQuickEntry: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Direct --og-font-family")
+            Text("Direct font-family")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -1535,7 +1535,7 @@ private struct OpenGraphiteFontPreviewPanel: View {
                 )
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("--og-font-family")
+                Text("font-family")
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                 Text(candidate.cssFamily.isEmpty ? "unset" : candidate.cssFamily)

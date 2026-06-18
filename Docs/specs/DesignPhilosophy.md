@@ -24,7 +24,7 @@ OpenGraphite app の中では、読み込み済み project / HTML / resource か
 
 永続化は、アプリ内同期の手段ではなく、cache の編集状態を HTML、CSS、locale resource、`.ogp` などの正本へ確定する境界です。永続化には validation、競合検出、debounce、失敗時の回復が関わるため、UI 同期のために「一度保存してから再読込する」ことを前提にしません。
 
-この原則は text に限りません。CSS 変数、属性、text content、resolved text、preview mock、canvas 配置、Project resource の設定など、app 内で編集でき、かつ同じ値を複数の表示経路が参照する項目は、常に cache 上の単一の現在値へ集約し、その値を即時に fan out します。永続化が未完了または失敗した場合は、表示経路を分岐させず、pending / conflict / error として扱います。
+この原則は text に限りません。companion CSS declaration、属性、text content、resolved text、preview mock、canvas 配置、Project resource の設定など、app 内で編集でき、かつ同じ値を複数の表示経路が参照する項目は、常に cache 上の単一の現在値へ集約し、その値を即時に fan out します。永続化が未完了または失敗した場合は、表示経路を分岐させず、pending / conflict / error として扱います。
 
 ## Responsibility Principles
 
@@ -38,7 +38,7 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則、proj
 
 HTML には構造と参照のパラメータだけを残します。`data-og-role` や `data-og-variant` のうち純粋に見た目を選ぶ値は companion CSS の selector で表し、`component-placement` のように editor / runtime が参照として解釈する値だけを HTML に残します。
 
-class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として使えますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と companion CSS 上の `--og-*` です。
+class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として使えますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と companion CSS 上の node-scoped CSS declaration です。
 
 詳細な属性、CSS 値、runtime、build、preview mock、text resource の境界は [SourceOfTruthContract.md](SourceOfTruthContract.md) に定義します。
 
@@ -60,7 +60,7 @@ component instance は master の構造を共有し、差分は明示された s
 
 OpenGraphite は HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が source HTML / CSS / JS を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。
 
-描画規則は class ではなく `data-og-*` と CSS 変数を中心に記述します。ページ固有の見た目は同名 companion CSS に置き、app 内描画とブラウザ描画の差分は、できるだけ CSS と runtime contract 側で説明できるようにします。
+描画規則は class ではなく `data-og-*` と標準 CSS property を中心に記述します。ページ固有の見た目は同名 companion CSS に置き、app 内描画とブラウザ描画の差分は、できるだけ CSS と runtime contract 側で説明できるようにします。
 
 ## Editor Principle
 
@@ -89,7 +89,7 @@ OpenGraphite 独自の機能を追加する場合も、最終的に Web 標準�
 実装判断で迷った場合は、次の順で優先します。
 
 1. 編集後の source files が、そのまま Web 成果物として読めるか。
-2. デザイン値が同名 companion CSS の CSS 変数として明示されているか。
+2. デザイン値が同名 companion CSS の標準 CSS property として明示されているか。
 3. エディタ用の構造・参照メタデータが `data-og-*` として source HTML 上に保持されているか。
 4. `.ogp` が source の複製ではなく、プロジェクト管理情報に留まっているか。
 5. app 内で同じ値を表示する複数経路が、永続化前の cache 現在値で同期しているか。

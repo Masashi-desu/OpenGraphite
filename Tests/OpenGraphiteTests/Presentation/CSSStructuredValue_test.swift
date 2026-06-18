@@ -5,6 +5,21 @@ import Testing
 /// 概要: Inspector の構造化 UI が使う CSS shorthand、関数値、複合値の round-trip を検証します。
 @Suite("CSS構造化値関連のテストスイート")
 struct CSSStructuredValueTests {
+    /// 論理名（日本語）: CSS宣言重複後勝ちテスト
+    /// 概要: 標準 CSS property が同じ style 内で複数回現れても、辞書化時にクラッシュせず後勝ちで扱うことを検証します。
+    @Test("重複CSS宣言は後勝ちで辞書化できる")
+    func testDuplicateCSSDeclarationsUseLastValue() {
+        // コンディション：同じ標準 property を複数持つ CSS declaration list を用意する
+        let style = OpenGraphiteCSSStyle.parse("border-radius: 16px; border-radius: 24px; gap: 12px;")
+
+        // 検証内容：OpenGraphite の編集対象 CSS declaration だけを辞書化する
+        let declarations = style.openGraphiteDeclarations(contract: .builtIn)
+
+        // 期待値：CSS cascade と同じく後続宣言が勝ち、重複でクラッシュしない
+        #expect(declarations["border-radius"] == "24px")
+        #expect(declarations["gap"] == "12px")
+    }
+
     /// 論理名（日本語）: CSS四辺shorthand解析テスト
     /// 概要: padding などの 2 値 shorthand を四辺へ分解し、同じ shorthand へ戻せることを検証します。
     @Test("2値shorthandを四辺へ展開して再直列化できる")
@@ -176,7 +191,7 @@ struct CSSStructuredValueTests {
         let cssFamily = candidate.cssFamily
         let stylesheetHref = candidate.stylesheetHref
 
-        // 期待値：`--og-font-family` と HTML head link に使える値が揃っている
+        // 期待値：`font-family` と HTML head link に使える値が揃っている
         #expect(candidate.sourceID == .external)
         #expect(candidate.externalProviderID == .googleFonts)
         #expect(cssFamily == "\"Roboto\", sans-serif")

@@ -806,8 +806,8 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
               const active = button.getAttribute('data-code-viewer-tab') === mode;
               button.setAttribute('aria-pressed', active ? 'true' : 'false');
-              button.style.setProperty('--og-background', active ? '#858892' : '#343438');
-              button.style.setProperty('--og-border', active ? '1px solid #858892' : '1px solid transparent');
+              button.style.setProperty('background', active ? '#858892' : '#343438');
+              button.style.setProperty('border', active ? '1px solid #858892' : '1px solid transparent');
             });
           }
 
@@ -840,17 +840,24 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
           }
 
           function inlinePlacementVariable(host, name) {
-            return String((host && host.style && host.style.getPropertyValue(name)) || '').trim();
+            if (!host) { return ''; }
+            const inlineValue = String((host.style && host.style.getPropertyValue(name)) || '').trim();
+            if (inlineValue) { return inlineValue; }
+            try {
+              return String(window.getComputedStyle(host).getPropertyValue(name) || '').trim();
+            } catch (_) {
+              return '';
+            }
           }
 
           function applyPlacementFrameSizing(clone, host) {
-            clone.style.setProperty('--og-margin', '0');
-            if (inlinePlacementVariable(host, '--og-width')) {
-              clone.style.setProperty('--og-width', '100%');
-              clone.style.setProperty('--og-max-width', 'none');
+            clone.style.setProperty('margin', '0');
+            if (inlinePlacementVariable(host, 'width')) {
+              clone.style.setProperty('width', '100%');
+              clone.style.setProperty('max-width', 'none');
             }
-            if (inlinePlacementVariable(host, '--og-height')) {
-              clone.style.setProperty('--og-height', '100%');
+            if (inlinePlacementVariable(host, 'height')) {
+              clone.style.setProperty('height', '100%');
             }
           }
 

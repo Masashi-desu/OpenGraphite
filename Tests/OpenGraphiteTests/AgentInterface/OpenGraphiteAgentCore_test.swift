@@ -7,7 +7,7 @@ import Testing
 @Suite("Agentインターフェース関連のテストスイート")
 struct OpenGraphiteAgentCoreTests {
     /// 論理名（日本語）: ページグラフ抽出テスト
-    /// 概要: HTML と companion CSS から `data-og-id` ノードと CSS 変数を抽出できることを検証します。
+    /// 概要: HTML と companion CSS から `data-og-id` ノードと CSS declaration を抽出できることを検証します。
     @Test("HTMLとcompanion CSSからpage graphを抽出できる")
     func testPageGraphExtractsNodes() throws {
         // コンディション：OpenGraphite 契約に沿った HTML と companion CSS を一時ファイルへ用意する
@@ -26,7 +26,7 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero"] {
-              --og-gap: 24px;
+              gap: 24px;
             }
             """
         )
@@ -34,9 +34,9 @@ struct OpenGraphiteAgentCoreTests {
         // 検証内容：page graph を生成する
         let graph = try fixture.core.pageGraph(at: fixture.htmlURL)
 
-        // 期待値：DOM 出現順のノードと CSS 変数が取得できる
+        // 期待値：DOM 出現順のノードと CSS declaration が取得できる
         #expect(graph.nodes.map(\.id) == ["hero", "title"])
-        #expect(graph.nodes[0].cssVariables["--og-gap"] == "24px")
+        #expect(graph.nodes[0].cssVariables["gap"] == "24px")
         #expect(graph.nodes[0].textContent == "OpenGraphite")
         #expect(graph.nodes[1].parentID == "hero")
         #expect(graph.diagnostics.isEmpty)
@@ -67,40 +67,40 @@ struct OpenGraphiteAgentCoreTests {
         #expect(result.diagnostics.contains { $0.code == "duplicate-data-og-id" && $0.severity == .error })
     }
 
-    /// 論理名（日本語）: CSS変数編集テスト
-    /// 概要: node 単位 CSS 変数編集が runtime 属性を正本 HTML へ残さず保存されることを確認します。
-    @Test("CSS変数編集でruntime状態を除去して保存する")
+    /// 論理名（日本語）: CSS宣言編集テスト
+    /// 概要: node 単位 CSS declaration 編集が runtime 属性を正本 HTML へ残さず保存されることを確認します。
+    @Test("CSS宣言編集でruntime状態を除去して保存する")
     func testSetCSSVariableStripsRuntimeState() throws {
-        // コンディション：runtime 属性と編集補助 CSS 変数を含む HTML を用意する
+        // コンディション：runtime 属性と編集補助 CSS custom property を含む HTML を用意する
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
         try fixture.writeHTML(
             """
             <!doctype html>
             <html><body>
-              <Hero data-og-id="hero" data-og-type="frame" data-og-selected="true" style="--og-gap:24px; --og-edit-width:100px;"></Hero>
+              <Hero data-og-id="hero" data-og-type="frame" data-og-selected="true" style="gap:24px; --og-edit-width:100px;"></Hero>
             </body></html>
             """
         )
 
-        // 検証内容：hero の --og-gap を更新する
-        let result = try fixture.core.setCSSVariable("--og-gap", value: "32px", nodeID: "hero", htmlURL: fixture.htmlURL)
+        // 検証内容：hero の gap を更新する
+        let result = try fixture.core.setCSSVariable("gap", value: "32px", nodeID: "hero", htmlURL: fixture.htmlURL)
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let css = try fixture.readCompanionCSS()
 
-        // 期待値：CSS 変数は companion CSS へ保存され、runtime 状態と inline design value は HTML から削除される
+        // 期待値：CSS declaration は companion CSS へ保存され、runtime 状態と inline design value は HTML から削除される
         #expect(result.updated == true)
-        #expect(result.node?.cssVariables["--og-gap"] == "32px")
-        #expect(css.contains("--og-gap: 32px;"))
+        #expect(result.node?.cssVariables["gap"] == "32px")
+        #expect(css.contains("gap: 32px;"))
         #expect(!html.contains("data-og-selected"))
-        #expect(!html.contains("--og-gap"))
+        #expect(!html.contains("gap"))
         #expect(!html.contains("--og-edit-width"))
         #expect(!css.contains("--og-edit-width"))
     }
 
-    /// 論理名（日本語）: CSSフォントファミリー変数編集テスト
-    /// 概要: node 単位 CSS 変数編集で `--og-font-family` を正本 HTML へ保存できることを確認します。
-    @Test("font-family CSS変数を保存できる")
+    /// 論理名（日本語）: CSSフォントファミリー宣言編集テスト
+    /// 概要: node 単位 CSS declaration 編集で `font-family` を正本 HTML へ保存できることを確認します。
+    @Test("font-family CSS宣言を保存できる")
     func testSetFontFamilyCSSVariable() throws {
         // コンディション：text node を持つ HTML を用意する
         let fixture = try AgentInterfaceFixture()
@@ -115,9 +115,9 @@ struct OpenGraphiteAgentCoreTests {
         )
         let fontStack = "\"Noto Sans JP\", \"Hiragino Sans\", sans-serif"
 
-        // 検証内容：title の --og-font-family を更新する
+        // 検証内容：title の font-family を更新する
         let result = try fixture.core.setCSSVariable(
-            "--og-font-family",
+            "font-family",
             value: fontStack,
             nodeID: "title",
             htmlURL: fixture.htmlURL
@@ -125,11 +125,11 @@ struct OpenGraphiteAgentCoreTests {
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let css = try fixture.readCompanionCSS()
 
-        // 期待値：font-family 値が companion CSS の CSS 変数として保存される
+        // 期待値：font-family 値が companion CSS の CSS declaration として保存される
         #expect(result.updated == true)
-        #expect(result.node?.cssVariables["--og-font-family"] == fontStack)
-        #expect(!html.contains("--og-font-family"))
-        #expect(css.contains("--og-font-family: \"Noto Sans JP\", \"Hiragino Sans\", sans-serif;"))
+        #expect(result.node?.cssVariables["font-family"] == fontStack)
+        #expect(!html.contains("font-family"))
+        #expect(css.contains("font-family: \"Noto Sans JP\", \"Hiragino Sans\", sans-serif;"))
     }
 
     /// 論理名（日本語）: Stylesheet link追加テスト
@@ -233,8 +233,8 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="decorative-icon"] {
-              --og-width: 24px;
-              --og-height: 24px;
+              width: 24px;
+              height: 24px;
               --og-stroke-width: 2;
             }
             """
@@ -329,8 +329,8 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!html.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
         #expect(!html.contains("--og-"))
         #expect(css.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
-        #expect(css.contains("--og-width: 24px;"))
-        #expect(css.contains("--og-height: 24px;"))
+        #expect(css.contains("width: 24px;"))
+        #expect(css.contains("height: 24px;"))
     }
 
     /// 論理名（日本語）: Placement Mock Stateデコードテスト
@@ -1279,7 +1279,7 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero"] {
-              --og-gap: 24px;
+              gap: 24px;
             }
             """
         )
@@ -1294,7 +1294,7 @@ struct OpenGraphiteAgentCoreTests {
                 "node", "style", "set", "Sample.ogp",
                 "--page-id", fixture.homePageInternalID,
                 "--id", "hero",
-                "--var", "--og-gap",
+                "--var", "gap",
                 "--value", "32px"
             ],
             currentDirectory: fixture.rootURL,
@@ -1306,7 +1306,7 @@ struct OpenGraphiteAgentCoreTests {
                 "node", "style", "set", "index.html",
                 "--page-id", fixture.homePageInternalID,
                 "--id", "hero",
-                "--var", "--og-gap",
+                "--var", "gap",
                 "--value", "40px"
             ],
             currentDirectory: fixture.rootURL,
@@ -1319,8 +1319,8 @@ struct OpenGraphiteAgentCoreTests {
         // 期待値：`.ogp` 経由の編集だけが成功し、直接 HTML 指定はエラーになり、値は companion CSS に残る
         #expect(successCode == 0)
         #expect(rejectedCode == 2)
-        #expect(!html.contains("--og-gap"))
-        #expect(css.contains("--og-gap: 32px;"))
+        #expect(!html.contains("gap"))
+        #expect(css.contains("gap: 32px;"))
         #expect(!css.contains("40px"))
         #expect(stderr.contains(".ogp"))
     }
@@ -1451,7 +1451,7 @@ struct OpenGraphiteAgentCoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero"] {
-              --og-gap: 24px;
+              gap: 24px;
             }
             """
         )
@@ -1466,7 +1466,7 @@ struct OpenGraphiteAgentCoreTests {
             arguments: [
                 "node", "style", "set", "Sample.ogp",
                 "--id", nodeReferenceID,
-                "--var", "--og-gap",
+                "--var", "gap",
                 "--value", "40px"
             ],
             currentDirectory: fixture.rootURL,
@@ -1480,8 +1480,8 @@ struct OpenGraphiteAgentCoreTests {
         #expect(code == 0)
         #expect(stderr.isEmpty)
         #expect(stdout.contains("\"updated\" : true"))
-        #expect(!html.contains("--og-gap"))
-        #expect(css.contains("--og-gap: 40px;"))
+        #expect(!html.contains("gap"))
+        #expect(css.contains("gap: 40px;"))
     }
 
     /// 論理名（日本語）: CLIページ配置名更新テスト
@@ -1876,15 +1876,15 @@ struct OpenGraphiteAgentCoreTests {
         }
         let contract = try OpenGraphiteContract.load(from: contractURL)
 
-        // 期待値：主要な type、layout、CSS 変数が契約に含まれる
+        // 期待値：主要な type、layout、CSS declaration が契約に含まれる
         #expect(contract.types.contains("frame"))
         #expect(contract.layouts.contains("horizontal"))
-        #expect(contract.cssVariables.contains { $0.name == "--og-gap" && $0.editable })
-        #expect(contract.cssVariables.contains { $0.name == "--og-font-family" && $0.category == "text" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "gap" && $0.editable })
+        #expect(contract.cssVariables.contains { $0.name == "font-family" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-font-family-default" && $0.category == "text" && $0.editable })
         #expect(contract.cssVariables.contains { $0.name == "--og-active-font-family" && $0.category == "runtime" && !$0.editable })
         #expect(contract.isKnownCSSVariable("--og-font-family-fr"))
-        #expect(contract.cssVariablePatterns.contains { $0.pattern.contains("--og-font-family") && $0.category == "text" })
+        #expect(contract.cssVariablePatterns.contains { $0.pattern.contains("font-family") && $0.category == "text" })
     }
 
     /// 論理名（日本語）: Componentsセグメント要約テスト

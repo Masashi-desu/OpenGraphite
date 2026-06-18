@@ -117,9 +117,14 @@ struct OpenGraphiteHTMLDocument {
     /// 論理名（日本語）: ノード一覧抽出関数
     /// 処理概要: HTML を軽量に走査し、`data-og-id` を持つ開始タグを OpenGraphite ノードへ変換します。
     ///
-    /// - Parameter companionCSS: HTML と同名の design value 正本 CSS。未指定時は legacy inline style だけを読みます。
+    /// - Parameters:
+    ///   - companionCSS: HTML と同名の design value 正本 CSS。未指定時は legacy inline style だけを読みます。
+    ///   - contract: 抽出対象の CSS 宣言を定義する OpenGraphite 契約。
     /// - Returns: DOM 出現順の OpenGraphite agent node 一覧。
-    func nodes(companionCSS: OpenGraphiteCompanionCSSDocument? = nil) -> [OpenGraphiteAgentNode] {
+    func nodes(
+        companionCSS: OpenGraphiteCompanionCSSDocument? = nil,
+        contract: OpenGraphiteContract = .builtIn
+    ) -> [OpenGraphiteAgentNode] {
         var nodeStack: [(depth: Int, id: String)] = []
         return parsedTags().compactMap { tag in
             while let last = nodeStack.last, last.depth >= tag.depth {
@@ -131,8 +136,9 @@ struct OpenGraphiteHTMLDocument {
             }
 
             let internalID = tag.attributeValue(named: "data-og-internal-id") ?? ""
-            let inlineVariables = OpenGraphiteCSSStyle.parse(tag.attributeValue(named: "style") ?? "").ogVariables()
-            let companionVariables = companionCSS?.cssVariables(forNodeInternalID: internalID) ?? [:]
+            let inlineVariables = OpenGraphiteCSSStyle.parse(tag.attributeValue(named: "style") ?? "")
+                .openGraphiteDeclarations(contract: contract)
+            let companionVariables = companionCSS?.cssVariables(forNodeInternalID: internalID, contract: contract) ?? [:]
             let cssVariables = companionCSS == nil || companionVariables.isEmpty
                 ? inlineVariables
                 : inlineVariables.merging(companionVariables) { _, companionValue in companionValue }
@@ -299,11 +305,11 @@ struct OpenGraphiteHTMLDocument {
         return tags
     }
 
-    /// 論理名（日本語）: CSS変数設定関数
-    /// 処理概要: legacy HTML の inline style に残る `--og-*` CSS 変数を設定します。
+    /// 論理名（日本語）: CSS宣言設定関数
+    /// 処理概要: legacy HTML の inline style に残る OpenGraphite 編集対象 CSS 宣言を設定します。
     ///
     /// - Parameters:
-    ///   - variable: 更新する CSS 変数名。
+    ///   - variable: 更新する CSS property または custom property 名。
     ///   - value: 設定値。空の場合は対象変数を削除します。
     ///   - id: 対象ノードの `data-og-internal-id`。
     ///   - contract: 検証に使う OpenGraphite 契約。
@@ -314,19 +320,6 @@ struct OpenGraphiteHTMLDocument {
         forNodeID id: String,
         contract: OpenGraphiteContract
     ) -> OpenGraphiteHTMLMutationResult {
-        guard variable.hasPrefix("--og-") else {
-            return .failure(
-                html: html,
-                diagnostic: OpenGraphiteDiagnostic(
-                    severity: .error,
-                    code: "invalid-css-variable",
-                    message: "\(variable) は --og-* CSS 変数ではありません。",
-                    path: nil,
-                    nodeID: id
-                )
-            )
-        }
-
         if !contract.isKnownCSSVariable(variable) {
             return .failure(
                 html: html,
@@ -1021,17 +1014,18 @@ struct OpenGraphiteHTMLDocument {
     }
 
     /// 論理名（日本語）: OpenGraphite design style削除関数
-    /// 処理概要: companion CSS 正本へ移す `--og-*` 宣言を HTML inline style から除去します。
+    /// 処理概要: companion CSS 正本へ移す OpenGraphite 編集対象 CSS 宣言を HTML inline style から除去します。
     ///
-    /// - Returns: `--og-*` 宣言を取り除いた HTML。
-    func removingOpenGraphiteStyleVariables() -> String {
+    /// - Parameter contract: 除去対象の CSS 宣言を定義する OpenGraphite 契約。
+    /// - Returns: OpenGraphite 編集対象 CSS 宣言を取り除いた HTML。
+    func removingOpenGraphiteStyleVariables(contract: OpenGraphiteContract = .builtIn) -> String {
         var result = html
         for tag in parsedTags().reversed() {
             var attributes = tag.attributes
             guard let styleIndex = attributes.firstIndex(where: { $0.name == "style" }) else { continue }
             var style = OpenGraphiteCSSStyle.parse(attributes[styleIndex].value)
             let originalStyle = style
-            style.declarations.removeAll { $0.name.hasPrefix("--og-") }
+            style.declarations.removeAll { contract.isKnownCSSVariable($0.name) }
             guard style != originalStyle else { continue }
             if style.declarations.isEmpty {
                 attributes.remove(at: styleIndex)
@@ -1720,11 +1714,11 @@ struct OpenGraphiteCSSStyle: Equatable {
         return declarations
     }
 
-    /// 論理名（日本語）: CSS変数設定関数
-    /// 処理概要: 指定 CSS 変数を設定し、空値の場合は宣言を削除します。
+    /// 論理名（日本語）: CSS宣言設定関数
+    /// 処理概要: 指定 CSS declaration を設定し、空値の場合は宣言を削除します。
     ///
     /// - Parameters:
-    ///   - name: CSS 変数名。
+    ///   - name: CSS property または OpenGraphite 予約 custom property 名。
     ///   - value: 設定値。空の場合は削除。
     mutating func set(_ name: String, value: String) {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1740,20 +1734,25 @@ struct OpenGraphiteCSSStyle: Equatable {
         }
     }
 
-    /// 論理名（日本語）: CSS変数一括削除関数
-    /// 処理概要: 指定された CSS 変数名に一致する宣言を削除します。
+    /// 論理名（日本語）: CSS宣言一括削除関数
+    /// 処理概要: 指定された CSS declaration 名に一致する宣言を削除します。
     ///
-    /// - Parameter names: 削除対象の CSS 変数名。
+    /// - Parameter names: 削除対象の CSS property または OpenGraphite 予約 custom property 名。
     mutating func removeVariables(_ names: Set<String>) {
         declarations.removeAll { names.contains($0.name) }
     }
 
-    /// 論理名（日本語）: OpenGraphite CSS変数辞書化関数
-    /// 処理概要: `--og-*` 宣言だけを JSON / node model 向け辞書へ変換します。
+    /// 論理名（日本語）: OpenGraphite CSS宣言辞書化関数
+    /// 処理概要: contract で定義された編集対象 CSS 宣言だけを JSON / node model 向け辞書へ変換します。
     ///
-    /// - Returns: `--og-*` CSS 変数辞書。
-    func ogVariables() -> [String: String] {
-        Dictionary(uniqueKeysWithValues: declarations.filter { $0.name.hasPrefix("--og-") }.map { ($0.name, $0.value) })
+    /// - Parameter contract: 抽出対象の CSS 宣言を定義する OpenGraphite 契約。
+    /// - Returns: OpenGraphite 編集対象 CSS 宣言辞書。
+    func openGraphiteDeclarations(contract: OpenGraphiteContract) -> [String: String] {
+        var result: [String: String] = [:]
+        for declaration in declarations where contract.isKnownCSSVariable(declaration.name) {
+            result[declaration.name] = declaration.value
+        }
+        return result
     }
 
     /// 論理名（日本語）: CSS style直列化関数

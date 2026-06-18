@@ -100,7 +100,7 @@ function resourcesList() {
     {
       uri: "opengraphite://contract/css",
       name: "OpenGraphite Contract",
-      description: "Machine-readable data-og-* and --og-* contract.",
+      description: "Machine-readable data-og-* and editable CSS declaration contract.",
       mimeType: "application/json"
     },
     {
@@ -426,7 +426,7 @@ function toolsList() {
     },
     {
       name: "set_css_variable",
-      description: "Set a --og-* CSS variable on a node selected by data-og-internal-id or ogref.",
+      description: "Set an editable companion CSS declaration on a node selected by data-og-internal-id or ogref.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -437,7 +437,7 @@ function toolsList() {
     },
     {
       name: "remove_css_variable",
-      description: "Remove a --og-* CSS variable from a node selected by data-og-internal-id or ogref.",
+      description: "Remove an editable companion CSS declaration from a node selected by data-og-internal-id or ogref.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -490,8 +490,8 @@ function toolsList() {
         iconID: { type: "string", description: "Optional data-og-id for the new icon node." },
         library: { type: "string", enum: ["lucide"] },
         source: { type: "string", enum: ["inline", "cdn", "library"] },
-        width: { type: "string", description: "Optional CSS length for --og-width." },
-        height: { type: "string", description: "Optional CSS length for --og-height." }
+        width: { type: "string", description: "Optional CSS width value." },
+        height: { type: "string", description: "Optional CSS height value." }
       }, ["projectPath", "id", "position", "name"])
     },
     {

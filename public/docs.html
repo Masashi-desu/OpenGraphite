@@ -34,7 +34,7 @@
   <HeroCopy data-og-id="docs-hero-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="5aa878848f7f">
     <EyebrowText data-og-id="docs-hero-eyebrow" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.eyebrow" data-og-internal-id="28082dd7e38a" data-og-text-variant-eng="The issue OpenGraphite solves">OpenGraphite が解決するイシュー</EyebrowText>
     <PageTitle data-og-id="docs-hero-title" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.title" data-og-internal-id="1fb37cc0de50" data-og-text-variant-eng="Design tools, code, and agents should not edit different sources of truth.">デザインツール、コード、agents が別々の正本を編集してしまう問題をなくす。</PageTitle>
-    <LeadText data-og-id="docs-hero-lead" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.lead" data-og-internal-id="eb1860ea5f51" data-og-text-variant-eng="OpenGraphite opens the web source files themselves, keeps editor metadata in data-og-* and design values in --og-* variables, and makes HTML/CSS/assets/locales the reviewable deliverable instead of an exported copy.">OpenGraphite は Web source files そのものを開き、編集情報を data-og-*、デザイン値を --og-* に残します。export された別成果物ではなく、HTML / CSS / assets / locales をレビュー可能な deliverable にします。</LeadText>
+    <LeadText data-og-id="docs-hero-lead" data-og-type="text" data-og-text-source="binding" data-i18n-key="docs.hero.lead" data-og-internal-id="eb1860ea5f51" data-og-text-variant-eng="OpenGraphite opens the web source files themselves, keeps editor metadata in data-og-* and design values in standard companion CSS properties. Reserved --og-* helpers stay only where structure or runtime needs them, so HTML/CSS/assets/locales remain the reviewable deliverable.">OpenGraphite は Web source files そのものを開き、編集情報は data-og-*、デザイン値は companion CSS の標準 CSS property に残します。--og-* は構造や runtime に必要な予約 helper だけに絞り、HTML / CSS / assets / locales をレビュー可能な deliverable にします。</LeadText>
   </HeroCopy>
   <HeroIssueGrid data-og-id="docs-hero-issue-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="docsheroissuegrid">
     <HeroIssue data-og-id="docs-hero-issue-ir" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="docsheroissueir">
@@ -87,7 +87,7 @@
     <og-instance id="editable-nodes" data-og-id="docs-spec-editable-nodes" data-og-type="frame" data-og-component="doc-row" data-og-internal-id="docsspecnodes1">
       <span slot="index" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.index" data-og-text-variant-eng="04">04</span>
       <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.title" data-og-text-variant-eng="Editable nodes">編集可能 node</span>
-      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.body" data-og-text-variant-eng="Tag names carry human meaning, data-og-* carries editor metadata, --og-* carries editable design values, and OpenGraphite.css turns type, layout, role, and variables into browser rendering.">タグ名は人間向けの意味、data-og-* は editor metadata、--og-* は editable design values、OpenGraphite.css は type / layout / role / variables をブラウザ描画へ変換します。</span>
+      <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.body" data-og-text-variant-eng="Tag names carry human meaning, data-og-* carries editor metadata, and standard CSS properties carry editable design values. OpenGraphite.css connects type, layout, role, and reserved --og-* helpers to browser rendering.">タグ名は人間向けの意味、data-og-* は editor metadata、標準 CSS property は editable design values を担います。OpenGraphite.css は type / layout / role と予約 --og-* helper をブラウザ描画へ接続します。</span>
       <span slot="meta" data-og-text-source="binding" data-i18n-key="docs.spec.nodes.meta" data-og-text-variant-eng="data-og-type page/frame/text/button/image">data-og-type page/frame/text/button/image</span>
     </og-instance>
 
@@ -129,7 +129,7 @@ validate | build | screenshot canvas/page/node</span>
       <span slot="title" data-og-text-source="binding" data-i18n-key="docs.spec.edits.title" data-og-text-variant-eng="Node edits">node edits</span>
       <span slot="body" data-og-text-source="binding" data-i18n-key="docs.spec.edits.body" data-og-text-variant-eng="Prefer small node operations over full-file rewrites. Writes fail on duplicate data-og-id or data-og-internal-id, invalid target scope, invalid editable attributes, or post-edit validation errors.">HTML 全体置換より小さな node operation を優先します。data-og-id / data-og-internal-id 重複、無効な対象 scope、許可されない editable attribute、編集後 validation error がある場合、write は失敗します。</span>
       <span slot="code">./Scripts/ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --type text --json
-./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id &lt;page&gt; --id &lt;node&gt; --var --og-gap --value 32px
+./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id &lt;page&gt; --id &lt;node&gt; --var gap --value 32px
 ./Scripts/ogkiln node html replace SampleProject/OpenGraphiteSample.ogp --component-id &lt;component&gt; --id &lt;node&gt; --html-file fragment.html</span>
     </og-instance>
 

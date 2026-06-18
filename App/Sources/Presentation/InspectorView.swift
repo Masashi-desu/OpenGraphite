@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// 論理名（日本語）: インスペクタービュー
-/// 概要: 選択ノードの `data-og-*` と `--og-*` を表示・編集する右ペインです。
+/// 概要: 選択ノードの `data-og-*` と編集対象 CSS declaration を表示・編集する右ペインです。
 struct InspectorView: View {
     @EnvironmentObject private var store: EditorStore
 
@@ -52,26 +52,26 @@ struct InspectorView: View {
                         InspectorSection(title: "Alignment") {
                             InspectorButtonStrip(
                                 title: "Align",
-                                value: node.cssVariables["--og-align"] ?? "",
+                                value: node.cssVariables["align-items"] ?? "",
                                 options: [
                                     InspectorButtonOption(label: "L", icon: .alignHorizontalStart, value: "flex-start"),
                                     InspectorButtonOption(label: "C", icon: .alignHorizontalCenter, value: "center"),
                                     InspectorButtonOption(label: "R", icon: .alignHorizontalEnd, value: "flex-end")
                                 ]
                             ) { value in
-                                store.updateCSSVariable(key: "--og-align", value: value)
+                                store.updateCSSVariable(key: "align-items", value: value)
                             }
 
                             InspectorButtonStrip(
                                 title: "Justify",
-                                value: node.cssVariables["--og-justify"] ?? "",
+                                value: node.cssVariables["justify-content"] ?? "",
                                 options: [
                                     InspectorButtonOption(label: "T", icon: .alignVerticalStart, value: "flex-start"),
                                     InspectorButtonOption(label: "M", icon: .alignVerticalCenter, value: "center"),
                                     InspectorButtonOption(label: "B", icon: .alignVerticalEnd, value: "flex-end")
                                 ]
                             ) { value in
-                                store.updateCSSVariable(key: "--og-justify", value: value)
+                                store.updateCSSVariable(key: "justify-content", value: value)
                             }
                         }
 
@@ -81,35 +81,35 @@ struct InspectorView: View {
                             }
 
                             CSSPairVariableField(
-                                key: "--og-gap",
-                                value: node.cssVariables["--og-gap"] ?? "",
+                                key: "gap",
+                                value: node.cssVariables["gap"] ?? "",
                                 firstLabel: "Row",
                                 secondLabel: "Column"
                             ) { value in
-                                store.updateCSSVariable(key: "--og-gap", value: value)
+                                store.updateCSSVariable(key: "gap", value: value)
                             }
                             .id("\(node.id)-gap")
 
                             CSSBoxVariableField(
-                                key: "--og-padding",
-                                value: node.cssVariables["--og-padding"] ?? "",
+                                key: "padding",
+                                value: node.cssVariables["padding"] ?? "",
                                 labels: ["T", "R", "B", "L"]
                             ) { value in
-                                store.updateCSSVariable(key: "--og-padding", value: value)
+                                store.updateCSSVariable(key: "padding", value: value)
                             }
                             .id("\(node.id)-padding")
 
                             CSSBoxVariableField(
-                                key: "--og-margin",
-                                value: node.cssVariables["--og-margin"] ?? "",
+                                key: "margin",
+                                value: node.cssVariables["margin"] ?? "",
                                 labels: ["T", "R", "B", "L"]
                             ) { value in
-                                store.updateCSSVariable(key: "--og-margin", value: value)
+                                store.updateCSSVariable(key: "margin", value: value)
                             }
                             .id("\(node.id)-margin")
 
-                            CSSFlexVariableField(key: "--og-flex", value: node.cssVariables["--og-flex"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-flex", value: value)
+                            CSSFlexVariableField(key: "flex", value: node.cssVariables["flex"] ?? "") { value in
+                                store.updateCSSVariable(key: "flex", value: value)
                             }
                             .id("\(node.id)-flex")
                         }
@@ -129,62 +129,62 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Dimensions") {
-                            CSSDimensionVariableField(key: "--og-width", value: node.cssVariables["--og-width"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-width", value: value)
+                            CSSDimensionVariableField(key: "width", value: node.cssVariables["width"] ?? "") { value in
+                                store.updateCSSVariable(key: "width", value: value)
                             }
                             .id("\(node.id)-width")
 
-                            CSSDimensionVariableField(key: "--og-height", value: node.cssVariables["--og-height"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-height", value: value)
+                            CSSDimensionVariableField(key: "height", value: node.cssVariables["height"] ?? "") { value in
+                                store.updateCSSVariable(key: "height", value: value)
                             }
                             .id("\(node.id)-height")
 
-                            CSSDimensionVariableField(key: "--og-min-width", value: node.cssVariables["--og-min-width"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-min-width", value: value)
+                            CSSDimensionVariableField(key: "min-width", value: node.cssVariables["min-width"] ?? "") { value in
+                                store.updateCSSVariable(key: "min-width", value: value)
                             }
                             .id("\(node.id)-min-width")
 
-                            CSSDimensionVariableField(key: "--og-min-height", value: node.cssVariables["--og-min-height"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-min-height", value: value)
+                            CSSDimensionVariableField(key: "min-height", value: node.cssVariables["min-height"] ?? "") { value in
+                                store.updateCSSVariable(key: "min-height", value: value)
                             }
                             .id("\(node.id)-min-height")
 
-                            CSSDimensionVariableField(key: "--og-max-width", value: node.cssVariables["--og-max-width"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-max-width", value: value)
+                            CSSDimensionVariableField(key: "max-width", value: node.cssVariables["max-width"] ?? "") { value in
+                                store.updateCSSVariable(key: "max-width", value: value)
                             }
                             .id("\(node.id)-max-width")
                         }
 
                         InspectorSection(title: "Appearance") {
                             CSSBoxVariableField(
-                                key: "--og-radius",
-                                value: node.cssVariables["--og-radius"] ?? "",
+                                key: "border-radius",
+                                value: node.cssVariables["border-radius"] ?? "",
                                 labels: ["TL", "TR", "BR", "BL"]
                             ) { value in
-                                store.updateCSSVariable(key: "--og-radius", value: value)
+                                store.updateCSSVariable(key: "border-radius", value: value)
                             }
                             .id("\(node.id)-radius")
 
-                            CSSBorderVariableField(key: "--og-border", value: node.cssVariables["--og-border"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-border", value: value)
+                            CSSBorderVariableField(key: "border", value: node.cssVariables["border"] ?? "") { value in
+                                store.updateCSSVariable(key: "border", value: value)
                             }
                             .id("\(node.id)-border")
 
                             CSSBackgroundVariableField(
-                                key: "--og-background",
-                                value: node.cssVariables["--og-background"] ?? ""
+                                key: "background",
+                                value: node.cssVariables["background"] ?? ""
                             ) { value in
-                                store.updateCSSVariable(key: "--og-background", value: value)
+                                store.updateCSSVariable(key: "background", value: value)
                             }
                             .id("\(node.id)-background")
 
                             if node.type != "icon" {
                                 CSSColorVariableField(
-                                    key: "--og-foreground",
-                                    value: node.cssVariables["--og-foreground"] ?? "",
+                                    key: "color",
+                                    value: node.cssVariables["color"] ?? "",
                                     initialColor: .black
                                 ) { value in
-                                    store.updateCSSVariable(key: "--og-foreground", value: value)
+                                    store.updateCSSVariable(key: "color", value: value)
                                 }
                                 .id("\(node.id)-foreground")
                             }
@@ -195,45 +195,45 @@ struct InspectorView: View {
 
                             InspectorSection(title: "Typography") {
                                 CSSFontFamilyVariableField(
-                                    key: "--og-font-family",
-                                    value: node.cssVariables["--og-font-family"] ?? "",
+                                    key: "font-family",
+                                    value: node.cssVariables["font-family"] ?? "",
                                     resolvedValue: node.resolvedFontFamily ?? "",
                                     sampleText: fontPreviewText(for: node)
                                 ) { value in
-                                    store.updateCSSVariable(key: "--og-font-family", value: value)
+                                    store.updateCSSVariable(key: "font-family", value: value)
                                 } onSelectCandidate: { candidate in
                                     store.applyFontCandidate(candidate)
                                 }
                                 .id("\(node.id)-font-family")
 
                                 InspectorFieldGrid {
-                                    CSSNumericUnitVariableField(key: "--og-font-size", value: node.cssVariables["--og-font-size"] ?? "", units: ["px", "rem", "em", "%"]) { value in
-                                        store.updateCSSVariable(key: "--og-font-size", value: value)
+                                    CSSNumericUnitVariableField(key: "font-size", value: node.cssVariables["font-size"] ?? "", units: ["px", "rem", "em", "%"]) { value in
+                                        store.updateCSSVariable(key: "font-size", value: value)
                                     }
                                     .id("\(node.id)-font-size")
 
-                                    CSSNumericUnitVariableField(key: "--og-font-weight", value: node.cssVariables["--og-font-weight"] ?? "", units: [""]) { value in
-                                        store.updateCSSVariable(key: "--og-font-weight", value: value)
+                                    CSSNumericUnitVariableField(key: "font-weight", value: node.cssVariables["font-weight"] ?? "", units: [""]) { value in
+                                        store.updateCSSVariable(key: "font-weight", value: value)
                                     }
                                     .id("\(node.id)-font-weight")
 
-                                    CSSNumericUnitVariableField(key: "--og-line-height", value: node.cssVariables["--og-line-height"] ?? "", units: ["", "px", "%", "em"]) { value in
-                                        store.updateCSSVariable(key: "--og-line-height", value: value)
+                                    CSSNumericUnitVariableField(key: "line-height", value: node.cssVariables["line-height"] ?? "", units: ["", "px", "%", "em"]) { value in
+                                        store.updateCSSVariable(key: "line-height", value: value)
                                     }
                                     .id("\(node.id)-line-height")
 
-                                    CSSNumericUnitVariableField(key: "--og-letter-spacing", value: node.cssVariables["--og-letter-spacing"] ?? "", units: ["px", "em", "rem", ""]) { value in
-                                        store.updateCSSVariable(key: "--og-letter-spacing", value: value)
+                                    CSSNumericUnitVariableField(key: "letter-spacing", value: node.cssVariables["letter-spacing"] ?? "", units: ["px", "em", "rem", ""]) { value in
+                                        store.updateCSSVariable(key: "letter-spacing", value: value)
                                     }
                                     .id("\(node.id)-letter-spacing")
                                 }
 
                                 CSSEnumVariableField(
-                                    key: "--og-text-align",
-                                    value: node.cssVariables["--og-text-align"] ?? "",
+                                    key: "text-align",
+                                    value: node.cssVariables["text-align"] ?? "",
                                     options: ["left", "center", "right", "justify", "start", "end"]
                                 ) { value in
-                                    store.updateCSSVariable(key: "--og-text-align", value: value)
+                                    store.updateCSSVariable(key: "text-align", value: value)
                                 }
                                 .id("\(node.id)-text-align")
                             }
@@ -293,11 +293,11 @@ struct InspectorView: View {
                                 .id("\(node.id)-icon-name")
 
                                 CSSColorVariableField(
-                                    key: "--og-foreground",
-                                    value: node.cssVariables["--og-foreground"] ?? "",
+                                    key: "color",
+                                    value: node.cssVariables["color"] ?? "",
                                     initialColor: .white
                                 ) { value in
-                                    store.updateCSSVariable(key: "--og-foreground", value: value)
+                                    store.updateCSSVariable(key: "color", value: value)
                                 }
                                 .id("\(node.id)-icon-foreground")
 
@@ -309,18 +309,18 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Effects") {
-                            CSSShadowVariableField(key: "--og-shadow", value: node.cssVariables["--og-shadow"] ?? "") { value in
-                                store.updateCSSVariable(key: "--og-shadow", value: value)
+                            CSSShadowVariableField(key: "box-shadow", value: node.cssVariables["box-shadow"] ?? "") { value in
+                                store.updateCSSVariable(key: "box-shadow", value: value)
                             }
                             .id("\(node.id)-shadow")
 
                             CSSPairVariableField(
-                                key: "--og-transform-origin",
-                                value: node.cssVariables["--og-transform-origin"] ?? "",
+                                key: "transform-origin",
+                                value: node.cssVariables["transform-origin"] ?? "",
                                 firstLabel: "X",
                                 secondLabel: "Y"
                             ) { value in
-                                store.updateCSSVariable(key: "--og-transform-origin", value: value)
+                                store.updateCSSVariable(key: "transform-origin", value: value)
                             }
                             .id("\(node.id)-transform-origin")
 
@@ -2976,7 +2976,7 @@ private struct LayoutModePicker: View {
 }
 
 /// 論理名（日本語）: インスペクターフィールドグリッド
-/// 概要: CSS 変数入力欄を二列グリッドで配置する汎用コンテナです。
+/// 概要: CSS declaration 入力欄を二列グリッドで配置する汎用コンテナです。
 ///
 /// プロパティ:
 /// - `content`: グリッド内に表示する SwiftUI content。
@@ -2996,11 +2996,11 @@ private struct InspectorFieldGrid<Content: View>: View {
     }
 }
 
-/// 論理名（日本語）: CSS変数フィールド
-/// 概要: `--og-*` のキーと値入力欄を表示し、Enter またはフォーカスアウトで確定します。
+/// 論理名（日本語）: CSS宣言フィールド
+/// 概要: CSS property または OpenGraphite 予約 custom property のキーと値入力欄を表示し、Enter またはフォーカスアウトで確定します。
 ///
 /// プロパティ:
-/// - `key`: CSS 変数名。
+/// - `key`: CSS property または OpenGraphite 予約 custom property 名。
 /// - `value`: 現在値。
 /// - `onCommit`: 適用時に呼び出す処理。
 private struct CSSVariableField: View {
@@ -3011,11 +3011,11 @@ private struct CSSVariableField: View {
     @State private var draft: String
     @FocusState private var isFocused: Bool
 
-    /// 論理名（日本語）: CSS変数フィールド初期化関数
+    /// 論理名（日本語）: CSS宣言フィールド初期化関数
     /// 処理概要: 現在値を draft state へコピーし、適用処理を保持します。
     ///
     /// - Parameters:
-    ///   - key: CSS 変数名。
+    ///   - key: CSS property または OpenGraphite 予約 custom property 名。
     ///   - value: 現在値。
     ///   - onCommit: 適用時に呼び出す処理。
     init(key: String, value: String, onCommit: @escaping (String) -> Void) {
@@ -3058,8 +3058,8 @@ private struct CSSVariableField: View {
         }
     }
 
-    /// 論理名（日本語）: CSS変数変更時適用関数
-    /// 処理概要: 入力値を trim し、変更がある場合だけ CSS 変数更新を反映します。
+    /// 論理名（日本語）: CSS宣言変更時適用関数
+    /// 処理概要: 入力値を trim し、変更がある場合だけ CSS declaration 更新を反映します。
     private func commitIfChanged() {
         let nextValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = nextValue
@@ -3068,11 +3068,11 @@ private struct CSSVariableField: View {
     }
 }
 
-/// 論理名（日本語）: CSS色変数フィールド
-/// 概要: `--og-background` などの色系 CSS 変数をスウォッチ、ColorPicker、CSS 文字列で編集します。
+/// 論理名（日本語）: CSS色宣言フィールド
+/// 概要: `background` などの色系 CSS declaration をスウォッチ、ColorPicker、CSS 文字列で編集します。
 ///
 /// プロパティ:
-/// - `key`: CSS 変数名。
+/// - `key`: CSS property または OpenGraphite 予約 custom property 名。
 /// - `value`: 現在値。
 /// - `initialColor`: 現在値が CSS 色として解釈できないときの ColorPicker 初期色。
 /// - `onCommit`: 色または CSS 文字列の適用時に呼び出す処理。
@@ -3086,11 +3086,11 @@ private struct CSSColorVariableField: View {
     @State private var pickerColor: Color
     @FocusState private var isFocused: Bool
 
-    /// 論理名（日本語）: CSS色変数フィールド初期化関数
+    /// 論理名（日本語）: CSS色宣言フィールド初期化関数
     /// 処理概要: 現在値を draft state へコピーし、ColorPicker の初期色を決定します。
     ///
     /// - Parameters:
-    ///   - key: CSS 変数名。
+    ///   - key: CSS property または OpenGraphite 予約 custom property 名。
     ///   - value: 現在値。
     ///   - initialColor: CSS 色として解釈できない場合に使う初期色。
     ///   - onCommit: 適用時に呼び出す処理。
@@ -3221,7 +3221,7 @@ private struct CSSColorSwatch: View {
 /// プロパティ:
 /// - `label`: tooltip 用の短いラベル。
 /// - `icon`: 表示するアイコン。
-/// - `value`: 適用する CSS 変数値。
+/// - `value`: 適用する CSS 値。
 private struct InspectorButtonOption: Identifiable {
     var label: String
     var icon: OpenGraphiteIcon
@@ -3231,7 +3231,7 @@ private struct InspectorButtonOption: Identifiable {
 }
 
 /// 論理名（日本語）: インスペクターボタンストリップ
-/// 概要: alignment や justify をアイコンボタン群として表示し、選択値を CSS 変数へ反映します。
+/// 概要: alignment や justify をアイコンボタン群として表示し、選択値を CSS declaration へ反映します。
 ///
 /// プロパティ:
 /// - `title`: 行タイトル。

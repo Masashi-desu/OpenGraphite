@@ -3,7 +3,7 @@ import Foundation
 @testable import OpenGraphite
 
 /// 論理名（日本語）: エディターストア関連のテストスイート
-/// 概要: DOM payload の取り込み、選択解除、CSS 変数 mutation の状態更新を確認します。
+/// 概要: DOM payload の取り込み、選択解除、CSS declaration mutation の状態更新を確認します。
 @MainActor
 @Suite("エディターストア関連のテストスイート")
 struct EditorStoreTests {
@@ -29,7 +29,7 @@ struct EditorStoreTests {
                 "fallbackTextContent": "Fallback headline",
                 "textSource": "binding",
                 "i18nKey": "home.hero.title",
-                "cssVariables": ["--og-gap": "32px"],
+                "cssVariables": ["gap": "32px"],
                 "hidden": false,
                 "locked": true,
                 "depth": 1
@@ -39,7 +39,7 @@ struct EditorStoreTests {
         // 検証内容：payload を取り込む
         store.ingestNodePayload(payload)
 
-        // 期待値：ノードの基本情報と CSS 変数が保持される
+        // 期待値：ノードの基本情報と CSS declaration が保持される
         #expect(store.nodes.count == 1)
         #expect(store.nodes[0].id == "hero")
         #expect(store.nodes[0].layout == "horizontal")
@@ -52,7 +52,7 @@ struct EditorStoreTests {
         #expect(store.nodes[0].fallbackTextContent == "Fallback headline")
         #expect(store.nodes[0].textSource == "binding")
         #expect(store.nodes[0].i18nKey == "home.hero.title")
-        #expect(store.nodes[0].cssVariables["--og-gap"] == "32px")
+        #expect(store.nodes[0].cssVariables["gap"] == "32px")
         #expect(store.nodes[0].isLocked == true)
     }
 
@@ -70,7 +70,7 @@ struct EditorStoreTests {
                 "type": "frame",
                 "layout": "vertical",
                 "role": "",
-                "cssVariables": ["--og-width": "440px"],
+                "cssVariables": ["width": "440px"],
                 "hidden": false,
                 "locked": false,
                 "depth": 1
@@ -114,7 +114,7 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hrbifdygbcig"] {
-              --og-gap: 9px;
+              gap: 9px;
             }
             """
         )
@@ -128,7 +128,7 @@ struct EditorStoreTests {
                 "internalID": "hrbifdygbcig",
                 "tagName": "codeviewer",
                 "type": "frame",
-                "cssVariables": ["--og-gap": "9px"],
+                "cssVariables": ["gap": "9px"],
                 "depth": 0
             ],
             [
@@ -149,14 +149,14 @@ struct EditorStoreTests {
                 "sourceNodeID": "codeviewer",
                 "sourcePlacementID": "placement-code-viewer-preview",
                 "placementGenerated": true,
-                "cssVariables": ["--og-gap": "9px"],
+                "cssVariables": ["gap": "9px"],
                 "depth": 1
             ]
         ])
 
-        // 検証内容：placement clone 内 node を選択して CSS 変数を更新する（When）
+        // 検証内容：placement clone 内 node を選択して CSS declaration を更新する（When）
         store.selectNode(id: placementSelectionID)
-        store.updateCSSVariable(key: "--og-gap", value: "24px")
+        store.updateCSSVariable(key: "gap", value: "24px")
 
         // 期待値：選択 ID は clone 用のまま、保存先 HTML は同じ internalID の正本 node になる（Then）
         #expect(store.selectedNodeID == placementSelectionID)
@@ -167,8 +167,8 @@ struct EditorStoreTests {
         #expect(store.cssMutation?.nodeID == placementSelectionID)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
-        #expect(!diskHTML.contains("--og-gap"))
-        #expect(diskCSS.contains("--og-gap: 24px;"))
+        #expect(!diskHTML.contains("gap"))
+        #expect(diskCSS.contains("gap: 24px;"))
     }
 
     /// 論理名（日本語）: DOM payload fallback補完テスト
@@ -505,9 +505,9 @@ struct EditorStoreTests {
         #expect(store.lastError == "キャンバス配置の入力が不正です。")
     }
 
-    /// 論理名（日本語）: CSS変数更新テスト
-    /// 概要: 選択中ノードの CSS 変数更新と mutation 発行を検証します。
-    @Test("CSS変数更新でノードとmutationを更新する")
+    /// 論理名（日本語）: CSS宣言更新テスト
+    /// 概要: 選択中ノードの CSS declaration 更新と mutation 発行を検証します。
+    @Test("CSS宣言更新でノードとmutationを更新する")
     func testUpdateCSSVariableMutatesSelectedNode() throws {
         // コンディション：内部 ID 付き HTML node を持つ一時プロジェクトを開く
         let fixture = try EditorStoreHistoryFixture()
@@ -519,7 +519,7 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero-node"] {
-              --og-gap: 16px;
+              gap: 16px;
             }
             """
         )
@@ -532,29 +532,29 @@ struct EditorStoreTests {
                 "internalID": "hero-node",
                 "tagName": "herosection",
                 "type": "frame",
-                "cssVariables": ["--og-gap": "16px"],
+                "cssVariables": ["gap": "16px"],
                 "depth": 0
             ]
         ])
         store.selectNode(id: "hero")
 
-        // 検証内容：CSS 変数を空白付きの値で更新する
-        store.updateCSSVariable(key: "--og-gap", value: " 32px ")
+        // 検証内容：CSS declaration を空白付きの値で更新する
+        store.updateCSSVariable(key: "gap", value: " 32px ")
 
         // 期待値：値は trim され、WebView 反映用 mutation が発行される
-        #expect(store.nodes[0].cssVariables["--og-gap"] == "32px")
+        #expect(store.nodes[0].cssVariables["gap"] == "32px")
         #expect(store.cssMutation?.nodeID == "hero")
-        #expect(store.cssMutation?.key == "--og-gap")
+        #expect(store.cssMutation?.key == "gap")
         #expect(store.cssMutation?.value == "32px")
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
-        #expect(!diskHTML.contains("--og-gap"))
-        #expect(diskCSS.contains("--og-gap: 32px;"))
+        #expect(!diskHTML.contains("gap"))
+        #expect(diskCSS.contains("gap: 32px;"))
     }
 
     /// 論理名（日本語）: フォント候補適用テスト
-    /// 概要: フォントブラウザの候補適用で CSS 変数と stylesheet link が HTML 正本へ保存されることを検証します。
-    @Test("フォント候補適用でCSS変数とstylesheetを保存する")
+    /// 概要: フォントブラウザの候補適用で CSS declaration と stylesheet link が HTML 正本へ保存されることを検証します。
+    @Test("フォント候補適用でCSS宣言とstylesheetを保存する")
     func testApplyFontCandidatePersistsCSSVariableAndStylesheet() throws {
         // コンディション：head と text node を持つ一時プロジェクトを開く
         let fixture = try EditorStoreHistoryFixture()
@@ -588,17 +588,17 @@ struct EditorStoreTests {
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
 
-        // 期待値：node の CSS 変数と head の stylesheet link が保存される
-        #expect(store.nodes[0].cssVariables["--og-font-family"] == "\"Roboto\", sans-serif")
-        #expect(!diskHTML.contains("--og-font-family"))
-        #expect(diskCSS.contains("--og-font-family: \"Roboto\", sans-serif;"))
+        // 期待値：node の CSS declaration と head の stylesheet link が保存される
+        #expect(store.nodes[0].cssVariables["font-family"] == "\"Roboto\", sans-serif")
+        #expect(!diskHTML.contains("font-family"))
+        #expect(diskCSS.contains("font-family: \"Roboto\", sans-serif;"))
         #expect(diskHTML.contains("<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Roboto&amp;display=swap\">"))
         #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
     }
 
     /// 論理名（日本語）: ページルートlocaleフォント候補適用テスト
-    /// 概要: Page Inspector の locale font-family 編集でページ root CSS 変数と stylesheet link が保存されることを検証します。
-    @Test("ページルートのlocaleフォント候補適用でCSS変数とstylesheetを保存する")
+    /// 概要: Page Inspector の locale font-family 編集でページ root CSS custom property と stylesheet link が保存されることを検証します。
+    @Test("ページルートのlocaleフォント候補適用でCSS custom propertyとstylesheetを保存する")
     func testApplyPageRootLocaleFontCandidatePersistsCSSVariableAndStylesheet() throws {
         // コンディション：head と page root node を持つ一時プロジェクトを開く
         let fixture = try EditorStoreHistoryFixture()
@@ -619,10 +619,10 @@ struct EditorStoreTests {
         _ = try selectFirstPage(in: store)
         let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
-        // 検証内容：動的 locale suffix を持つ font-family 変数を直接保存する
+        // 検証内容：動的 locale suffix を持つ font-family custom property を直接保存する
         store.updateSelectedPageRootCSSVariable(key: "--og-font-family-fr", value: " \"Merriweather\", serif ")
 
-        // 期待値：動的 locale 変数が契約で拒否されず、page root の mutation として保存される
+        // 期待値：動的 locale custom property が契約で拒否されず、page root の mutation として保存される
         #expect(store.selectedPageRootCSSVariables["--og-font-family-fr"] == "\"Merriweather\", serif")
         #expect(store.cssMutation?.nodeID == "page")
         #expect(store.cssMutation?.key == "--og-font-family-fr")
@@ -638,7 +638,7 @@ struct EditorStoreTests {
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
 
-        // 期待値：page root の locale CSS 変数と head の stylesheet link が保存される
+        // 期待値：page root の locale CSS custom property と head の stylesheet link が保存される
         #expect(store.selectedPageRootCSSVariables["--og-font-family-ja"] == "\"Noto Sans JP\", sans-serif")
         #expect(!diskHTML.contains("--og-font-family-fr"))
         #expect(!diskHTML.contains("--og-font-family-ja"))
@@ -1060,7 +1060,7 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero-node"] {
-              --og-gap: 16px;
+              gap: 16px;
             }
             """
         )
@@ -1073,7 +1073,7 @@ struct EditorStoreTests {
                 "internalID": "hero-node",
                 "tagName": "hero",
                 "type": "frame",
-                "cssVariables": ["--og-gap": "16px"],
+                "cssVariables": ["gap": "16px"],
                 "depth": 0
             ]
         ])
@@ -1081,27 +1081,27 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero-node"] {
-              --og-gap: 24px;
+              gap: 24px;
             }
             """
         )
 
         // 検証内容：古い Store 状態をもとに CSS 値を更新しようとする
-        store.updateCSSVariable(key: "--og-gap", value: "32px")
+        store.updateCSSVariable(key: "gap", value: "32px")
         let diskCSS = try fixture.readCompanionCSS()
 
         // 期待値：agent 相当の 24px は上書きされず、再設定を促す簡易エラーが表示される
-        #expect(diskCSS.contains("--og-gap: 24px;"))
-        #expect(!diskCSS.contains("--og-gap: 32px;"))
+        #expect(diskCSS.contains("gap: 24px;"))
+        #expect(!diskCSS.contains("gap: 32px;"))
         #expect(store.cssMutation == nil)
         #expect(store.lastError == "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。")
     }
 
-    /// 論理名（日本語）: CSS変数同値更新抑制テスト
+    /// 論理名（日本語）: CSS宣言同値更新抑制テスト
     /// 概要: フォーカスアウト時の再確定で同じ CSS 値の mutation が増えないことを検証します。
-    @Test("同じCSS変数値の再適用ではmutationを発行しない")
+    @Test("同じCSS宣言値の再適用ではmutationを発行しない")
     func testUpdateCSSVariableSkipsUnchangedValue() throws {
-        // コンディション：既存 CSS 変数を持つ選択中ノードを用意する
+        // コンディション：既存 CSS declaration を持つ選択中ノードを用意する
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
@@ -1111,7 +1111,7 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="hero-node"] {
-              --og-gap: 16px;
+              gap: 16px;
             }
             """
         )
@@ -1124,17 +1124,17 @@ struct EditorStoreTests {
                 "internalID": "hero-node",
                 "tagName": "herosection",
                 "type": "frame",
-                "cssVariables": ["--og-gap": "16px"],
+                "cssVariables": ["gap": "16px"],
                 "depth": 0
             ]
         ])
         store.selectNode(id: "hero")
 
         // 検証内容：同じ値を空白付きで再適用する
-        store.updateCSSVariable(key: "--og-gap", value: " 16px ")
+        store.updateCSSVariable(key: "gap", value: " 16px ")
 
         // 期待値：値は変わらず、WebView 反映用 mutation も発行されない
-        #expect(store.nodes[0].cssVariables["--og-gap"] == "16px")
+        #expect(store.nodes[0].cssVariables["gap"] == "16px")
         #expect(store.cssMutation == nil)
     }
 
@@ -1220,7 +1220,7 @@ struct EditorStoreTests {
         #expect(store.documentReplacementRequest?.selectedNodeID == "decorative-icon")
     }
 
-    /// 論理名（日本語）: 複合CSS変数更新テスト
+    /// 論理名（日本語）: 複合CSS宣言更新テスト
     /// 概要: CSS shorthand や関数値を分解せず、HTML 正本へ戻す値としてそのまま保持することを検証します。
     @Test("複合CSS値をStoreで正規化しすぎずmutationへ渡せる")
     func testUpdateCSSVariablePreservesStructuredCSSValues() throws {
@@ -1246,10 +1246,10 @@ struct EditorStoreTests {
         ])
         store.selectNode(id: "preview-card")
         let cases: [(key: String, value: String)] = [
-            ("--og-width", "min(100%,560px)"),
-            ("--og-padding", "14px 20px"),
-            ("--og-background", "linear-gradient(135deg,#ffffff 0%,#e9fbf5 54%,#fff3d6 100%)"),
-            ("--og-flex", "1 1 0")
+            ("width", "min(100%,560px)"),
+            ("padding", "14px 20px"),
+            ("background", "linear-gradient(135deg,#ffffff 0%,#e9fbf5 54%,#fff3d6 100%)"),
+            ("flex", "1 1 0")
         ]
 
         // 検証内容：各 CSS 値を Store に適用する
@@ -1450,7 +1450,7 @@ struct EditorStoreTests {
         try fixture.writeCompanionCSS(
             """
             [data-og-internal-id="title-node"] {
-              --og-gap: 8px;
+              gap: 8px;
             }
             """
         )
@@ -1463,12 +1463,12 @@ struct EditorStoreTests {
                 "internalID": "title-node",
                 "tagName": "title",
                 "type": "text",
-                "cssVariables": ["--og-gap": "8px"],
+                "cssVariables": ["gap": "8px"],
                 "depth": 0
             ]
         ])
         store.selectNode(id: "title")
-        store.updateCSSVariable(key: "--og-gap", value: "16px")
+        store.updateCSSVariable(key: "gap", value: "16px")
         try "<!doctype html>\n<html><body>external</body></html>".write(
             to: fixture.htmlURL,
             atomically: true,

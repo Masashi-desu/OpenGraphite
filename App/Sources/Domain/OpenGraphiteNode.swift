@@ -25,7 +25,7 @@ import Foundation
 /// - `iconLibrary`: `data-og-icon-library` の値。
 /// - `iconName`: `data-og-icon-name` の値。
 /// - `iconSource`: `data-og-icon-source` の値。
-/// - `cssVariables`: companion CSS から抽出した `--og-*` の値。
+/// - `cssVariables`: companion CSS から抽出した編集対象 CSS declaration の値。
 /// - `resolvedFontFamily`: preview DOM の computed style で解決された font-family。
 /// - `isHidden`: `data-og-hidden` による非表示状態。
 /// - `isLocked`: `data-og-locked` によるロック状態。
@@ -83,7 +83,7 @@ struct OpenGraphiteNode: Identifiable, Hashable {
     ///   - iconLibrary: `data-og-icon-library`。
     ///   - iconName: `data-og-icon-name`。
     ///   - iconSource: `data-og-icon-source`。
-    ///   - cssVariables: companion CSS 上の `--og-*`。
+    ///   - cssVariables: companion CSS 上の編集対象 CSS declaration。
     ///   - isHidden: 非表示状態。
     ///   - isLocked: ロック状態。
     ///   - depth: DOM 階層深度。
@@ -239,15 +239,15 @@ struct OpenGraphiteComponentSource: Equatable, Identifiable {
     }
 }
 
-/// 論理名（日本語）: CSS変数変更要求
-/// 概要: Inspector で編集された `--og-*` の値を WebView 側 DOM へ反映するための mutation です。
+/// 論理名（日本語）: CSS宣言変更要求
+/// 概要: Inspector で編集された CSS declaration の値を WebView 側 DOM へ反映するための mutation です。
 ///
 /// プロパティ:
 /// - `sequence`: mutation の順序番号。
 /// - `pageURL`: mutation を適用する HTML ファイル URL。
 /// - `nodeID`: 対象ノードの `data-og-id`。
-/// - `key`: CSS 変数名。
-/// - `value`: 反映する CSS 変数値。
+/// - `key`: CSS property または OpenGraphite 予約 custom property 名。
+/// - `value`: 反映する CSS 値。
 struct CSSVariableMutation: Equatable {
     var sequence: Int
     var pageURL: URL

@@ -1,6 +1,6 @@
 # Operations TODO Index
 
-更新日: 2026-06-17
+更新日: 2026-06-18
 
 OpenGraphite の運用 TODO は、残タスクだけを直列化して管理する。作成・更新・削除の正本は [TODO Document Governance](GOVERNANCE.md)、新規文書の雛形は [TEMPLATE.md](TEMPLATE.md) とする。
 
@@ -16,10 +16,11 @@ OpenGraphite の運用 TODO は、残タスクだけを直列化して管理す�
 ## 分類順
 
 1. [Editor](Editor/): SwiftUI editor、`.ogp` project loading、WKWebView canvas bridge、layers、selection、inspector、HTML write-back など editor 実行経路の TODO。
-2. [WebAssets](WebAssets/): `CSS/OpenGraphite.css`、`public/index.html`、`SampleProject`、`data-og-*` / `--og-*` rendering contract など web deliverable と sample の TODO。
+2. [WebAssets](WebAssets/): `CSS/OpenGraphite.css`、`public/index.html`、`SampleProject`、`data-og-*` / CSS rendering contract など web deliverable と sample の TODO。
 3. [Release](Release/): `project.yml` / XcodeGen、build/test scripts、DMG/notarization、配布手順など release と project operation の TODO。
 4. [Other](Other/): 上記 3 分類に直接属さない運用 TODO。
 
 ## 現在の直列ドキュメント
 
-1. [Agent Interface Batch Editing TODO](Other/AgentInterfaceBatchEditing.md): `ogkiln` と OpenGraphite MCP のバッチ編集、dry-run、diff、整形、テンプレート適用を整備する。
+1. [Standard CSS Second Candidates TODO](WebAssets/StandardCSSSecondCandidates.md): 残る OpenGraphite 固有 CSS custom property のうち、標準 CSS へ寄せる第二候補を判断・移行する。
+2. [Agent Interface Batch Editing TODO](Other/AgentInterfaceBatchEditing.md): `ogkiln` と OpenGraphite MCP のバッチ編集、dry-run、diff、整形、テンプレート適用を整備する。
