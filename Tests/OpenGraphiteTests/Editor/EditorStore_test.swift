@@ -384,6 +384,81 @@ struct EditorStoreTests {
         #expect(store.nodes.isEmpty)
     }
 
+    /// 論理名（日本語）: Chapter追加保存テスト
+    /// 概要: Store から新しい Chapter を追加し、選択状態と `.ogp` の保存内容が更新されることを検証します。
+    @Test("Chapterを追加してogpへ保存できる")
+    func testAddChapterPersistsManifestAndSelectsNewChapter() throws {
+        // コンディション：ページを持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：Chapter 追加操作を実行する（When）
+        store.addChapter()
+
+        // 期待値：Store とディスク上の `.ogp` に空の Chapter が追加され、その Chapter が選択される（Then）
+        let addedChapter = try #require(store.selectedChapter)
+        #expect(store.loadedProject?.project.chapters.count == 2)
+        #expect(addedChapter.id == "chapter-1")
+        #expect(addedChapter.displayName == "Chapter 2")
+        #expect(!addedChapter.internalID.isEmpty)
+        #expect(addedChapter.pages.isEmpty)
+        #expect(store.selectedCanvasSegment == .pages)
+        #expect(store.selectedPage == nil)
+        #expect(store.lastError == nil)
+
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedChapter = try #require(reloadedProject.project.chapters.last)
+        #expect(reloadedProject.project.chapters.count == 2)
+        #expect(persistedChapter.id == "chapter-1")
+        #expect(persistedChapter.displayName == "Chapter 2")
+        #expect(persistedChapter.pages.isEmpty)
+        #expect(persistedChapter.internalID == addedChapter.internalID)
+    }
+
+    /// 論理名（日本語）: 空ChapterへのPage追加保存テスト
+    /// 概要: 選択中の空 Chapter に新しい HTML page file と page entry を追加し、その page が選択されることを検証します。
+    @Test("空ChapterにPageを追加してogpへ保存できる")
+    func testAddPagePersistsHTMLAndManifestInSelectedEmptyChapter() throws {
+        // コンディション：空 Chapter を追加して選択中にする（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.addChapter()
+
+        // 検証内容：選択中 Chapter へ page を追加する（When）
+        store.addPage()
+
+        // 期待値：新規 HTML と companion CSS が作成され、空 Chapter だった場所に page entry が保存される（Then）
+        let addedPage = try #require(store.selectedPage)
+        let addedChapter = try #require(store.selectedChapter)
+        let addedHTMLURL = fixture.publicURL.appendingPathComponent("page-1.html")
+        let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
+        let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
+
+        #expect(addedChapter.id == "chapter-1")
+        #expect(addedPage.id == "page-1")
+        #expect(addedPage.displayName == "Page 1")
+        #expect(addedPage.path == "page-1.html")
+        #expect(addedPage.canvas.x == 0)
+        #expect(addedPage.canvas.y == 0)
+        #expect(addedPage.canvas.width == 100)
+        #expect(addedPage.canvas.height == 100)
+        #expect(FileManager.default.fileExists(atPath: addedHTMLURL.path))
+        #expect(FileManager.default.fileExists(atPath: addedCompanionCSSURL.path))
+        #expect(addedHTML.contains("<title>Page 1</title>"))
+        #expect(addedHTML.contains(#"data-og-id="page-1-root""#))
+        #expect(store.selectedCanvasSegment == .pages)
+        #expect(store.lastError == nil)
+
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        #expect(reloadedProject.project.chapters[0].pages.map(\.id) == ["home"])
+        #expect(reloadedProject.project.chapters[1].pages.map(\.id) == ["page-1"])
+        #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
+    }
+
     /// 論理名（日本語）: Project資源選択テスト
     /// 概要: Project セグメントの実装資源選択が Canvas の表示対象を維持し、通常ページ選択へ戻ると解除されることを確認します。
     @Test("Project資源選択はCanvas選択と分離される")

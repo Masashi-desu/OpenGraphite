@@ -488,6 +488,115 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: Chapter追加関数
+    /// 処理概要: 現在の `.ogp` に空の Chapter を追加保存し、追加した Chapter を Pages セグメントで選択します。
+    func addChapter() {
+        guard var loadedProject else { return }
+
+        let chapterNumber = loadedProject.project.chapters.count + 1
+        let chapter = OpenGraphiteChapter(
+            id: nextChapterID(in: loadedProject.project),
+            internalID: nextChapterInternalID(in: loadedProject.project),
+            title: "Chapter \(chapterNumber)",
+            pages: []
+        )
+        loadedProject.project.chapters.append(chapter)
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            let reloadedProject = try loader.loadProject(at: loadedProject.fileURL)
+            let addedChapter = reloadedProject.project.chapters.first { $0.id == chapter.id }
+                ?? reloadedProject.project.chapters.last
+            self.loadedProject = reloadedProject
+            selectedProjectResource = nil
+            selectChapter(addedChapter)
+            lastError = nil
+            statusMessage = "\(addedChapter?.displayName ?? chapter.displayName) を追加しました。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Page追加関数
+    /// 処理概要: 現在選択中の Chapter に新しい HTML page file を作成し、`.ogp` へ page entry を追加保存します。
+    func addPage() {
+        guard var loadedProject else { return }
+
+        let targetChapterIndex = writableChapterIndex(in: &loadedProject.project)
+        let previousProject = loadedProject.project
+        let pageID = nextPageID(in: loadedProject.project)
+        let pageTitle = pageID.hasPrefix("page-")
+            ? "Page \(pageID.dropFirst("page-".count))"
+            : pageID
+        let pagePath = nextPagePath(in: loadedProject, idPrefix: "page")
+        let pageCanvas = nextPageCanvas(
+            in: loadedProject.project.chapters[targetChapterIndex],
+            fallbackProject: loadedProject.project
+        )
+        let page = OpenGraphitePage(
+            id: pageID,
+            title: pageTitle,
+            path: pagePath,
+            canvas: pageCanvas
+        )
+        let htmlURL = loadedProject
+            .rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot)
+            .appendingPathComponent(pagePath)
+            .standardizedFileURL
+        let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL)
+        let stylesheetPath = Self.relativePath(
+            from: htmlURL.deletingLastPathComponent(),
+            to: loadedProject.cssURL
+        )
+        let bodyHTML = """
+            <OpenGraphitePage data-og-id="\(pageID)-root" data-og-type="page" data-og-layout="vertical"></OpenGraphitePage>
+        """
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+
+        do {
+            let writeResult = try core.createPage(
+                at: htmlURL,
+                title: pageTitle,
+                lang: "ja",
+                stylesheetPath: stylesheetPath,
+                bodyHTML: bodyHTML,
+                overwrite: false
+            )
+            guard writeResult.created else {
+                lastError = writeResult.diagnostics.first(where: { $0.severity == .error })?.message
+                    ?? "ページHTMLの作成に失敗しました。"
+                return
+            }
+
+            loadedProject.project.chapters[targetChapterIndex].pages.append(page)
+            do {
+                try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+                let reloadedProject = try loader.loadProject(at: loadedProject.fileURL)
+                self.loadedProject = reloadedProject
+                let addedPage = reloadedProject.project.chapters
+                    .flatMap(\.pages)
+                    .first { $0.id == pageID }
+                if let addedPage {
+                    selectPage(internalID: addedPage.internalID)
+                }
+                lastError = nil
+                statusMessage = "\(addedPage?.displayName ?? page.displayName) を追加しました。"
+                restartExternalProjectMonitoring(force: true)
+                restartExternalPageMonitoring(force: true)
+            } catch {
+                try? writeProjectManifest(previousProject, to: loadedProject.fileURL)
+                try? FileManager.default.removeItem(at: htmlURL)
+                try? FileManager.default.removeItem(at: companionCSSURL)
+                lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+            }
+        } catch {
+            lastError = "ページHTMLの作成に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
     /// 論理名（日本語）: ノード複合参照ID生成関数
     /// 処理概要: 選択中 HTML 文脈と node 内部 ID から `.ogp` 内で一意な agent 向け参照 ID を作ります。
     ///
@@ -2890,6 +2999,164 @@ final class EditorStore: ObservableObject {
             html: html,
             selectedNodeID: selectedNodeID
         )
+    }
+
+    /// 論理名（日本語）: 次Chapter ID生成関数
+    /// 処理概要: 既存 Chapter の ID と重複しない `chapter-N` 形式の ID を返します。
+    ///
+    /// - Parameter project: Chapter を追加する project manifest。
+    /// - Returns: 重複しない Chapter ID。
+    private func nextChapterID(in project: OpenGraphiteProject) -> String {
+        let usedIDs = Set(project.chapters.map(\.id))
+        return Self.nextSequencedID(prefix: "chapter", usedIDs: usedIDs)
+    }
+
+    /// 論理名（日本語）: 次Chapter内部ID生成関数
+    /// 処理概要: 既存 manifest 内部 ID と重複しない `chapter-N` 形式の内部 ID を返します。
+    ///
+    /// - Parameter project: Chapter を追加する project manifest。
+    /// - Returns: 重複しない Chapter 内部 ID。
+    private func nextChapterInternalID(in project: OpenGraphiteProject) -> String {
+        let usedIDs = Set(
+            project.chapters.map(\.internalID)
+                + project.chapters.flatMap { $0.pages.map(\.internalID) }
+                + project.collections.map(\.internalID)
+                + project.collections.flatMap { $0.components.map(\.internalID) }
+        )
+        return Self.nextSequencedID(prefix: "chapter", usedIDs: usedIDs)
+    }
+
+    /// 論理名（日本語）: 書き込み対象Chapter位置取得関数
+    /// 処理概要: 選択中 Chapter を優先し、未選択または Chapter がない場合は page 追加先を確保して index を返します。
+    ///
+    /// - Parameter project: page を追加する project manifest。
+    /// - Returns: page 追加先 Chapter の index。
+    private func writableChapterIndex(in project: inout OpenGraphiteProject) -> Int {
+        if let selectedChapterInternalID,
+           let index = project.chapters.firstIndex(where: { $0.internalID == selectedChapterInternalID }) {
+            return index
+        }
+        if project.chapters.isEmpty {
+            project.chapters.append(
+                OpenGraphiteChapter(
+                    id: OpenGraphiteChapter.defaultID,
+                    title: OpenGraphiteChapter.defaultTitle,
+                    pages: []
+                )
+            )
+        }
+        return project.chapters.startIndex
+    }
+
+    /// 論理名（日本語）: 次Page ID生成関数
+    /// 処理概要: 既存 page / component の ID と重複しない `page-N` 形式の ID を返します。
+    ///
+    /// - Parameter project: page を追加する project manifest。
+    /// - Returns: 重複しない page ID。
+    private func nextPageID(in project: OpenGraphiteProject) -> String {
+        let usedIDs = Set(project.allPages.map(\.id))
+        return Self.nextSequencedID(prefix: "page", usedIDs: usedIDs)
+    }
+
+    /// 論理名（日本語）: 次Page path生成関数
+    /// 処理概要: manifest と実ファイルの双方で重複しない `page-N.html` path を返します。
+    ///
+    /// - Parameters:
+    ///   - loadedProject: path と HTML root を確認する読み込み済み project。
+    ///   - idPrefix: path の接頭辞。
+    /// - Returns: 新規 page HTML path。
+    private func nextPagePath(in loadedProject: LoadedOpenGraphiteProject, idPrefix: String) -> String {
+        let usedPaths = Set(loadedProject.project.allPages.map(\.path))
+        let htmlRootURL = loadedProject.rootURL.appendingPathComponent(loadedProject.project.htmlRoot)
+        var index = 1
+        while true {
+            let candidate = "\(idPrefix)-\(index).html"
+            let htmlURL = htmlRootURL.appendingPathComponent(candidate)
+            let companionURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL)
+            if !usedPaths.contains(candidate),
+               !FileManager.default.fileExists(atPath: htmlURL.path),
+               !FileManager.default.fileExists(atPath: companionURL.path) {
+                return candidate
+            }
+            index += 1
+        }
+    }
+
+    /// 論理名（日本語）: 次Pageキャンバス生成関数
+    /// 処理概要: Chapter 末尾 page の右隣、または既存 project page の寸法を使った原点配置を返します。
+    ///
+    /// - Parameters:
+    ///   - chapter: page を追加する Chapter。
+    ///   - fallbackProject: Chapter が空の場合に寸法を参照する project manifest。
+    /// - Returns: 新規 page の canvas 配置。
+    private func nextPageCanvas(in chapter: OpenGraphiteChapter, fallbackProject: OpenGraphiteProject) -> OpenGraphiteCanvas {
+        let spacing: Double = 80
+        if let lastCanvas = chapter.pages.last?.canvas {
+            return OpenGraphiteCanvas(
+                name: lastCanvas.name,
+                x: lastCanvas.x + lastCanvas.width + spacing,
+                y: lastCanvas.y,
+                width: lastCanvas.width,
+                height: lastCanvas.height,
+                previewContext: lastCanvas.previewContext
+            )
+        }
+
+        if let fallbackCanvas = fallbackProject.allPages.first?.canvas {
+            return OpenGraphiteCanvas(
+                name: fallbackCanvas.name,
+                x: 0,
+                y: 0,
+                width: fallbackCanvas.width,
+                height: fallbackCanvas.height,
+                previewContext: fallbackCanvas.previewContext
+            )
+        }
+
+        return OpenGraphiteCanvas(x: 0, y: 0, width: 1440, height: 1200)
+    }
+
+    /// 論理名（日本語）: 連番ID生成関数
+    /// 処理概要: 指定 prefix に数値 suffix を付け、既存 ID と衝突しない最初の値を返します。
+    ///
+    /// - Parameters:
+    ///   - prefix: ID の接頭辞。
+    ///   - usedIDs: 既に使われている ID。
+    /// - Returns: 未使用の連番 ID。
+    private static func nextSequencedID(prefix: String, usedIDs: Set<String>) -> String {
+        var index = 1
+        while true {
+            let candidate = "\(prefix)-\(index)"
+            if !usedIDs.contains(candidate) {
+                return candidate
+            }
+            index += 1
+        }
+    }
+
+    /// 論理名（日本語）: 相対path生成関数
+    /// 処理概要: 基準ディレクトリから対象 URL への相対 path を POSIX 区切りで返します。
+    ///
+    /// - Parameters:
+    ///   - directoryURL: 基準ディレクトリ URL。
+    ///   - targetURL: 参照先 URL。
+    /// - Returns: 相対 path。算出できない場合は対象 URL の path。
+    private static func relativePath(from directoryURL: URL, to targetURL: URL) -> String {
+        let baseComponents = directoryURL.standardizedFileURL.pathComponents
+        let targetComponents = targetURL.standardizedFileURL.pathComponents
+        var sharedCount = 0
+        while sharedCount < baseComponents.count,
+              sharedCount < targetComponents.count,
+              baseComponents[sharedCount] == targetComponents[sharedCount] {
+            sharedCount += 1
+        }
+        guard sharedCount > 0 else {
+            return targetURL.path
+        }
+        let up = Array(repeating: "..", count: baseComponents.count - sharedCount)
+        let down = Array(targetComponents.dropFirst(sharedCount))
+        let path = (up + down).joined(separator: "/")
+        return path.isEmpty ? "." : path
     }
 
     /// 論理名（日本語）: キャンバス配置名正規化関数

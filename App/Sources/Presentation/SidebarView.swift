@@ -219,11 +219,13 @@ private enum SidebarSplitMetrics {
 /// - `title`: セクション名。
 /// - `count`: セクション内の項目数。
 /// - `isCollapsed`: 最小化状態。
+/// - `trailingAction`: 見出し右端に表示する任意の操作。
 /// - `content`: 展開時に表示する本文。
 private struct SidebarSplitSection<Content: View>: View {
     var title: String
     var count: Int
     @Binding var isCollapsed: Bool
+    var trailingAction: SidebarSplitSectionAction?
     var content: Content
 
     /// 論理名（日本語）: サイドバー分割セクション初期化関数
@@ -233,50 +235,58 @@ private struct SidebarSplitSection<Content: View>: View {
     ///   - title: セクション名。
     ///   - count: セクション内の項目数。
     ///   - isCollapsed: 最小化状態。
+    ///   - trailingAction: 見出し右端に表示する任意の操作。
     ///   - content: 展開時に表示する本文。
     init(
         title: String,
         count: Int,
         isCollapsed: Binding<Bool>,
+        trailingAction: SidebarSplitSectionAction? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.count = count
         _isCollapsed = isCollapsed
+        self.trailingAction = trailingAction
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.14)) {
-                    isCollapsed.toggle()
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.14)) {
+                        isCollapsed.toggle()
+                    }
+                } label: {
+                    headerLabel
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14, height: 18)
+                .buttonStyle(.plain)
+                .help(isCollapsed ? "Expand" : "Collapse")
 
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
+                if let trailingAction {
+                    Button(action: trailingAction.action) {
+                        OpenGraphiteIconView(icon: trailingAction.icon, size: 12, weight: .semibold)
+                            .frame(width: 22, height: 22)
+                            .background(
+                                Circle()
+                                    .fill(EditorColumnStyle.rowFill)
+                            )
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .help(trailingAction.help)
+                } else {
                     Text("\(count)")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
+                        .frame(width: 22, height: 22, alignment: .trailing)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help(isCollapsed ? "Expand" : "Collapse")
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if !isCollapsed {
                 content
@@ -285,6 +295,37 @@ private struct SidebarSplitSection<Content: View>: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
+
+    private var headerLabel: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14, height: 18)
+
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// 論理名（日本語）: サイドバー分割セクション操作
+/// 概要: 分割セクション見出しの右端に表示する小型操作を表します。
+///
+/// プロパティ:
+/// - `icon`: 表示するアイコン。
+/// - `help`: hover 時の説明。
+/// - `action`: 実行する操作。
+private struct SidebarSplitSectionAction {
+    var icon: OpenGraphiteIcon
+    var help: String
+    var action: () -> Void
 }
 
 /// 論理名（日本語）: Project依存性一覧ビュー
@@ -867,7 +908,8 @@ private struct PageLayerListView: View {
         SidebarSplitSection(
             title: groupSectionTitle,
             count: groups.count,
-            isCollapsed: groupSectionCollapsedBinding
+            isCollapsed: groupSectionCollapsedBinding,
+            trailingAction: groupSectionAction
         ) {
             groupSectionContent
         }
@@ -880,7 +922,8 @@ private struct PageLayerListView: View {
         SidebarSplitSection(
             title: contentSectionTitle,
             count: visiblePages.count,
-            isCollapsed: contentSectionCollapsedBinding
+            isCollapsed: contentSectionCollapsedBinding,
+            trailingAction: contentSectionAction
         ) {
             contentSectionContent
         }
@@ -1102,6 +1145,17 @@ private struct PageLayerListView: View {
         }
     }
 
+    private var groupSectionAction: SidebarSplitSectionAction? {
+        guard segment == .pages, store.loadedProject != nil else { return nil }
+        return SidebarSplitSectionAction(
+            icon: .addChapter,
+            help: "Add Chapter",
+            action: {
+                store.addChapter()
+            }
+        )
+    }
+
     private var contentSectionTitle: String {
         switch segment {
         case .pages:
@@ -1109,6 +1163,17 @@ private struct PageLayerListView: View {
         case .components:
             return "Components"
         }
+    }
+
+    private var contentSectionAction: SidebarSplitSectionAction? {
+        guard segment == .pages, store.loadedProject != nil else { return nil }
+        return SidebarSplitSectionAction(
+            icon: .addPage,
+            help: "Add Page",
+            action: {
+                store.addPage()
+            }
+        )
     }
 
     private var emptyGroupMessage: String {
