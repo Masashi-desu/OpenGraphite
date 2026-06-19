@@ -26,6 +26,7 @@ import Foundation
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
 /// - `textMutation`: WebView へ反映待ちの text content 変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
+/// - `inspectorSectionOpenRequest`: Preview 側編集に応じて Inspector カードを開く one-shot 要求。
 @MainActor
 final class EditorStore: ObservableObject {
     @Published private(set) var loadedProject: LoadedOpenGraphiteProject?
@@ -38,9 +39,19 @@ final class EditorStore: ObservableObject {
     @Published var selectedCollectionInternalID: String?
     @Published var selectedComponentPageID: String?
     @Published var selectedComponentPageInternalID: String?
-    @Published var selectedProjectResource: OpenGraphiteProjectResourceSelection?
+    @Published var selectedProjectResource: OpenGraphiteProjectResourceSelection? {
+        didSet {
+            guard oldValue != selectedProjectResource else { return }
+            inspectorSectionOpenRequest = nil
+        }
+    }
     @Published private(set) var nodes: [OpenGraphiteNode] = []
-    @Published var selectedNodeID: String?
+    @Published var selectedNodeID: String? {
+        didSet {
+            guard oldValue != selectedNodeID else { return }
+            inspectorSectionOpenRequest = nil
+        }
+    }
     @Published var zoom: Double = 0.72
     @Published var statusMessage = "HTMLを正本として開きます。"
     @Published var lastError: String?
@@ -51,6 +62,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var attributeMutation: NodeAttributeMutation?
     @Published private(set) var textMutation: NodeTextContentMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
+    @Published private(set) var inspectorSectionOpenRequest: InspectorSectionOpenRequest?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
@@ -64,6 +76,7 @@ final class EditorStore: ObservableObject {
     private var attributeMutationSequence = 0
     private var textMutationSequence = 0
     private var documentReplacementSequence = 0
+    private var inspectorSectionOpenRequestSequence = 0
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
@@ -135,6 +148,33 @@ final class EditorStore: ObservableObject {
             return selectedChapter?.displayName ?? "Pages"
         case .components:
             return selectedComponentCollection?.displayName ?? "Components"
+        }
+    }
+
+    var inspectorExpansionScopeIdentifier: String {
+        if let selectedProjectResource {
+            return "project-resource:\(selectedProjectResource)"
+        }
+        if let selectedNodeID {
+            return [
+                "node",
+                selectedCanvasSegment.rawValue,
+                selectedPage?.internalID ?? "",
+                selectedNodeID
+            ].joined(separator: ":")
+        }
+        if let selectedPage {
+            return [
+                "page",
+                selectedCanvasSegment.rawValue,
+                selectedPage.internalID
+            ].joined(separator: ":")
+        }
+        switch selectedCanvasSegment {
+        case .pages:
+            return "chapter:\(selectedChapter?.internalID ?? "")"
+        case .components:
+            return "collection:\(selectedComponentCollection?.internalID ?? "")"
         }
     }
 
@@ -906,9 +946,13 @@ final class EditorStore: ObservableObject {
         }
 
         let text = payload["text"] as? String ?? ""
+        let previousText = nodes[index].textContent ?? ""
         nodes[index].textContent = text
         if !nodes[index].isTextBinding {
             nodes[index].fallbackTextContent = text
+        }
+        if previousText != text {
+            requestInspectorSections([.text])
         }
     }
 
@@ -1982,7 +2026,33 @@ final class EditorStore: ObservableObject {
             lastError = "HTMLの保存形式が不正です。ページを再読み込みしてからもう一度設定してください。"
             return .failed
         }
-        return applyHTMLObjectEdit(edit)
+        let result = applyHTMLObjectEdit(edit)
+        if result.updated {
+            requestInspectorSections(for: edit.operation)
+        }
+        return result
+    }
+
+    /// 論理名（日本語）: Inspectorセクション開放要求関数
+    /// 処理概要: Preview 側編集で変更されたパラメータに対応する Inspector カードを現在選択スコープ内で開く要求を発行します。
+    ///
+    /// - Parameter sectionIDs: 開く対象の Inspector セクション ID 集合。
+    private func requestInspectorSections(_ sectionIDs: Set<InspectorSectionID>) {
+        guard !sectionIDs.isEmpty else { return }
+        inspectorSectionOpenRequestSequence += 1
+        inspectorSectionOpenRequest = InspectorSectionOpenRequest(
+            sequence: inspectorSectionOpenRequestSequence,
+            scopeIdentifier: inspectorExpansionScopeIdentifier,
+            sectionIDs: sectionIDs
+        )
+    }
+
+    /// 論理名（日本語）: HTML編集操作対応Inspectorセクション開放要求関数
+    /// 処理概要: Web preview 由来の object edit 操作を Inspector セクションへ分類し、該当カードを開く要求を発行します。
+    ///
+    /// - Parameter operation: 保存に成功した HTML object edit 操作。
+    private func requestInspectorSections(for operation: HTMLObjectEditOperation) {
+        requestInspectorSections(InspectorSectionID.sections(for: operation))
     }
 
     /// 論理名（日本語）: ドキュメント変更取り消し関数

@@ -36,7 +36,7 @@ struct InspectorView: View {
                             }
                         }
 
-                        InspectorSection(title: "Context") {
+                        InspectorSection(title: "Context", sectionID: .context) {
                             InspectorInfoRow(label: "tag", value: node.tagName)
                             InspectorInfoRow(label: "data-og-id", value: node.displayID)
                             InspectorInfoRow(label: "data-og-type", value: node.type)
@@ -49,7 +49,7 @@ struct InspectorView: View {
                             .id("\(node.id)-role")
                         }
 
-                        InspectorSection(title: "Alignment") {
+                        InspectorSection(title: "Alignment", sectionID: .alignment) {
                             InspectorButtonStrip(
                                 title: "Align",
                                 value: node.cssVariables["align-items"] ?? "",
@@ -75,7 +75,7 @@ struct InspectorView: View {
                             }
                         }
 
-                        InspectorSection(title: "Layout") {
+                        InspectorSection(title: "Layout", sectionID: .layout) {
                             LayoutModePicker(value: node.layout ?? "") { value in
                                 store.updateNodeAttribute(name: "data-og-layout", value: value)
                             }
@@ -114,7 +114,7 @@ struct InspectorView: View {
                             .id("\(node.id)-flex")
                         }
 
-                        InspectorSection(title: "Position") {
+                        InspectorSection(title: "Position", sectionID: .position) {
                             CSSEnumVariableField(
                                 key: "position",
                                 value: node.cssVariables["position"] ?? "",
@@ -140,7 +140,7 @@ struct InspectorView: View {
                             .id("\(node.id)-z-index")
                         }
 
-                        InspectorSection(title: "Dimensions") {
+                        InspectorSection(title: "Dimensions", sectionID: .dimensions) {
                             CSSDimensionVariableField(key: "width", value: node.cssVariables["width"] ?? "") { value in
                                 store.updateCSSVariable(key: "width", value: value)
                             }
@@ -167,7 +167,7 @@ struct InspectorView: View {
                             .id("\(node.id)-max-width")
                         }
 
-                        InspectorSection(title: "Appearance") {
+                        InspectorSection(title: "Appearance", sectionID: .appearance) {
                             CSSBoxVariableField(
                                 key: "border-radius",
                                 value: node.cssVariables["border-radius"] ?? "",
@@ -205,7 +205,7 @@ struct InspectorView: View {
                         if node.type == "text" {
                             TextContentSection(node: node)
 
-                            InspectorSection(title: "Typography") {
+                            InspectorSection(title: "Typography", sectionID: .typography) {
                                 CSSFontFamilyVariableField(
                                     key: "font-family",
                                     value: node.cssVariables["font-family"] ?? "",
@@ -252,7 +252,7 @@ struct InspectorView: View {
                         }
 
                         if node.type == "image" {
-                            InspectorSection(title: "Media") {
+                            InspectorSection(title: "Media", sectionID: .media) {
                                 CSSEnumVariableField(
                                     key: "--og-object-fit",
                                     value: node.cssVariables["--og-object-fit"] ?? "",
@@ -265,7 +265,7 @@ struct InspectorView: View {
                         }
 
                         if node.type == "icon" {
-                            InspectorSection(title: "Icon") {
+                            InspectorSection(title: "Icon", sectionID: .icon) {
                                 IconAttributeOptionPicker(
                                     label: "data-og-icon-library",
                                     value: node.iconLibrary ?? "lucide",
@@ -320,7 +320,7 @@ struct InspectorView: View {
                             }
                         }
 
-                        InspectorSection(title: "Effects") {
+                        InspectorSection(title: "Effects", sectionID: .effects) {
                             CSSShadowVariableField(key: "box-shadow", value: node.cssVariables["box-shadow"] ?? "") { value in
                                 store.updateCSSVariable(key: "box-shadow", value: value)
                             }
@@ -431,14 +431,14 @@ private struct ChapterInspectorView: View {
             VStack(alignment: .leading, spacing: 14) {
                 ChapterSummaryPanel(chapter: chapter)
 
-                InspectorSection(title: "Context") {
+                InspectorSection(title: "Context", sectionID: .context) {
                     InspectorInfoRow(label: "id", value: chapter.id)
                     InspectorInfoRow(label: "title", value: chapter.title ?? "-")
                     InspectorInfoRow(label: "pages", value: "\(chapter.pages.count)")
                     InspectorInfoRow(label: "reference", value: referenceID ?? "-")
                 }
 
-                InspectorSection(title: "Pages") {
+                InspectorSection(title: "Pages", sectionID: .pages) {
                     if chapter.pages.isEmpty {
                         Text("No pages")
                             .font(.caption)
@@ -599,7 +599,7 @@ private struct ComponentSourceSection: View {
     var onReveal: () -> Void
 
     var body: some View {
-        InspectorSection(title: "Component") {
+        InspectorSection(title: "Component", sectionID: .component) {
             InspectorInfoRow(label: "name", value: source.componentID)
             InspectorInfoRow(label: "location", value: source.locationLabel)
             InspectorInfoRow(label: "path", value: source.componentPagePath)
@@ -690,7 +690,7 @@ private struct TextContentSection: View {
     var node: OpenGraphiteNode
 
     var body: some View {
-        InspectorSection(title: "Text") {
+        InspectorSection(title: "Text", sectionID: .text) {
             InspectorInfoRow(label: "source", value: node.textSourceLabel)
 
             if node.isTextBinding {
@@ -786,7 +786,7 @@ private struct AnimationInspectorSection: View {
     var onUpdate: (String, String) -> Void
 
     var body: some View {
-        InspectorSection(title: "Animation") {
+        InspectorSection(title: "Animation", sectionID: .animation) {
             CSSVariableField(key: "animation-name", value: value("animation-name")) { value in
                 onUpdate("animation-name", value)
             }
@@ -870,7 +870,7 @@ private struct ScrollTimelineInspectorSection: View {
     var onUpdate: (String, String) -> Void
 
     var body: some View {
-        InspectorSection(title: "Scroll Timeline") {
+        InspectorSection(title: "Scroll Timeline", sectionID: .scrollTimeline) {
             if let appliedParentContext {
                 AppliedParentAnimationContextPanel(context: appliedParentContext)
             }
@@ -1393,7 +1393,7 @@ private struct PageInspectorView: View {
             VStack(alignment: .leading, spacing: 14) {
                 PageSummaryPanel(page: page)
 
-                InspectorSection(title: "Context") {
+                InspectorSection(title: "Context", sectionID: .context) {
                     InspectorInfoRow(label: "path", value: page.path)
                     InspectorInfoRow(label: "name", value: page.canvas.displayName ?? "-")
                     InspectorInfoRow(label: "resolution", value: page.canvas.resolutionLabel)
@@ -1402,7 +1402,7 @@ private struct PageInspectorView: View {
                     InspectorInfoRow(label: "text dir", value: htmlDocumentContext.dirValue.isEmpty ? "-" : htmlDocumentContext.dirValue)
                 }
 
-                InspectorSection(title: "HTML Document") {
+                InspectorSection(title: "HTML Document", sectionID: .htmlDocument) {
                     HTMLLangDocumentEditor(
                         source: $langSourceDraft,
                         value: $langValueDraft,
@@ -1419,14 +1419,14 @@ private struct PageInspectorView: View {
                     )
                 }
 
-                InspectorSection(title: "I18n Runtime") {
+                InspectorSection(title: "I18n Runtime", sectionID: .i18nRuntime) {
                     I18nRuntimeSummarySection(
                         inspection: i18nInspection,
                         onOpenProjectResource: onOpenI18nRuntime
                     )
                 }
 
-                InspectorSection(title: "Locale Typography") {
+                InspectorSection(title: "Locale Typography", sectionID: .localeTypography) {
                     LocaleTypographyFontSection(
                         variables: pageFontVariables,
                         htmlDocumentContext: htmlDocumentContext,
@@ -1437,11 +1437,11 @@ private struct PageInspectorView: View {
                     )
                 }
 
-                InspectorSection(title: "Mock State") {
+                InspectorSection(title: "Mock State", sectionID: .mockState) {
                     PreviewMockStateEditor(entries: $mockFieldDrafts, onSubmit: commitIfValid)
                 }
 
-                InspectorSection(title: "Canvas") {
+                InspectorSection(title: "Canvas", sectionID: .canvas) {
                     OptionalCanvasNameField(
                         label: "Name",
                         text: $nameDraft,
@@ -2170,7 +2170,7 @@ private struct ProjectResourceInspectorView: View {
                         iconNames: iconNames
                     )
                 case .i18nRuntime:
-                    InspectorSection(title: "I18n Runtime") {
+                    InspectorSection(title: "I18n Runtime", sectionID: .i18nRuntime) {
                         I18nRuntimeEditorSection(
                             inspection: i18nInspection,
                             onRecommend: onRecommendI18n,
@@ -2178,7 +2178,7 @@ private struct ProjectResourceInspectorView: View {
                         )
                     }
                 case .localeResource(let locale, let path):
-                    InspectorSection(title: "Locale Resource") {
+                    InspectorSection(title: "Locale Resource", sectionID: .localeResource) {
                         LocaleResourceInspectorSection(
                             locale: locale,
                             path: path,
@@ -2197,7 +2197,7 @@ private struct ProjectResourceInspectorView: View {
 
     @ViewBuilder
     private var projectOverview: some View {
-        InspectorSection(title: "Project") {
+        InspectorSection(title: "Project", sectionID: .project) {
             InspectorInfoRow(label: "name", value: loadedProject?.project.name ?? "-")
             InspectorInfoRow(label: "manifest", value: loadedProject?.fileURL.lastPathComponent ?? "-")
             InspectorInfoRow(label: "repository", value: loadedProject?.rootURL.path ?? "-")
@@ -2205,7 +2205,7 @@ private struct ProjectResourceInspectorView: View {
             InspectorInfoRow(label: "css", value: loadedProject?.project.cssLibrary ?? "-")
         }
 
-        InspectorSection(title: "I18n Runtime") {
+        InspectorSection(title: "I18n Runtime", sectionID: .i18nRuntime) {
             I18nRuntimeSummaryContent(inspection: i18nInspection)
         }
     }
@@ -2219,7 +2219,7 @@ private struct ProjectResourceInspectorView: View {
         usedCount: Int,
         iconNames: [String]
     ) -> some View {
-        InspectorSection(title: "Icon CDN") {
+        InspectorSection(title: "Icon CDN", sectionID: .iconCDN) {
             InspectorInfoRow(label: "Library", value: library)
             InspectorInfoRow(label: "Provider", value: provider)
             InspectorInfoRow(label: "Package", value: package)
@@ -2232,7 +2232,7 @@ private struct ProjectResourceInspectorView: View {
 
     @ViewBuilder
     private func pathResourceSection(title: String, path: String) -> some View {
-        InspectorSection(title: title) {
+        InspectorSection(title: title, sectionID: .resourcePath) {
             InspectorInfoRow(label: "path", value: path)
             InspectorInfoRow(label: "status", value: resolvedURL(for: path).map { FileManager.default.fileExists(atPath: $0.path) ? "Found" : "Missing" } ?? "-")
             if let url = resolvedURL(for: path) {
@@ -3081,33 +3081,110 @@ private struct RequiredCanvasNumberField: View {
 ///
 /// プロパティ:
 /// - `title`: セクション見出し。
+/// - `sectionID`: Preview 側編集と対応付ける Inspector セクション ID。
 /// - `content`: セクション内に表示する SwiftUI content。
 private struct InspectorSection<Content: View>: View {
+    @EnvironmentObject private var store: EditorStore
+
     var title: String
-    @ViewBuilder var content: Content
+    var sectionID: InspectorSectionID?
+    var content: Content
+
+    @State private var isExpanded = false
+
+    /// 論理名（日本語）: インスペクターセクション初期化関数
+    /// 処理概要: 見出し、Preview 編集との対応 ID、カード内 content を保持します。
+    ///
+    /// - Parameters:
+    ///   - title: セクション見出し。
+    ///   - sectionID: Preview 側編集と対応付ける Inspector セクション ID。
+    ///   - content: セクション内に表示する SwiftUI content。
+    init(title: String, sectionID: InspectorSectionID? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.sectionID = sectionID
+        self.content = content()
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                OpenGraphiteIconView(icon: headerIcon, size: 13, weight: .semibold)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+
                 Text(title)
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
-            }
 
-            VStack(alignment: .leading, spacing: 8) {
-                content
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "\(title) を閉じる" : "\(title) を開く")
+                .help(isExpanded ? "\(title) を閉じる" : "\(title) を開く")
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
-                    .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
-            )
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    content
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.rowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+        .onAppear {
+            expandIfRequested()
+        }
+        .onChange(of: store.inspectorExpansionScopeIdentifier) { _, _ in
+            isExpanded = false
+        }
+        .onChange(of: store.inspectorSectionOpenRequest?.sequence) { _, _ in
+            expandIfRequested()
+        }
+    }
+
+    private var headerIcon: OpenGraphiteIcon {
+        guard let sectionID else {
+            return .lucide("panel-right", fallbackSystemName: "sidebar.right")
+        }
+        return .inspectorSection(sectionID)
+    }
+
+    /// 論理名（日本語）: 要求反映関数
+    /// 処理概要: 現在選択スコープに一致する Preview 編集要求がこのカードを指している場合だけカードを開きます。
+    private func expandIfRequested() {
+        guard let sectionID,
+              let request = store.inspectorSectionOpenRequest,
+              request.scopeIdentifier == store.inspectorExpansionScopeIdentifier,
+              request.sectionIDs.contains(sectionID)
+        else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isExpanded = true
+        }
     }
 }
 

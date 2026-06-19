@@ -172,6 +172,62 @@ extension OpenGraphiteIcon {
     static let alignVerticalCenter = OpenGraphiteIcon.lucide("align-vertical-justify-center", fallbackSystemName: "align.vertical.center")
     static let alignVerticalEnd = OpenGraphiteIcon.lucide("align-vertical-justify-end", fallbackSystemName: "align.vertical.bottom")
 
+    /// 論理名（日本語）: インスペクターセクションアイコン生成関数
+    /// 処理概要: Inspector の折りたたみカード種別を Lucide 優先のアイコン記述子へ変換します。
+    ///
+    /// - Parameter sectionID: 対象の Inspector セクション ID。
+    /// - Returns: セクションの意味を表すアイコン記述子。
+    static func inspectorSection(_ sectionID: InspectorSectionID) -> OpenGraphiteIcon {
+        switch sectionID {
+        case .context:
+            return .lucide("info", fallbackSystemName: "info.circle")
+        case .component:
+            return .componentDocument
+        case .pages:
+            return .pagesPanel
+        case .alignment:
+            return .alignHorizontalCenter
+        case .layout:
+            return .lucide("layout-template", fallbackSystemName: "rectangle.3.group")
+        case .position:
+            return .lucide("move", fallbackSystemName: "arrow.up.and.down.and.arrow.left.and.right")
+        case .dimensions:
+            return .lucide("ruler", fallbackSystemName: "ruler")
+        case .appearance:
+            return .lucide("palette", fallbackSystemName: "paintpalette")
+        case .text:
+            return .lucide("type", fallbackSystemName: "textformat")
+        case .typography, .localeTypography:
+            return .lucide("case-sensitive", fallbackSystemName: "textformat.size")
+        case .media:
+            return .lucide("image", fallbackSystemName: "photo")
+        case .icon:
+            return .lucide("star", fallbackSystemName: "star")
+        case .effects:
+            return .lucide("sparkles", fallbackSystemName: "sparkles")
+        case .animation:
+            return .lucide("play", fallbackSystemName: "play")
+        case .scrollTimeline:
+            return .lucide("timer", fallbackSystemName: "timer")
+        case .htmlDocument:
+            return .lucide("file-code", fallbackSystemName: "doc.text")
+        case .i18nRuntime:
+            return .i18nResource
+        case .mockState:
+            return .lucide("sliders-horizontal", fallbackSystemName: "slider.horizontal.3")
+        case .canvas:
+            return .lucide("frame", fallbackSystemName: "square.dashed")
+        case .project:
+            return .projectPanel
+        case .iconCDN:
+            return .iconCDNResource
+        case .localeResource:
+            return .localeResource
+        case .resourcePath:
+            return .dependencyResource
+        }
+    }
+
     /// 論理名（日本語）: キャンバスツールアイコン生成関数
     /// 処理概要: キャンバス操作ツールを Lucide 優先のアイコン記述子へ変換します。
     ///
