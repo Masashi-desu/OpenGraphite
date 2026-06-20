@@ -2790,10 +2790,25 @@ final class EditorStore: ObservableObject {
         }
 
         do {
-            try mutation.html.write(to: edit.target.htmlURL, atomically: true, encoding: .utf8)
-            lastKnownPageHTMLByURL[edit.target.htmlURL] = mutation.html
+            let persisted = try htmlObjectEditPersistencePayload(
+                for: edit,
+                mutationHTML: mutation.html,
+                contract: contract
+            )
+            let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL)
+            let previousCompanionCSS = (try? String(contentsOf: companionCSSURL, encoding: .utf8)) ?? ""
+            let companionCSSChanged = persisted.companionCSS.map { $0.css != previousCompanionCSS } ?? false
+            if persisted.html == diskHTML && !companionCSSChanged {
+                return .noChange
+            }
+
+            try persisted.html.write(to: edit.target.htmlURL, atomically: true, encoding: .utf8)
+            if companionCSSChanged, let companionCSS = persisted.companionCSS {
+                try companionCSS.write(forHTMLURL: edit.target.htmlURL)
+            }
+            lastKnownPageHTMLByURL[edit.target.htmlURL] = persisted.html
             var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
-            history.recordSync(html: mutation.html)
+            history.recordSync(html: persisted.html)
             syncHistories[edit.target.htmlURL] = history
             updateHistoryAvailability()
             statusMessage = "\(edit.target.htmlURL.lastPathComponent) と同期しました。"
@@ -2801,6 +2816,54 @@ final class EditorStore: ObservableObject {
         } catch {
             lastError = "HTMLの同期に失敗しました: \(error.localizedDescription)"
             return .failed
+        }
+    }
+
+    /// 論理名（日本語）: HTMLオブジェクト編集永続化payload生成関数
+    /// 処理概要: HTML mutation の保存内容を整え、挿入HTML内の editable design value を companion CSS へ移します。
+    ///
+    /// - Parameters:
+    ///   - edit: 適用中の object edit。
+    ///   - mutationHTML: HTML mutation 後の候補HTML。
+    ///   - contract: CSS declaration の判定に使う OpenGraphite 契約。
+    /// - Returns: 保存する HTML と、更新が必要な companion CSS。
+    private func htmlObjectEditPersistencePayload(
+        for edit: HTMLObjectEdit,
+        mutationHTML: String,
+        contract: OpenGraphiteContract
+    ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
+        guard case .insertHTML = edit.operation else {
+            return (mutationHTML, nil)
+        }
+
+        let runtimeSanitizedHTML = OpenGraphiteHTMLDocument(html: mutationHTML)
+            .removingRuntimeState(contract: contract)
+        let legacyDocument = OpenGraphiteHTMLDocument(html: runtimeSanitizedHTML)
+        let sanitizedHTML = legacyDocument.removingOpenGraphiteStyleVariables(contract: contract)
+        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: edit.target.htmlURL)
+        migrateInlineOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS, contract: contract)
+        return (sanitizedHTML, companionCSS)
+    }
+
+    /// 論理名（日本語）: Inline design value移行関数
+    /// 処理概要: HTML inline style に残る OpenGraphite 編集対象 CSS declaration を companion CSS へ移します。
+    ///
+    /// - Parameters:
+    ///   - document: inline style を含み得る HTML 文書。
+    ///   - companionCSS: 移行先の companion CSS 文書。
+    ///   - contract: CSS declaration の判定に使う OpenGraphite 契約。
+    private func migrateInlineOpenGraphiteCSSVariables(
+        from document: OpenGraphiteHTMLDocument,
+        into companionCSS: inout OpenGraphiteCompanionCSSDocument,
+        contract: OpenGraphiteContract
+    ) {
+        for node in document.nodes(contract: contract) {
+            guard !node.internalID.isEmpty else { continue }
+            let existingVariables = companionCSS.cssVariables(forNodeInternalID: node.internalID, contract: contract)
+            for key in node.cssVariables.keys.sorted()
+                where !contract.runtimeCSSVariableSet.contains(key) && existingVariables[key] == nil {
+                companionCSS.setCSSVariable(key, value: node.cssVariables[key] ?? "", forNodeInternalID: node.internalID)
+            }
         }
     }
 

@@ -1385,6 +1385,60 @@ struct EditorStoreTests {
         #expect(thirdRange.lowerBound < secondRange.lowerBound)
     }
 
+    /// 論理名（日本語）: フレーム配置payload保存テスト
+    /// 概要: frame tool のドラッグ配置と同じ `insertHTML` payload で、選択中親の直下へ座標付き frame が保存されることを確認します。
+    @Test("frame配置payloadで選択親直下へ座標付きframeを保存する")
+    func testObjectEditInsertHTMLPayloadPersistsPlacedFrameUnderSelectedParent() throws {
+        // コンディション：page root だけを持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="vertical"></OpenGraphitePage>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try #require(store.loadedProject?.project.allPages.first)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+        let frameHTML = """
+        <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical" style="gap: 0; padding: 0; position: absolute; left: 12px; top: 24px; width: 160px; height: 90px;"></OpenGraphiteFrame>
+        """
+
+        // 検証内容：WebView bridge 由来の insertHTML payload を保存する（When）
+        let result = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "insertHTML",
+                "selectedID": "frame",
+                "anchorInternalID": "page-node",
+                "position": "append",
+                "html": frameHTML
+            ],
+            target: target
+        )
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
+        let insertedFrameNode = try #require(
+            OpenGraphiteHTMLDocument(html: diskHTML).nodes().first { $0.id == "frame" }
+        )
+        let pageRange = try #require(diskHTML.range(of: "data-og-id=\"page\""))
+        let frameRange = try #require(diskHTML.range(of: "data-og-id=\"frame\""))
+
+        // 期待値：frame が page root の後続範囲へ保存され、ドラッグ矩形の座標とサイズを companion CSS に保持する（Then）
+        #expect(result.updated == true)
+        #expect(result.requiresReload == true)
+        #expect(insertedFrameNode.parentID == "page")
+        #expect(pageRange.lowerBound < frameRange.lowerBound)
+        #expect(!diskHTML.contains("style="))
+        #expect(diskCSS.contains(#"[data-og-internal-id="frame-node"]"#))
+        #expect(diskCSS.contains("position: absolute;"))
+        #expect(diskCSS.contains("left: 12px;"))
+        #expect(diskCSS.contains("top: 24px;"))
+        #expect(diskCSS.contains("width: 160px;"))
+        #expect(diskCSS.contains("height: 90px;"))
+    }
+
     /// 論理名（日本語）: 同時編集競合拒否テスト
     /// 概要: agent 相当の同一 node 更新が先に入った場合、Inspector 保存で上書きしないことを検証します。
     @Test("同一nodeが外部更新済みならobject editで上書きしない")

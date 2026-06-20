@@ -143,6 +143,123 @@ final class WebScrollStateRegistry {
     }
 }
 
+/// 論理名（日本語）: Webキャンバス編集オーバーレイ
+/// 概要: WebView 上に重ねて表示するフレーム配置 preview または選択枠の描画情報です。
+///
+/// プロパティ:
+/// - `rect`: WebView client 座標上の矩形。
+/// - `label`: 矩形左上に表示する補助ラベル。
+/// - `style`: preview / selection の描画種別。
+private struct WebCanvasEditingOverlay {
+    enum Style {
+        case placementPreview
+        case selectedFrame
+    }
+
+    var rect: CGRect
+    var label: String
+    var style: Style
+}
+
+/// 論理名（日本語）: Webキャンバス編集オーバーレイView
+/// 概要: 透明な HTML frame でも実態が見えるよう、WKWebView の最前面で編集用矩形を描画します。
+private final class WebCanvasEditingOverlayView: NSView {
+    var overlays: [WebCanvasEditingOverlay] = [] {
+        didSet {
+            isHidden = overlays.isEmpty
+            needsDisplay = true
+        }
+    }
+
+    override var isFlipped: Bool { true }
+
+    /// 論理名（日本語）: ヒットテスト無効化関数
+    /// 処理概要: 編集オーバーレイが WebView の pointer / mouse event を奪わないようにします。
+    ///
+    /// - Parameter point: hit test 対象座標。
+    /// - Returns: 常に `nil`。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    /// 論理名（日本語）: オーバーレイ描画関数
+    /// 処理概要: preview と selected frame の矩形、塗り、補助ラベルを描画します。
+    ///
+    /// - Parameter dirtyRect: 再描画対象矩形。
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        for overlay in overlays where overlay.rect.width > 0 && overlay.rect.height > 0 {
+            draw(overlay)
+        }
+    }
+
+    /// 論理名（日本語）: 単一オーバーレイ描画関数
+    /// 処理概要: 指定された overlay の矩形とラベルを現在の graphics context へ描画します。
+    ///
+    /// - Parameter overlay: 描画する overlay。
+    private func draw(_ overlay: WebCanvasEditingOverlay) {
+        let rect = overlay.rect.integral.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(rect: rect)
+        path.lineJoinStyle = .round
+
+        switch overlay.style {
+        case .placementPreview:
+            NSColor.systemBlue.withAlphaComponent(0.16).setFill()
+            path.fill()
+            NSColor.systemBlue.withAlphaComponent(0.95).setStroke()
+            path.lineWidth = 2
+        case .selectedFrame:
+            NSColor.systemBlue.withAlphaComponent(0.07).setFill()
+            path.fill()
+            NSColor.systemBlue.setStroke()
+            path.lineWidth = 2
+        }
+        path.stroke()
+
+        drawLabel(overlay.label, near: rect)
+    }
+
+    /// 論理名（日本語）: オーバーレイラベル描画関数
+    /// 処理概要: 矩形の上端または内側に、サイズや ID を示す短いラベルを描画します。
+    ///
+    /// - Parameters:
+    ///   - label: 表示するテキスト。
+    ///   - rect: ラベルの基準となる overlay 矩形。
+    private func drawLabel(_ label: String, near rect: CGRect) {
+        guard !label.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ]
+        let attributed = NSAttributedString(string: label, attributes: attributes)
+        let textSize = attributed.size()
+        let labelPadding = CGSize(width: 12, height: 5)
+        let labelSize = CGSize(
+            width: min(max(textSize.width + labelPadding.width, 36), max(bounds.width - 8, 36)),
+            height: textSize.height + labelPadding.height
+        )
+        let labelOriginY = rect.minY >= labelSize.height + 4
+            ? rect.minY - labelSize.height - 2
+            : rect.minY + 3
+        let labelOriginX = min(max(rect.minX, 4), max(bounds.width - labelSize.width - 4, 4))
+        let labelRect = CGRect(origin: CGPoint(x: labelOriginX, y: labelOriginY), size: labelSize)
+        let backgroundPath = NSBezierPath(roundedRect: labelRect, xRadius: 4, yRadius: 4)
+        NSColor.systemBlue.setFill()
+        backgroundPath.fill()
+
+        attributed.draw(
+            in: CGRect(
+                x: labelRect.minX + 6,
+                y: labelRect.minY + 2,
+                width: labelRect.width - 12,
+                height: labelRect.height - 4
+            )
+        )
+    }
+}
+
 /// 論理名（日本語）: OpenGraphiteコマンド対応WebView
 /// 概要: `⌘C` と responder chain の `copy:` を OpenGraphite の選択ノードコピーへ接続する WKWebView です。
 ///
@@ -150,6 +267,13 @@ final class WebScrollStateRegistry {
 /// - `copyCommandHandler`: OpenGraphite 専用コピーを実行し、処理できた場合に `true` を返す handler。
 private final class OpenGraphiteCommandWebView: WKWebView {
     var copyCommandHandler: (() -> Bool)?
+    var activeToolRawValue = CanvasTool.select.rawValue
+    private let editingOverlayView = WebCanvasEditingOverlayView()
+    private let framePlacementPreviewDragThreshold: CGFloat = 3
+    private var framePlacementPreviewStartPoint: CGPoint?
+    private var framePlacementPreviewDidBegin = false
+    private var framePlacementPreviewOverlay: WebCanvasEditingOverlay?
+    private var selectedFrameOverlay: WebCanvasEditingOverlay?
 
     /// 論理名（日本語）: WebView不透明判定
     /// 概要: WebKit の未描画期間に親キャンバス背景を透過表示するため、常に非不透明 view として扱います。
@@ -162,6 +286,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     override func layout() {
         super.layout()
         applyTransparentPreviewBackground()
+        layoutEditingOverlay()
     }
 
     /// 論理名（日本語）: ウィンドウ所属更新関数
@@ -189,6 +314,75 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     /// - Parameter sender: action 送信元。
     @objc func copy(_ sender: Any?) {
         _ = copyCommandHandler?()
+    }
+
+    /// 論理名（日本語）: マウスダウン処理関数
+    /// 処理概要: WebKit の DOM pointer event が届かない場合に備え、フレーム配置用の native 入力も bridge へ転送します。
+    ///
+    /// - Parameter event: AppKit から届いたマウスダウンイベント。
+    override func mouseDown(with event: NSEvent) {
+        beginNativeFramePlacementTrackingIfNeeded(event)
+        forwardFramePlacementMouseEvent("down", event: event)
+        super.mouseDown(with: event)
+    }
+
+    /// 論理名（日本語）: マウスドラッグ処理関数
+    /// 処理概要: native drag 座標を WebView viewport 座標へ変換し、フレーム配置プレビュー更新へ渡します。
+    ///
+    /// - Parameter event: AppKit から届いたドラッグイベント。
+    override func mouseDragged(with event: NSEvent) {
+        updateNativeFramePlacementPreviewIfNeeded(event)
+        forwardFramePlacementMouseEvent("move", event: event)
+        super.mouseDragged(with: event)
+    }
+
+    /// 論理名（日本語）: マウスアップ処理関数
+    /// 処理概要: native release 座標を WebView bridge へ渡し、フレーム配置を確定します。
+    ///
+    /// - Parameter event: AppKit から届いたマウスアップイベント。
+    override func mouseUp(with event: NSEvent) {
+        forwardFramePlacementMouseEvent("up", event: event)
+        endNativeFramePlacementPreview()
+        super.mouseUp(with: event)
+    }
+
+    /// 論理名（日本語）: 選択フレームオーバーレイ表示関数
+    /// 処理概要: JS から得た selected frame の client 矩形を WebView 上の AppKit overlay として表示します。
+    ///
+    /// - Parameters:
+    ///   - rect: WebView client 座標上の selected frame 矩形。
+    ///   - label: 選択対象を示す補助ラベル。
+    func showSelectedFrameOverlay(rect: CGRect, label: String) {
+        selectedFrameOverlay = WebCanvasEditingOverlay(rect: rect, label: label, style: .selectedFrame)
+        refreshEditingOverlays()
+    }
+
+    /// 論理名（日本語）: 選択フレームオーバーレイ非表示関数
+    /// 処理概要: selected frame 用 AppKit overlay を消去します。
+    func hideSelectedFrameOverlay() {
+        selectedFrameOverlay = nil
+        refreshEditingOverlays()
+    }
+
+    /// 論理名（日本語）: アクティブツール反映関数
+    /// 処理概要: SwiftUI 側の canvas tool を native overlay の制御にも反映します。
+    ///
+    /// - Parameter rawValue: `CanvasTool` の raw value。
+    func setActiveToolRawValue(_ rawValue: String) {
+        activeToolRawValue = rawValue
+        if rawValue != CanvasTool.frame.rawValue {
+            endNativeFramePlacementPreview()
+        }
+    }
+
+    /// 論理名（日本語）: 編集オーバーレイ全消去関数
+    /// 処理概要: navigation や document replacement の境界で AppKit 側の編集表示をリセットします。
+    func clearEditingOverlays() {
+        framePlacementPreviewStartPoint = nil
+        framePlacementPreviewDidBegin = false
+        framePlacementPreviewOverlay = nil
+        selectedFrameOverlay = nil
+        refreshEditingOverlays()
     }
 
     /// 論理名（日本語）: プレビュー背景透明化関数
@@ -230,6 +424,127 @@ private final class OpenGraphiteCommandWebView: WKWebView {
         root.subviews.forEach { subview in
             makeScrollContainersTransparent(in: subview)
         }
+    }
+
+    /// 論理名（日本語）: 編集オーバーレイ配置関数
+    /// 処理概要: WebView の bounds に合わせて overlay view を最前面へ配置します。
+    private func layoutEditingOverlay() {
+        ensureEditingOverlayView()
+        if editingOverlayView.superview === self {
+            editingOverlayView.frame = bounds
+        } else {
+            editingOverlayView.frame = frame
+        }
+    }
+
+    /// 論理名（日本語）: 編集オーバーレイView確保関数
+    /// 処理概要: WebKit 内部 view に隠れないよう、可能なら WebView の親 view 上で前面 sibling として追加します。
+    private func ensureEditingOverlayView() {
+        let targetSuperview = superview ?? self
+        if editingOverlayView.superview !== targetSuperview {
+            editingOverlayView.removeFromSuperview()
+            editingOverlayView.autoresizingMask = []
+            editingOverlayView.isHidden = true
+            if targetSuperview === self {
+                addSubview(editingOverlayView, positioned: .above, relativeTo: nil)
+            } else if let superview {
+                superview.addSubview(editingOverlayView, positioned: .above, relativeTo: self)
+            }
+        }
+    }
+
+    /// 論理名（日本語）: 編集オーバーレイ更新関数
+    /// 処理概要: preview と selected frame の overlay をまとめて描画 view へ反映します。
+    private func refreshEditingOverlays() {
+        ensureEditingOverlayView()
+        layoutEditingOverlay()
+        editingOverlayView.overlays = [framePlacementPreviewOverlay, selectedFrameOverlay].compactMap { $0 }
+    }
+
+    /// 論理名（日本語）: フレーム配置preview追跡開始関数
+    /// 処理概要: frame tool のドラッグ候補開始点を WebView client 座標で記録します。
+    ///
+    /// - Parameter event: AppKit から届いたマウスダウンイベント。
+    private func beginNativeFramePlacementTrackingIfNeeded(_ event: NSEvent) {
+        guard activeToolRawValue == CanvasTool.frame.rawValue,
+              event.buttonNumber == 0
+        else {
+            return
+        }
+        framePlacementPreviewStartPoint = clientPoint(for: event)
+        framePlacementPreviewDidBegin = false
+        framePlacementPreviewOverlay = nil
+    }
+
+    /// 論理名（日本語）: フレーム配置preview更新関数
+    /// 処理概要: native drag 中の対角矩形を AppKit overlay として更新します。
+    ///
+    /// - Parameter event: AppKit から届いたドラッグイベント。
+    private func updateNativeFramePlacementPreviewIfNeeded(_ event: NSEvent) {
+        guard activeToolRawValue == CanvasTool.frame.rawValue,
+              let startPoint = framePlacementPreviewStartPoint
+        else {
+            return
+        }
+        let currentPoint = clientPoint(for: event)
+        let dragDistance = hypot(currentPoint.x - startPoint.x, currentPoint.y - startPoint.y)
+        if !framePlacementPreviewDidBegin && dragDistance < framePlacementPreviewDragThreshold {
+            return
+        }
+        framePlacementPreviewDidBegin = true
+        let rect = CGRect(
+            x: min(startPoint.x, currentPoint.x),
+            y: min(startPoint.y, currentPoint.y),
+            width: abs(currentPoint.x - startPoint.x),
+            height: abs(currentPoint.y - startPoint.y)
+        )
+        framePlacementPreviewOverlay = WebCanvasEditingOverlay(
+            rect: rect,
+            label: "Frame \(Int(rect.width.rounded())) x \(Int(rect.height.rounded()))",
+            style: .placementPreview
+        )
+        refreshEditingOverlays()
+    }
+
+    /// 論理名（日本語）: フレーム配置preview終了関数
+    /// 処理概要: mouse up / cancel 後に native preview overlay を消去します。
+    private func endNativeFramePlacementPreview() {
+        framePlacementPreviewStartPoint = nil
+        framePlacementPreviewDidBegin = false
+        framePlacementPreviewOverlay = nil
+        refreshEditingOverlays()
+    }
+
+    /// 論理名（日本語）: フレーム配置マウスイベント転送関数
+    /// 処理概要: AppKit 座標を DOM client 座標へ変換し、JavaScript bridge の native fallback へ送ります。
+    ///
+    /// - Parameters:
+    ///   - kind: `down`、`move`、`up` のいずれか。
+    ///   - event: AppKit から届いたマウスイベント。
+    private func forwardFramePlacementMouseEvent(_ kind: String, event: NSEvent) {
+        let point = clientPoint(for: event)
+        let script = """
+        window.OpenGraphite && window.OpenGraphite.handleFramePlacementNativeEvent(
+          '\(kind)',
+          \(point.x),
+          \(point.y),
+          \(event.buttonNumber)
+        );
+        """
+        evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    /// 論理名（日本語）: DOM client座標変換関数
+    /// 処理概要: AppKit event 座標を DOM `clientX/clientY` と同じ左上原点座標へ変換します。
+    ///
+    /// - Parameter event: AppKit から届いたマウスイベント。
+    /// - Returns: WebView client 座標。
+    private func clientPoint(for event: NSEvent) -> CGPoint {
+        let point = convert(event.locationInWindow, from: nil)
+        let clientX = min(max(point.x, 0), bounds.width)
+        let rawClientY = isFlipped ? point.y : bounds.height - point.y
+        let clientY = min(max(rawClientY, 0), bounds.height)
+        return CGPoint(x: clientX, y: clientY)
     }
 
     /// 論理名（日本語）: コピーショートカット判定関数
@@ -346,6 +661,7 @@ struct WebCanvasView: NSViewRepresentable {
                 context.coordinator.loadedURL = targetPageURL
                 context.coordinator.lastReloadToken = reloadToken
                 context.coordinator.lastSelectedNodeID = nil
+                context.coordinator.lastActiveTool = nil
                 context.coordinator.hidePreviewUntilStyled()
                 if loadedURLChanged || webView.url == nil {
                     let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
@@ -1112,6 +1428,8 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - webView: 読み込み開始対象の WebView。
         ///   - navigation: 開始した provisional navigation。
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            lastActiveTool = nil
+            (webView as? OpenGraphiteCommandWebView)?.clearEditingOverlays()
             hidePreviewUntilStyled()
         }
 
@@ -1122,6 +1440,8 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - webView: 読み込み中の WebView。
         ///   - navigation: コミットされた navigation。
         func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            lastActiveTool = nil
+            (webView as? OpenGraphiteCommandWebView)?.clearEditingOverlays()
             (webView as? OpenGraphiteCommandWebView)?.hidePreviewContentUntilStyled()
         }
 
@@ -1195,7 +1515,25 @@ struct WebCanvasView: NSViewRepresentable {
         func selectNode(_ id: String?) {
             guard let webView else { return }
             let idLiteral = Self.javaScriptLiteral(id ?? "")
-            webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.selectNode(\(idLiteral));")
+            let script = """
+            (function() {
+              if (!window.OpenGraphite || typeof window.OpenGraphite.selectNode !== 'function') {
+                return { selected: false, frame: null };
+              }
+              const selected = window.OpenGraphite.selectNode(\(idLiteral));
+              if (!selected || typeof window.OpenGraphite.selectedFrameOverlayPayload !== 'function') {
+                return { selected: !!selected, frame: null };
+              }
+              return { selected: true, frame: window.OpenGraphite.selectedFrameOverlayPayload() };
+            })();
+            """
+            webView.evaluateJavaScript(script) { [weak self, weak webView] result, _ in
+                guard let self, let webView else { return }
+                Task { @MainActor in
+                    guard self.store.selectedNodeID == id else { return }
+                    self.applySelectedFrameOverlayPayload(result, to: webView)
+                }
+            }
         }
 
         @MainActor
@@ -1205,8 +1543,40 @@ struct WebCanvasView: NSViewRepresentable {
         /// - Parameter tool: 現在選択されているキャンバスツール。
         func setActiveTool(_ tool: CanvasTool) {
             guard let webView else { return }
+            lastActiveTool = tool
+            (webView as? OpenGraphiteCommandWebView)?.setActiveToolRawValue(tool.rawValue)
             webView.evaluateJavaScript(
                 "window.OpenGraphite && window.OpenGraphite.setActiveTool(\(Self.javaScriptLiteral(tool.rawValue)));"
+            )
+        }
+
+        /// 論理名（日本語）: 選択フレームオーバーレイpayload反映関数
+        /// 処理概要: JavaScript から返された selected frame rect を AppKit overlay へ変換します。
+        ///
+        /// - Parameters:
+        ///   - result: `selectedFrameOverlayPayload` を含む JavaScript 戻り値。
+        ///   - webView: overlay を表示する WebView。
+        private func applySelectedFrameOverlayPayload(_ result: Any?, to webView: WKWebView) {
+            guard let commandWebView = webView as? OpenGraphiteCommandWebView,
+                  let payload = result as? [String: Any],
+                  let frame = payload["frame"] as? [String: Any],
+                  let x = frame["x"] as? Double,
+                  let y = frame["y"] as? Double,
+                  let width = frame["width"] as? Double,
+                  let height = frame["height"] as? Double,
+                  width > 0,
+                  height > 0
+            else {
+                (webView as? OpenGraphiteCommandWebView)?.hideSelectedFrameOverlay()
+                return
+            }
+
+            let id = (frame["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let labelPrefix = id?.isEmpty == false ? id! : "frame"
+            let label = "\(labelPrefix) \(Int(width.rounded())) x \(Int(height.rounded()))"
+            commandWebView.showSelectedFrameOverlay(
+                rect: CGRect(x: x, y: y, width: width, height: height),
+                label: label
             )
         }
 
@@ -1355,7 +1725,7 @@ struct WebCanvasView: NSViewRepresentable {
 
             let script = """
             (function() {
-              const editorStyleSelector = '#opengraphite-editor-selection-style';
+              const editorStyleSelector = '#opengraphite-editor-selection-style,[data-og-editor-artifact="true"]';
               function removeEditorStyles(root) {
                 if (!root || typeof root.querySelectorAll !== 'function') { return; }
                 root.querySelectorAll(editorStyleSelector).forEach((element) => {
@@ -1923,11 +2293,17 @@ struct WebCanvasView: NSViewRepresentable {
         var activeTool = 'select';
         var pendingDrag = null;
         var activeDrag = null;
+        var pendingFramePlacement = null;
+        var framePlacement = null;
+        var framePlacementOverlay = null;
+        var selectionOverlay = null;
+        var selectionOverlayFrame = null;
         var reorderAnimationToken = 0;
         var editingTextElement = null;
         var editingOriginalText = '';
         var suppressNextClick = false;
         var clickSequenceStartSelectedID = '';
+        let minimumFramePlacementSize = 2;
 
         function installEditorSelectionStyle() {
           if (document.getElementById('opengraphite-editor-selection-style')) { return; }
@@ -1941,7 +2317,18 @@ struct WebCanvasView: NSViewRepresentable {
             '[data-og-dragging="true"]{cursor:grabbing!important;filter:drop-shadow(0 14px 24px rgba(0,0,0,.28));position:relative;z-index:2147483647;}',
             '[data-og-reorder-dragging="true"]{pointer-events:none;transform:translate3d(var(--og-drag-x,0),var(--og-drag-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:none!important;will-change:transform;}',
             '[data-og-reorder-animating="true"]{transform:translate3d(var(--og-reorder-x,0),var(--og-reorder-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:transform 160ms cubic-bezier(.2,0,.2,1)!important;will-change:transform;}',
-            '[data-og-reorder-preparing="true"]{transition:none!important;}'
+            '[data-og-reorder-preparing="true"]{transition:none!important;}',
+            'html[data-og-frame-guides="true"] [data-og-type="frame"]{outline:1px dashed rgba(29,155,240,.35)!important;outline-offset:-1px!important;}',
+            '[data-og-selected="true"][data-og-type="frame"]{outline:2px solid #1d9bf0!important;outline-offset:2px!important;box-shadow:0 0 0 1px rgba(29,155,240,.9) inset,0 0 0 1px rgba(29,155,240,.9)!important;}',
+            '[data-og-frame-preview="true"]{background:rgba(29,155,240,.14)!important;border:1px solid rgba(29,155,240,.75)!important;outline:1px solid #1d9bf0!important;outline-offset:0!important;box-shadow:0 0 0 1px rgba(29,155,240,.45) inset!important;pointer-events:none!important;position:absolute!important;z-index:2147483645!important;}',
+            '[data-og-editor-artifact="true"]{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important;}',
+            '[data-og-frame-placement-overlay="true"],[data-og-selection-overlay="true"]{box-sizing:border-box!important;contain:layout style paint!important;position:fixed!important;}',
+            '[data-og-frame-placement-overlay="true"]{background:rgba(29,155,240,.16)!important;border:1px solid #60a5fa!important;box-shadow:0 0 0 1px rgba(29,155,240,.92),0 12px 30px rgba(29,155,240,.22)!important;z-index:2147483647!important;}',
+            '[data-og-selection-overlay="true"]{background:rgba(29,155,240,.055)!important;border:1px solid #1d9bf0!important;box-shadow:0 0 0 1px rgba(29,155,240,.5),0 0 0 1px rgba(29,155,240,.35) inset!important;z-index:2147483646!important;}',
+            '[data-og-frame-placement-overlay="true"]::after,[data-og-selection-overlay="true"]::after{background:#0a84ff;border-radius:4px;color:#fff;display:block;font:600 10px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;left:-1px;max-width:260px;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;top:-21px;white-space:nowrap;}',
+            '[data-og-frame-placement-overlay="true"]::after{content:attr(data-og-placement-label);}',
+            '[data-og-selection-overlay="true"]::after{content:attr(data-og-selection-label);}',
+            '[data-og-frame-placement-overlay="true"][data-og-overlay-label-position="inside"]::after,[data-og-selection-overlay="true"][data-og-overlay-label-position="inside"]::after{left:2px;top:2px;}'
           ].join('');
           (document.head || document.documentElement).appendChild(style);
         }
@@ -2218,15 +2605,179 @@ struct WebCanvasView: NSViewRepresentable {
           return document.querySelector('[data-og-selected="true"]');
         }
 
+        function isFrameElement(element) {
+          return element && element.getAttribute('data-og-type') === 'frame';
+        }
+
+        function shouldShowFrameGuides() {
+          return activeTool === 'frame' || !!framePlacement || isFrameElement(selectedElement());
+        }
+
+        function updateFrameGuideState() {
+          if (shouldShowFrameGuides()) {
+            document.documentElement.setAttribute('data-og-frame-guides', 'true');
+          } else {
+            document.documentElement.removeAttribute('data-og-frame-guides');
+          }
+        }
+
+        function roundedPixel(value) {
+          return Math.max(0, Math.round(value * 10) / 10);
+        }
+
+        function overlayLabelPositionFor(rect) {
+          return rect && rect.top < 24 ? 'inside' : 'outside';
+        }
+
+        function setFixedOverlayRect(overlay, rect) {
+          if (!overlay || !rect || rect.width <= 0 || rect.height <= 0) {
+            if (overlay) {
+              overlay.style.setProperty('display', 'none');
+            }
+            return;
+          }
+
+          overlay.style.setProperty('display', 'block');
+          overlay.style.setProperty('left', pixelString(rect.left));
+          overlay.style.setProperty('top', pixelString(rect.top));
+          overlay.style.setProperty('width', pixelString(rect.width));
+          overlay.style.setProperty('height', pixelString(rect.height));
+          overlay.setAttribute('data-og-overlay-label-position', overlayLabelPositionFor(rect));
+        }
+
+        function ensureFramePlacementOverlay() {
+          if (framePlacementOverlay && framePlacementOverlay.isConnected) {
+            return framePlacementOverlay;
+          }
+
+          framePlacementOverlay = document.createElement('div');
+          framePlacementOverlay.setAttribute('data-og-editor-artifact', 'true');
+          framePlacementOverlay.setAttribute('data-og-frame-placement-overlay', 'true');
+          framePlacementOverlay.setAttribute('aria-hidden', 'true');
+          framePlacementOverlay.style.setProperty('display', 'none');
+          (document.body || document.documentElement).appendChild(framePlacementOverlay);
+          return framePlacementOverlay;
+        }
+
+        function removeFramePlacementOverlay() {
+          if (framePlacementOverlay) {
+            framePlacementOverlay.remove();
+          }
+          framePlacementOverlay = null;
+        }
+
+        function framePlacementViewportRect(placement, event) {
+          const left = Math.min(placement.startClientX, event.clientX);
+          const top = Math.min(placement.startClientY, event.clientY);
+          const width = Math.abs(event.clientX - placement.startClientX);
+          const height = Math.abs(event.clientY - placement.startClientY);
+          return { left: left, top: top, width: width, height: height };
+        }
+
+        function framePlacementLabel(rect) {
+          return 'Frame ' + Math.round(rect.width) + ' x ' + Math.round(rect.height);
+        }
+
+        function updateFramePlacementOverlay(placement, event) {
+          if (!placement || !event) { return; }
+          const overlay = ensureFramePlacementOverlay();
+          const rect = framePlacementViewportRect(placement, event);
+          overlay.setAttribute('data-og-placement-label', framePlacementLabel(rect));
+          setFixedOverlayRect(overlay, rect);
+        }
+
+        function selectedFrameOverlayPayload() {
+          const element = selectionOverlayTarget();
+          if (!element || typeof element.getBoundingClientRect !== 'function') {
+            return null;
+          }
+          const rect = element.getBoundingClientRect();
+          if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
+              !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+              rect.width <= 0 || rect.height <= 0) {
+            return null;
+          }
+          return {
+            id: elementID(element) || element.tagName.toLowerCase(),
+            x: rect.left,
+            y: rect.top,
+            width: rect.width,
+            height: rect.height
+          };
+        }
+
+        function ensureSelectionOverlay() {
+          if (selectionOverlay && selectionOverlay.isConnected) {
+            return selectionOverlay;
+          }
+
+          selectionOverlay = document.createElement('div');
+          selectionOverlay.setAttribute('data-og-editor-artifact', 'true');
+          selectionOverlay.setAttribute('data-og-selection-overlay', 'true');
+          selectionOverlay.setAttribute('aria-hidden', 'true');
+          selectionOverlay.style.setProperty('display', 'none');
+          (document.body || document.documentElement).appendChild(selectionOverlay);
+          return selectionOverlay;
+        }
+
+        function hideSelectionOverlay() {
+          if (selectionOverlay) {
+            selectionOverlay.style.setProperty('display', 'none');
+          }
+        }
+
+        function selectionOverlayTarget() {
+          const element = selectedElement();
+          if (!element || element.getAttribute('data-og-type') !== 'frame') {
+            return null;
+          }
+          return element;
+        }
+
+        function updateSelectionOverlay() {
+          selectionOverlayFrame = null;
+          const element = selectionOverlayTarget();
+          if (!element || typeof element.getBoundingClientRect !== 'function') {
+            hideSelectionOverlay();
+            return;
+          }
+
+          const rect = element.getBoundingClientRect();
+          if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
+              !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+              rect.width <= 0 || rect.height <= 0) {
+            hideSelectionOverlay();
+            return;
+          }
+
+          const overlay = ensureSelectionOverlay();
+          const id = elementID(element) || element.tagName.toLowerCase();
+          overlay.setAttribute(
+            'data-og-selection-label',
+            id + ' - ' + roundedPixel(rect.width) + ' x ' + roundedPixel(rect.height)
+          );
+          setFixedOverlayRect(overlay, rect);
+        }
+
+        function scheduleSelectionOverlayUpdate() {
+          if (selectionOverlayFrame !== null) { return; }
+          selectionOverlayFrame = window.requestAnimationFrame(updateSelectionOverlay);
+        }
+
         function setActiveTool(tool) {
           if (editingTextElement) {
             finishTextEditing(false);
           }
+          if (framePlacement) {
+            finishFramePlacement(true);
+          }
+          pendingFramePlacement = null;
           if (activeDrag) {
             finishActiveDrag(true);
           }
           activeTool = tool || 'select';
           pendingDrag = null;
+          updateFrameGuideState();
         }
 
         function elementID(element) {
@@ -2489,65 +3040,70 @@ struct WebCanvasView: NSViewRepresentable {
           postStaticFlowHover(payload);
         }
 
-      function collectNodes() {
-        if (window.OpenGraphiteComponentPlacementReferences && typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
-          window.OpenGraphiteComponentPlacementReferences.render();
-          if (currentSelectedID) {
-            selectNode(currentSelectedID);
+        function collectNodes() {
+          if (window.OpenGraphiteComponentPlacementReferences && typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
+            window.OpenGraphiteComponentPlacementReferences.render();
+            if (currentSelectedID) {
+              selectNode(currentSelectedID);
+            }
           }
+          ensureInternalIDs();
+          const nodes = allEditableNodes().map((element) => ({
+            id: selectionIDForElement(element),
+            internalID: element.getAttribute('data-og-internal-id') || '',
+            tagName: element.tagName.toLowerCase(),
+            type: element.getAttribute('data-og-type') || '',
+            layout: element.getAttribute('data-og-layout') || '',
+            role: element.getAttribute('data-og-role') || '',
+            componentID: element.getAttribute('data-og-component') || '',
+            componentKind: element.getAttribute('data-og-component-kind') || '',
+            sourceComponentID: element.getAttribute('data-og-source-component') || '',
+            sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
+            sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
+            sourceNodeID: isPlacementGeneratedElement(element) ? elementID(element) : '',
+            sourcePlacementID: sourcePlacementIDForElement(element),
+            placementGenerated: isPlacementGeneratedElement(element),
+            textContent: editablePlainText(element),
+            fallbackTextContent: fallbackPlainText(element),
+            textSource: element.getAttribute('data-og-text-source') || '',
+            i18nKey: element.getAttribute('data-i18n-key') || '',
+            iconLibrary: element.getAttribute('data-og-icon-library') || '',
+            iconName: element.getAttribute('data-og-icon-name') || '',
+            iconSource: element.getAttribute('data-og-icon-source') || '',
+            cssVariables: cssVariables(element),
+            resolvedFontFamily: resolvedFontFamily(element),
+            hidden: element.getAttribute('data-og-hidden') === 'true',
+            locked: element.getAttribute('data-og-locked') === 'true',
+            depth: depth(element)
+          }));
+          window.webkit.messageHandlers.openGraphiteNodes.postMessage(nodes);
+          scheduleStaticFlowLinkCollection();
+          scheduleSelectionOverlayUpdate();
+          return nodes;
         }
-        ensureInternalIDs();
-        const nodes = allEditableNodes().map((element) => ({
-          id: selectionIDForElement(element),
-          internalID: element.getAttribute('data-og-internal-id') || '',
-          tagName: element.tagName.toLowerCase(),
-          type: element.getAttribute('data-og-type') || '',
-          layout: element.getAttribute('data-og-layout') || '',
-          role: element.getAttribute('data-og-role') || '',
-          componentID: element.getAttribute('data-og-component') || '',
-          componentKind: element.getAttribute('data-og-component-kind') || '',
-          sourceComponentID: element.getAttribute('data-og-source-component') || '',
-          sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
-          sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
-          sourceNodeID: isPlacementGeneratedElement(element) ? elementID(element) : '',
-          sourcePlacementID: sourcePlacementIDForElement(element),
-          placementGenerated: isPlacementGeneratedElement(element),
-          textContent: editablePlainText(element),
-          fallbackTextContent: fallbackPlainText(element),
-          textSource: element.getAttribute('data-og-text-source') || '',
-          i18nKey: element.getAttribute('data-i18n-key') || '',
-          iconLibrary: element.getAttribute('data-og-icon-library') || '',
-          iconName: element.getAttribute('data-og-icon-name') || '',
-          iconSource: element.getAttribute('data-og-icon-source') || '',
-          cssVariables: cssVariables(element),
-          resolvedFontFamily: resolvedFontFamily(element),
-          hidden: element.getAttribute('data-og-hidden') === 'true',
-          locked: element.getAttribute('data-og-locked') === 'true',
-          depth: depth(element)
-        }));
-        window.webkit.messageHandlers.openGraphiteNodes.postMessage(nodes);
-        scheduleStaticFlowLinkCollection();
-        return nodes;
-      }
 
         function clearSelection() {
-        document.querySelectorAll('[data-og-selected]').forEach((element) => {
-          element.removeAttribute('data-og-selected');
-        });
-      }
+          document.querySelectorAll('[data-og-selected]').forEach((element) => {
+            element.removeAttribute('data-og-selected');
+          });
+          currentSelectedID = '';
+          hideSelectionOverlay();
+          updateFrameGuideState();
+        }
 
         function selectNode(id) {
           if (editingTextElement && elementID(editingTextElement) !== id) {
             finishTextEditing(false, false);
           }
           clearSelection();
-          currentSelectedID = '';
           if (!id) { return false; }
           const element = nodeWithID(id);
           if (!element) { return false; }
           currentSelectedID = id;
           element.setAttribute('data-og-selected', 'true');
           revealElementForSelection(element);
+          updateFrameGuideState();
+          scheduleSelectionOverlayUpdate();
           return true;
         }
 
@@ -2979,7 +3535,7 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function createFrameElement() {
-          const element = document.createElement('Frame');
+          const element = document.createElement('OpenGraphiteFrame');
           element.setAttribute('data-og-id', createFrameID());
           element.setAttribute('data-og-internal-id', newInternalID());
           element.setAttribute('data-og-type', 'frame');
@@ -3012,6 +3568,255 @@ struct WebCanvasView: NSViewRepresentable {
           if (tool === 'frame') { return createFrameElement(); }
           if (tool === 'icon') { return createIconElement(); }
           return null;
+        }
+
+        function selectedFramePlacementParent() {
+          const visualElement = selectedElement();
+          const element = editElementForSelectionID(currentSelectedID) || visualElement;
+          if (!element || !canReceiveChildren(element) || hasLockedAncestor(element)) {
+            return null;
+          }
+          return element;
+        }
+
+        function localPointInElement(element, event) {
+          const rect = element.getBoundingClientRect();
+          return {
+            x: event.clientX - rect.left + (element.scrollLeft || 0),
+            y: event.clientY - rect.top + (element.scrollTop || 0)
+          };
+        }
+
+        function framePlacementRect(placement, event) {
+          const point = localPointInElement(placement.parent, event);
+          const left = Math.min(placement.startX, point.x);
+          const top = Math.min(placement.startY, point.y);
+          const width = Math.abs(point.x - placement.startX);
+          const height = Math.abs(point.y - placement.startY);
+          return { left: left, top: top, width: width, height: height };
+        }
+
+        function applyFramePlacementRect(placement, rect) {
+          placement.frame.style.setProperty('position', 'absolute');
+          placement.frame.style.setProperty('left', pixelString(rect.left));
+          placement.frame.style.setProperty('top', pixelString(rect.top));
+          placement.frame.style.setProperty('width', pixelString(rect.width));
+          placement.frame.style.setProperty('height', pixelString(rect.height));
+          placement.lastRect = rect;
+        }
+
+        function eventPointerID(event) {
+          return event && event.pointerId !== undefined ? event.pointerId : 'mouse';
+        }
+
+        function framePlacementMatchesEvent(event) {
+          if (!framePlacement) { return false; }
+          return framePlacementPointerMatches(framePlacement.pointerID, event);
+        }
+
+        function framePlacementPointerMatches(storedPointerID, event) {
+          const pointerID = eventPointerID(event);
+          return storedPointerID === pointerID ||
+            storedPointerID === 'native-mouse' ||
+            pointerID === 'native-mouse';
+        }
+
+        function pendingFramePlacementMatchesEvent(event) {
+          if (!pendingFramePlacement) { return false; }
+          return framePlacementPointerMatches(pendingFramePlacement.pointerID, event);
+        }
+
+        function framePlacementCandidateFromEvent(event) {
+          if (activeTool !== 'frame' || event.button !== primaryPointerButton) { return false; }
+          const parent = selectedFramePlacementParent();
+          if (!parent) { return false; }
+          const anchorInternalID = nodeInternalID(parent);
+          if (!anchorInternalID) { return false; }
+
+          const start = localPointInElement(parent, event);
+          return {
+            pointerID: eventPointerID(event),
+            parent: parent,
+            anchorInternalID: anchorInternalID,
+            startX: start.x,
+            startY: start.y,
+            startClientX: event.clientX,
+            startClientY: event.clientY
+          };
+        }
+
+        function beginPendingFramePlacement(event) {
+          if (framePlacement || pendingFramePlacement) { return true; }
+          const candidate = framePlacementCandidateFromEvent(event);
+          if (!candidate) { return false; }
+          pendingFramePlacement = candidate;
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        function selectFrameToolClickTarget(event) {
+          const element = editableElementFromTarget(event.target);
+          if (!element) { return false; }
+          const id = nextSelectionIDForClick(element);
+          selectNode(id);
+          notifySelection(id);
+          collectNodes();
+          return true;
+        }
+
+        function startFramePlacementIfNeeded(event) {
+          if (framePlacement) { return true; }
+          if (!pendingFramePlacementMatchesEvent(event)) { return false; }
+
+          const pending = pendingFramePlacement;
+          const dragDistance = Math.hypot(
+            event.clientX - pending.startClientX,
+            event.clientY - pending.startClientY
+          );
+          if (dragDistance < dragStartThreshold) { return false; }
+
+          pendingFramePlacement = null;
+          const frame = createFrameElement();
+          frame.setAttribute('data-og-frame-preview', 'true');
+          pending.parent.append(frame);
+          framePlacement = {
+            pointerID: pending.pointerID,
+            parent: pending.parent,
+            frame: frame,
+            anchorInternalID: pending.anchorInternalID,
+            startX: pending.startX,
+            startY: pending.startY,
+            startClientX: pending.startClientX,
+            startClientY: pending.startClientY,
+            lastRect: { left: pending.startX, top: pending.startY, width: 0, height: 0 },
+            didDrag: true
+          };
+          applyFramePlacementRect(framePlacement, framePlacementRect(framePlacement, event));
+          updateFramePlacementOverlay(framePlacement, event);
+          updateFrameGuideState();
+          try {
+            if (event.pointerId !== undefined && typeof frame.setPointerCapture === 'function') {
+              frame.setPointerCapture(event.pointerId);
+            }
+          } catch (_) {}
+          suppressNextClick = true;
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        function updateFramePlacement(event) {
+          if (!framePlacement && !startFramePlacementIfNeeded(event)) { return false; }
+          if (!framePlacementMatchesEvent(event)) { return false; }
+
+          const rect = framePlacementRect(framePlacement, event);
+          const dragDistance = Math.hypot(rect.width, rect.height);
+          framePlacement.didDrag = framePlacement.didDrag || dragDistance >= dragStartThreshold;
+          applyFramePlacementRect(framePlacement, rect);
+          updateFramePlacementOverlay(framePlacement, event);
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        function finishFramePlacement(cancelled) {
+          const placement = framePlacement;
+          framePlacement = null;
+          pendingFramePlacement = null;
+          removeFramePlacementOverlay();
+          updateFrameGuideState();
+          if (!placement) { return; }
+          try {
+            if (placement.pointerID !== 'mouse' && typeof placement.frame.releasePointerCapture === 'function') {
+              placement.frame.releasePointerCapture(placement.pointerID);
+            }
+          } catch (_) {}
+
+          const rect = placement.lastRect || { width: 0, height: 0 };
+          const shouldInsert = !cancelled &&
+            placement.didDrag &&
+            rect.width >= minimumFramePlacementSize &&
+            rect.height >= minimumFramePlacementSize;
+          if (!shouldInsert) {
+            placement.frame.remove();
+            collectNodes();
+            return;
+          }
+
+          placement.frame.removeAttribute('data-og-frame-preview');
+          const selectedID = elementID(placement.frame);
+          const html = placement.frame.outerHTML;
+          collectNodes();
+          selectNode(selectedID);
+          notifySelection(selectedID);
+          collectStaticFlowLinks();
+          notifyDocumentChange({
+            operation: 'insertHTML',
+            selectedID: selectedID,
+            anchorInternalID: placement.anchorInternalID,
+            position: 'append',
+            html: html
+          });
+        }
+
+        function finishFramePlacementFromEvent(event, cancelled) {
+          if (!framePlacementMatchesEvent(event)) {
+            if (pendingFramePlacementMatchesEvent(event)) {
+              pendingFramePlacement = null;
+              if (!cancelled && selectFrameToolClickTarget(event)) {
+                suppressNextClick = true;
+                event.preventDefault();
+                event.stopPropagation();
+                return true;
+              }
+              if (cancelled) {
+                event.preventDefault();
+                event.stopPropagation();
+                return true;
+              }
+            }
+            return false;
+          }
+          if (!cancelled) {
+            const rect = framePlacementRect(framePlacement, event);
+            const dragDistance = Math.hypot(rect.width, rect.height);
+            framePlacement.didDrag = framePlacement.didDrag || dragDistance >= dragStartThreshold;
+            applyFramePlacementRect(framePlacement, rect);
+          }
+          finishFramePlacement(cancelled);
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+
+        function framePlacementNativeEvent(clientX, clientY, button) {
+          return {
+            clientX: clientX,
+            clientY: clientY,
+            button: button === undefined ? primaryPointerButton : button,
+            pointerId: 'native-mouse',
+            target: document.elementFromPoint(clientX, clientY),
+            preventDefault: function() {},
+            stopPropagation: function() {}
+          };
+        }
+
+        function handleFramePlacementNativeEvent(kind, clientX, clientY, button) {
+          const event = framePlacementNativeEvent(clientX, clientY, button);
+          if (kind === 'down') {
+            return beginPendingFramePlacement(event);
+          }
+          if (kind === 'move') {
+            return updateFramePlacement(event);
+          }
+          if (kind === 'up') {
+            return finishFramePlacementFromEvent(event, false);
+          }
+          if (kind === 'cancel') {
+            return finishFramePlacementFromEvent(event, true);
+          }
+          return false;
         }
 
         function applyClickPositionIfNeeded(element, parent, event) {
@@ -3638,6 +4443,12 @@ struct WebCanvasView: NSViewRepresentable {
 
           pendingDrag = null;
           activeDrag = null;
+          pendingFramePlacement = null;
+          framePlacement = null;
+          removeFramePlacementOverlay();
+          hideSelectionOverlay();
+          selectionOverlay = null;
+          selectionOverlayFrame = null;
           editingTextElement = null;
           editingOriginalText = '';
           const nextRoot = document.importNode(parsedDocument.documentElement, true);
@@ -3737,7 +4548,7 @@ struct WebCanvasView: NSViewRepresentable {
             };
             element.parentElement.insertBefore(element, element.parentElement.firstChild);
           } else if (command === 'wrapFrame') {
-            const frame = document.createElement('Frame');
+            const frame = document.createElement('OpenGraphiteFrame');
             selectedID = createFrameID();
             frame.setAttribute('data-og-id', selectedID);
             frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => nodeInternalID(node)))));
@@ -3865,7 +4676,9 @@ struct WebCanvasView: NSViewRepresentable {
           ensureInternalIDs: ensureInternalIDs,
           installEditorSelectionStyle: installEditorSelectionStyle,
           selectNode: selectNode,
+          selectedFrameOverlayPayload: selectedFrameOverlayPayload,
           setActiveTool: setActiveTool,
+          handleFramePlacementNativeEvent: handleFramePlacementNativeEvent,
           setCSSVariable: setCSSVariable,
           setAttributeValue: setAttributeValue,
           setTextContent: setTextContent,
@@ -3879,12 +4692,28 @@ struct WebCanvasView: NSViewRepresentable {
             if (editingTextElement.contains(event.target)) { return; }
             finishTextEditing(false);
           }
+          if (beginPendingFramePlacement(event)) {
+            return;
+          }
           beginPendingDrag(event);
+        }, activePointerOptions);
+
+        document.addEventListener('mousedown', function(event) {
+          if (editingTextElement) {
+            if (editingTextElement.contains(event.target)) { return; }
+            finishTextEditing(false);
+          }
+          if (beginPendingFramePlacement(event)) {
+            return;
+          }
         }, activePointerOptions);
 
         document.addEventListener('pointermove', function(event) {
           updateStaticFlowHoverFromTarget(event.target);
           updateScrollStateAt(event.clientX, event.clientY);
+          if (updateFramePlacement(event)) {
+            return;
+          }
           if (!editingTextElement && (activeDrag || startActiveDragIfNeeded(event))) {
             updateActiveDrag(event);
           }
@@ -3899,6 +4728,9 @@ struct WebCanvasView: NSViewRepresentable {
         }, passivePointerOptions);
 
         document.addEventListener('pointerup', function(event) {
+          if (finishFramePlacementFromEvent(event, false)) {
+            return;
+          }
           if (activeDrag && activeDrag.pointerID === event.pointerId) {
             event.preventDefault();
             event.stopPropagation();
@@ -3910,7 +4742,16 @@ struct WebCanvasView: NSViewRepresentable {
           }
         }, activePointerOptions);
 
+        document.addEventListener('mouseup', function(event) {
+          if (finishFramePlacementFromEvent(event, false)) {
+            return;
+          }
+        }, activePointerOptions);
+
         document.addEventListener('pointercancel', function(event) {
+          if (finishFramePlacementFromEvent(event, true)) {
+            return;
+          }
           if (activeDrag && activeDrag.pointerID === event.pointerId) {
             event.preventDefault();
             event.stopPropagation();
@@ -3950,6 +4791,17 @@ struct WebCanvasView: NSViewRepresentable {
             return;
           }
 
+          if ((framePlacement || pendingFramePlacement) && event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (framePlacement) {
+              finishFramePlacement(true);
+            } else {
+              pendingFramePlacement = null;
+            }
+            return;
+          }
+
           if (activeTool !== 'select' || !isReturnKey) { return; }
           const element = selectedElement();
           if (!isTextElement(element) || hasLockedAncestor(element)) { return; }
@@ -3978,7 +4830,10 @@ struct WebCanvasView: NSViewRepresentable {
 
         document.addEventListener('mousemove', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
-        }, passivePointerOptions);
+          if (updateFramePlacement(event)) {
+            return;
+          }
+        }, activePointerOptions);
 
         document.addEventListener('mouseleave', function() {
           markPointerOutside();
@@ -3988,13 +4843,17 @@ struct WebCanvasView: NSViewRepresentable {
         document.addEventListener('scroll', function() {
           updateLastPointerScrollState();
           scheduleStaticFlowLinkCollection();
+          scheduleSelectionOverlayUpdate();
         }, true);
 
         document.addEventListener('wheel', function(event) {
           updateScrollStateAt(event.clientX, event.clientY);
         }, passivePointerOptions);
 
-        window.addEventListener('resize', scheduleStaticFlowLinkCollection, passivePointerOptions);
+        window.addEventListener('resize', function() {
+          scheduleStaticFlowLinkCollection();
+          scheduleSelectionOverlayUpdate();
+        }, passivePointerOptions);
 
         if (window.ResizeObserver) {
           const staticFlowResizeObserver = new ResizeObserver(scheduleStaticFlowLinkCollection);
@@ -4015,6 +4874,21 @@ struct WebCanvasView: NSViewRepresentable {
 
           if (editingTextElement && editingTextElement.contains(event.target)) { return; }
           if (activeTool !== 'select') {
+            if (activeTool === 'frame') {
+              const element = editableElementFromTarget(event.target);
+              if (element) {
+                event.preventDefault();
+                event.stopPropagation();
+                const id = nextSelectionIDForClick(element);
+                selectNode(id);
+                notifySelection(id);
+                collectNodes();
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
             if (placeCreatedElement(event)) {
               event.preventDefault();
               event.stopPropagation();

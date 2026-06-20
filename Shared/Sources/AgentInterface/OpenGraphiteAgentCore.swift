@@ -2160,7 +2160,8 @@ struct OpenGraphiteAgentCore {
             mutation,
             htmlURL: htmlURL,
             nodeID: resolvedAnchorNodeID,
-            insertedNodeIDsBeforeMutation: beforeIDs
+            insertedNodeIDsBeforeMutation: beforeIDs,
+            migrateInlineDesignValues: true
         )
     }
 
@@ -3918,7 +3919,8 @@ struct OpenGraphiteAgentCore {
         _ mutation: OpenGraphiteHTMLMutationResult,
         htmlURL: URL,
         nodeID: String,
-        insertedNodeIDsBeforeMutation: Set<String>? = nil
+        insertedNodeIDsBeforeMutation: Set<String>? = nil,
+        migrateInlineDesignValues: Bool = false
     ) throws -> OpenGraphiteEditResult {
         let blockingDiagnostics = mutation.diagnostics.filter { $0.severity == .error }
         guard blockingDiagnostics.isEmpty else {
@@ -3932,8 +3934,14 @@ struct OpenGraphiteAgentCore {
             )
         }
 
-        let candidateDocument = OpenGraphiteHTMLDocument(html: mutation.html)
-        let companionCSS = try OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: htmlURL)
+        let persistence = try mutationPersistencePayload(
+            html: mutation.html,
+            htmlURL: htmlURL,
+            migrateInlineDesignValues: migrateInlineDesignValues
+        )
+        let candidateDocument = OpenGraphiteHTMLDocument(html: persistence.html)
+        let existingCompanionCSS = try OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: htmlURL)
+        let companionCSS = persistence.companionCSS ?? existingCompanionCSS
         let candidateDiagnostics = validate(
             nodes: candidateDocument.nodes(companionCSS: companionCSS, contract: contract),
             tags: candidateDocument.parsedTags(),
@@ -3953,7 +3961,10 @@ struct OpenGraphiteAgentCore {
             )
         }
 
-        try mutation.html.write(to: htmlURL, atomically: true, encoding: .utf8)
+        try persistence.html.write(to: htmlURL, atomically: true, encoding: .utf8)
+        if let companionCSS = persistence.companionCSS {
+            try companionCSS.write(forHTMLURL: htmlURL)
+        }
         let graph = try pageGraph(at: htmlURL)
         let insertedNodes = insertedNodeIDsBeforeMutation.map { beforeIDs in
             graph.nodes.filter { !beforeIDs.contains($0.id) }
@@ -3968,6 +3979,33 @@ struct OpenGraphiteAgentCore {
             diagnostics: graph.diagnostics,
             insertedNodes: insertedNodes
         )
+    }
+
+    /// 論理名（日本語）: HTML mutation永続化payload生成関数
+    /// 処理概要: 挿入HTML断片に含まれる inline design value を companion CSS へ移して保存候補を作ります。
+    ///
+    /// - Parameters:
+    ///   - html: HTML mutation 後の候補HTML。
+    ///   - htmlURL: 保存対象 HTML URL。
+    ///   - migrateInlineDesignValues: `true` の場合、契約対象 CSS declaration を companion CSS へ移します。
+    /// - Returns: 保存する HTML と、更新が必要な companion CSS。
+    private func mutationPersistencePayload(
+        html: String,
+        htmlURL: URL,
+        migrateInlineDesignValues: Bool
+    ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
+        guard migrateInlineDesignValues else {
+            return (html, nil)
+        }
+
+        let runtimeSanitizedHTML = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let legacyDocument = OpenGraphiteHTMLDocument(html: runtimeSanitizedHTML)
+        let sanitizedHTML = legacyDocument.removingOpenGraphiteStyleVariables(contract: contract)
+        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: htmlURL)
+        let previousCSS = companionCSS.css
+        migrateLegacyOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS)
+        let changedCompanionCSS = companionCSS.css == previousCSS ? nil : companionCSS
+        return (sanitizedHTML, changedCompanionCSS)
     }
 
     private func writeProject(_ project: OpenGraphiteProject, to projectURL: URL) throws {

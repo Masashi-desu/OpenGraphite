@@ -730,6 +730,42 @@ struct OpenGraphiteAgentCoreTests {
         #expect(graph.diagnostics.isEmpty)
     }
 
+    /// 論理名（日本語）: HTML挿入inline style移行テスト
+    /// 概要: HTML断片挿入時の editable design value が inline style ではなく companion CSS に保存されることを検証します。
+    @Test("HTML断片挿入時のinline design valueをcompanion CSSへ保存する")
+    func testInsertHTMLMigratesInlineDesignValuesToCompanionCSS() throws {
+        // コンディション：page root だけを持つ HTML を用意する
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><body><Page data-og-id="page" data-og-internal-id="page-node" data-og-type="page"></Page></body></html>
+            """
+        )
+
+        // 検証内容：style 属性付き frame HTML を page 直下へ挿入する
+        let result = try fixture.core.insertHTML(
+            #"<Frame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" style="position:absolute; left:12px; top:24px; width:160px; height:90px;"></Frame>"#,
+            anchorNodeID: "page-node",
+            position: .append,
+            htmlURL: fixture.htmlURL
+        )
+        let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
+
+        // 期待値：HTML には構造だけが残り、配置値は companion CSS に保存される
+        #expect(result.updated == true)
+        #expect(result.insertedNodes?.first?.internalID == "frame-node")
+        #expect(!html.contains("style="))
+        #expect(css.contains(#"[data-og-internal-id="frame-node"]"#))
+        #expect(css.contains("position: absolute;"))
+        #expect(css.contains("left: 12px;"))
+        #expect(css.contains("top: 24px;"))
+        #expect(css.contains("width: 160px;"))
+        #expect(css.contains("height: 90px;"))
+    }
+
     /// 論理名（日本語）: HTML置換削除テスト
     /// 概要: node subtree の置換と削除が validation を通して保存されることを確認します。
     @Test("node subtreeを置換して削除できる")
