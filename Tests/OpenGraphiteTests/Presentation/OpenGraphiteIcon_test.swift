@@ -65,7 +65,7 @@ struct OpenGraphiteIconTests {
         let toolIDs = tools.map(\.rawValue)
 
         // 期待値：icon ツールが選択肢にあり、Lucide の star で表示される（Then）
-        #expect(toolIDs == ["select", "rectangle", "text", "frame", "icon", "hand"])
+        #expect(toolIDs == ["select", "text", "frame", "icon", "hand"])
         #expect(icon.library == .lucide)
         #expect(icon.name == "star")
     }

@@ -3551,19 +3551,7 @@ struct WebCanvasView: NSViewRepresentable {
           return element;
         }
 
-        function createRectangleElement() {
-          const element = document.createElement('Rectangle');
-          element.setAttribute('data-og-id', uniqueID('rectangle'));
-          element.setAttribute('data-og-internal-id', newInternalID());
-          element.setAttribute('data-og-type', 'frame');
-          applyDefaultBoxStyles(element, '120px', '80px');
-          element.style.setProperty('background', 'color-mix(in srgb, currentColor 12%, transparent)');
-          element.style.setProperty('border', '1px solid color-mix(in srgb, currentColor 28%, transparent)');
-          return element;
-        }
-
         function createdElementForTool(tool) {
-          if (tool === 'rectangle') { return createRectangleElement(); }
           if (tool === 'text') { return createTextElement(); }
           if (tool === 'frame') { return createFrameElement(); }
           if (tool === 'icon') { return createIconElement(); }

@@ -239,8 +239,6 @@ extension OpenGraphiteIcon {
         switch tool {
         case .select:
             return .lucide("mouse-pointer-2", fallbackSystemName: "cursorarrow")
-        case .rectangle:
-            return .lucide("square", fallbackSystemName: "rectangle")
         case .text:
             return .lucide("type", fallbackSystemName: "textformat")
         case .frame:

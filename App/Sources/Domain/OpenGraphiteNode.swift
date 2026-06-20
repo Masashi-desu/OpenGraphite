@@ -354,18 +354,16 @@ struct NodeTextContentMutation: Equatable {
 }
 
 /// 論理名（日本語）: キャンバス操作ツール
-/// 概要: プレビュー上で利用する選択、図形、テキスト、フレーム、ハンドの各操作モードを表します。
+/// 概要: プレビュー上で利用する選択、テキスト、フレーム、アイコン、ハンドの各操作モードを表します。
 ///
 /// 定義内容:
 /// - `select`: ノード選択用の編集カーソル。
-/// - `rectangle`: レクトアングル作成ツール。
 /// - `text`: テキスト作成ツール。
 /// - `frame`: フレーム作成ツール。
 /// - `icon`: アイコン作成ツール。
 /// - `hand`: キャンバス移動用ツール。
 enum CanvasTool: String, CaseIterable, Identifiable {
     case select
-    case rectangle
     case text
     case frame
     case icon
@@ -377,8 +375,6 @@ enum CanvasTool: String, CaseIterable, Identifiable {
         switch self {
         case .select:
             return "編集カーソル"
-        case .rectangle:
-            return "レクトアングル"
         case .text:
             return "テキスト"
         case .frame:
@@ -394,8 +390,6 @@ enum CanvasTool: String, CaseIterable, Identifiable {
         switch self {
         case .select:
             return "cursorarrow"
-        case .rectangle:
-            return "rectangle"
         case .text:
             return "textformat"
         case .frame:
