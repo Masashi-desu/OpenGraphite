@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -6,6 +7,8 @@ import SwiftUI
 struct SidebarView: View {
     @EnvironmentObject private var store: EditorStore
     @SceneStorage("sidebar.selectedPanel") private var selectedPanel = SidebarPanel.pages.rawValue
+    @SceneStorage("sidebar.pagesLayerGroupFraction.v1") private var pagesLayerGroupFraction = SidebarSplitMetrics.defaultExpandedGroupFraction
+    @SceneStorage("sidebar.componentsLayerGroupFraction.v1") private var componentsLayerGroupFraction = SidebarSplitMetrics.defaultExpandedGroupFraction
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -18,9 +21,9 @@ struct SidebarView: View {
                 if resolvedPanel == .project {
                     ProjectDependencyListView()
                 } else if resolvedPanel == .pages {
-                    PageListView()
+                    PageListView(groupFraction: $pagesLayerGroupFraction)
                 } else {
-                    ComponentPageListView()
+                    ComponentPageListView(groupFraction: $componentsLayerGroupFraction)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -281,10 +284,127 @@ private enum SidebarSplitMetrics {
     static let collapsedHeight: CGFloat = 34
     static let groupMinHeight: CGFloat = 92
     static let contentMinHeight: CGFloat = 120
+    static let defaultDividerThickness: CGFloat = 10
+    static let defaultExpandedGroupFraction: Double = 0.3
+    static let minimumExpandedGroupFraction: Double = 0.1
+    static let maximumExpandedGroupFraction: Double = 0.9
+    static let sectionCollapseAnimationDuration: TimeInterval = 0.16
+}
+
+/// 論理名（日本語）: サイドバー分割レイアウト
+/// 概要: Chapter / Collection と所属 HTML ペインの高さを、保存済み分割比率と折りたたみ状態から解決します。
+///
+/// プロパティ:
+/// - `groupHeight`: Chapter / Collection 側ペインの高さ。
+/// - `contentHeight`: 所属 HTML 側ペインの高さ。
+/// - `showsDivider`: 分割バーを表示するか。
+struct SidebarSplitLayout: Equatable {
+    var groupHeight: CGFloat
+    var contentHeight: CGFloat
+    var showsDivider: Bool
+
+    /// 論理名（日本語）: サイドバー分割レイアウト解決関数
+    /// 処理概要: 利用可能な高さから divider 分を除き、折りたたみ状態と比率に応じて各ペイン高さを返します。
+    ///
+    /// - Parameters:
+    ///   - availableHeight: 分割ビュー全体で利用できる高さ。
+    ///   - isGroupCollapsed: Chapter / Collection 側が折りたたまれているか。
+    ///   - isContentCollapsed: 所属 HTML 側が折りたたまれているか。
+    ///   - groupFraction: 展開時に Chapter / Collection 側へ割り当てる比率。
+    /// - Returns: 解決済みのサイドバー分割レイアウト。
+    static func resolve(
+        availableHeight: CGFloat,
+        isGroupCollapsed: Bool,
+        isContentCollapsed: Bool,
+        groupFraction: Double,
+        dividerThickness: CGFloat = SidebarSplitMetrics.defaultDividerThickness
+    ) -> SidebarSplitLayout {
+        let showsDivider = !(isGroupCollapsed && isContentCollapsed)
+        let sectionHeight = max(availableHeight - (showsDivider ? max(dividerThickness, 0) : 0), 0)
+
+        if isGroupCollapsed && isContentCollapsed {
+            let groupHeight = min(SidebarSplitMetrics.collapsedHeight, sectionHeight)
+            return SidebarSplitLayout(
+                groupHeight: groupHeight,
+                contentHeight: min(SidebarSplitMetrics.collapsedHeight, max(sectionHeight - groupHeight, 0)),
+                showsDivider: false
+            )
+        }
+
+        if isGroupCollapsed {
+            let groupHeight = min(SidebarSplitMetrics.collapsedHeight, sectionHeight)
+            return SidebarSplitLayout(
+                groupHeight: groupHeight,
+                contentHeight: max(sectionHeight - groupHeight, 0),
+                showsDivider: showsDivider
+            )
+        }
+
+        if isContentCollapsed {
+            let contentHeight = min(SidebarSplitMetrics.collapsedHeight, sectionHeight)
+            return SidebarSplitLayout(
+                groupHeight: max(sectionHeight - contentHeight, 0),
+                contentHeight: contentHeight,
+                showsDivider: showsDivider
+            )
+        }
+
+        let minimumGroupHeight = min(SidebarSplitMetrics.groupMinHeight, sectionHeight)
+        let maximumGroupHeight = max(
+            minimumGroupHeight,
+            sectionHeight - min(SidebarSplitMetrics.contentMinHeight, sectionHeight)
+        )
+        let desiredGroupHeight = sectionHeight * CGFloat(clampedFraction(groupFraction))
+        let groupHeight = min(max(desiredGroupHeight, minimumGroupHeight), maximumGroupHeight)
+
+        return SidebarSplitLayout(
+            groupHeight: groupHeight,
+            contentHeight: max(sectionHeight - groupHeight, 0),
+            showsDivider: showsDivider
+        )
+    }
+
+    /// 論理名（日本語）: サイドバー分割比率変換関数
+    /// 処理概要: drag 後の Chapter / Collection 側高さを保存可能な比率へ変換します。
+    ///
+    /// - Parameters:
+    ///   - groupHeight: Chapter / Collection 側ペインの高さ。
+    ///   - availableHeight: 分割ビュー全体で利用できる高さ。
+    /// - Returns: `SceneStorage` へ保存する正規化済み比率。
+    static func fraction(
+        forGroupHeight groupHeight: CGFloat,
+        availableHeight: CGFloat,
+        dividerThickness: CGFloat = SidebarSplitMetrics.defaultDividerThickness
+    ) -> Double {
+        let sectionHeight = max(availableHeight - max(dividerThickness, 0), 1)
+        let minimumGroupHeight = min(SidebarSplitMetrics.groupMinHeight, sectionHeight)
+        let maximumGroupHeight = max(
+            minimumGroupHeight,
+            sectionHeight - min(SidebarSplitMetrics.contentMinHeight, sectionHeight)
+        )
+        let clampedGroupHeight = min(max(groupHeight, minimumGroupHeight), maximumGroupHeight)
+        return clampedFraction(Double(clampedGroupHeight / sectionHeight))
+    }
+
+    /// 論理名（日本語）: サイドバー分割比率制限関数
+    /// 処理概要: 保存済み比率が極端な値や非数値になった場合に安全な範囲へ丸めます。
+    ///
+    /// - Parameter fraction: 保存済みまたは入力された分割比率。
+    /// - Returns: 0.1 から 0.9 の範囲に収めた比率。
+    static func clampedFraction(_ fraction: Double) -> Double {
+        guard fraction.isFinite else {
+            return SidebarSplitMetrics.defaultExpandedGroupFraction
+        }
+
+        return min(
+            max(fraction, SidebarSplitMetrics.minimumExpandedGroupFraction),
+            SidebarSplitMetrics.maximumExpandedGroupFraction
+        )
+    }
 }
 
 /// 論理名（日本語）: サイドバー分割セクションビュー
-/// 概要: `VSplitView` 内で使う折りたたみ可能な標準ペインを表します。
+/// 概要: 上下分割内で使う折りたたみ可能な標準ペインを表します。
 ///
 /// プロパティ:
 /// - `title`: セクション名。
@@ -326,7 +446,7 @@ private struct SidebarSplitSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.14)) {
+                    withAnimation(.easeInOut(duration: SidebarSplitMetrics.sectionCollapseAnimationDuration)) {
                         isCollapsed.toggle()
                     }
                 } label: {
@@ -362,9 +482,11 @@ private struct SidebarSplitSection<Content: View>: View {
             if !isCollapsed {
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .animation(.easeInOut(duration: SidebarSplitMetrics.sectionCollapseAnimationDuration), value: isCollapsed)
     }
 
     private var headerLabel: some View {
@@ -397,6 +519,392 @@ private struct SidebarSplitSectionAction {
     var icon: OpenGraphiteIcon
     var help: String
     var action: () -> Void
+}
+
+/// 論理名（日本語）: サイドバーリサイズ分割ビュー
+/// 概要: AppKit の `NSSplitView` で Chapter / Collection 側と所属 HTML 側を上下分割して表示します。
+///
+/// プロパティ:
+/// - `groupFraction`: Chapter / Collection 側の保存済み高さ比率。
+/// - `isGroupCollapsed`: Chapter / Collection 側が折りたたまれているか。
+/// - `isContentCollapsed`: 所属 HTML 側が折りたたまれているか。
+/// - `group`: 上段に表示するビュー。
+/// - `content`: 下段に表示するビュー。
+private struct SidebarResizableSplitView<Group: View, Content: View>: NSViewRepresentable {
+    @Binding var groupFraction: Double
+    var isGroupCollapsed: Bool
+    var isContentCollapsed: Bool
+    var group: Group
+    var content: Content
+
+    /// 論理名（日本語）: サイドバーリサイズ分割ビュー初期化関数
+    /// 処理概要: 保存済み分割比率、折りたたみ状態、上下の表示内容を受け取ります。
+    ///
+    /// - Parameters:
+    ///   - groupFraction: Chapter / Collection 側の保存済み高さ比率。
+    ///   - isGroupCollapsed: Chapter / Collection 側が折りたたまれているか。
+    ///   - isContentCollapsed: 所属 HTML 側が折りたたまれているか。
+    ///   - group: 上段に表示するビュー。
+    ///   - content: 下段に表示するビュー。
+    init(
+        groupFraction: Binding<Double>,
+        isGroupCollapsed: Bool,
+        isContentCollapsed: Bool,
+        @ViewBuilder group: () -> Group,
+        @ViewBuilder content: () -> Content
+    ) {
+        _groupFraction = groupFraction
+        self.isGroupCollapsed = isGroupCollapsed
+        self.isContentCollapsed = isContentCollapsed
+        self.group = group()
+        self.content = content()
+    }
+
+    /// 論理名（日本語）: Coordinator生成関数
+    /// 処理概要: `NSSplitViewDelegate` と保存比率の書き戻しを担当する coordinator を作ります。
+    ///
+    /// - Returns: サイドバー分割用 coordinator。
+    func makeCoordinator() -> Coordinator {
+        Coordinator(groupFraction: $groupFraction)
+    }
+
+    /// 論理名（日本語）: サイドバーAppKit分割ビュー生成関数
+    /// 処理概要: SwiftUI の上下セクションを `NSHostingView` として保持する `NSSplitView` を生成します。
+    ///
+    /// - Parameter context: SwiftUI が渡す representable context。
+    /// - Returns: AppKit の上下分割ビュー。
+    func makeNSView(context: Context) -> SidebarAppKitSplitView<Group, Content> {
+        let splitView = SidebarAppKitSplitView(group: group, content: content)
+        splitView.delegate = context.coordinator
+        context.coordinator.applyState(from: self)
+        splitView.update(
+            group: group,
+            content: content,
+            configuration: splitConfiguration
+        )
+        return splitView
+    }
+
+    /// 論理名（日本語）: サイドバーAppKit分割ビュー更新関数
+    /// 処理概要: SwiftUI 側の view 内容、折りたたみ状態、保存比率を AppKit 側へ同期します。
+    ///
+    /// - Parameters:
+    ///   - splitView: 更新対象の AppKit 分割ビュー。
+    ///   - context: SwiftUI が渡す representable context。
+    func updateNSView(_ splitView: SidebarAppKitSplitView<Group, Content>, context: Context) {
+        context.coordinator.applyState(from: self)
+        splitView.update(
+            group: group,
+            content: content,
+            configuration: splitConfiguration
+        )
+    }
+
+    private var splitConfiguration: SidebarAppKitSplitConfiguration {
+        SidebarAppKitSplitConfiguration(
+            groupFraction: SidebarSplitLayout.clampedFraction(groupFraction),
+            isGroupCollapsed: isGroupCollapsed,
+            isContentCollapsed: isContentCollapsed
+        )
+    }
+
+    /// 論理名（日本語）: サイドバー分割Coordinator
+    /// 概要: `NSSplitView` のネイティブ drag 結果を SwiftUI の保存比率へ反映します。
+    final class Coordinator: NSObject, NSSplitViewDelegate {
+        private var groupFraction: Binding<Double>
+        private var isGroupCollapsed = false
+        private var isContentCollapsed = false
+
+        /// 論理名（日本語）: サイドバー分割Coordinator初期化関数
+        /// 処理概要: 保存比率の binding を保持します。
+        ///
+        /// - Parameter groupFraction: Chapter / Collection 側の保存済み高さ比率。
+        init(groupFraction: Binding<Double>) {
+            self.groupFraction = groupFraction
+        }
+
+        /// 論理名（日本語）: サイドバー分割状態同期関数
+        /// 処理概要: representable の最新 binding と折りたたみ状態を coordinator へ反映します。
+        ///
+        /// - Parameter parent: 最新の representable 値。
+        func applyState(from parent: SidebarResizableSplitView<Group, Content>) {
+            groupFraction = parent.$groupFraction
+            isGroupCollapsed = parent.isGroupCollapsed
+            isContentCollapsed = parent.isContentCollapsed
+        }
+
+        /// 論理名（日本語）: サイドバー分割リサイズ通知関数
+        /// 処理概要: ユーザーが AppKit divider を動かした後の上段高さを保存比率へ変換します。
+        ///
+        /// - Parameter notification: `NSSplitView` の resize 通知。
+        func splitViewDidResizeSubviews(_ notification: Notification) {
+            guard let splitView = notification.object as? SidebarAppKitSplitView<Group, Content>,
+                  !splitView.isApplyingProgrammaticLayout,
+                  splitView.hasAppliedInitialLayout,
+                  !isGroupCollapsed,
+                  !isContentCollapsed
+            else {
+                return
+            }
+
+            let nextFraction = SidebarSplitLayout.fraction(
+                forGroupHeight: splitView.groupHeight,
+                availableHeight: splitView.bounds.height,
+                dividerThickness: splitView.dividerThickness
+            )
+            if abs(groupFraction.wrappedValue - nextFraction) > 0.001 {
+                groupFraction.wrappedValue = nextFraction
+            }
+        }
+
+        /// 論理名（日本語）: サイドバー分割最小座標制限関数
+        /// 処理概要: 下段 content または折りたたみ状態に合わせて divider の最小座標を返します。
+        ///
+        /// - Parameters:
+        ///   - splitView: 対象の `NSSplitView`。
+        ///   - proposedMinimumPosition: AppKit が提案する最小座標。
+        ///   - dividerIndex: 対象 divider index。
+        /// - Returns: 制限後の最小座標。
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMinCoordinate proposedMinimumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            guard dividerIndex == 0 else { return proposedMinimumPosition }
+            return lockedDividerPosition(in: splitView) ?? minimumDividerPosition(in: splitView)
+        }
+
+        /// 論理名（日本語）: サイドバー分割最大座標制限関数
+        /// 処理概要: 上段 group または折りたたみ状態に合わせて divider の最大座標を返します。
+        ///
+        /// - Parameters:
+        ///   - splitView: 対象の `NSSplitView`。
+        ///   - proposedMaximumPosition: AppKit が提案する最大座標。
+        ///   - dividerIndex: 対象 divider index。
+        /// - Returns: 制限後の最大座標。
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            guard dividerIndex == 0 else { return proposedMaximumPosition }
+            return lockedDividerPosition(in: splitView) ?? maximumDividerPosition(in: splitView)
+        }
+
+        /// 論理名（日本語）: サイドバー分割サブビュー折りたたみ許可関数
+        /// 処理概要: 標準 divider drag で subview が完全 collapse されないようにします。
+        ///
+        /// - Parameters:
+        ///   - splitView: 対象の `NSSplitView`。
+        ///   - subview: 判定対象 subview。
+        /// - Returns: 常に `false`。
+        func splitView(_ splitView: NSSplitView, canCollapseSubview subview: NSView) -> Bool {
+            false
+        }
+
+        private func sectionHeight(in splitView: NSSplitView) -> CGFloat {
+            max(splitView.bounds.height - splitView.dividerThickness, 0)
+        }
+
+        private func lockedDividerPosition(in splitView: NSSplitView) -> CGFloat? {
+            let sectionHeight = sectionHeight(in: splitView)
+            if isGroupCollapsed {
+                return min(SidebarSplitMetrics.collapsedHeight, sectionHeight)
+            }
+            if isContentCollapsed {
+                return max(sectionHeight - min(SidebarSplitMetrics.collapsedHeight, sectionHeight), 0)
+            }
+            return nil
+        }
+
+        private func minimumDividerPosition(in splitView: NSSplitView) -> CGFloat {
+            min(SidebarSplitMetrics.groupMinHeight, sectionHeight(in: splitView))
+        }
+
+        private func maximumDividerPosition(in splitView: NSSplitView) -> CGFloat {
+            let sectionHeight = sectionHeight(in: splitView)
+            return max(
+                minimumDividerPosition(in: splitView),
+                sectionHeight - min(SidebarSplitMetrics.contentMinHeight, sectionHeight)
+            )
+        }
+    }
+}
+
+/// 論理名（日本語）: サイドバーAppKit分割設定
+/// 概要: `NSSplitView` へ同期する保存比率と折りたたみ状態をまとめます。
+///
+/// プロパティ:
+/// - `groupFraction`: Chapter / Collection 側の保存済み高さ比率。
+/// - `isGroupCollapsed`: Chapter / Collection 側が折りたたまれているか。
+/// - `isContentCollapsed`: 所属 HTML 側が折りたたまれているか。
+private struct SidebarAppKitSplitConfiguration: Equatable {
+    var groupFraction: Double
+    var isGroupCollapsed: Bool
+    var isContentCollapsed: Bool
+}
+
+/// 論理名（日本語）: サイドバーAppKit分割ビュー
+/// 概要: SwiftUI の上下セクションを `NSHostingView` として内包する `NSSplitView` です。
+///
+/// プロパティ:
+/// - `groupHost`: 上段 Chapter / Collection 側の hosting view。
+/// - `contentHost`: 下段 HTML 側の hosting view。
+private final class SidebarAppKitSplitView<Group: View, Content: View>: NSSplitView {
+    let groupHost: NSHostingView<Group>
+    let contentHost: NSHostingView<Content>
+    var isApplyingProgrammaticLayout = false
+    var hasAppliedInitialLayout = false
+    private var configuration = SidebarAppKitSplitConfiguration(
+        groupFraction: SidebarSplitMetrics.defaultExpandedGroupFraction,
+        isGroupCollapsed: false,
+        isContentCollapsed: false
+    )
+    private var previousBoundsHeight: CGFloat = 0
+    private var dividerAnimationTimer: Timer?
+
+    var groupHeight: CGFloat {
+        groupHost.frame.height
+    }
+
+    /// 論理名（日本語）: サイドバーAppKit分割ビュー初期化関数
+    /// 処理概要: 上段 group、下段 content の順で subview を追加し、AppKit の上下分割を構成します。
+    ///
+    /// - Parameters:
+    ///   - group: 上段に表示する SwiftUI view。
+    ///   - content: 下段に表示する SwiftUI view。
+    init(group: Group, content: Content) {
+        groupHost = NSHostingView(rootView: group)
+        contentHost = NSHostingView(rootView: content)
+        super.init(frame: .zero)
+        isVertical = false
+        dividerStyle = .thin
+        addSubview(groupHost)
+        addSubview(contentHost)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    deinit {
+        dividerAnimationTimer?.invalidate()
+    }
+
+    /// 論理名（日本語）: サイドバーAppKit分割レイアウト関数
+    /// 処理概要: 外側の高さ変更時に保存比率を維持した divider 位置へ再適用します。
+    override func layout() {
+        let boundsHeightChanged = abs(bounds.height - previousBoundsHeight) > 0.5
+        let suppressesDelegateWriteBack = boundsHeightChanged && !isApplyingProgrammaticLayout
+        if suppressesDelegateWriteBack {
+            isApplyingProgrammaticLayout = true
+        }
+
+        super.layout()
+
+        if suppressesDelegateWriteBack {
+            isApplyingProgrammaticLayout = false
+        }
+
+        guard !isApplyingProgrammaticLayout else { return }
+        if boundsHeightChanged {
+            previousBoundsHeight = bounds.height
+            applyCurrentLayoutIfNeeded(force: false)
+        }
+    }
+
+    /// 論理名（日本語）: サイドバーAppKit分割更新関数
+    /// 処理概要: hosting view の root view と分割設定を同期し、必要な場合だけ divider 位置を設定します。
+    ///
+    /// - Parameters:
+    ///   - group: 上段に表示する SwiftUI view。
+    ///   - content: 下段に表示する SwiftUI view。
+    ///   - configuration: 分割比率と折りたたみ状態。
+    func update(group: Group, content: Content, configuration: SidebarAppKitSplitConfiguration) {
+        groupHost.rootView = group
+        contentHost.rootView = content
+        let collapsedStateChanged = self.configuration.isGroupCollapsed != configuration.isGroupCollapsed
+            || self.configuration.isContentCollapsed != configuration.isContentCollapsed
+        self.configuration = configuration
+        applyCurrentLayoutIfNeeded(
+            force: collapsedStateChanged,
+            animated: collapsedStateChanged && hasAppliedInitialLayout
+        )
+    }
+
+    private func applyCurrentLayoutIfNeeded(force: Bool, animated: Bool = false) {
+        guard bounds.height > 0 else { return }
+        let layout = SidebarSplitLayout.resolve(
+            availableHeight: bounds.height,
+            isGroupCollapsed: configuration.isGroupCollapsed,
+            isContentCollapsed: configuration.isContentCollapsed,
+            groupFraction: configuration.groupFraction,
+            dividerThickness: dividerThickness
+        )
+        let desiredDividerPosition = layout.groupHeight
+        guard force || abs(groupHost.frame.height - desiredDividerPosition) > 1.0 else {
+            return
+        }
+
+        if animated {
+            animateDividerPosition(to: desiredDividerPosition)
+            return
+        }
+
+        dividerAnimationTimer?.invalidate()
+        dividerAnimationTimer = nil
+        isApplyingProgrammaticLayout = true
+        applyDividerPosition(desiredDividerPosition)
+        isApplyingProgrammaticLayout = false
+        hasAppliedInitialLayout = true
+    }
+
+    /// 論理名（日本語）: サイドバーdividerアニメーション関数
+    /// 処理概要: `setPosition` を短い間隔で適用し、divider line の描画も移動へ追従させます。
+    ///
+    /// - Parameter dividerPosition: 到達させる divider 座標。
+    private func animateDividerPosition(to dividerPosition: CGFloat) {
+        dividerAnimationTimer?.invalidate()
+        let startPosition = groupHost.frame.height
+        let distance = dividerPosition - startPosition
+        if abs(distance) <= 0.5 {
+            isApplyingProgrammaticLayout = true
+            applyDividerPosition(dividerPosition)
+            isApplyingProgrammaticLayout = false
+            hasAppliedInitialLayout = true
+            return
+        }
+
+        isApplyingProgrammaticLayout = true
+        let startedAt = Date()
+        let duration = max(SidebarSplitMetrics.sectionCollapseAnimationDuration, 0.01)
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            guard let self else { return }
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let progress = min(max(elapsed / duration, 0), 1)
+            let easedProgress = progress * progress * (3 - 2 * progress)
+            let nextPosition = startPosition + distance * CGFloat(easedProgress)
+            applyDividerPosition(nextPosition)
+
+            if progress >= 1 {
+                timer.invalidate()
+                dividerAnimationTimer = nil
+                applyDividerPosition(dividerPosition)
+                isApplyingProgrammaticLayout = false
+                hasAppliedInitialLayout = true
+            }
+        }
+        dividerAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func applyDividerPosition(_ position: CGFloat) {
+        setPosition(position, ofDividerAt: 0)
+        adjustSubviews()
+        needsDisplay = true
+        displayIfNeeded()
+    }
 }
 
 /// 論理名（日本語）: Project依存性一覧ビュー
@@ -893,17 +1401,27 @@ private struct ProjectDependencyRow: View {
 
 /// 論理名（日本語）: ページ一覧ビュー
 /// 概要: 左カラムの Pages パネルで選択 Chapter 内ページを開閉可能な HTML カードとして表示します。
+///
+/// プロパティ:
+/// - `groupFraction`: Chapter / Pages 分割比率の共有 binding。
 private struct PageListView: View {
+    var groupFraction: Binding<Double>
+
     var body: some View {
-        PageLayerListView(segment: .pages)
+        PageLayerListView(groupSectionFraction: groupFraction, segment: .pages)
     }
 }
 
 /// 論理名（日本語）: Componentページ一覧ビュー
 /// 概要: 左カラムの Components パネルで component master を格納する HTML canvas を開閉可能なカードとして表示します。
+///
+/// プロパティ:
+/// - `groupFraction`: Collection / Components 分割比率の共有 binding。
 private struct ComponentPageListView: View {
+    var groupFraction: Binding<Double>
+
     var body: some View {
-        PageLayerListView(segment: .components)
+        PageLayerListView(groupSectionFraction: groupFraction, segment: .components)
     }
 }
 
@@ -930,6 +1448,7 @@ private struct SidebarPageGroup: Identifiable {
 /// 概要: 上段に Chapter / Collection を並べ、下段に選択グループ内 HTML カードと Layers を表示します。
 ///
 /// プロパティ:
+/// - `groupSectionFraction`: Chapter / Collection 側の表示比率。
 /// - `segment`: 表示対象の Pages / Components セグメント。
 private struct PageLayerListView: View {
     @EnvironmentObject private var store: EditorStore
@@ -937,6 +1456,7 @@ private struct PageLayerListView: View {
     @SceneStorage("sidebar.pagesContentSectionCollapsed") private var isPagesContentSectionCollapsed = false
     @SceneStorage("sidebar.componentsGroupSectionCollapsed") private var isComponentsGroupSectionCollapsed = false
     @SceneStorage("sidebar.componentsContentSectionCollapsed") private var isComponentsContentSectionCollapsed = false
+    @Binding var groupSectionFraction: Double
     @State private var expansionState = SidebarPageExpansionState()
     @State private var editingGroupID: String?
     @State private var editingPageID: String?
@@ -951,8 +1471,14 @@ private struct PageLayerListView: View {
                     Spacer(minLength: 0)
                 }
             } else {
-                VSplitView {
-                    sidebarSplitSections
+                SidebarResizableSplitView(
+                    groupFraction: $groupSectionFraction,
+                    isGroupCollapsed: isGroupSectionCollapsed,
+                    isContentCollapsed: isContentSectionCollapsed
+                ) {
+                    groupSplitSection
+                } content: {
+                    contentSplitSection
                 }
             }
         }
@@ -978,6 +1504,12 @@ private struct PageLayerListView: View {
 
     @ViewBuilder
     private var sidebarSplitSections: some View {
+        groupSplitSection
+        contentSplitSection
+    }
+
+    @ViewBuilder
+    private var groupSplitSection: some View {
         SidebarSplitSection(
             title: groupSectionTitle,
             count: groups.count,
@@ -991,7 +1523,10 @@ private struct PageLayerListView: View {
             idealHeight: groupSectionIdealHeight,
             maxHeight: groupSectionMaxHeight
         )
+    }
 
+    @ViewBuilder
+    private var contentSplitSection: some View {
         SidebarSplitSection(
             title: contentSectionTitle,
             count: visiblePages.count,
