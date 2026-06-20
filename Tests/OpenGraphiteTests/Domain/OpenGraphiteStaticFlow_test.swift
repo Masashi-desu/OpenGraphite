@@ -149,11 +149,11 @@ struct OpenGraphiteStaticFlowTests {
         #expect(connection.targetPageInternalID == "home-desktop-target-card")
     }
 
-    /// 論理名（日本語）: 表示名フロー解決テスト
-    /// 概要: data-og-target などが page の表示名を参照する場合でも、同じ配置名の page へ接続できることを検証します。
-    @Test("page表示名を参照する静的リンクも同じ配置名のpageへ解決する")
-    func testConnectionsResolveTargetByPageDisplayName() throws {
-        // コンディション：title を持つ target page と、その表示名を raw target に持つリンクを用意する（Given）
+    /// 論理名（日本語）: ファイル名フロー解決テスト
+    /// 概要: data-og-target などが page のファイル名を参照する場合でも、同じ配置名の page へ接続できることを検証します。
+    @Test("pageファイル名を参照する静的リンクも同じ配置名のpageへ解決する")
+    func testConnectionsResolveTargetByPageFileName() throws {
+        // コンディション：target page と、そのファイル名を raw target に持つリンクを用意する（Given）
         let pages = [
             OpenGraphitePage(
                 id: "home",
@@ -164,7 +164,6 @@ struct OpenGraphiteStaticFlowTests {
             OpenGraphitePage(
                 id: "docs",
                 internalID: "docs-card",
-                title: "Docs Landing",
                 path: "docs.html",
                 canvas: OpenGraphiteCanvas(name: "desktop", x: 200, y: 0, width: 100, height: 100)
             )
@@ -183,15 +182,15 @@ struct OpenGraphiteStaticFlowTests {
             rootURL: rootURL
         )
         let link = OpenGraphiteStaticFlowLink(
-            id: "docs-display-name",
+            id: "docs-file-name",
             sourceNodeID: "docs-button",
             sourceLabel: "Docs",
-            targetHref: "Docs Landing",
+            targetHref: "docs.html",
             targetURL: "",
             sourceRect: CGRect(x: 12, y: 20, width: 36, height: 16)
         )
 
-        // 検証内容：表示名を参照するリンクを静的フロー接続へ解決する（When）
+        // 検証内容：ファイル名を参照するリンクを静的フロー接続へ解決する（When）
         let connections = OpenGraphiteStaticFlowResolver.connections(
             pages: pages,
             loadedProject: loadedProject,
@@ -201,7 +200,7 @@ struct OpenGraphiteStaticFlowTests {
             linksByPageURL: [:]
         )
 
-        // 期待値：targetHref が path ではなく表示名でも target page が解決される（Then）
+        // 期待値：targetHref がファイル名の場合でも target page が解決される（Then）
         #expect(connections.count == 1)
         #expect(connections.first?.targetPageInternalID == "docs-card")
     }

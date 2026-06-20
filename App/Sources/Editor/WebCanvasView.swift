@@ -2826,6 +2826,13 @@ struct WebCanvasView: NSViewRepresentable {
           element.setAttribute(name, value);
         }
         collectNodes();
+        if (name === 'data-og-id') {
+          const nextSelectionID = id.indexOf('ogpl:') === 0 ? id : (value || '').trim();
+          if (nextSelectionID) {
+            selectNode(nextSelectionID);
+            notifySelection(nextSelectionID);
+          }
+        }
           return true;
         }
 

@@ -346,7 +346,7 @@ enum OpenGraphiteStaticFlowResolver {
     }
 
     /// 論理名（日本語）: page参照値生成関数
-    /// 処理概要: 静的リンクの raw target と照合するため、page ID、表示名、HTML path を比較候補として生成します。
+    /// 処理概要: 静的リンクの raw target と照合するため、page ID、ファイル名、HTML path、旧 title を比較候補として生成します。
     ///
     /// - Parameter page: 参照値を生成する page。
     /// - Returns: page を指す文字列候補の集合。

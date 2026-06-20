@@ -526,17 +526,14 @@ final class EditorStore: ObservableObject {
         let targetChapterIndex = writableChapterIndex(in: &loadedProject.project)
         let previousProject = loadedProject.project
         let pageID = nextPageID(in: loadedProject.project)
-        let pageTitle = pageID.hasPrefix("page-")
-            ? "Page \(pageID.dropFirst("page-".count))"
-            : pageID
         let pagePath = nextPagePath(in: loadedProject, idPrefix: "page")
+        let pageFileName = URL(fileURLWithPath: pagePath).lastPathComponent
         let pageCanvas = nextPageCanvas(
             in: loadedProject.project.chapters[targetChapterIndex],
             fallbackProject: loadedProject.project
         )
         let page = OpenGraphitePage(
             id: pageID,
-            title: pageTitle,
             path: pagePath,
             canvas: pageCanvas
         )
@@ -559,7 +556,7 @@ final class EditorStore: ObservableObject {
         do {
             let writeResult = try core.createPage(
                 at: htmlURL,
-                title: pageTitle,
+                title: pageFileName,
                 lang: "ja",
                 stylesheetPath: stylesheetPath,
                 bodyHTML: bodyHTML,
@@ -594,6 +591,216 @@ final class EditorStore: ObservableObject {
             }
         } catch {
             lastError = "ページHTMLの作成に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Chapter表示名更新関数
+    /// 処理概要: 指定 Chapter の UI 表示タイトルを `.ogp` に保存し、選択状態を維持したまま反映します。
+    ///
+    /// - Parameters:
+    ///   - internalID: 更新対象 Chapter の内部 ID。
+    ///   - value: Sidebar で入力された表示名。空の場合は title を解除して ID 表示へ戻します。
+    func updateChapterTitle(internalID: String, value: String) {
+        guard var loadedProject,
+              let chapterIndex = loadedProject.project.chapters.firstIndex(where: { $0.internalID == internalID })
+        else {
+            return
+        }
+
+        let normalizedTitle = Self.normalizedManifestTitle(value)
+        guard loadedProject.project.chapters[chapterIndex].title != normalizedTitle else { return }
+        loadedProject.project.chapters[chapterIndex].title = normalizedTitle
+        let updatedChapter = loadedProject.project.chapters[chapterIndex]
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            self.loadedProject = loadedProject
+            lastError = nil
+            statusMessage = "\(updatedChapter.displayName) に変更しました。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Collection表示名更新関数
+    /// 処理概要: 指定 Component Collection の UI 表示タイトルを `.ogp` に保存し、選択状態を維持したまま反映します。
+    ///
+    /// - Parameters:
+    ///   - internalID: 更新対象 Collection の内部 ID。
+    ///   - value: Sidebar で入力された表示名。空の場合は title を解除して ID 表示へ戻します。
+    func updateCollectionTitle(internalID: String, value: String) {
+        guard var loadedProject,
+              let collectionIndex = loadedProject.project.collections.firstIndex(where: { $0.internalID == internalID })
+        else {
+            return
+        }
+
+        let normalizedTitle = Self.normalizedManifestTitle(value)
+        guard loadedProject.project.collections[collectionIndex].title != normalizedTitle else { return }
+        loadedProject.project.collections[collectionIndex].title = normalizedTitle
+        let updatedCollection = loadedProject.project.collections[collectionIndex]
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            self.loadedProject = loadedProject
+            lastError = nil
+            statusMessage = "\(updatedCollection.displayName) に変更しました。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: HTMLカードファイル名更新関数
+    /// 処理概要: 指定 Page または Component canvas の HTML ファイル名を変更し、`.ogp` の path と同名 companion CSS を同期します。
+    ///
+    /// - Parameters:
+    ///   - internalID: 更新対象 HTML カードの内部 ID。
+    ///   - segment: Pages / Components のどちらを更新するか。
+    ///   - value: Sidebar で入力された新しい HTML ファイル名。拡張子省略時は `.html` を補います。
+    func updatePageFilename(internalID: String, segment: OpenGraphiteCanvasSegment, value: String) {
+        guard var loadedProject else { return }
+
+        guard cssMutation == nil,
+              attributeMutation == nil,
+              textMutation == nil,
+              documentReplacementRequest == nil
+        else {
+            lastError = "未適用の編集があるため、ファイル名変更を保留しました。"
+            return
+        }
+
+        let originalPage: OpenGraphitePage
+        let updatePagePath: (String) -> Void
+        switch segment {
+        case .pages:
+            guard let chapterIndex = loadedProject.project.chapters.firstIndex(where: { chapter in
+                chapter.pages.contains { $0.internalID == internalID }
+            }),
+                  let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: { $0.internalID == internalID })
+            else {
+                return
+            }
+            originalPage = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
+            updatePagePath = { nextPath in
+                loadedProject.project.chapters[chapterIndex].pages[pageIndex].path = nextPath
+                loadedProject.project.chapters[chapterIndex].pages[pageIndex].title = nil
+            }
+        case .components:
+            guard let collectionIndex = loadedProject.project.collections.firstIndex(where: { collection in
+                collection.components.contains { $0.internalID == internalID }
+            }),
+                  let pageIndex = loadedProject.project.collections[collectionIndex].components.firstIndex(where: { $0.internalID == internalID })
+            else {
+                return
+            }
+            originalPage = loadedProject.project.collections[collectionIndex].components[pageIndex]
+            updatePagePath = { nextPath in
+                loadedProject.project.collections[collectionIndex].components[pageIndex].path = nextPath
+                loadedProject.project.collections[collectionIndex].components[pageIndex].title = nil
+            }
+        }
+
+        let renamePath = Self.renamedHTMLPath(currentPath: originalPage.path, value: value)
+        guard let nextPath = renamePath.path else {
+            lastError = renamePath.error ?? "ファイル名が正しくありません。"
+            return
+        }
+        guard nextPath != originalPage.path else { return }
+        guard !loadedProject.project.allPages.contains(where: { page in
+            page.internalID != originalPage.internalID && page.path == nextPath
+        }) else {
+            lastError = "同じ HTML path が既に登録されています: \(nextPath)"
+            return
+        }
+
+        let htmlRootURL = loadedProject.rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot)
+            .standardizedFileURL
+        let currentHTMLURL = htmlRootURL
+            .appendingPathComponent(originalPage.path)
+            .standardizedFileURL
+        let nextHTMLURL = htmlRootURL
+            .appendingPathComponent(nextPath)
+            .standardizedFileURL
+        let currentCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: currentHTMLURL).standardizedFileURL
+        let nextCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: nextHTMLURL).standardizedFileURL
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: currentHTMLURL.path) else {
+            lastError = "変更元の HTML が見つかりません: \(currentHTMLURL.path)"
+            return
+        }
+        guard !fileManager.fileExists(atPath: nextHTMLURL.path) else {
+            lastError = "変更先の HTML が既に存在します: \(nextHTMLURL.path)"
+            return
+        }
+        if currentCSSURL != nextCSSURL,
+           fileManager.fileExists(atPath: nextCSSURL.path) {
+            lastError = "変更先の companion CSS が既に存在します: \(nextCSSURL.path)"
+            return
+        }
+
+        let previousProject = loadedProject.project
+        let movedCSS = currentCSSURL != nextCSSURL && fileManager.fileExists(atPath: currentCSSURL.path)
+        var dependencyBackups: [HTMLDependencyRewriteBackup] = []
+        var didMoveHTML = false
+        var didMoveCSS = false
+
+        do {
+            if segment == .components {
+                dependencyBackups = try rewriteComponentDependencyReferences(
+                    in: loadedProject,
+                    from: currentHTMLURL,
+                    to: nextHTMLURL,
+                    excludingPageInternalID: originalPage.internalID
+                )
+            }
+            try fileManager.createDirectory(at: nextHTMLURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fileManager.moveItem(at: currentHTMLURL, to: nextHTMLURL)
+            didMoveHTML = true
+            if movedCSS {
+                try fileManager.moveItem(at: currentCSSURL, to: nextCSSURL)
+                didMoveCSS = true
+            }
+
+            updatePagePath(nextPath)
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            let reloadedProject = try loader.loadProject(at: loadedProject.fileURL)
+            self.loadedProject = reloadedProject
+            migratePageRuntimeState(from: currentHTMLURL, to: nextHTMLURL)
+            seedKnownHTMLForProject(reloadedProject)
+            if selectedCanvasSegment == segment {
+                switch segment {
+                case .pages:
+                    selectedPageInternalID = originalPage.internalID
+                    selectedPageID = originalPage.id
+                case .components:
+                    selectedComponentPageInternalID = originalPage.internalID
+                    selectedComponentPageID = originalPage.id
+                }
+                selectedNodeID = nil
+                nodes = []
+                prepareHistoryForSelectedPage()
+            }
+            lastError = nil
+            statusMessage = "\(URL(fileURLWithPath: nextPath).lastPathComponent) に変更しました。"
+            restartExternalProjectMonitoring(force: true)
+            restartExternalPageMonitoring(force: true)
+            restartExternalDependencyMonitoring(force: true)
+        } catch {
+            if didMoveCSS {
+                try? fileManager.moveItem(at: nextCSSURL, to: currentCSSURL)
+            }
+            if didMoveHTML {
+                try? fileManager.moveItem(at: nextHTMLURL, to: currentHTMLURL)
+            }
+            for backup in dependencyBackups {
+                try? backup.data.write(to: backup.url, options: .atomic)
+            }
+            try? writeProjectManifest(previousProject, to: loadedProject.fileURL)
+            lastError = "ファイル名の変更に失敗しました: \(error.localizedDescription)"
         }
     }
 
@@ -1729,6 +1936,46 @@ final class EditorStore: ObservableObject {
         statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
     }
 
+    /// 論理名（日本語）: ノード表示ID更新関数
+    /// 処理概要: Layers のインライン編集から選択中ノードの `data-og-id` を正規化して更新し、WebView へ反映する mutation を発行します。
+    ///
+    /// - Parameter value: Layers で入力された新しいオブジェクト名。
+    func updateNodeDisplayID(value: String) {
+        guard let selectedNodeID,
+              let selectedNode,
+              let editTarget = cssEditTarget(for: selectedNode)
+        else {
+            return
+        }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
+
+        let normalizedValue = Self.normalizedNodeDisplayID(value)
+        guard selectedNode.displayID != normalizedValue else { return }
+
+        let edit = HTMLObjectEdit(
+            target: editTarget,
+            operation: .renameNodeID(
+                nodeInternalID: selectedNode.internalID,
+                value: normalizedValue,
+                expectedOldValue: selectedNode.displayID
+            )
+        )
+        guard applyHTMLObjectEdit(edit).updated else { return }
+
+        attributeMutationSequence += 1
+        attributeMutation = NodeAttributeMutation(
+            sequence: attributeMutationSequence,
+            pageURL: editTarget.htmlURL,
+            nodeID: selectedNodeID,
+            name: "data-og-id",
+            value: normalizedValue
+        )
+        statusMessage = "\(selectedNode.displayID) を \(normalizedValue) に変更しました。"
+    }
+
     /// 論理名（日本語）: ノードテキスト内容プレビュー関数
     /// 処理概要: 選択中 text node の app 内 cache を更新し、永続化せず WebView へ反映する mutation を発行します。
     ///
@@ -2371,6 +2618,17 @@ final class EditorStore: ObservableObject {
         case redo
     }
 
+    /// 論理名（日本語）: HTML依存参照復元情報
+    /// 概要: Component ファイル名変更時に書き換えた参照元 HTML を、失敗時に元へ戻すための最小情報を保持します。
+    ///
+    /// プロパティ:
+    /// - `url`: 復元対象 HTML URL。
+    /// - `data`: 変更前 HTML data。
+    private struct HTMLDependencyRewriteBackup {
+        var url: URL
+        var data: Data
+    }
+
     /// 論理名（日本語）: 選択ページ履歴準備関数
     /// 処理概要: 選択ページの HTML をディスクから読み込み、未登録であれば履歴の初期値にします。
     private func prepareHistoryForSelectedPage() {
@@ -2613,6 +2871,18 @@ final class EditorStore: ObservableObject {
                     expectedOldValue: payload["previousValue"] as? String ?? ""
                 )
             )
+        case "renameNodeID":
+            guard let nodeInternalID = payload["nodeInternalID"] as? String else {
+                return nil
+            }
+            return HTMLObjectEdit(
+                target: target,
+                operation: .renameNodeID(
+                    nodeInternalID: nodeInternalID,
+                    value: payload["value"] as? String ?? "",
+                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                )
+            )
         case "setIcon":
             guard let nodeInternalID = payload["nodeInternalID"] as? String else { return nil }
             return HTMLObjectEdit(
@@ -2748,6 +3018,9 @@ final class EditorStore: ObservableObject {
         case let .setAttribute(nodeInternalID, name, _, expectedOldValue):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
             return (node.attributes[name] ?? "") == expectedOldValue
+        case let .renameNodeID(nodeInternalID, _, expectedOldValue):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            return node.id == expectedOldValue
         case let .setIcon(nodeInternalID, _, _, _, expectedOldValues):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
             return expectedOldValues.allSatisfy { key, value in
@@ -2870,6 +3143,9 @@ final class EditorStore: ObservableObject {
         case let .setAttribute(nodeInternalID, name, value, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .settingAttribute(name: name, value: value, forNodeID: nodeInternalID, contract: contract)
+        case let .renameNodeID(nodeInternalID, value, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .renamingNodeID(value: value, forNodeID: nodeInternalID, contract: contract)
         case let .setIcon(nodeInternalID, library, name, source, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .settingIcon(library: library, name: name, source: source, forNodeID: nodeInternalID, contract: contract)
@@ -3134,6 +3410,67 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: Manifest表示名正規化関数
+    /// 処理概要: `.ogp` の title 欄に保存する人間向け表示名として前後空白を除去し、空文字は未指定に戻します。
+    ///
+    /// - Parameter title: Sidebar から入力された表示名。
+    /// - Returns: 保存する title。空の場合は `nil`。
+    private static func normalizedManifestTitle(_ title: String) -> String? {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedTitle.isEmpty ? nil : normalizedTitle
+    }
+
+    /// 論理名（日本語）: HTMLファイル名変更path生成関数
+    /// 処理概要: 現在の HTML path のディレクトリを保ったまま、入力値から `.html` ファイル名を生成します。
+    ///
+    /// - Parameters:
+    ///   - currentPath: 変更前の `htmlRoot` 相対 HTML path。
+    ///   - value: Sidebar から入力されたファイル名。
+    /// - Returns: 更新後 path。入力が無効な場合は error に理由を返します。
+    private static func renamedHTMLPath(currentPath: String, value: String) -> (path: String?, error: String?) {
+        let rawFileName = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawFileName.isEmpty else {
+            return (nil, "ファイル名を入力してください。")
+        }
+        guard rawFileName.rangeOfCharacter(from: CharacterSet(charactersIn: "/\\")) == nil else {
+            return (nil, "ファイル名にはディレクトリ区切りを含められません。")
+        }
+        guard rawFileName.rangeOfCharacter(from: .newlines) == nil else {
+            return (nil, "ファイル名には改行を含められません。")
+        }
+
+        var fileName = rawFileName
+        if URL(fileURLWithPath: fileName).pathExtension.isEmpty {
+            fileName += ".html"
+        }
+        guard URL(fileURLWithPath: fileName).pathExtension.lowercased() == "html" else {
+            return (nil, "HTML ファイル名は .html で終わる必要があります。")
+        }
+
+        let fileStem = String(fileName.dropLast(".html".count))
+            .trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        guard !fileStem.isEmpty, fileName != ".", fileName != ".." else {
+            return (nil, "ファイル名が正しくありません。")
+        }
+
+        let directory = (currentPath as NSString).deletingLastPathComponent
+        let nextPath = directory.isEmpty || directory == "."
+            ? fileName
+            : "\(directory)/\(fileName)"
+        let components = nextPath.split(separator: "/", omittingEmptySubsequences: false)
+        guard !nextPath.isEmpty,
+              !nextPath.hasPrefix("/"),
+              !nextPath.hasSuffix("/"),
+              !components.contains(""),
+              !components.contains("."),
+              !components.contains("..")
+        else {
+            return (nil, "HTML path は htmlRoot 配下の相対 path である必要があります。")
+        }
+
+        return (nextPath, nil)
+    }
+
     /// 論理名（日本語）: 相対path生成関数
     /// 処理概要: 基準ディレクトリから対象 URL への相対 path を POSIX 区切りで返します。
     ///
@@ -3256,6 +3593,54 @@ final class EditorStore: ObservableObject {
             if let html = readHTMLFromDisk(at: pageURL) {
                 lastKnownPageHTMLByURL[pageURL] = html
             }
+        }
+    }
+
+    /// 論理名（日本語）: ページ実行時状態移行関数
+    /// 処理概要: HTML ファイル名変更に伴い、履歴、既知 HTML、reload token、静的フロー cache を新 URL へ移します。
+    ///
+    /// - Parameters:
+    ///   - currentHTMLURL: 変更前 HTML URL。
+    ///   - nextHTMLURL: 変更後 HTML URL。
+    private func migratePageRuntimeState(from currentHTMLURL: URL, to nextHTMLURL: URL) {
+        let currentURL = currentHTMLURL.standardizedFileURL
+        let nextURL = nextHTMLURL.standardizedFileURL
+
+        if let key = matchingURLKey(in: syncHistories, for: currentURL),
+           let history = syncHistories.removeValue(forKey: key) {
+            syncHistories[nextURL] = history
+        }
+        if let key = matchingURLKey(in: lastKnownPageHTMLByURL, for: currentURL),
+           let html = lastKnownPageHTMLByURL.removeValue(forKey: key) {
+            lastKnownPageHTMLByURL[nextURL] = html
+        }
+        if let key = matchingURLKey(in: staticFlowLinksByPageURL, for: currentURL),
+           let links = staticFlowLinksByPageURL.removeValue(forKey: key) {
+            staticFlowLinksByPageURL[nextURL] = links
+        }
+        if let key = matchingURLKey(in: pageReloadTokensByURL, for: currentURL),
+           let token = pageReloadTokensByURL.removeValue(forKey: key) {
+            pageReloadTokensByURL[nextURL] = token + 1
+        } else {
+            pageReloadTokensByURL[nextURL, default: 0] += 1
+        }
+        if let key = matchingURLKey(in: pageChangeMonitorsByURL, for: currentURL) {
+            pageChangeMonitorsByURL[key]?.cancel()
+            pageChangeMonitorsByURL.removeValue(forKey: key)
+        }
+    }
+
+    /// 論理名（日本語）: URL辞書key照合関数
+    /// 処理概要: URL を key に持つ cache から、標準化後に一致する既存 key を探します。
+    ///
+    /// - Parameters:
+    ///   - dictionary: URL key を持つ辞書。
+    ///   - url: 探索する URL。
+    /// - Returns: 一致した既存 key。見つからない場合は `nil`。
+    private func matchingURLKey<Value>(in dictionary: [URL: Value], for url: URL) -> URL? {
+        let standardizedURL = url.standardizedFileURL
+        return dictionary.keys.first { key in
+            key == url || key.standardizedFileURL == standardizedURL
         }
     }
 
@@ -3473,6 +3858,127 @@ final class EditorStore: ObservableObject {
 
         let pageURLs = Set(loadedProject.project.chapters.flatMap(\.pages).map { loadedProject.htmlURL(for: $0).standardizedFileURL })
         return urls.subtracting(pageURLs)
+    }
+
+    /// 論理名（日本語）: Component依存参照書き換え関数
+    /// 処理概要: Component HTML ファイル名変更時に、参照元 HTML の component link と同名 CSS link を新しい相対 path へ更新します。
+    ///
+    /// - Parameters:
+    ///   - loadedProject: 変更前の project。
+    ///   - currentHTMLURL: 変更前 component HTML URL。
+    ///   - nextHTMLURL: 変更後 component HTML URL。
+    ///   - excludingPageInternalID: rename 対象自身の page 内部 ID。
+    /// - Returns: 失敗時 rollback に使う変更前 HTML data 一覧。
+    private func rewriteComponentDependencyReferences(
+        in loadedProject: LoadedOpenGraphiteProject,
+        from currentHTMLURL: URL,
+        to nextHTMLURL: URL,
+        excludingPageInternalID: String
+    ) throws -> [HTMLDependencyRewriteBackup] {
+        var backups: [HTMLDependencyRewriteBackup] = []
+        do {
+            for page in loadedProject.project.allPages where page.internalID != excludingPageInternalID {
+                let pageURL = loadedProject.htmlURL(for: page).standardizedFileURL
+                guard let data = try? Data(contentsOf: pageURL),
+                      let html = String(data: data, encoding: .utf8)
+                else {
+                    continue
+                }
+                let rewrittenHTML = rewriteComponentDependencyReferences(
+                    in: html,
+                    pageURL: pageURL,
+                    currentHTMLURL: currentHTMLURL,
+                    nextHTMLURL: nextHTMLURL
+                )
+                guard rewrittenHTML != html else { continue }
+                backups.append(HTMLDependencyRewriteBackup(url: pageURL, data: data))
+                try rewrittenHTML.write(to: pageURL, atomically: true, encoding: .utf8)
+                lastKnownPageHTMLByURL[pageURL] = rewrittenHTML
+                incrementReloadToken(for: pageURL)
+            }
+            return backups
+        } catch {
+            for backup in backups {
+                try? backup.data.write(to: backup.url, options: .atomic)
+            }
+            throw error
+        }
+    }
+
+    /// 論理名（日本語）: Component依存参照HTML書き換え関数
+    /// 処理概要: HTML 文字列内の `opengraphite-components` と同名 stylesheet 参照を、新しい component ファイル名へ差し替えます。
+    ///
+    /// - Parameters:
+    ///   - html: 書き換え対象 HTML。
+    ///   - pageURL: HTML の URL。
+    ///   - currentHTMLURL: 変更前 component HTML URL。
+    ///   - nextHTMLURL: 変更後 component HTML URL。
+    /// - Returns: 必要な href を置換した HTML。
+    private func rewriteComponentDependencyReferences(
+        in html: String,
+        pageURL: URL,
+        currentHTMLURL: URL,
+        nextHTMLURL: URL
+    ) -> String {
+        let currentComponentURL = currentHTMLURL.standardizedFileURL
+        let nextComponentURL = nextHTMLURL.standardizedFileURL
+        let currentCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: currentHTMLURL).standardizedFileURL
+        let nextCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: nextHTMLURL).standardizedFileURL
+        var result = html
+        for tag in matches(pattern: #"<link\b[^>]*>"#, in: html).reversed() {
+            guard let href = attribute("href", in: tag) else { continue }
+            let rel = attribute("rel", in: tag)?.lowercased() ?? ""
+            let resolvedURL = resolveDependencyURL(href, relativeTo: pageURL).standardizedFileURL
+            let replacementHref: String?
+            if rel == "opengraphite-components", resolvedURL == currentComponentURL {
+                replacementHref = Self.relativePath(from: pageURL.deletingLastPathComponent(), to: nextComponentURL)
+            } else if rel == "stylesheet", resolvedURL == currentCSSURL {
+                replacementHref = Self.relativePath(from: pageURL.deletingLastPathComponent(), to: nextCSSURL)
+            } else {
+                replacementHref = nil
+            }
+            guard let replacementHref,
+                  let rewrittenTag = replacingAttribute("href", in: tag, with: replacementHref),
+                  let range = result.range(of: tag)
+            else {
+                continue
+            }
+            result.replaceSubrange(range, with: rewrittenTag)
+        }
+        return result
+    }
+
+    /// 論理名（日本語）: HTML属性値置換関数
+    /// 処理概要: 開始タグ文字列に含まれる指定属性の値だけを置き換え、引用符や他属性を維持します。
+    ///
+    /// - Parameters:
+    ///   - name: 置換する属性名。
+    ///   - tag: 対象開始タグ文字列。
+    ///   - value: 新しい属性値。
+    /// - Returns: 属性値を置換したタグ。属性が見つからない場合は `nil`。
+    private func replacingAttribute(_ name: String, in tag: String, with value: String) -> String? {
+        let pattern = #"\b\#(NSRegularExpression.escapedPattern(for: name))\s*=\s*(["'])(.*?)\1"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: tag, options: [], range: NSRange(tag.startIndex..<tag.endIndex, in: tag)),
+              let range = Range(match.range(at: 2), in: tag)
+        else {
+            return nil
+        }
+        var rewrittenTag = tag
+        rewrittenTag.replaceSubrange(range, with: htmlAttributeEscapedValue(value))
+        return rewrittenTag
+    }
+
+    /// 論理名（日本語）: HTML属性値エスケープ関数
+    /// 処理概要: href 属性へ保存する相対 path の最小 HTML entity escape を行います。
+    ///
+    /// - Parameter value: 属性へ保存する値。
+    /// - Returns: HTML 属性値として安全な文字列。
+    private func htmlAttributeEscapedValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     /// 論理名（日本語）: HTML依存href抽出関数
@@ -3757,6 +4263,27 @@ final class EditorStore: ObservableObject {
             }
         }
         return node
+    }
+
+    /// 論理名（日本語）: ノード表示ID正規化関数
+    /// 処理概要: Layers の入力値を `data-og-id` として扱いやすい小文字英数字、ハイフン、アンダースコアの ID へ変換します。
+    ///
+    /// - Parameter value: 正規化する入力値。
+    /// - Returns: 空になった場合は `node` を返します。
+    private static func normalizedNodeDisplayID(_ value: String) -> String {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789_-")
+        var result = ""
+        for character in value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+            result.append(allowed.contains(character) ? character : "-")
+        }
+        while result.contains("--") {
+            result = result.replacingOccurrences(of: "--", with: "-")
+        }
+        result = result
+            .replacingOccurrences(of: "_-", with: "_")
+            .replacingOccurrences(of: "-_", with: "_")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return result.isEmpty ? "node" : result
     }
 
     /// 論理名（日本語）: ページルートノード抽出関数

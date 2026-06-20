@@ -49,7 +49,7 @@ struct InspectorSectionExpansionTests {
     /// 概要: Web preview bridge の object edit が対応する Inspector カードへ分類されることを検証します。
     @Test("HTML object editから該当Inspectorカードを解決できる")
     func testSectionsForHTMLObjectEditOperationResolveInspectorCards() {
-        // コンディション：テキスト編集、ドラッグ移動、layout 変更の object edit を用意する（Given）
+        // コンディション：テキスト編集、ドラッグ移動、layout 変更、表示 ID 変更の object edit を用意する（Given）
         let textOperation = HTMLObjectEditOperation.setTextContent(
             nodeInternalID: "title-node",
             text: "Updated",
@@ -66,15 +66,22 @@ struct InspectorSectionExpansionTests {
             value: "horizontal",
             expectedOldValue: "vertical"
         )
+        let renameOperation = HTMLObjectEditOperation.renameNodeID(
+            nodeInternalID: "frame-node",
+            value: "hero-card",
+            expectedOldValue: "hero"
+        )
 
         // 検証内容：object edit を Inspector section ID へ分類する（When）
         let textSections = InspectorSectionID.sections(for: textOperation)
         let dragSections = InspectorSectionID.sections(for: dragOperation)
         let layoutSections = InspectorSectionID.sections(for: layoutOperation)
+        let renameSections = InspectorSectionID.sections(for: renameOperation)
 
-        // 期待値：Text、Position、Layout カードに対応する（Then）
+        // 期待値：Text、Position、Layout、Context カードに対応する（Then）
         #expect(textSections == [.text])
         #expect(dragSections == [.position])
         #expect(layoutSections == [.layout])
+        #expect(renameSections == [.context])
     }
 }

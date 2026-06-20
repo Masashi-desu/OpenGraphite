@@ -404,6 +404,66 @@ struct OpenGraphiteHTMLDocument {
         return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
     }
 
+    /// 論理名（日本語）: ノード表示ID変更関数
+    /// 処理概要: 一意な `data-og-internal-id` を持つノードの `data-og-id` を、同一 HTML 内で重複しない値へ変更します。
+    ///
+    /// - Parameters:
+    ///   - value: 新しい `data-og-id`。空文字は拒否します。
+    ///   - id: 対象ノードの `data-og-internal-id`。
+    ///   - contract: runtime 属性除去に使う OpenGraphite 契約。
+    /// - Returns: 更新済み HTML と diagnostics。
+    func renamingNodeID(
+        value: String,
+        forNodeID id: String,
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteHTMLMutationResult {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedValue.isEmpty else {
+            return .failure(
+                html: html,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "invalid-data-og-id",
+                    message: "data-og-id には空でない値が必要です。",
+                    path: nil,
+                    nodeID: id
+                )
+            )
+        }
+
+        var sanitized = OpenGraphiteHTMLDocument(html: html).removingRuntimeState(contract: contract)
+        let sanitizedDocument = OpenGraphiteHTMLDocument(html: sanitized)
+        let match = sanitizedDocument.uniqueTag(forNodeID: id)
+        guard let tag = match.tag else {
+            return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: match.diagnostics)
+        }
+
+        let currentValue = tag.attributeValue(named: "data-og-id") ?? ""
+        guard currentValue != normalizedValue else {
+            return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+        }
+
+        if sanitizedDocument.parsedTags().contains(where: { candidate in
+            candidate.range != tag.range && candidate.attributeValue(named: "data-og-id") == normalizedValue
+        }) {
+            return .failure(
+                html: sanitized,
+                diagnostic: OpenGraphiteDiagnostic(
+                    severity: .error,
+                    code: "duplicate-data-og-id",
+                    message: "data-og-id \"\(normalizedValue)\" が重複しています。",
+                    path: nil,
+                    nodeID: id
+                )
+            )
+        }
+
+        var attributes = tag.attributes
+        Self.setAttribute("data-og-id", value: normalizedValue, in: &attributes)
+        sanitized.replaceRange(tag.range, with: tag.serialized(with: attributes))
+        return OpenGraphiteHTMLMutationResult(html: sanitized, diagnostics: [])
+    }
+
     /// 論理名（日本語）: アイコン設定関数
     /// 処理概要: icon node の library/name/source metadata と保存済み描画 HTML を同時に更新します。
     ///

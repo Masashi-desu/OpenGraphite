@@ -140,6 +140,8 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
             return sections(forCSSKeys: values.keys)
         case let .setAttribute(_, name, _, _):
             return sections(forAttributeName: name)
+        case .renameNodeID:
+            return [.context]
         case .setIcon:
             return [.icon]
         case .setTextContent:

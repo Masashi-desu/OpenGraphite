@@ -417,6 +417,30 @@ struct EditorStoreTests {
         #expect(persistedChapter.internalID == addedChapter.internalID)
     }
 
+    /// 論理名（日本語）: Chapter表示名更新テスト
+    /// 概要: Sidebar のインライン編集から Chapter title を `.ogp` に保存できることを検証します。
+    @Test("Chapter表示名をogpへ保存できる")
+    func testUpdateChapterTitlePersistsManifest() throws {
+        // コンディション：既存 Chapter を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let chapterInternalID = try #require(store.selectedChapter?.internalID)
+
+        // 検証内容：Chapter の表示名を更新する（When）
+        store.updateChapterTitle(internalID: chapterInternalID, value: " Landing Pages ")
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedChapter = try #require(reloadedProject.project.chapters.first)
+
+        // 期待値：title は前後空白を除いて保存され、選択状態は維持される（Then）
+        #expect(store.selectedChapter?.displayName == "Landing Pages")
+        #expect(persistedChapter.title == "Landing Pages")
+        #expect(persistedChapter.internalID == chapterInternalID)
+        #expect(store.selectedChapterInternalID == chapterInternalID)
+        #expect(store.lastError == nil)
+    }
+
     /// 論理名（日本語）: 空ChapterへのPage追加保存テスト
     /// 概要: 選択中の空 Chapter に新しい HTML page file と page entry を追加し、その page が選択されることを検証します。
     @Test("空ChapterにPageを追加してogpへ保存できる")
@@ -440,15 +464,16 @@ struct EditorStoreTests {
 
         #expect(addedChapter.id == "chapter-1")
         #expect(addedPage.id == "page-1")
-        #expect(addedPage.displayName == "Page 1")
+        #expect(addedPage.displayName == "page-1.html")
         #expect(addedPage.path == "page-1.html")
+        #expect(addedPage.title == nil)
         #expect(addedPage.canvas.x == 0)
         #expect(addedPage.canvas.y == 0)
         #expect(addedPage.canvas.width == 100)
         #expect(addedPage.canvas.height == 100)
         #expect(FileManager.default.fileExists(atPath: addedHTMLURL.path))
         #expect(FileManager.default.fileExists(atPath: addedCompanionCSSURL.path))
-        #expect(addedHTML.contains("<title>Page 1</title>"))
+        #expect(addedHTML.contains("<title>page-1.html</title>"))
         #expect(addedHTML.contains(#"data-og-id="page-1-root""#))
         #expect(store.selectedCanvasSegment == .pages)
         #expect(store.lastError == nil)
@@ -457,6 +482,156 @@ struct EditorStoreTests {
         #expect(reloadedProject.project.chapters[0].pages.map(\.id) == ["home"])
         #expect(reloadedProject.project.chapters[1].pages.map(\.id) == ["page-1"])
         #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
+    }
+
+    /// 論理名（日本語）: Pageファイル名更新テスト
+    /// 概要: Sidebar のインライン編集から Page HTML と同名 companion CSS を rename し、`.ogp` path へ保存できることを検証します。
+    @Test("Pageファイル名を変更するとHTMLとcompanion CSSとogp pathが同期する")
+    func testUpdatePageFilenameMovesHTMLAndCompanionCSSAndPersistsPath() throws {
+        // コンディション：既存 Page と companion CSS を持つ一時プロジェクトを開き、先頭 Page を選択する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        try fixture.writeCompanionCSS("body { color: red; }")
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+
+        // 検証内容：拡張子を省略して Page ファイル名を更新する（When）
+        store.updatePageFilename(internalID: page.internalID, segment: .pages, value: " home-draft ")
+        let renamedHTMLURL = fixture.publicURL.appendingPathComponent("home-draft.html")
+        let renamedCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: renamedHTMLURL)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let renamedPage = try #require(reloadedProject.project.chapters.first?.pages.first)
+
+        // 期待値：実ファイルと `.ogp` path が同時に更新され、表示名はファイル名と一致する（Then）
+        #expect(store.selectedPage?.displayName == "home-draft.html")
+        #expect(store.selectedPage?.path == "home-draft.html")
+        #expect(renamedPage.path == "home-draft.html")
+        #expect(renamedPage.title == nil)
+        #expect(store.selectedPageInternalID == page.internalID)
+        #expect(FileManager.default.fileExists(atPath: renamedHTMLURL.path))
+        #expect(FileManager.default.fileExists(atPath: renamedCSSURL.path))
+        #expect(!FileManager.default.fileExists(atPath: fixture.htmlURL.path))
+        #expect(!FileManager.default.fileExists(atPath: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL).path))
+        #expect(try String(contentsOf: renamedHTMLURL, encoding: .utf8) == originalHTML)
+        #expect(try String(contentsOf: renamedCSSURL, encoding: .utf8) == "body { color: red; }")
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: Pageファイル名重複拒否テスト
+    /// 概要: Sidebar のインライン編集で既存 Page path と重複するファイル名を指定した場合、実ファイルも `.ogp` も変更しないことを検証します。
+    @Test("Pageファイル名変更は既存pathとの重複を拒否する")
+    func testUpdatePageFilenameRejectsDuplicatePath() throws {
+        // コンディション：2つの Page HTML を持つ一時プロジェクトを開き、先頭 Page を選択する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let docsHTMLURL = fixture.publicURL.appendingPathComponent("docs.html")
+        try "<!doctype html>\n<html><body>docs</body></html>".write(to: docsHTMLURL, atomically: true, encoding: .utf8)
+        try fixture.writeProject(pages: [
+            OpenGraphitePage(
+                id: "home",
+                path: "index.html",
+                canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+            ),
+            OpenGraphitePage(
+                id: "docs",
+                path: "docs.html",
+                canvas: OpenGraphiteCanvas(x: 200, y: 0, width: 100, height: 100)
+            )
+        ])
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+
+        // 検証内容：既存 path と同じファイル名へ変更しようとする（When）
+        store.updatePageFilename(internalID: page.internalID, segment: .pages, value: "docs.html")
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let firstPage = try #require(reloadedProject.project.chapters.first?.pages.first)
+
+        // 期待値：変更は拒否され、元 HTML と docs HTML はそのまま残る（Then）
+        #expect(firstPage.path == "index.html")
+        #expect(store.selectedPage?.displayName == "index.html")
+        #expect(FileManager.default.fileExists(atPath: fixture.htmlURL.path))
+        #expect(FileManager.default.fileExists(atPath: docsHTMLURL.path))
+        #expect(store.lastError?.contains("既に登録されています") == true)
+    }
+
+    /// 論理名（日本語）: Componentファイル名参照更新テスト
+    /// 概要: Component master の HTML ファイル名を変更した場合、参照元 Page の component link と同名 CSS link も更新されることを検証します。
+    @Test("Componentファイル名変更は参照元HTMLのcomponent linkとCSS linkも更新する")
+    func testUpdateComponentFilenameRewritesReferencingLinks() throws {
+        // コンディション：component master と、それを link 参照する Page HTML を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components")
+        let componentHTMLURL = componentDirectory.appendingPathComponent("design-system.html")
+        let componentCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: componentHTMLURL)
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try "<!doctype html>\n<html><body>component</body></html>".write(to: componentHTMLURL, atomically: true, encoding: .utf8)
+        try "body { color: blue; }".write(to: componentCSSURL, atomically: true, encoding: .utf8)
+        try """
+        <!doctype html>
+        <html>
+          <head>
+            <link rel="stylesheet" href="./_components/design-system.css">
+          </head>
+          <body>
+            <link rel="opengraphite-components" href="./_components/design-system.html">
+            <og-instance data-og-component="site-header"></og-instance>
+          </body>
+        </html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(x: 200, y: 0, width: 100, height: 100)
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.selectComponentsSegment()
+        let component = try #require(store.componentPages.first)
+        let initialPageReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：Component ファイル名を拡張子なしで変更する（When）
+        store.updatePageFilename(internalID: component.internalID, segment: .components, value: "tokens")
+        let renamedComponentHTMLURL = componentDirectory.appendingPathComponent("tokens.html")
+        let renamedComponentCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: renamedComponentHTMLURL)
+        let updatedPageHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let renamedComponent = try #require(reloadedProject.project.components.first)
+
+        // 期待値：component 実ファイル、同名 CSS、`.ogp` path、参照元 link が同時に更新される（Then）
+        #expect(renamedComponent.path == "_components/tokens.html")
+        #expect(renamedComponent.title == nil)
+        #expect(store.selectedPage?.displayName == "tokens.html")
+        #expect(FileManager.default.fileExists(atPath: renamedComponentHTMLURL.path))
+        #expect(FileManager.default.fileExists(atPath: renamedComponentCSSURL.path))
+        #expect(!FileManager.default.fileExists(atPath: componentHTMLURL.path))
+        #expect(!FileManager.default.fileExists(atPath: componentCSSURL.path))
+        #expect(updatedPageHTML.contains(#"href="_components/tokens.html""#))
+        #expect(updatedPageHTML.contains(#"href="_components/tokens.css""#))
+        #expect(!updatedPageHTML.contains("design-system.html"))
+        #expect(!updatedPageHTML.contains("design-system.css"))
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialPageReloadToken + 1)
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: Project資源選択テスト
@@ -1336,6 +1511,166 @@ struct EditorStoreTests {
         #expect(store.attributeMutation == nil)
     }
 
+    /// 論理名（日本語）: ノード表示ID更新テスト
+    /// 概要: Layers のインライン編集が `data-og-id` を正規化して HTML 正本へ保存し、WebView 反映 mutation を発行することを検証します。
+    @Test("Layersからノード表示IDを変更できる")
+    func testUpdateNodeDisplayIDRenamesDataOGID() throws {
+        // コンディション：表示 ID を持つ選択中ノードを用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero>
+          <Card data-og-id="card" data-og-internal-id="card-node" data-og-type="frame"></Card>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "hero",
+                "internalID": "hero-node",
+                "tagName": "hero",
+                "type": "frame",
+                "depth": 0
+            ],
+            [
+                "id": "card",
+                "internalID": "card-node",
+                "tagName": "card",
+                "type": "frame",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero")
+
+        // 検証内容：空白を含む名前を Layers 相当で確定する
+        store.updateNodeDisplayID(value: "Hero Card")
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：正規化された data-og-id が保存され、WebView 反映用 mutation は旧選択 ID を対象にする
+        #expect(diskHTML.contains(#"data-og-id="hero-card""#))
+        #expect(!diskHTML.contains(#"data-og-id="hero""#))
+        #expect(store.attributeMutation?.nodeID == "hero")
+        #expect(store.attributeMutation?.name == "data-og-id")
+        #expect(store.attributeMutation?.value == "hero-card")
+    }
+
+    /// 論理名（日本語）: ノード表示ID重複拒否テスト
+    /// 概要: Layers のインライン編集で既存 `data-og-id` と重複する名前を指定しても HTML 正本を変更しないことを検証します。
+    @Test("重複するノード表示IDは保存しない")
+    func testUpdateNodeDisplayIDRejectsDuplicateDataOGID() throws {
+        // コンディション：同一 HTML に複数ノードがある状態を用意する
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero>
+          <Card data-og-id="card" data-og-internal-id="card-node" data-og-type="frame"></Card>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "hero",
+                "internalID": "hero-node",
+                "tagName": "hero",
+                "type": "frame",
+                "depth": 0
+            ],
+            [
+                "id": "card",
+                "internalID": "card-node",
+                "tagName": "card",
+                "type": "frame",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero")
+
+        // 検証内容：既存ノードと同じ表示 ID へ変更しようとする
+        store.updateNodeDisplayID(value: "card")
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：HTML は元の ID のままで、WebView 反映用 mutation も発行されない
+        #expect(diskHTML.contains(#"data-og-id="hero""#))
+        #expect(diskHTML.contains(#"data-og-id="card""#))
+        #expect(store.attributeMutation == nil)
+    }
+
+    /// 論理名（日本語）: Runtime展開ノード表示ID更新テスト
+    /// 概要: runtime component 由来ノードの表示 ID 更新が、表示中 Page ではなく component master HTML へ保存されることを検証します。
+    @Test("runtime展開ノードの表示ID変更はcomponent masterへ保存する")
+    func testUpdateNodeDisplayIDForGeneratedComponentUsesSourcePageURL() throws {
+        // コンディション：component master と page instance を持つ一時プロジェクトを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components")
+        let componentURL = componentDirectory.appendingPathComponent("design-system.html")
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        try """
+        <!doctype html>
+        <html><body>
+        <SiteHeader data-og-id="site-header" data-og-internal-id="site-header-node" data-og-type="frame" data-og-component="site-header" data-og-component-kind="master"></SiteHeader>
+        </body></html>
+        """.write(to: componentURL, atomically: true, encoding: .utf8)
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(x: 200, y: 0, width: 100, height: 100)
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "site-header",
+                "internalID": "site-header-node",
+                "tagName": "siteheader",
+                "type": "frame",
+                "sourceComponentID": "site-header",
+                "sourceInstanceID": "site-header-instance",
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "site-header")
+
+        // 検証内容：runtime 展開ノードの表示 ID を変更する（When）
+        store.updateNodeDisplayID(value: "global-header")
+        let componentHTML = try String(contentsOf: componentURL, encoding: .utf8)
+        let pageHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：component master HTML が更新され、DOM 反映 mutation も component URL を対象にする（Then）
+        #expect(componentHTML.contains(#"data-og-id="global-header""#))
+        #expect(!componentHTML.contains(#"data-og-id="site-header""#))
+        #expect(pageHTML == "<!doctype html>\n<html><body>initial</body></html>")
+        #expect(store.attributeMutation?.pageURL.standardizedFileURL == componentURL.standardizedFileURL)
+        #expect(store.attributeMutation?.nodeID == "site-header")
+        #expect(store.attributeMutation?.value == "global-header")
+    }
+
     /// 論理名（日本語）: アイコンInspector更新テスト
     /// 概要: Store の icon 更新が metadata と保存済み描画 HTML を同時に更新し、置換要求を発行することを検証します。
     @Test("Storeのicon更新はHTML置換要求を発行する")
@@ -1900,7 +2235,7 @@ struct EditorStoreTests {
         // 期待値：master の名称と場所が解決され、Components 側の master root が選択される
         #expect(source.componentID == "feature-card")
         #expect(source.masterNodeID == "feature-card-master")
-        #expect(source.locationLabel == "Main / design-system")
+        #expect(source.locationLabel == "Main / design-system.html")
         #expect(source.componentPagePath == "_components/design-system.html")
         #expect(source.canvasLabel == "1120, 0 · 1180 x 1900")
         #expect(store.selectedCanvasSegment == .components)

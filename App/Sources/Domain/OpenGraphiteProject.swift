@@ -479,7 +479,7 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
 /// プロパティ:
 /// - `id`: ページ識別子。
 /// - `internalID`: `.ogp` 内で HTML カードを一意に指す内部識別子。
-/// - `title`: UI 表示用タイトル。未指定時は `id` を使います。
+/// - `title`: 旧 manifest 互換用タイトル。Page の UI 表示名には使わず、ファイル名を正本として扱います。
 /// - `path`: `htmlRoot` から見た HTML ファイルパス。
 /// - `canvas`: キャンバス上の配置とサイズ。
 struct OpenGraphitePage: Codable, Equatable, Identifiable {
@@ -489,9 +489,12 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
     var path: String
     var canvas: OpenGraphiteCanvas
 
+    var fileName: String {
+        URL(fileURLWithPath: path).lastPathComponent
+    }
+
     var displayName: String {
-        guard let title, !title.isEmpty else { return id }
-        return title
+        fileName
     }
 
     private enum CodingKeys: String, CodingKey {

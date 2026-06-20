@@ -35,6 +35,7 @@ struct HTMLSyncTarget: Equatable {
 /// - `setCSSVariable`: CSS 変数を設定または削除します。
 /// - `setCSSVariables`: 複数 CSS 変数を同一 node に設定または削除します。
 /// - `setAttribute`: 永続属性を設定または削除します。
+/// - `renameNodeID`: node の `data-og-id` を重複しない表示 ID へ変更します。
 /// - `setIcon`: icon node の metadata と描画 HTML を更新します。
 /// - `setTextContent`: text node のプレーンテキストを置換します。
 /// - `insertHTML`: anchor node の相対位置へ HTML 断片を挿入します。
@@ -45,6 +46,7 @@ enum HTMLObjectEditOperation: Equatable {
     case setCSSVariable(nodeInternalID: String, key: String, value: String, expectedOldValue: String)
     case setCSSVariables(nodeInternalID: String, values: [String: String], expectedOldValues: [String: String])
     case setAttribute(nodeInternalID: String, name: String, value: String, expectedOldValue: String)
+    case renameNodeID(nodeInternalID: String, value: String, expectedOldValue: String)
     case setIcon(nodeInternalID: String, library: String, name: String, source: String, expectedOldValues: [String: String])
     case setTextContent(nodeInternalID: String, text: String, expectedOldValue: String)
     case insertHTML(anchorInternalID: String, position: OpenGraphiteHTMLInsertionPosition, html: String, baselineNodeHash: String?)
@@ -56,7 +58,7 @@ enum HTMLObjectEditOperation: Equatable {
     /// 処理概要: WebView 側の DOM だけでは保存後の表示を継続できない操作かどうかを返します。
     var requiresWebViewReload: Bool {
         switch self {
-        case .setCSSVariable, .setCSSVariables, .setAttribute, .setTextContent:
+        case .setCSSVariable, .setCSSVariables, .setAttribute, .renameNodeID, .setTextContent:
             return false
         case .setIcon:
             return true

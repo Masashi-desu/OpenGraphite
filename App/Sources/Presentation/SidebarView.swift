@@ -122,57 +122,128 @@ private struct SidebarPanelSwitcher: View {
 /// 概要: Chapter または Collection 名と保持 HTML 数を Sidebar 向けの軽量行として表示します。
 ///
 /// プロパティ:
+/// - `id`: 行を識別する内部 ID。
 /// - `title`: 表示名。
 /// - `detail`: 補助表示する ID。
 /// - `count`: グループ内 HTML 数。
 /// - `icon`: グループ種別アイコン。
 /// - `isSelected`: 現在選択中のグループか。
 /// - `onSelect`: 行選択時に呼び出す処理。
+/// - `editingID`: 現在タイトル編集中のグループ内部 ID。
+/// - `onRename`: タイトル確定時の更新処理。
 /// - `onCopyReferenceID`: 参照 ID コピー時に呼び出す処理。
 private struct SidebarGroupRow: View {
+    var id: String
     var title: String
     var detail: String
     var count: Int
     var icon: OpenGraphiteIcon
     var isSelected: Bool
     var onSelect: () -> Void
+    @Binding var editingID: String?
+    var onRename: (String) -> Void
     var onCopyReferenceID: () -> Void
+    @State private var draftTitle = ""
+    @FocusState private var isTitleFieldFocused: Bool
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 8) {
-                OpenGraphiteIconView(icon: icon, size: 14)
-                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                    .frame(width: 18, height: 18)
+        HStack(spacing: 8) {
+            OpenGraphiteIconView(icon: icon, size: 14)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .frame(width: 18, height: 18)
 
+            if isEditing {
+                TextField("", text: $draftTitle)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .focused($isTitleFieldFocused)
+                    .onSubmit {
+                        commitTitleEdit()
+                    }
+                    .onExitCommand {
+                        cancelTitleEdit()
+                    }
+            } else {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                Text("\(count)")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                    .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+
+            Spacer(minLength: 0)
+
+            Text("\(count)")
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.quaternary, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        .highPriorityGesture(
+            TapGesture(count: 2)
+                .onEnded {
+                    beginTitleEdit()
+                }
+        )
+        .onTapGesture(perform: onSelect)
+        .onChange(of: isEditing) { _, newValue in
+            if newValue {
+                draftTitle = title
+                Task { @MainActor in
+                    isTitleFieldFocused = true
+                }
+            } else {
+                isTitleFieldFocused = false
+            }
+        }
+        .onChange(of: isTitleFieldFocused) { _, newValue in
+            if !newValue, isEditing {
+                commitTitleEdit()
+            }
+        }
         .contextMenu {
             Button("参照IDをコピー", action: onCopyReferenceID)
         }
         .help(detail.isEmpty ? title : "\(title) (\(detail))")
+    }
+
+    private var isEditing: Bool {
+        editingID == id
+    }
+
+    /// 論理名（日本語）: グループタイトル編集開始関数
+    /// 処理概要: 行を選択してから、Chapter / Collection 表示名のインライン編集へ切り替えます。
+    private func beginTitleEdit() {
+        onSelect()
+        draftTitle = title
+        editingID = id
+    }
+
+    /// 論理名（日本語）: グループタイトル編集確定関数
+    /// 処理概要: 入力された表示名を親へ渡し、インライン編集状態を終了します。
+    private func commitTitleEdit() {
+        let nextTitle = draftTitle
+        editingID = nil
+        isTitleFieldFocused = false
+        guard nextTitle.trimmingCharacters(in: .whitespacesAndNewlines) != title else { return }
+        onRename(nextTitle)
+    }
+
+    /// 論理名（日本語）: グループタイトル編集キャンセル関数
+    /// 処理概要: draft を現在の表示名に戻し、保存せずインライン編集状態を終了します。
+    private func cancelTitleEdit() {
+        draftTitle = title
+        editingID = nil
+        isTitleFieldFocused = false
     }
 }
 
@@ -867,6 +938,8 @@ private struct PageLayerListView: View {
     @SceneStorage("sidebar.componentsGroupSectionCollapsed") private var isComponentsGroupSectionCollapsed = false
     @SceneStorage("sidebar.componentsContentSectionCollapsed") private var isComponentsContentSectionCollapsed = false
     @State private var expansionState = SidebarPageExpansionState()
+    @State private var editingGroupID: String?
+    @State private var editingPageID: String?
     var segment: OpenGraphiteCanvasSegment
 
     var body: some View {
@@ -943,6 +1016,7 @@ private struct PageLayerListView: View {
                 } else {
                     ForEach(groups) { group in
                         SidebarGroupRow(
+                            id: group.internalID,
                             title: group.title,
                             detail: group.detail,
                             count: group.pages.count,
@@ -950,6 +1024,10 @@ private struct PageLayerListView: View {
                             isSelected: isGroupSelected(group),
                             onSelect: {
                                 select(group)
+                            },
+                            editingID: $editingGroupID,
+                            onRename: { value in
+                                rename(group, value: value)
                             },
                             onCopyReferenceID: {
                                 copyGroupReferenceID(group)
@@ -982,6 +1060,7 @@ private struct PageLayerListView: View {
                                 isExpanded: expansionState.isExpanded(pageID: page.internalID),
                                 nodes: isSelected(page, in: group) ? store.nodes : [],
                                 selectedNodeID: $store.selectedNodeID,
+                                editingPageID: $editingPageID,
                                 icon: segment == .components ? .componentDocument : .pageDocument,
                                 onSelect: {
                                     select(page, in: group)
@@ -1003,6 +1082,14 @@ private struct PageLayerListView: View {
                                 },
                                 onSelectNode: { nodeID in
                                     store.selectNode(id: nodeID)
+                                },
+                                onRenameNode: { node, value in
+                                    store.selectNode(id: node.id)
+                                    store.updateNodeDisplayID(value: value)
+                                },
+                                onRenamePageFile: { value in
+                                    select(page, in: group)
+                                    store.updatePageFilename(internalID: page.internalID, segment: segment, value: value)
                                 },
                                 nodeReferenceID: { node in
                                     store.nodeReferenceID(forNodeID: node.editTargetNodeID, nodeInternalID: node.internalID)
@@ -1245,6 +1332,22 @@ private struct PageLayerListView: View {
         }
     }
 
+    /// 論理名（日本語）: グループ表示名更新関数
+    /// 処理概要: セグメントに応じて Chapter または Collection の表示名を `.ogp` へ保存します。
+    ///
+    /// - Parameters:
+    ///   - group: 更新対象の Chapter / Collection。
+    ///   - value: Sidebar で入力された表示名。
+    private func rename(_ group: SidebarPageGroup, value: String) {
+        select(group)
+        switch segment {
+        case .pages:
+            store.updateChapterTitle(internalID: group.internalID, value: value)
+        case .components:
+            store.updateCollectionTitle(internalID: group.internalID, value: value)
+        }
+    }
+
     /// 論理名（日本語）: HTMLカード選択関数
     /// 処理概要: 所属 Chapter / Collection を選択してから通常 page または component master を選択します。
     ///
@@ -1354,12 +1457,15 @@ private struct PageLayerListView: View {
 /// - `isExpanded`: レイヤー階層を展開中か。
 /// - `nodes`: 選択中 HTML から収集された DOM ノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
+/// - `editingPageID`: 現在ファイル名編集中の HTML カード内部 ID。
 /// - `icon`: 見出しに表示するアイコン。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onToggle`: 展開切替時に呼び出す処理。
 /// - `onCopyReferenceID`: HTML カード参照 ID コピー時に呼び出す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
 /// - `onSelectNode`: DOM node 選択時に呼び出す処理。
+/// - `onRenameNode`: DOM node 名変更時に呼び出す処理。
+/// - `onRenamePageFile`: HTML カードのファイル名変更時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct PageLayerCard: View {
     var page: OpenGraphitePage
@@ -1367,13 +1473,18 @@ private struct PageLayerCard: View {
     var isExpanded: Bool
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
+    @Binding var editingPageID: String?
     var icon: OpenGraphiteIcon
     var onSelect: () -> Void
     var onToggle: () -> Void
     var onCopyReferenceID: () -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
     var onSelectNode: (String) -> Void
+    var onRenameNode: (OpenGraphiteNode, String) -> Void
+    var onRenamePageFile: (String) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
+    @State private var draftFileName = ""
+    @FocusState private var isFileNameFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1387,31 +1498,64 @@ private struct PageLayerCard: View {
                 .foregroundStyle(.secondary)
                 .help(isExpanded ? "Collapse" : "Expand")
 
-                Button(action: onSelect) {
-                    HStack(spacing: 9) {
-                        OpenGraphiteIconView(icon: icon, size: 14)
-                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
-                            .frame(width: 18, height: 18)
+                HStack(spacing: 9) {
+                    OpenGraphiteIconView(icon: icon, size: 14)
+                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                        .frame(width: 18, height: 18)
 
-                        VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if isFileNameEditing {
+                            TextField("", text: $draftFileName)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                                .focused($isFileNameFieldFocused)
+                                .onSubmit {
+                                    commitFileNameEdit()
+                                }
+                                .onExitCommand {
+                                    cancelFileNameEdit()
+                                }
+                        } else {
                             Text(page.displayName)
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
-
-                            Text(page.path)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
                         }
 
-                        Spacer(minLength: 0)
+                        Text(page.path)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture(count: 2)
+                        .onEnded {
+                            beginFileNameEdit()
+                        }
+                )
+                .onTapGesture(perform: onSelect)
+                .onChange(of: isFileNameEditing) { _, newValue in
+                    if newValue {
+                        draftFileName = page.displayName
+                        Task { @MainActor in
+                            isFileNameFieldFocused = true
+                        }
+                    } else {
+                        isFileNameFieldFocused = false
+                    }
+                }
+                .onChange(of: isFileNameFieldFocused) { _, newValue in
+                    if !newValue, isFileNameEditing {
+                        commitFileNameEdit()
+                    }
+                }
                 .contextMenu {
                     Button("参照IDをコピー", action: onCopyReferenceID)
                 }
@@ -1431,6 +1575,7 @@ private struct PageLayerCard: View {
                     selectedNodeID: $selectedNodeID,
                     onSelectNode: onSelectNode,
                     onCopyNodeReferenceID: onCopyNodeReferenceID,
+                    onRenameNode: onRenameNode,
                     nodeReferenceID: nodeReferenceID
                 )
                 .padding(.leading, 8)
@@ -1451,6 +1596,36 @@ private struct PageLayerCard: View {
             Button("参照IDをコピー", action: onCopyReferenceID)
         }
     }
+
+    private var isFileNameEditing: Bool {
+        editingPageID == page.internalID
+    }
+
+    /// 論理名（日本語）: HTMLカードファイル名編集開始関数
+    /// 処理概要: HTML カードを選択してから、Page / Component ファイル名のインライン編集へ切り替えます。
+    private func beginFileNameEdit() {
+        onSelect()
+        draftFileName = page.displayName
+        editingPageID = page.internalID
+    }
+
+    /// 論理名（日本語）: HTMLカードファイル名編集確定関数
+    /// 処理概要: 入力されたファイル名を親へ渡し、インライン編集状態を終了します。
+    private func commitFileNameEdit() {
+        let nextFileName = draftFileName
+        editingPageID = nil
+        isFileNameFieldFocused = false
+        guard nextFileName.trimmingCharacters(in: .whitespacesAndNewlines) != page.displayName else { return }
+        onRenamePageFile(nextFileName)
+    }
+
+    /// 論理名（日本語）: HTMLカードファイル名編集キャンセル関数
+    /// 処理概要: draft を現在のファイル名に戻し、保存せずインライン編集状態を終了します。
+    private func cancelFileNameEdit() {
+        draftFileName = page.displayName
+        editingPageID = nil
+        isFileNameFieldFocused = false
+    }
 }
 
 /// 論理名（日本語）: レイヤーアウトライン内容ビュー
@@ -1461,13 +1636,16 @@ private struct PageLayerCard: View {
 /// - `selectedNodeID`: 選択中ノード ID のバインディング。
 /// - `onSelectNode`: DOM node 選択時に呼び出す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
+/// - `onRenameNode`: DOM node 名変更時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct LayerOutlineContentView: View {
     var nodes: [OpenGraphiteNode]
     @Binding var selectedNodeID: String?
     @State private var expandedNodeIDs: Set<String> = []
+    @State private var editingNodeID: String?
     var onSelectNode: (String) -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
+    var onRenameNode: (OpenGraphiteNode, String) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
 
     var body: some View {
@@ -1482,6 +1660,10 @@ private struct LayerOutlineContentView: View {
                     },
                     onSelect: {
                         onSelectNode(row.id)
+                    },
+                    editingNodeID: $editingNodeID,
+                    onRename: { value in
+                        onRenameNode(row.node, value)
                     },
                     onCopyReferenceID: {
                         onSelectNode(row.id)
@@ -1690,7 +1872,7 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 }
 
 /// 論理名（日本語）: レイヤー行ビュー
-/// 概要: レイヤーの展開ボタン、種別アイコン、タグ名、詳細行を一行に表示します。
+/// 概要: レイヤーの展開ボタン、種別アイコン、表示 ID、詳細行を一行に表示します。
 ///
 /// プロパティ:
 /// - `row`: 表示するレイヤー行モデル。
@@ -1698,6 +1880,8 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 /// - `isSelected`: 現在選択中の行か。
 /// - `onToggle`: 展開切替処理。
 /// - `onSelect`: 選択処理。
+/// - `editingNodeID`: 現在名前編集中のノード ID。
+/// - `onRename`: 名前確定時の更新処理。
 /// - `onCopyReferenceID`: 参照 ID コピー処理。
 private struct LayerRow: View {
     var row: VisibleLayerRow
@@ -1705,7 +1889,11 @@ private struct LayerRow: View {
     var isSelected: Bool
     var onToggle: () -> Void
     var onSelect: () -> Void
+    @Binding var editingNodeID: String?
+    var onRename: (String) -> Void
     var onCopyReferenceID: () -> Void
+    @State private var draftName = ""
+    @FocusState private var isNameFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1730,10 +1918,25 @@ private struct LayerRow: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.node.tagName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                Text("\(row.node.displayID) · \(row.node.detailLine)")
+                if isEditing {
+                    TextField("", text: $draftName)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .focused($isNameFieldFocused)
+                        .onSubmit {
+                            commitNameEdit()
+                        }
+                        .onExitCommand {
+                            cancelNameEdit()
+                        }
+                } else {
+                    Text(row.node.displayID)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                }
+
+                Text(detailText)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -1751,11 +1954,68 @@ private struct LayerRow: View {
             RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                 .fill(isSelected ? EditorColumnStyle.selectedRowFill : Color.clear)
         )
+        .highPriorityGesture(
+            TapGesture(count: 2)
+                .onEnded {
+                    beginNameEdit()
+                }
+        )
         .onTapGesture(perform: onSelect)
+        .onChange(of: isEditing) { _, newValue in
+            if newValue {
+                draftName = row.node.displayID
+                Task { @MainActor in
+                    isNameFieldFocused = true
+                }
+            } else {
+                isNameFieldFocused = false
+            }
+        }
+        .onChange(of: isNameFieldFocused) { _, newValue in
+            if !newValue, isEditing {
+                commitNameEdit()
+            }
+        }
         .contextMenu {
             Button("参照IDをコピー", action: onCopyReferenceID)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var isEditing: Bool {
+        editingNodeID == row.id
+    }
+
+    private var detailText: String {
+        [row.node.tagName, row.node.detailLine]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    /// 論理名（日本語）: 名前編集開始関数
+    /// 処理概要: レイヤー行を選択してから、表示 ID のインライン編集状態へ切り替えます。
+    private func beginNameEdit() {
+        onSelect()
+        draftName = row.node.displayID
+        editingNodeID = row.id
+    }
+
+    /// 論理名（日本語）: 名前編集確定関数
+    /// 処理概要: 入力された表示 ID を親へ渡し、インライン編集状態を終了します。
+    private func commitNameEdit() {
+        let nextName = draftName
+        editingNodeID = nil
+        isNameFieldFocused = false
+        guard nextName.trimmingCharacters(in: .whitespacesAndNewlines) != row.node.displayID else { return }
+        onRename(nextName)
+    }
+
+    /// 論理名（日本語）: 名前編集キャンセル関数
+    /// 処理概要: draft を現在の表示 ID に戻し、保存せずインライン編集状態を終了します。
+    private func cancelNameEdit() {
+        draftName = row.node.displayID
+        editingNodeID = nil
+        isNameFieldFocused = false
     }
 
 }
