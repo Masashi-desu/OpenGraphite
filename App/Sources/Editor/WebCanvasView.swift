@@ -144,16 +144,15 @@ final class WebScrollStateRegistry {
 }
 
 /// 論理名（日本語）: Webキャンバス編集オーバーレイ
-/// 概要: WebView 上に重ねて表示するフレーム配置 preview または選択枠の描画情報です。
+/// 概要: WebView 上に重ねて表示するフレーム配置 preview の描画情報です。
 ///
 /// プロパティ:
 /// - `rect`: WebView client 座標上の矩形。
 /// - `label`: 矩形左上に表示する補助ラベル。
-/// - `style`: preview / selection の描画種別。
+/// - `style`: preview の描画種別。
 private struct WebCanvasEditingOverlay {
     enum Style {
         case placementPreview
-        case selectedFrame
     }
 
     var rect: CGRect
@@ -162,7 +161,7 @@ private struct WebCanvasEditingOverlay {
 }
 
 /// 論理名（日本語）: Webキャンバス編集オーバーレイView
-/// 概要: 透明な HTML frame でも実態が見えるよう、WKWebView の最前面で編集用矩形を描画します。
+/// 概要: DOM pointer event が届かない frame 配置操作でも実態が見えるよう、WKWebView の最前面で編集用矩形を描画します。
 private final class WebCanvasEditingOverlayView: NSView {
     var overlays: [WebCanvasEditingOverlay] = [] {
         didSet {
@@ -183,7 +182,7 @@ private final class WebCanvasEditingOverlayView: NSView {
     }
 
     /// 論理名（日本語）: オーバーレイ描画関数
-    /// 処理概要: preview と selected node の矩形、塗り、補助ラベルを描画します。
+    /// 処理概要: frame 配置 preview の矩形、塗り、補助ラベルを描画します。
     ///
     /// - Parameter dirtyRect: 再描画対象矩形。
     override func draw(_ dirtyRect: NSRect) {
@@ -208,11 +207,6 @@ private final class WebCanvasEditingOverlayView: NSView {
             NSColor.systemBlue.withAlphaComponent(0.16).setFill()
             path.fill()
             NSColor.systemBlue.withAlphaComponent(0.95).setStroke()
-            path.lineWidth = 2
-        case .selectedFrame:
-            NSColor.systemBlue.withAlphaComponent(0.07).setFill()
-            path.fill()
-            NSColor.systemBlue.setStroke()
             path.lineWidth = 2
         }
         path.stroke()
@@ -273,7 +267,6 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     private var framePlacementPreviewStartPoint: CGPoint?
     private var framePlacementPreviewDidBegin = false
     private var framePlacementPreviewOverlay: WebCanvasEditingOverlay?
-    private var selectedFrameOverlay: WebCanvasEditingOverlay?
 
     /// 論理名（日本語）: WebView不透明判定
     /// 概要: WebKit の未描画期間に親キャンバス背景を透過表示するため、常に非不透明 view として扱います。
@@ -346,24 +339,6 @@ private final class OpenGraphiteCommandWebView: WKWebView {
         super.mouseUp(with: event)
     }
 
-    /// 論理名（日本語）: 選択ノードオーバーレイ表示関数
-    /// 処理概要: JS から得た selected frame / icon の client 矩形を WebView 上の AppKit overlay として表示します。
-    ///
-    /// - Parameters:
-    ///   - rect: WebView client 座標上の selected node 矩形。
-    ///   - label: 選択対象を示す補助ラベル。
-    func showSelectedFrameOverlay(rect: CGRect, label: String) {
-        selectedFrameOverlay = WebCanvasEditingOverlay(rect: rect, label: label, style: .selectedFrame)
-        refreshEditingOverlays()
-    }
-
-    /// 論理名（日本語）: 選択ノードオーバーレイ非表示関数
-    /// 処理概要: selected frame / icon 用 AppKit overlay を消去します。
-    func hideSelectedFrameOverlay() {
-        selectedFrameOverlay = nil
-        refreshEditingOverlays()
-    }
-
     /// 論理名（日本語）: アクティブツール反映関数
     /// 処理概要: SwiftUI 側の canvas tool を native overlay の制御にも反映します。
     ///
@@ -381,7 +356,6 @@ private final class OpenGraphiteCommandWebView: WKWebView {
         framePlacementPreviewStartPoint = nil
         framePlacementPreviewDidBegin = false
         framePlacementPreviewOverlay = nil
-        selectedFrameOverlay = nil
         refreshEditingOverlays()
     }
 
@@ -454,11 +428,11 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     }
 
     /// 論理名（日本語）: 編集オーバーレイ更新関数
-    /// 処理概要: preview と selected node の overlay をまとめて描画 view へ反映します。
+    /// 処理概要: native fallback が必要な frame 配置 preview overlay を描画 view へ反映します。
     private func refreshEditingOverlays() {
         ensureEditingOverlayView()
         layoutEditingOverlay()
-        editingOverlayView.overlays = [framePlacementPreviewOverlay, selectedFrameOverlay].compactMap { $0 }
+        editingOverlayView.overlays = [framePlacementPreviewOverlay].compactMap { $0 }
     }
 
     /// 論理名（日本語）: フレーム配置preview追跡開始関数
@@ -1518,22 +1492,12 @@ struct WebCanvasView: NSViewRepresentable {
             let script = """
             (function() {
               if (!window.OpenGraphite || typeof window.OpenGraphite.selectNode !== 'function') {
-                return { selected: false, frame: null };
+                return false;
               }
-              const selected = window.OpenGraphite.selectNode(\(idLiteral));
-              if (!selected || typeof window.OpenGraphite.selectedFrameOverlayPayload !== 'function') {
-                return { selected: !!selected, frame: null };
-              }
-              return { selected: true, frame: window.OpenGraphite.selectedFrameOverlayPayload() };
+              return !!window.OpenGraphite.selectNode(\(idLiteral));
             })();
             """
-            webView.evaluateJavaScript(script) { [weak self, weak webView] result, _ in
-                guard let self, let webView else { return }
-                Task { @MainActor in
-                    guard self.store.selectedNodeID == id else { return }
-                    self.applySelectedFrameOverlayPayload(result, to: webView)
-                }
-            }
+            webView.evaluateJavaScript(script, completionHandler: nil)
         }
 
         @MainActor
@@ -1547,36 +1511,6 @@ struct WebCanvasView: NSViewRepresentable {
             (webView as? OpenGraphiteCommandWebView)?.setActiveToolRawValue(tool.rawValue)
             webView.evaluateJavaScript(
                 "window.OpenGraphite && window.OpenGraphite.setActiveTool(\(Self.javaScriptLiteral(tool.rawValue)));"
-            )
-        }
-
-        /// 論理名（日本語）: 選択ノードオーバーレイpayload反映関数
-        /// 処理概要: JavaScript から返された selected frame / icon rect を AppKit overlay へ変換します。
-        ///
-        /// - Parameters:
-        ///   - result: `selectedFrameOverlayPayload` を含む JavaScript 戻り値。
-        ///   - webView: overlay を表示する WebView。
-        private func applySelectedFrameOverlayPayload(_ result: Any?, to webView: WKWebView) {
-            guard let commandWebView = webView as? OpenGraphiteCommandWebView,
-                  let payload = result as? [String: Any],
-                  let frame = payload["frame"] as? [String: Any],
-                  let x = frame["x"] as? Double,
-                  let y = frame["y"] as? Double,
-                  let width = frame["width"] as? Double,
-                  let height = frame["height"] as? Double,
-                  width > 0,
-                  height > 0
-            else {
-                (webView as? OpenGraphiteCommandWebView)?.hideSelectedFrameOverlay()
-                return
-            }
-
-            let id = (frame["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let labelPrefix = id?.isEmpty == false ? id! : "frame"
-            let label = "\(labelPrefix) \(Int(width.rounded())) x \(Int(height.rounded()))"
-            commandWebView.showSelectedFrameOverlay(
-                rect: CGRect(x: x, y: y, width: width, height: height),
-                label: label
             )
         }
 
@@ -2325,10 +2259,9 @@ struct WebCanvasView: NSViewRepresentable {
             '[data-og-frame-placement-overlay="true"],[data-og-selection-overlay="true"]{box-sizing:border-box!important;contain:layout style paint!important;position:fixed!important;}',
             '[data-og-frame-placement-overlay="true"]{background:rgba(29,155,240,.16)!important;border:1px solid #60a5fa!important;box-shadow:0 0 0 1px rgba(29,155,240,.92),0 12px 30px rgba(29,155,240,.22)!important;z-index:2147483647!important;}',
             '[data-og-selection-overlay="true"]{background:rgba(29,155,240,.055)!important;border:1px solid #1d9bf0!important;box-shadow:0 0 0 1px rgba(29,155,240,.5),0 0 0 1px rgba(29,155,240,.35) inset!important;z-index:2147483646!important;}',
-            '[data-og-frame-placement-overlay="true"]::after,[data-og-selection-overlay="true"]::after{background:#0a84ff;border-radius:4px;color:#fff;display:block;font:600 10px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;left:-1px;max-width:260px;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;top:-21px;white-space:nowrap;}',
+            '[data-og-frame-placement-overlay="true"]::after{background:#0a84ff;border-radius:4px;color:#fff;display:block;font:600 10px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;left:-1px;max-width:260px;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;top:-21px;white-space:nowrap;}',
             '[data-og-frame-placement-overlay="true"]::after{content:attr(data-og-placement-label);}',
-            '[data-og-selection-overlay="true"]::after{content:attr(data-og-selection-label);}',
-            '[data-og-frame-placement-overlay="true"][data-og-overlay-label-position="inside"]::after,[data-og-selection-overlay="true"][data-og-overlay-label-position="inside"]::after{left:2px;top:2px;}'
+            '[data-og-frame-placement-overlay="true"][data-og-overlay-label-position="inside"]::after{left:2px;top:2px;}'
           ].join('');
           (document.head || document.documentElement).appendChild(style);
         }
@@ -2621,10 +2554,6 @@ struct WebCanvasView: NSViewRepresentable {
           }
         }
 
-        function roundedPixel(value) {
-          return Math.max(0, Math.round(value * 10) / 10);
-        }
-
         function overlayLabelPositionFor(rect) {
           return rect && rect.top < 24 ? 'inside' : 'outside';
         }
@@ -2756,11 +2685,7 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           const overlay = ensureSelectionOverlay();
-          const id = elementID(element) || element.tagName.toLowerCase();
-          overlay.setAttribute(
-            'data-og-selection-label',
-            id + ' - ' + roundedPixel(rect.width) + ' x ' + roundedPixel(rect.height)
-          );
+          overlay.removeAttribute('data-og-selection-label');
           setFixedOverlayRect(overlay, rect);
         }
 
