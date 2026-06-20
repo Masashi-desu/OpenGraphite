@@ -70,6 +70,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var staticFlowLinksByPageURL: [URL: [OpenGraphiteStaticFlowLink]] = [:]
 
     private let loader: ProjectLoader
+    private let projectCreator: ProjectCreator
     private let sampleProjectLocator: SampleProjectLocator
     private let currentProjectStore: OpenGraphiteCurrentProjectStore?
     private var mutationSequence = 0
@@ -92,13 +93,17 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameters:
     ///   - loader: `.ogp` 読み込みに使う loader。
+    ///   - projectCreator: 新規 `.ogp` 作成に使う creator。
     ///   - sampleProjectLocator: Open Sample Project の解決に使う locator。
+    ///   - currentProjectStore: 現在開いている `.ogp` の共有状態保存先。
     init(
         loader: ProjectLoader = ProjectLoader(),
+        projectCreator: ProjectCreator = ProjectCreator(),
         sampleProjectLocator: SampleProjectLocator = SampleProjectLocator(),
         currentProjectStore: OpenGraphiteCurrentProjectStore? = nil
     ) {
         self.loader = loader
+        self.projectCreator = projectCreator
         self.sampleProjectLocator = sampleProjectLocator
         self.currentProjectStore = currentProjectStore ?? (Self.isRunningTests ? nil : OpenGraphiteCurrentProjectStore())
     }
@@ -929,6 +934,26 @@ final class EditorStore: ObservableObject {
     /// - Returns: WebView が比較する reload token。
     func reloadToken(for pageURL: URL) -> Int {
         pageReloadTokensByURL[pageURL] ?? 0
+    }
+
+    /// 論理名（日本語）: パネル経由プロジェクト作成関数
+    /// 処理概要: 保存パネルから新規 `.ogp` の作成先を選ばせ、作成後に読み込みます。
+    func createProjectWithPanel() {
+        guard let url = ProjectDialogs.createProjectURL() else { return }
+        createProject(at: url)
+    }
+
+    /// 論理名（日本語）: プロジェクト作成関数
+    /// 処理概要: 指定された URL に新規 `.ogp` と初期 HTML/CSS を作成し、作成した project を開きます。
+    ///
+    /// - Parameter url: 新規 `.ogp` の作成先 URL。
+    func createProject(at url: URL) {
+        do {
+            let projectURL = try projectCreator.createProject(at: url)
+            openProject(at: projectURL)
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     /// 論理名（日本語）: サンプルプロジェクトオープン関数

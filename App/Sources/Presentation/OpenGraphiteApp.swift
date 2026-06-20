@@ -31,6 +31,13 @@ struct OpenGraphiteApp: App {
         .windowToolbarStyle(UnifiedWindowToolbarStyle(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {
+                Button("New Project...") {
+                    store.createProjectWithPanel()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+
+                Divider()
+
                 Button("Open Project...") {
                     store.openProjectWithPanel()
                 }

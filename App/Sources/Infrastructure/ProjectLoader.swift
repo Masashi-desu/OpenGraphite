@@ -5,19 +5,15 @@ import Foundation
 ///
 /// 定義内容:
 /// - `missingChapters`: `.ogp` に chapters も collections も定義されていない状態。
-/// - `missingPages`: `.ogp` の chapters と collections に表示対象 HTML が定義されていない状態。
 /// - `missingHTML`: 先頭ページの HTML ファイルが存在しない状態。
 enum ProjectLoadError: LocalizedError {
     case missingChapters
-    case missingPages
     case missingHTML(URL)
 
     var errorDescription: String? {
         switch self {
         case .missingChapters:
             return ".ogp に chapters または collections がありません。"
-        case .missingPages:
-            return ".ogp の chapters または collections に表示対象 HTML がありません。"
         case .missingHTML(let url):
             return "HTMLが見つかりません: \(url.path)"
         }
@@ -31,7 +27,7 @@ enum ProjectLoadError: LocalizedError {
 /// - `loadProject(at:)`: `.ogp` を読み込んで検証済みプロジェクトを返します。
 struct ProjectLoader {
     /// 論理名（日本語）: プロジェクト読み込み関数
-    /// 処理概要: `.ogp` をデコードし、pages/collections、先頭 HTML の存在を検証して読み込み済みモデルを返します。
+    /// 処理概要: `.ogp` をデコードし、chapters/collections と登録済み先頭 HTML の存在を検証して読み込み済みモデルを返します。
     ///
     /// - Parameter fileURL: 読み込む `.ogp` ファイルの URL。
     /// - Returns: HTML 参照ルートを解決した読み込み済みプロジェクト。
@@ -42,9 +38,6 @@ struct ProjectLoader {
         guard !project.chapters.isEmpty || !project.collections.isEmpty else {
             throw ProjectLoadError.missingChapters
         }
-        guard !project.allPages.isEmpty else {
-            throw ProjectLoadError.missingPages
-        }
 
         let projectDirectory = fileURL.deletingLastPathComponent()
         let rootURL = resolvedRootURL(from: project.repositoryRoot, relativeTo: projectDirectory)
@@ -54,9 +47,11 @@ struct ProjectLoader {
             rootURL: rootURL
         )
 
-        let firstHTML = loadedProject.htmlURL(for: project.allPages[0])
-        guard FileManager.default.fileExists(atPath: firstHTML.path) else {
-            throw ProjectLoadError.missingHTML(firstHTML)
+        if let firstPage = project.allPages.first {
+            let firstHTML = loadedProject.htmlURL(for: firstPage)
+            guard FileManager.default.fileExists(atPath: firstHTML.path) else {
+                throw ProjectLoadError.missingHTML(firstHTML)
+            }
         }
 
         return loadedProject

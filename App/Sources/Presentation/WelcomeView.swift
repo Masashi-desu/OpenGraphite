@@ -21,11 +21,18 @@ struct WelcomeView: View {
 
             HStack(spacing: 12) {
                 Button {
+                    store.createProjectWithPanel()
+                } label: {
+                    Label("New Project", systemImage: "doc.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
                     store.openSampleProject()
                 } label: {
                     Label("Open Sample Project", systemImage: "play.rectangle")
                 }
-                .buttonStyle(.borderedProminent)
                 .controlSize(.large)
 
                 Button {

@@ -147,25 +147,21 @@ struct ProjectLoaderTests {
         #expect(!pageInternalIDs.contains("page-home"))
     }
 
-    /// 論理名（日本語）: ページ未定義エラーテスト
-    /// 概要: pages が空の .ogp を読み込んだときに missingPages が発生することを検証します。
-    @Test("pagesが空ならmissingPagesを返す")
-    func testLoadProjectThrowsMissingPages() throws {
+    /// 論理名（日本語）: ページ未定義プロジェクト読み込みテスト
+    /// 概要: 既存 project 導入用に pages が空の `.ogp` でも読み込めることを検証します。
+    @Test("pagesが空でもprojectを読み込める")
+    func testLoadProjectAllowsEmptyPages() throws {
         // コンディション：pages が空の .ogp を用意する
         let fixture = try ProjectLoaderFixture()
         let projectURL = fixture.rootURL.appendingPathComponent("Empty.ogp")
         try fixture.writeProject(repositoryRoot: nil, pages: [], to: projectURL)
 
-        // 検証内容：プロジェクト読み込み時の例外を確認する
-        do {
-            _ = try ProjectLoader().loadProject(at: projectURL)
-            Issue.record("missingPages が発生する必要があります。")
-        } catch ProjectLoadError.missingPages {
-            // 期待値：missingPages が発生する
-            #expect(true)
-        } catch {
-            Issue.record("想定外のエラーです: \(error)")
-        }
+        // 検証内容：プロジェクトを読み込む
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+
+        // 期待値：HTML 存在検証は行われず、空 Chapter のまま読み込める
+        #expect(loadedProject.project.chapters.count == 1)
+        #expect(loadedProject.project.allPages.isEmpty)
     }
 
     /// 論理名（日本語）: HTML未検出エラーテスト
