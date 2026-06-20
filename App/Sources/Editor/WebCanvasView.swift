@@ -183,7 +183,7 @@ private final class WebCanvasEditingOverlayView: NSView {
     }
 
     /// 論理名（日本語）: オーバーレイ描画関数
-    /// 処理概要: preview と selected frame の矩形、塗り、補助ラベルを描画します。
+    /// 処理概要: preview と selected node の矩形、塗り、補助ラベルを描画します。
     ///
     /// - Parameter dirtyRect: 再描画対象矩形。
     override func draw(_ dirtyRect: NSRect) {
@@ -346,19 +346,19 @@ private final class OpenGraphiteCommandWebView: WKWebView {
         super.mouseUp(with: event)
     }
 
-    /// 論理名（日本語）: 選択フレームオーバーレイ表示関数
-    /// 処理概要: JS から得た selected frame の client 矩形を WebView 上の AppKit overlay として表示します。
+    /// 論理名（日本語）: 選択ノードオーバーレイ表示関数
+    /// 処理概要: JS から得た selected frame / icon の client 矩形を WebView 上の AppKit overlay として表示します。
     ///
     /// - Parameters:
-    ///   - rect: WebView client 座標上の selected frame 矩形。
+    ///   - rect: WebView client 座標上の selected node 矩形。
     ///   - label: 選択対象を示す補助ラベル。
     func showSelectedFrameOverlay(rect: CGRect, label: String) {
         selectedFrameOverlay = WebCanvasEditingOverlay(rect: rect, label: label, style: .selectedFrame)
         refreshEditingOverlays()
     }
 
-    /// 論理名（日本語）: 選択フレームオーバーレイ非表示関数
-    /// 処理概要: selected frame 用 AppKit overlay を消去します。
+    /// 論理名（日本語）: 選択ノードオーバーレイ非表示関数
+    /// 処理概要: selected frame / icon 用 AppKit overlay を消去します。
     func hideSelectedFrameOverlay() {
         selectedFrameOverlay = nil
         refreshEditingOverlays()
@@ -454,7 +454,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     }
 
     /// 論理名（日本語）: 編集オーバーレイ更新関数
-    /// 処理概要: preview と selected frame の overlay をまとめて描画 view へ反映します。
+    /// 処理概要: preview と selected node の overlay をまとめて描画 view へ反映します。
     private func refreshEditingOverlays() {
         ensureEditingOverlayView()
         layoutEditingOverlay()
@@ -1550,8 +1550,8 @@ struct WebCanvasView: NSViewRepresentable {
             )
         }
 
-        /// 論理名（日本語）: 選択フレームオーバーレイpayload反映関数
-        /// 処理概要: JavaScript から返された selected frame rect を AppKit overlay へ変換します。
+        /// 論理名（日本語）: 選択ノードオーバーレイpayload反映関数
+        /// 処理概要: JavaScript から返された selected frame / icon rect を AppKit overlay へ変換します。
         ///
         /// - Parameters:
         ///   - result: `selectedFrameOverlayPayload` を含む JavaScript 戻り値。
@@ -2726,9 +2726,14 @@ struct WebCanvasView: NSViewRepresentable {
           }
         }
 
+        function isSelectionOverlayElement(element) {
+          const type = element ? element.getAttribute('data-og-type') || '' : '';
+          return type === 'frame' || type === 'icon';
+        }
+
         function selectionOverlayTarget() {
           const element = selectedElement();
-          if (!element || element.getAttribute('data-og-type') !== 'frame') {
+          if (!isSelectionOverlayElement(element)) {
             return null;
           }
           return element;
