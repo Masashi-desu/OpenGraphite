@@ -45,7 +45,13 @@ final class EditorStore: ObservableObject {
             inspectorSectionOpenRequest = nil
         }
     }
-    @Published private(set) var nodes: [OpenGraphiteNode] = []
+    @Published private(set) var nodes: [OpenGraphiteNode] = [] {
+        didSet {
+            if nodes.isEmpty {
+                cssVariableBaselinesByInternalID = [:]
+            }
+        }
+    }
     @Published var selectedNodeID: String? {
         didSet {
             guard oldValue != selectedNodeID else { return }
@@ -80,6 +86,7 @@ final class EditorStore: ObservableObject {
     private var inspectorSectionOpenRequestSequence = 0
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
+    private var cssVariableBaselinesByInternalID: [String: [String: String]] = [:]
     private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
@@ -1750,10 +1757,16 @@ final class EditorStore: ObservableObject {
     /// - Parameter payload: DOM から収集されたノード辞書の配列。
     func ingestNodePayload(_ payload: [[String: Any]]) {
         let sourceNodes = sourceNodesByInternalIDForCurrentTarget()
+        var nextCSSVariableBaselines: [String: [String: String]] = [:]
         nodes = payload.compactMap { dictionary in
             let internalID = dictionary["internalID"] as? String ?? ""
-            return Self.node(from: dictionary, sourceNode: sourceNodes[internalID])
+            let sourceNode = sourceNodes[internalID]
+            if !internalID.isEmpty, let sourceNode {
+                nextCSSVariableBaselines[internalID] = sourceNode.cssVariables
+            }
+            return Self.node(from: dictionary, sourceNode: sourceNode)
         }
+        cssVariableBaselinesByInternalID = nextCSSVariableBaselines
 
         if let selectedNodeID, !nodes.contains(where: { $0.id == selectedNodeID }) {
             self.selectedNodeID = nil
@@ -1779,7 +1792,12 @@ final class EditorStore: ObservableObject {
             return
         }
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expectedOldValue = selectedNode.cssVariables[key] ?? ""
+        let selectedOldValue = selectedNode.cssVariables[key] ?? ""
+        let expectedOldValue = expectedOldCSSVariableValue(
+            for: selectedNode,
+            key: key,
+            fallback: selectedOldValue
+        )
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             let currentValue = nodes[index].cssVariables[key] ?? ""
@@ -3148,6 +3166,60 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: CSS宣言期待旧値取得関数
+    /// 処理概要: Inspector 表示由来の既定値ではなく、payload 取り込み時に正本 CSS に存在した値を編集基準として返します。
+    ///
+    /// - Parameters:
+    ///   - node: 対象 node。
+    ///   - key: 更新する CSS property または OpenGraphite 予約 custom property 名。
+    ///   - fallback: 正本 baseline がない場合に使う旧値。
+    /// - Returns: object edit に渡す期待旧値。
+    private func expectedOldCSSVariableValue(
+        for node: OpenGraphiteNode,
+        key: String,
+        fallback: String
+    ) -> String {
+        guard let baseline = cssVariableBaselinesByInternalID[node.internalID] else {
+            return fallback
+        }
+        return baseline[key] ?? ""
+    }
+
+    /// 論理名（日本語）: CSS宣言baseline更新関数
+    /// 処理概要: companion CSS への保存成功後、次回編集の競合判定に使う正本 baseline を更新します。
+    ///
+    /// - Parameter operation: 保存に成功した object edit operation。
+    private func recordCSSVariableBaselineUpdate(for operation: HTMLObjectEditOperation) {
+        switch operation {
+        case let .setCSSVariable(nodeInternalID, key, value, _):
+            recordCSSVariableBaseline(nodeInternalID: nodeInternalID, key: key, value: value)
+        case let .setCSSVariables(nodeInternalID, values, _):
+            for (key, value) in values {
+                recordCSSVariableBaseline(nodeInternalID: nodeInternalID, key: key, value: value)
+            }
+        default:
+            break
+        }
+    }
+
+    /// 論理名（日本語）: CSS宣言baseline単項更新関数
+    /// 処理概要: 指定 node の CSS declaration について、保存済み baseline 値を追加・更新・削除します。
+    ///
+    /// - Parameters:
+    ///   - nodeInternalID: 対象 node の `data-og-internal-id`。
+    ///   - key: CSS property または OpenGraphite 予約 custom property 名。
+    ///   - value: 保存後の値。空文字列の場合は declaration 削除として扱います。
+    private func recordCSSVariableBaseline(nodeInternalID: String, key: String, value: String) {
+        guard !nodeInternalID.isEmpty else { return }
+        var baseline = cssVariableBaselinesByInternalID[nodeInternalID] ?? [:]
+        if value.isEmpty {
+            baseline.removeValue(forKey: key)
+        } else {
+            baseline[key] = value
+        }
+        cssVariableBaselinesByInternalID[nodeInternalID] = baseline
+    }
+
     /// 論理名（日本語）: オブジェクト編集基準一致判定関数
     /// 処理概要: 対象 node の旧値または subtree hash が最新ディスク HTML と一致するか確認します。
     ///
@@ -3255,10 +3327,14 @@ final class EditorStore: ObservableObject {
             }
 
             statusMessage = "\(OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL).lastPathComponent) と同期しました。"
-            return HTMLObjectEditResult(
+            let result = HTMLObjectEditResult(
                 updated: lastResult?.updated ?? false,
                 requiresReload: edit.operation.requiresWebViewReload
             )
+            if result.updated {
+                recordCSSVariableBaselineUpdate(for: edit.operation)
+            }
+            return result
         } catch {
             lastError = "CSSの同期に失敗しました: \(error.localizedDescription)"
             return .failed

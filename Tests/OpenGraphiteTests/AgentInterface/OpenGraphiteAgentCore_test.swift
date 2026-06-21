@@ -879,11 +879,16 @@ struct OpenGraphiteAgentCoreTests {
             overwrite: false
         )
         let html = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let css = try fixture.readCompanionCSS()
 
-        // 期待値：HTML file が保存され、page graph も取得できる
+        // 期待値：HTML file と空 companion CSS が保存され、page graph も取得できる
         #expect(result.created == true)
         #expect(html.contains("<title>Created Page</title>"))
         #expect(html.contains("data-og-internal-id="))
+        #expect(css.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        #expect(result.graph?.nodes.first?.cssVariables["background"] == nil)
+        #expect(result.graph?.nodes.first?.cssVariables["color"] == nil)
+        #expect(result.graph?.nodes.first?.cssVariables["min-height"] == nil)
         #expect(result.graph?.nodes.map(\.id) == ["page", "title"])
         #expect(result.graph?.nodes.allSatisfy { !$0.internalID.isEmpty } == true)
         #expect(result.diagnostics.isEmpty)

@@ -455,12 +455,13 @@ struct EditorStoreTests {
         // 検証内容：選択中 Chapter へ page を追加する（When）
         store.addPage()
 
-        // 期待値：新規 HTML と companion CSS が作成され、空 Chapter だった場所に page entry が保存される（Then）
+        // 期待値：新規 HTML と空 companion CSS が作成され、空 Chapter だった場所に page entry が保存される（Then）
         let addedPage = try #require(store.selectedPage)
         let addedChapter = try #require(store.selectedChapter)
         let addedHTMLURL = fixture.publicURL.appendingPathComponent("page-1.html")
         let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
         let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
+        let addedCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
 
         #expect(addedChapter.id == "chapter-1")
         #expect(addedPage.id == "page-1")
@@ -475,6 +476,7 @@ struct EditorStoreTests {
         #expect(FileManager.default.fileExists(atPath: addedCompanionCSSURL.path))
         #expect(addedHTML.contains("<title>page-1.html</title>"))
         #expect(addedHTML.contains(#"data-og-id="page-1-root""#))
+        #expect(addedCSS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         #expect(store.selectedCanvasSegment == .pages)
         #expect(store.lastError == nil)
 
@@ -482,6 +484,150 @@ struct EditorStoreTests {
         #expect(reloadedProject.project.chapters[0].pages.map(\.id) == ["home"])
         #expect(reloadedProject.project.chapters[1].pages.map(\.id) == ["page-1"])
         #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
+    }
+
+    /// 論理名（日本語）: 新規Page root色保存テスト
+    /// 概要: 新規追加した page の初期 companion CSS が空でも、ユーザー操作で page root の色だけを保存できることを検証します。
+    @Test("新規Page rootはユーザー操作でcolorを保存できる")
+    func testAddedPageRootPersistsColorByUserOperation() throws {
+        // コンディション：空 Chapter へ新規 page を追加し、生成直後の companion CSS が空であることを確認する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.addChapter()
+        store.addPage()
+        let addedHTMLURL = fixture.publicURL.appendingPathComponent("page-1.html")
+        let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
+        let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
+        let rootNode = try #require(
+            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.type == "page" }
+        )
+        let initialCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
+        #expect(initialCSS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        // 検証内容：Inspector 相当の操作で page root の color を更新する（When）
+        store.ingestNodePayload([
+            [
+                "id": rootNode.id,
+                "internalID": rootNode.internalID,
+                "tagName": rootNode.tagName,
+                "type": rootNode.type,
+                "layout": rootNode.layout ?? "",
+                "cssVariables": ["color": "rgb(244, 246, 247)"],
+                "depth": rootNode.depth
+            ]
+        ])
+        store.selectNode(id: rootNode.id)
+        store.updateCSSVariable(key: "color", value: "#123456")
+        store.updateCSSVariable(key: "color", value: "#654321")
+
+        // 期待値：ユーザーが指定した color だけが companion CSS に保存される（Then）
+        let updatedCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
+        #expect(store.nodes.first?.cssVariables["color"] == "#654321")
+        #expect(store.cssMutation?.nodeID == rootNode.id)
+        #expect(store.cssMutation?.key == "color")
+        #expect(store.cssMutation?.value == "#654321")
+        #expect(updatedCSS.contains("color: #654321;"))
+        #expect(!updatedCSS.contains("color: #123456;"))
+        #expect(!updatedCSS.contains("background:"))
+        #expect(!updatedCSS.contains("min-height:"))
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 新規Page root CSSパラメータ保存テスト
+    /// 概要: 新規追加した page root で、Inspector に表示される主要 CSS declaration を初期 CSS なしで保存できることを検証します。
+    @Test("新規Page rootはInspectorの主要CSSパラメータを保存できる")
+    func testAddedPageRootPersistsInspectorCSSParametersByUserOperation() throws {
+        // コンディション：空 Chapter へ新規 page を追加し、表示由来の既定 CSS 値を payload として取り込む（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.addChapter()
+        store.addPage()
+        let addedHTMLURL = fixture.publicURL.appendingPathComponent("page-1.html")
+        let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
+        let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
+        let rootNode = try #require(
+            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.type == "page" }
+        )
+        let cases: [(key: String, displayedValue: String, savedValue: String)] = [
+            ("align-items", "stretch", "center"),
+            ("justify-content", "flex-start", "center"),
+            ("gap", "0px", "12px"),
+            ("padding", "0px", "16px"),
+            ("margin", "0px", "4px"),
+            ("flex", "0 1 auto", "1 1 auto"),
+            ("position", "static", "relative"),
+            ("top", "auto", "10px"),
+            ("right", "auto", "20px"),
+            ("bottom", "auto", "30px"),
+            ("left", "auto", "40px"),
+            ("z-index", "auto", "2"),
+            ("width", "auto", "720px"),
+            ("height", "auto", "480px"),
+            ("min-width", "0px", "320px"),
+            ("min-height", "0px", "240px"),
+            ("max-width", "none", "960px"),
+            ("border-radius", "0px", "8px"),
+            ("border", "0px solid transparent", "1px solid #123456"),
+            ("background", "transparent", "#101820"),
+            ("box-shadow", "none", "0 2px 8px rgba(0,0,0,0.2)"),
+            ("transform-origin", "center center", "left top"),
+            ("--og-scale-x", "1", "1.2"),
+            ("--og-scale-y", "1", "0.8"),
+            ("animation-name", "none", "fade-in"),
+            ("animation-duration", "0s", "300ms"),
+            ("animation-delay", "0s", "50ms"),
+            ("animation-timing-function", "ease", "linear"),
+            ("animation-iteration-count", "1", "2"),
+            ("animation-fill-mode", "none", "both"),
+            ("animation-direction", "normal", "alternate"),
+            ("animation-play-state", "running", "paused"),
+            ("animation", "none", "fade-in 300ms ease both"),
+            ("animation-timeline", "auto", "view()"),
+            ("animation-range-start", "normal", "entry 0%"),
+            ("animation-range-end", "normal", "exit 100%"),
+            ("animation-range", "normal", "entry 0% exit 100%"),
+            ("timeline-scope", "none", "--page-scroll"),
+            ("scroll-timeline-name", "none", "--page-scroll"),
+            ("scroll-timeline-axis", "block", "y"),
+            ("scroll-timeline", "none", "--page-scroll y"),
+            ("view-timeline-name", "none", "--page-view"),
+            ("view-timeline-axis", "block", "y"),
+            ("view-timeline-inset", "auto", "10% 20%"),
+            ("view-timeline", "none", "--page-view y")
+        ]
+        let displayedVariables = Dictionary(uniqueKeysWithValues: cases.map { ($0.key, $0.displayedValue) })
+        store.ingestNodePayload([
+            [
+                "id": rootNode.id,
+                "internalID": rootNode.internalID,
+                "tagName": rootNode.tagName,
+                "type": rootNode.type,
+                "layout": rootNode.layout ?? "",
+                "cssVariables": displayedVariables,
+                "depth": rootNode.depth
+            ]
+        ])
+        store.selectNode(id: rootNode.id)
+
+        // 検証内容：Inspector 相当の操作で各 CSS declaration を順に更新する（When）
+        for item in cases {
+            store.updateCSSVariable(key: item.key, value: item.savedValue)
+        }
+
+        // 期待値：各 declaration が companion CSS へ保存され、未保存の表示値が競合扱いされない（Then）
+        let updatedCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
+        for item in cases {
+            #expect(store.nodes.first?.cssVariables[item.key] == item.savedValue)
+            #expect(updatedCSS.contains("\(item.key): \(item.savedValue);"))
+        }
+        #expect(store.cssMutation?.nodeID == rootNode.id)
+        #expect(store.cssMutation?.key == cases.last?.key)
+        #expect(store.cssMutation?.value == cases.last?.savedValue)
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: 既存HTMLのPage追加保存テスト
@@ -1545,6 +1691,51 @@ struct EditorStoreTests {
 
         // 期待値：agent 相当の 24px は上書きされず、再設定を促す簡易エラーが表示される
         #expect(diskCSS.contains("gap: 24px;"))
+        #expect(!diskCSS.contains("gap: 32px;"))
+        #expect(store.cssMutation == nil)
+        #expect(store.lastError == "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。")
+    }
+
+    /// 論理名（日本語）: 同時CSS削除競合拒否テスト
+    /// 概要: agent 相当の同一 CSS declaration 削除が先に入った場合、Inspector 保存で復元上書きしないことを検証します。
+    @Test("同一CSS declarationが外部削除済みならobject editで上書きしない")
+    func testObjectEditRejectsConflictingCSSDeletion() throws {
+        // コンディション：Store が把握した CSS declaration を、別経路の編集で削除済みにする
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              gap: 16px;
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "hero",
+                "internalID": "hero-node",
+                "tagName": "hero",
+                "type": "frame",
+                "cssVariables": ["gap": "16px"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero")
+        try fixture.writeCompanionCSS("")
+
+        // 検証内容：古い Store 状態をもとに削除済み CSS declaration を更新しようとする
+        store.updateCSSVariable(key: "gap", value: "32px")
+        let diskCSS = try fixture.readCompanionCSS()
+
+        // 期待値：削除済み declaration は復元上書きされず、再設定を促す簡易エラーが表示される
+        #expect(!diskCSS.contains("gap: 16px;"))
         #expect(!diskCSS.contains("gap: 32px;"))
         #expect(store.cssMutation == nil)
         #expect(store.lastError == "HTMLが別の編集で更新されています。ページを再読み込みしてからもう一度設定してください。")
