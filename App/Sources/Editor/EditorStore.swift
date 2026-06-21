@@ -599,6 +599,73 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 既存Page追加関数
+    /// 処理概要: `htmlRoot` 配下に存在する HTML file を、現在選択中の Chapter の page entry として `.ogp` へ追加保存します。
+    ///
+    /// - Parameter htmlURL: 追加する既存 HTML file の URL。
+    func addExistingPage(at htmlURL: URL) {
+        guard var loadedProject else { return }
+
+        let pathResult = Self.existingHTMLPath(for: htmlURL, in: loadedProject)
+        guard let pagePath = pathResult.path else {
+            lastError = pathResult.error ?? "追加する HTML file を確認できませんでした。"
+            return
+        }
+        guard !loadedProject.project.allPages.contains(where: { $0.path == pagePath }) else {
+            lastError = "同じ HTML path が既に登録されています: \(pagePath)"
+            return
+        }
+
+        let targetChapterIndex = writableChapterIndex(in: &loadedProject.project)
+        let previousProject = loadedProject.project
+        let pageID = Self.existingPageID(forHTMLPath: pagePath, in: loadedProject.project)
+        let pageCanvas = nextPageCanvas(
+            in: loadedProject.project.chapters[targetChapterIndex],
+            fallbackProject: loadedProject.project
+        )
+        let page = OpenGraphitePage(
+            id: pageID,
+            path: pagePath,
+            canvas: pageCanvas
+        )
+        loadedProject.project.chapters[targetChapterIndex].pages.append(page)
+        let targetChapter = loadedProject.project.chapters[targetChapterIndex]
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            let reloadedProject = try loader.loadProject(at: loadedProject.fileURL)
+            let addedChapter = Self.reloadedChapter(
+                in: reloadedProject.project,
+                matching: targetChapter,
+                fallbackIndex: targetChapterIndex
+            )
+            let addedPage = addedChapter?.pages.first { candidate in
+                candidate.id == pageID && candidate.path == pagePath
+            }
+            guard let addedChapter, let addedPage else {
+                throw NSError(
+                    domain: "OpenGraphite.EditorStore",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "追加した page を再読み込みできませんでした。"]
+                )
+            }
+
+            self.loadedProject = reloadedProject
+            selectedProjectResource = nil
+            selectedCanvasSegment = .pages
+            selectedChapterID = addedChapter.id
+            selectedChapterInternalID = addedChapter.internalID
+            selectPage(internalID: addedPage.internalID)
+            lastError = nil
+            statusMessage = "\(addedPage.displayName) を追加しました。"
+            restartExternalProjectMonitoring(force: true)
+            restartExternalPageMonitoring(force: true)
+        } catch {
+            try? writeProjectManifest(previousProject, to: loadedProject.fileURL)
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
     /// 論理名（日本語）: Chapter表示名更新関数
     /// 処理概要: 指定 Chapter の UI 表示タイトルを `.ogp` に保存し、選択状態を維持したまま反映します。
     ///
@@ -3412,6 +3479,57 @@ final class EditorStore: ObservableObject {
         return project.chapters.startIndex
     }
 
+    /// 論理名（日本語）: 既存HTML path検証関数
+    /// 処理概要: 選択された file URL が project の `htmlRoot` 配下にある HTML file かを確認し、manifest 用の相対 path を返します。
+    ///
+    /// - Parameters:
+    ///   - htmlURL: ユーザーが選択した HTML file URL。
+    ///   - loadedProject: path 解決の基準になる読み込み済み project。
+    /// - Returns: 正常時は `htmlRoot` 相対 path、異常時は error メッセージ。
+    private static func existingHTMLPath(
+        for htmlURL: URL,
+        in loadedProject: LoadedOpenGraphiteProject
+    ) -> (path: String?, error: String?) {
+        guard htmlURL.isFileURL else {
+            return (nil, "追加する HTML は local file である必要があります。")
+        }
+
+        let htmlURL = htmlURL.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: htmlURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue
+        else {
+            return (nil, "追加する HTML が見つかりません: \(htmlURL.path)")
+        }
+        guard htmlURL.pathExtension.lowercased() == "html" else {
+            return (nil, "追加するファイルは .html で終わる必要があります。")
+        }
+
+        let htmlRootURL = loadedProject.rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot, isDirectory: true)
+            .standardizedFileURL
+        let rootPath = htmlRootURL.path
+        let htmlPath = htmlURL.path
+        guard htmlPath.hasPrefix(rootPath + "/") else {
+            return (nil, "追加する HTML は htmlRoot 配下に配置してください: \(htmlPath)")
+        }
+
+        let relativePath = String(htmlPath.dropFirst(rootPath.count + 1))
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"),
+              !relativePath.hasSuffix("/"),
+              !components.contains(""),
+              !components.contains("."),
+              !components.contains(".."),
+              URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "html"
+        else {
+            return (nil, "HTML path は htmlRoot 配下の相対 path である必要があります。")
+        }
+
+        return (relativePath, nil)
+    }
+
     /// 論理名（日本語）: 次Page ID生成関数
     /// 処理概要: 既存 page / component の ID と重複しない `page-N` 形式の ID を返します。
     ///
@@ -3420,6 +3538,23 @@ final class EditorStore: ObservableObject {
     private func nextPageID(in project: OpenGraphiteProject) -> String {
         let usedIDs = Set(project.allPages.map(\.id))
         return Self.nextSequencedID(prefix: "page", usedIDs: usedIDs)
+    }
+
+    /// 論理名（日本語）: 既存HTML用Page ID生成関数
+    /// 処理概要: HTML file 名から manifest 用 ID を生成し、既存 page / component ID と重複する場合は連番 suffix を付けます。
+    ///
+    /// - Parameters:
+    ///   - path: `htmlRoot` から見た HTML path。
+    ///   - project: ID の重複を確認する project manifest。
+    /// - Returns: 既存 HTML 登録に使う page ID。
+    private static func existingPageID(forHTMLPath path: String, in project: OpenGraphiteProject) -> String {
+        let fileStem = URL(fileURLWithPath: path)
+            .deletingPathExtension()
+            .lastPathComponent
+        let preferredID = manifestIDSlug(from: fileStem, fallback: "page")
+        let usedIDs = Set(project.allPages.map(\.id))
+        guard usedIDs.contains(preferredID) else { return preferredID }
+        return nextSequencedID(prefix: preferredID, usedIDs: usedIDs)
     }
 
     /// 論理名（日本語）: 次Page path生成関数
@@ -3480,6 +3615,29 @@ final class EditorStore: ObservableObject {
         return OpenGraphiteCanvas(x: 0, y: 0, width: 1440, height: 1200)
     }
 
+    /// 論理名（日本語）: 再読込Chapter解決関数
+    /// 処理概要: `.ogp` 保存後に再読み込みされた project から、追加先だった Chapter を内部 ID または index で復元します。
+    ///
+    /// - Parameters:
+    ///   - project: 再読み込み後の project manifest。
+    ///   - chapter: 保存前に追加先だった Chapter。
+    ///   - fallbackIndex: 保存前の Chapter index。
+    /// - Returns: 再読み込み後の Chapter。見つからない場合は `nil`。
+    private static func reloadedChapter(
+        in project: OpenGraphiteProject,
+        matching chapter: OpenGraphiteChapter,
+        fallbackIndex: Int
+    ) -> OpenGraphiteChapter? {
+        if !chapter.internalID.isEmpty,
+           let matchedChapter = project.chapters.first(where: { $0.internalID == chapter.internalID }) {
+            return matchedChapter
+        }
+        if project.chapters.indices.contains(fallbackIndex) {
+            return project.chapters[fallbackIndex]
+        }
+        return project.chapters.first { $0.id == chapter.id }
+    }
+
     /// 論理名（日本語）: 連番ID生成関数
     /// 処理概要: 指定 prefix に数値 suffix を付け、既存 ID と衝突しない最初の値を返します。
     ///
@@ -3496,6 +3654,31 @@ final class EditorStore: ObservableObject {
             }
             index += 1
         }
+    }
+
+    /// 論理名（日本語）: Manifest ID slug生成関数
+    /// 処理概要: ファイル名などの任意文字列から page ID として扱いやすい英数字 hyphen 形式の値を生成します。
+    ///
+    /// - Parameters:
+    ///   - value: slug 化する文字列。
+    ///   - fallback: slug が空になった場合に使う値。
+    /// - Returns: manifest ID として使う slug。
+    private static func manifestIDSlug(from value: String, fallback: String) -> String {
+        var slug = ""
+        var previousWasSeparator = false
+
+        for scalar in value.lowercased().unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                slug.append(String(scalar))
+                previousWasSeparator = false
+            } else if !previousWasSeparator {
+                slug.append("-")
+                previousWasSeparator = true
+            }
+        }
+
+        let normalized = slug.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return normalized.isEmpty ? fallback : normalized
     }
 
     /// 論理名（日本語）: Manifest表示名正規化関数

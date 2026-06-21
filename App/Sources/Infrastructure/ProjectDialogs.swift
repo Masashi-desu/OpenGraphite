@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// 定義内容:
 /// - `createProjectURL()`: ユーザーが指定した新規 `.ogp` の URL を返します。
 /// - `openProjectURL()`: ユーザーが選択した `.ogp` の URL を返します。
+/// - `openPageHTMLURL(initialDirectory:)`: 既存 Page HTML の URL を返します。
 @MainActor
 enum ProjectDialogs {
     /// 論理名（日本語）: プロジェクト作成URL選択関数
@@ -35,6 +36,24 @@ enum ProjectDialogs {
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowedContentTypes = [UTType(filenameExtension: "ogp") ?? .json]
+
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// 論理名（日本語）: Page HTML URL選択関数
+    /// 処理概要: `NSOpenPanel` を表示し、既存の `.html` ファイルを単一選択させます。
+    ///
+    /// - Parameter initialDirectory: 初期表示するディレクトリ。通常は project の `htmlRoot`。
+    /// - Returns: 選択された HTML ファイル URL。キャンセル時は `nil`。
+    static func openPageHTMLURL(initialDirectory: URL?) -> URL? {
+        let panel = NSOpenPanel()
+        panel.title = "Add Existing HTML Page"
+        panel.prompt = "Add"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = initialDirectory
+        panel.allowedContentTypes = [.html]
 
         return panel.runModal() == .OK ? panel.url : nil
     }

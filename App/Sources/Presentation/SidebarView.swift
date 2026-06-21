@@ -410,13 +410,13 @@ struct SidebarSplitLayout: Equatable {
 /// - `title`: セクション名。
 /// - `count`: セクション内の項目数。
 /// - `isCollapsed`: 最小化状態。
-/// - `trailingAction`: 見出し右端に表示する任意の操作。
+/// - `trailingActions`: 見出し右端に表示する任意の操作群。
 /// - `content`: 展開時に表示する本文。
 private struct SidebarSplitSection<Content: View>: View {
     var title: String
     var count: Int
     @Binding var isCollapsed: Bool
-    var trailingAction: SidebarSplitSectionAction?
+    var trailingActions: [SidebarSplitSectionAction]
     var content: Content
 
     /// 論理名（日本語）: サイドバー分割セクション初期化関数
@@ -427,18 +427,24 @@ private struct SidebarSplitSection<Content: View>: View {
     ///   - count: セクション内の項目数。
     ///   - isCollapsed: 最小化状態。
     ///   - trailingAction: 見出し右端に表示する任意の操作。
+    ///   - trailingActions: 見出し右端に表示する任意の操作群。
     ///   - content: 展開時に表示する本文。
     init(
         title: String,
         count: Int,
         isCollapsed: Binding<Bool>,
         trailingAction: SidebarSplitSectionAction? = nil,
+        trailingActions: [SidebarSplitSectionAction] = [],
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.count = count
         _isCollapsed = isCollapsed
-        self.trailingAction = trailingAction
+        if trailingActions.isEmpty, let trailingAction {
+            self.trailingActions = [trailingAction]
+        } else {
+            self.trailingActions = trailingActions
+        }
         self.content = content()
     }
 
@@ -455,24 +461,28 @@ private struct SidebarSplitSection<Content: View>: View {
                 .buttonStyle(.plain)
                 .help(isCollapsed ? "Expand" : "Collapse")
 
-                if let trailingAction {
-                    Button(action: trailingAction.action) {
-                        OpenGraphiteIconView(icon: trailingAction.icon, size: 12, weight: .semibold)
-                            .frame(width: 22, height: 22)
-                            .background(
-                                Circle()
-                                    .fill(EditorColumnStyle.rowFill)
-                            )
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .help(trailingAction.help)
-                } else {
+                if trailingActions.isEmpty {
                     Text("\(count)")
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
                         .frame(width: 22, height: 22, alignment: .trailing)
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(trailingActions) { trailingAction in
+                            Button(action: trailingAction.action) {
+                                OpenGraphiteIconView(icon: trailingAction.icon, size: 12, weight: .semibold)
+                                    .frame(width: 22, height: 22)
+                                    .background(
+                                        Circle()
+                                            .fill(EditorColumnStyle.rowFill)
+                                    )
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.secondary)
+                            .help(trailingAction.help)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 8)
@@ -512,13 +522,16 @@ private struct SidebarSplitSection<Content: View>: View {
 /// 概要: 分割セクション見出しの右端に表示する小型操作を表します。
 ///
 /// プロパティ:
+/// - `id`: SwiftUI diffing 用の安定 ID。
 /// - `icon`: 表示するアイコン。
 /// - `help`: hover 時の説明。
 /// - `action`: 実行する操作。
-private struct SidebarSplitSectionAction {
+private struct SidebarSplitSectionAction: Identifiable {
     var icon: OpenGraphiteIcon
     var help: String
     var action: () -> Void
+
+    var id: String { help }
 }
 
 /// 論理名（日本語）: サイドバーリサイズ分割ビュー
@@ -1531,7 +1544,7 @@ private struct PageLayerListView: View {
             title: contentSectionTitle,
             count: visiblePages.count,
             isCollapsed: contentSectionCollapsedBinding,
-            trailingAction: contentSectionAction
+            trailingActions: contentSectionActions
         ) {
             contentSectionContent
         }
@@ -1787,15 +1800,24 @@ private struct PageLayerListView: View {
         }
     }
 
-    private var contentSectionAction: SidebarSplitSectionAction? {
-        guard segment == .pages, store.loadedProject != nil else { return nil }
-        return SidebarSplitSectionAction(
-            icon: .addPage,
-            help: "Add Page",
-            action: {
-                store.addPage()
-            }
-        )
+    private var contentSectionActions: [SidebarSplitSectionAction] {
+        guard segment == .pages, store.loadedProject != nil else { return [] }
+        return [
+            SidebarSplitSectionAction(
+                icon: .addPage,
+                help: "Add New Page",
+                action: {
+                    store.addPage()
+                }
+            ),
+            SidebarSplitSectionAction(
+                icon: .addExistingPage,
+                help: "Add Existing HTML",
+                action: {
+                    addExistingPageFromDialog()
+                }
+            )
+        ]
     }
 
     private var emptyGroupMessage: String {
@@ -1941,6 +1963,22 @@ private struct PageLayerListView: View {
             }
             store.copyReferenceIDToPasteboard(store.collectionReferenceID(for: collection), label: "Collection \(collection.displayName)")
         }
+    }
+
+    /// 論理名（日本語）: 既存Page HTML追加関数
+    /// 処理概要: project の `htmlRoot` を初期位置にして HTML 選択 panel を開き、選択された既存 file を Pages へ登録します。
+    private func addExistingPageFromDialog() {
+        guard let htmlURL = ProjectDialogs.openPageHTMLURL(initialDirectory: htmlRootDirectoryURL) else {
+            return
+        }
+        store.addExistingPage(at: htmlURL)
+    }
+
+    private var htmlRootDirectoryURL: URL? {
+        guard let loadedProject = store.loadedProject else { return nil }
+        return loadedProject.rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot, isDirectory: true)
+            .standardizedFileURL
     }
 
     /// 論理名（日本語）: セグメント選択関数

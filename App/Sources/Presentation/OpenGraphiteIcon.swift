@@ -158,6 +158,7 @@ extension OpenGraphiteIcon {
     static let collectionGroup = OpenGraphiteIcon.lucide("blocks", fallbackSystemName: "square.grid.2x2")
     static let pageDocument = OpenGraphiteIcon.lucide("file-code", fallbackSystemName: "doc.text")
     static let addPage = OpenGraphiteIcon.lucide("file-plus", fallbackSystemName: "doc.badge.plus")
+    static let addExistingPage = OpenGraphiteIcon.lucide("file-input", fallbackSystemName: "square.and.arrow.down")
     static let componentDocument = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")
     static let componentInstance = OpenGraphiteIcon.lucide("replace", fallbackSystemName: "arrow.triangle.2.circlepath")
     static let componentPlacement = OpenGraphiteIcon.lucide("copy", fallbackSystemName: "square.on.square")

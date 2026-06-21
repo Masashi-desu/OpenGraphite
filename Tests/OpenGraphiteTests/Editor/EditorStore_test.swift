@@ -484,6 +484,66 @@ struct EditorStoreTests {
         #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
     }
 
+    /// 論理名（日本語）: 既存HTMLのPage追加保存テスト
+    /// 概要: `htmlRoot` 配下にある既存 HTML file を選択中 Chapter の page entry として追加できることを検証します。
+    @Test("既存HTMLをPageとしてogpへ追加できる")
+    func testAddExistingPagePersistsManifestInSelectedChapter() throws {
+        // コンディション：空 Chapter を追加して選択中にし、public 配下に未登録 HTML を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let existingHTMLURL = fixture.publicURL.appendingPathComponent("landing.html")
+        try "<!doctype html>\n<html><body>landing</body></html>".write(
+            to: existingHTMLURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.addChapter()
+
+        // 検証内容：既存 HTML を page entry として追加する（When）
+        store.addExistingPage(at: existingHTMLURL)
+
+        // 期待値：HTML file はそのまま、選択中 Chapter の `.ogp` pages に登録される（Then）
+        let addedPage = try #require(store.selectedPage)
+        let addedChapter = try #require(store.selectedChapter)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+
+        #expect(addedChapter.id == "chapter-1")
+        #expect(addedPage.id == "landing")
+        #expect(addedPage.path == "landing.html")
+        #expect(addedPage.displayName == "landing.html")
+        #expect(addedPage.canvas.x == 0)
+        #expect(addedPage.canvas.y == 0)
+        #expect(addedPage.canvas.width == 100)
+        #expect(addedPage.canvas.height == 100)
+        #expect(try String(contentsOf: existingHTMLURL, encoding: .utf8).contains("landing"))
+        #expect(store.selectedCanvasSegment == .pages)
+        #expect(store.lastError == nil)
+        #expect(reloadedProject.project.chapters[0].pages.map(\.id) == ["home"])
+        #expect(reloadedProject.project.chapters[1].pages.map(\.id) == ["landing"])
+        #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
+    }
+
+    /// 論理名（日本語）: 既存HTML重複追加拒否テスト
+    /// 概要: すでに登録済みの HTML path を既存 Page として追加しようとした場合に `.ogp` を変更しないことを検証します。
+    @Test("既存HTML追加は登録済みpathを拒否する")
+    func testAddExistingPageRejectsDuplicatePath() throws {
+        // コンディション：index.html が既に登録済みの project を開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：登録済み HTML を再追加する（When）
+        store.addExistingPage(at: fixture.htmlURL)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+
+        // 期待値：エラーが表示され、manifest の pages は増えない（Then）
+        #expect(store.lastError == "同じ HTML path が既に登録されています: index.html")
+        #expect(reloadedProject.project.allPages.map(\.path) == ["index.html"])
+    }
+
     /// 論理名（日本語）: Pageファイル名更新テスト
     /// 概要: Sidebar のインライン編集から Page HTML と同名 companion CSS を rename し、`.ogp` path へ保存できることを検証します。
     @Test("Pageファイル名を変更するとHTMLとcompanion CSSとogp pathが同期する")
