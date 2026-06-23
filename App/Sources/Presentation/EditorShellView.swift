@@ -463,6 +463,8 @@ private struct CanvasPaneView: View {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
                     documentID: canvasDocumentID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
+                    contentRevisionID: canvasContentRevisionID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
+                    contentCanvasOrigin: canvasContentOrigin(for: store.selectedCanvasPages),
                     overlayAvoidance: overlayAvoidance,
                     onEmptyCanvasClick: {
                         store.selectPage(id: nil)
@@ -524,7 +526,7 @@ private struct CanvasPaneView: View {
     }
 
     /// 論理名（日本語）: キャンバスドキュメントID生成関数
-    /// 処理概要: 選択セグメントのページ構成と配置が変わったときにスクロール document を作り直す識別子を生成します。
+    /// 処理概要: 選択セグメントのページ構成が変わったときだけスクロール document を作り直す識別子を生成します。
     ///
     /// - Parameters:
     ///   - project: 表示中の読み込み済みプロジェクト。
@@ -532,12 +534,36 @@ private struct CanvasPaneView: View {
     ///   - pages: 表示対象ページ一覧。
     /// - Returns: キャンバス構成を表す安定 ID。
     private func canvasDocumentID(for project: LoadedOpenGraphiteProject, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
-        let pageID = pages
-            .map { page in
-                "\(page.internalID):\(page.id):\(page.canvas.x):\(page.canvas.y):\(page.canvas.width):\(page.canvas.height)"
-            }
-            .joined(separator: "|")
-        return "\(project.fileURL.path)#\(segment.rawValue)#\(pageID)"
+        CanvasDocumentIdentityResolver.viewportID(
+            projectPath: project.fileURL.path,
+            segment: segment,
+            pages: pages
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス内容Revision ID生成関数
+    /// 処理概要: page 配置や preview context の変更時に、表示領域を維持したまま SwiftUI content を更新する識別子を生成します。
+    ///
+    /// - Parameters:
+    ///   - project: 表示中の読み込み済みプロジェクト。
+    ///   - segment: 表示中の Pages / Components セグメント。
+    ///   - pages: 表示対象ページ一覧。
+    /// - Returns: キャンバス内容を表す revision ID。
+    private func canvasContentRevisionID(for project: LoadedOpenGraphiteProject, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
+        CanvasDocumentIdentityResolver.contentRevisionID(
+            projectPath: project.fileURL.path,
+            segment: segment,
+            pages: pages
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス内容原点取得関数
+    /// 処理概要: page 配置を document 座標へ写すときに使う canvas bounds 原点を取得します。
+    ///
+    /// - Parameter pages: 表示対象ページ一覧。
+    /// - Returns: 現在の canvas content 原点。
+    private func canvasContentOrigin(for pages: [OpenGraphitePage]) -> CGPoint {
+        CanvasProjectBounds(pages: pages).origin
     }
 
     /// 論理名（日本語）: ズーム調整関数
@@ -550,6 +576,101 @@ private struct CanvasPaneView: View {
         }
     }
 
+}
+
+/// 論理名（日本語）: キャンバスドキュメント識別子解決器
+/// 概要: スクロール位置の初期化に使う ID と、表示内容の再描画に使う revision ID を分けて生成します。
+///
+/// 定義内容:
+/// - `viewportID(projectPath:segment:pages:)`: page 構成変更だけで変わる表示領域用 ID を生成します。
+/// - `contentRevisionID(projectPath:segment:pages:)`: page 配置や preview context 変更で変わる描画更新用 ID を生成します。
+enum CanvasDocumentIdentityResolver {
+    /// 論理名（日本語）: 表示領域ID生成関数
+    /// 処理概要: page の canvas 座標やサイズを含めず、表示領域を初期化すべき構成変更だけを ID 化します。
+    ///
+    /// - Parameters:
+    ///   - projectPath: `.ogp` project path。
+    ///   - segment: 表示中の Pages / Components セグメント。
+    ///   - pages: 表示対象 page 一覧。
+    /// - Returns: スクロール document を切り替えるための安定 ID。
+    static func viewportID(projectPath: String, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
+        "\(projectPath)#\(segment.rawValue)#\(pageIdentitySignature(for: pages))"
+    }
+
+    /// 論理名（日本語）: 内容Revision ID生成関数
+    /// 処理概要: 表示領域の初期化は避けつつ、page の配置・寸法・preview context 変更を描画更新へ伝える ID を生成します。
+    ///
+    /// - Parameters:
+    ///   - projectPath: `.ogp` project path。
+    ///   - segment: 表示中の Pages / Components セグメント。
+    ///   - pages: 表示対象 page 一覧。
+    /// - Returns: SwiftUI content の再適用要否を判定する revision ID。
+    static func contentRevisionID(projectPath: String, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
+        let pageRevision = pages
+            .map { page in
+                [
+                    pageIdentity(for: page),
+                    page.id,
+                    page.canvas.name,
+                    String(page.canvas.x),
+                    String(page.canvas.y),
+                    String(page.canvas.width),
+                    String(page.canvas.height),
+                    previewContextSignature(for: page.canvas.previewContext)
+                ].joined(separator: ":")
+            }
+            .joined(separator: "|")
+        return "\(viewportID(projectPath: projectPath, segment: segment, pages: pages))#revision#\(pageRevision)"
+    }
+
+    /// 論理名（日本語）: Page Identity Signature生成関数
+    /// 処理概要: 表示対象 page の順序と参照先を表す、canvas geometry を含まない署名を生成します。
+    ///
+    /// - Parameter pages: 表示対象 page 一覧。
+    /// - Returns: page 構成署名。
+    private static func pageIdentitySignature(for pages: [OpenGraphitePage]) -> String {
+        pages.map(pageIdentity(for:)).joined(separator: "|")
+    }
+
+    /// 論理名（日本語）: Page Identity生成関数
+    /// 処理概要: `.ogp` 内の page を識別するため、内部 ID と HTML path をまとめます。
+    ///
+    /// - Parameter page: 署名対象 page。
+    /// - Returns: page identity。
+    private static func pageIdentity(for page: OpenGraphitePage) -> String {
+        "\(page.internalID):\(page.path)"
+    }
+
+    /// 論理名（日本語）: Preview Context Signature生成関数
+    /// 処理概要: Dictionary の順序に依存せず preview context の変更を revision ID へ反映します。
+    ///
+    /// - Parameter previewContext: 署名対象の preview context。
+    /// - Returns: preview context の安定署名。
+    private static func previewContextSignature(for previewContext: OpenGraphitePreviewContext) -> String {
+        let fields = sortedPairs(previewContext.fieldMocks)
+        let placements = previewContext.placementMocks
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=[\(sortedPairs($0.value))]" }
+            .joined(separator: ",")
+        return [
+            previewContext.locale,
+            previewContext.direction,
+            fields,
+            placements
+        ].joined(separator: ":")
+    }
+
+    /// 論理名（日本語）: ソート済みDictionary署名生成関数
+    /// 処理概要: 文字列 dictionary を key 順に直列化し、revision ID の揺れを防ぎます。
+    ///
+    /// - Parameter values: 署名対象 dictionary。
+    /// - Returns: key 順に並べた `key=value` 署名。
+    private static func sortedPairs(_ values: [String: String]) -> String {
+        values
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: ",")
+    }
 }
 
 /// 論理名（日本語）: キャンバスプロジェクトビュー
@@ -570,13 +691,16 @@ private struct CanvasProjectView: View {
     var body: some View {
         let bounds = CanvasProjectBounds(pages: pages)
         let scale = CGFloat(zoom)
+        let visualHeight = bounds.height + CanvasMetrics.pageNameCardOutsideOffset
         let isFlowHoverEnabled = store.previewDisplayMode == .flow && store.selectedCanvasSegment == .pages
-        let flowConnections = isFlowHoverEnabled ? OpenGraphiteStaticFlowResolver.connections(
-            pages: pages,
-            loadedProject: loadedProject,
-            linksByPageInternalID: store.staticFlowLinksByPageInternalID,
-            linksByPageURL: store.staticFlowLinksByPageURL
-        ) : []
+        let flowConnections = isFlowHoverEnabled
+            ? OpenGraphiteStaticFlowResolver.connections(
+                pages: pages,
+                loadedProject: loadedProject,
+                linksByPageInternalID: store.staticFlowLinksByPageInternalID,
+                linksByPageURL: store.staticFlowLinksByPageURL
+            ).map(visualFlowConnection)
+            : []
 
         ZStack(alignment: .topLeading) {
             Rectangle()
@@ -592,6 +716,7 @@ private struct CanvasProjectView: View {
                     page: page,
                     pageURL: loadedProject.htmlURL(for: page),
                     isSelected: page.internalID == store.selectedPage?.internalID,
+                    zoom: zoom,
                     reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page)),
                     isFlowHoverEnabled: isFlowHoverEnabled,
                     onFlowTargetPageHover: handleFlowTargetPageHover
@@ -615,7 +740,7 @@ private struct CanvasProjectView: View {
                 .allowsHitTesting(false)
             }
         }
-        .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+        .frame(width: bounds.width, height: visualHeight, alignment: .topLeading)
         .coordinateSpace(name: CanvasMetrics.projectCoordinateSpaceName)
         .onContinuousHover(coordinateSpace: .named(CanvasMetrics.projectCoordinateSpaceName)) { phase in
             switch phase {
@@ -626,7 +751,7 @@ private struct CanvasProjectView: View {
             }
         }
         .scaleEffect(scale, anchor: .topLeading)
-        .frame(width: bounds.width * scale, height: bounds.height * scale, alignment: .topLeading)
+        .frame(width: bounds.width * scale, height: visualHeight * scale, alignment: .topLeading)
         .padding(CanvasMetrics.documentPadding)
         .onChange(of: store.previewDisplayMode) { _, mode in
             if mode != .flow {
@@ -638,6 +763,18 @@ private struct CanvasProjectView: View {
                 clearFlowHoverState()
             }
         }
+    }
+
+    /// 論理名（日本語）: 視覚用フロー接続変換関数
+    /// 処理概要: キャプションカード用の上側スペース分だけ、page 本体基準のフロー接続点を表示座標へ移します。
+    ///
+    /// - Parameter connection: page canvas 座標基準で生成された静的フロー接続。
+    /// - Returns: Canvas 上の表示座標へ変換した静的フロー接続。
+    private func visualFlowConnection(_ connection: OpenGraphiteStaticFlowConnection) -> OpenGraphiteStaticFlowConnection {
+        var adjusted = connection
+        adjusted.sourcePoint.y += CanvasMetrics.pageNameCardOutsideOffset
+        adjusted.targetPoint.y += CanvasMetrics.pageNameCardOutsideOffset
+        return adjusted
     }
 
     /// 論理名（日本語）: フローhover座標更新関数
@@ -734,7 +871,7 @@ private struct CanvasProjectView: View {
     private func pageRect(for page: OpenGraphitePage, in bounds: CanvasProjectBounds) -> CGRect {
         CGRect(
             x: CGFloat(page.canvas.x) - bounds.minX,
-            y: CGFloat(page.canvas.y) - bounds.minY,
+            y: CGFloat(page.canvas.y) - bounds.minY + CanvasMetrics.pageNameCardOutsideOffset,
             width: CGFloat(page.canvas.width),
             height: CGFloat(page.canvas.height)
         )
@@ -749,6 +886,7 @@ private struct CanvasProjectView: View {
 /// - `page`: 表示対象ページ。
 /// - `pageURL`: 表示対象 HTML URL。
 /// - `isSelected`: 現在の編集対象ページか。
+/// - `zoom`: 現在の表示倍率。
 /// - `reloadToken`: 外部変更時に WebView を再読み込みするためのトークン。
 /// - `isFlowHoverEnabled`: フロー表示用の受け側 page hover を通知するか。
 /// - `onFlowTargetPageHover`: page hover 状態が変わったときに呼ぶ処理。
@@ -757,49 +895,52 @@ private struct CanvasDocumentView: View {
     var page: OpenGraphitePage
     var pageURL: URL
     var isSelected: Bool
+    var zoom: Double
     var reloadToken: Int
     var isFlowHoverEnabled: Bool
     var onFlowTargetPageHover: (String, Bool) -> Void
+    @State private var pageDragTranslation: CGSize = .zero
 
     var body: some View {
         let width = max(CGFloat(page.canvas.width), 1)
         let height = max(CGFloat(page.canvas.height), 1)
+        let layout = CanvasPageVisualLayout.resolve(pageWidth: width, pageHeight: height)
 
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color(nsColor: .textBackgroundColor))
-                .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-                .frame(width: width, height: height)
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Color(nsColor: .textBackgroundColor))
+                    .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+                    .frame(width: width, height: height)
 
-            WebCanvasView(
-                store: store,
-                pageURL: pageURL,
-                pageInternalID: page.internalID,
-                syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
-                isInteractive: isSelected,
-                reloadToken: reloadToken,
-                previewContext: page.canvas.previewContext,
-                allowsComponentPlacements: store.selectedCanvasSegment == .components
-            )
+                WebCanvasView(
+                    store: store,
+                    pageURL: pageURL,
+                    pageInternalID: page.internalID,
+                    syncTarget: store.htmlSyncTarget(for: page, segment: store.selectedCanvasSegment),
+                    isInteractive: isSelected,
+                    reloadToken: reloadToken,
+                    previewContext: page.canvas.previewContext,
+                    allowsComponentPlacements: store.selectedCanvasSegment == .components
+                )
                 .frame(width: width, height: height)
                 .allowsHitTesting(isSelected)
-        }
-        .frame(width: width, height: height, alignment: .topLeading)
-        .overlay(alignment: .topLeading) {
+            }
+            .frame(width: width, height: height, alignment: .topLeading)
+            .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+
             CanvasPageNameCard(
                 title: page.id,
                 placementName: page.canvas.displayName,
                 path: page.path,
                 resolution: page.canvas.resolutionLabel,
                 isSelected: isSelected,
-                maxTextWidth: max(
-                    min(width, CanvasMetrics.pageNameCardMaxTextWidth),
-                    CanvasMetrics.pageNameCardMinTextWidth
-                )
+                maxTextWidth: layout.captionTextWidth
             )
             .onTapGesture {
                 store.selectPage(internalID: page.internalID)
             }
+            .highPriorityGesture(pageCaptionDragGesture())
             .contextMenu {
                 Button("参照IDをコピー") {
                     store.selectPage(internalID: page.internalID)
@@ -812,12 +953,16 @@ private struct CanvasDocumentView: View {
                     for: store.pageReferenceID(for: page, segment: store.selectedCanvasSegment)
                 )
             }
-            .offset(y: -CanvasMetrics.pageNameCardOutsideOffset)
         }
-        .overlay(
+        .frame(width: layout.documentSize.width, height: layout.documentSize.height, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
             Rectangle()
                 .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isSelected ? 3 : 1)
-        )
+                .frame(width: layout.pageBodyFrame.width, height: layout.pageBodyFrame.height)
+                .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+        }
+        .offset(x: pageDragTranslation.width, y: pageDragTranslation.height)
+        .zIndex(pageDragTranslation == .zero ? (isSelected ? 1 : 0) : 2)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isSelected else { return }
@@ -839,6 +984,41 @@ private struct CanvasDocumentView: View {
             guard isFlowHoverEnabled else { return }
             onFlowTargetPageHover(page.internalID, isHovering)
         }
+    }
+
+    /// 論理名（日本語）: キャプションカードドラッグジェスチャ生成関数
+    /// 処理概要: ページ左上カードのドラッグ量を現在倍率から canvas 座標へ戻し、終了時だけ manifest へ位置を保存します。
+    ///
+    /// - Returns: キャプションカードへ付与するドラッグジェスチャ。
+    private func pageCaptionDragGesture() -> some Gesture {
+        DragGesture(minimumDistance: CanvasMetrics.pageDragMinimumDistance, coordinateSpace: .global)
+            .onChanged { value in
+                selectPageForCaptionInteraction()
+                pageDragTranslation = CanvasPageDragResolver.canvasTranslation(
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+            }
+            .onEnded { value in
+                let position = CanvasPageDragResolver.finalizedPosition(
+                    for: page.canvas,
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+                pageDragTranslation = .zero
+                selectPageForCaptionInteraction()
+                store.updateSelectedPageCanvasPosition(
+                    x: Double(position.x),
+                    y: Double(position.y)
+                )
+            }
+    }
+
+    /// 論理名（日本語）: キャプション操作ページ選択関数
+    /// 処理概要: キャプションカードの click / drag 操作対象を現在の編集対象 page として選択します。
+    private func selectPageForCaptionInteraction() {
+        guard store.selectedPage?.internalID != page.internalID else { return }
+        store.selectPage(internalID: page.internalID)
     }
 }
 
@@ -1078,6 +1258,7 @@ private struct CanvasPageNameCard: View {
                 RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                     .stroke(Color(nsColor: .separatorColor).opacity(isSelected ? 0 : 0.7), lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
             .shadow(color: .black.opacity(0.16), radius: 7, y: 3)
             .help("\(title) · \(detailText)")
             .accessibilityLabel("\(title), \(detailText)")
@@ -1099,11 +1280,17 @@ private struct CanvasPageNameCard: View {
 /// - `minY`: 最小 Y 座標。
 /// - `width`: 表示対象ページを含む幅。
 /// - `height`: 表示対象ページを含む高さ。
-private struct CanvasProjectBounds {
+/// - `origin`: document 座標へ写すときの canvas 原点。
+struct CanvasProjectBounds {
     var minX: CGFloat
     var minY: CGFloat
     var width: CGFloat
     var height: CGFloat
+
+    /// document 座標へ写すときの canvas 原点。
+    var origin: CGPoint {
+        CGPoint(x: minX, y: minY)
+    }
 
     /// 論理名（日本語）: キャンバスプロジェクト境界初期化関数
     /// 処理概要: ページ一覧の canvas 矩形から包含境界を計算します。
@@ -1118,15 +1305,73 @@ private struct CanvasProjectBounds {
             return
         }
 
-        let minX = pages.map { CGFloat($0.canvas.x) }.min() ?? 0
-        let minY = pages.map { CGFloat($0.canvas.y) }.min() ?? 0
-        let maxX = pages.map { CGFloat($0.canvas.x + $0.canvas.width) }.max() ?? 1
+        let minX = min(pages.map { CGFloat($0.canvas.x) }.min() ?? 0, 0)
+        let minY = min(pages.map { CGFloat($0.canvas.y) }.min() ?? 0, 0)
+        let maxX = pages.map { page in
+            CGFloat(page.canvas.x) + CanvasPageVisualLayout.resolve(
+                pageWidth: CGFloat(page.canvas.width),
+                pageHeight: CGFloat(page.canvas.height)
+            ).documentSize.width
+        }.max() ?? 1
         let maxY = pages.map { CGFloat($0.canvas.y + $0.canvas.height) }.max() ?? 1
 
         self.minX = minX
         self.minY = minY
         self.width = max(maxX - minX, 1)
         self.height = max(maxY - minY, 1)
+    }
+}
+
+/// 論理名（日本語）: キャンバスページ視覚レイアウト
+/// 概要: page 本体と左上キャプションカードを含む、ヒットテスト可能な document frame を計算します。
+///
+/// プロパティ:
+/// - `documentSize`: キャプションカードと page 本体を内包する view 全体サイズ。
+/// - `pageBodyFrame`: document 内で page 本体を置く矩形。
+/// - `captionHitFrame`: document 内でキャプションカードがドラッグ開始を受ける矩形。
+/// - `captionTextWidth`: キャプションカード内テキストの最大幅。
+struct CanvasPageVisualLayout: Equatable {
+    let documentSize: CGSize
+    let pageBodyFrame: CGRect
+    let captionHitFrame: CGRect
+    let captionTextWidth: CGFloat
+
+    /// 論理名（日本語）: ページ視覚レイアウト解決関数
+    /// 処理概要: page canvas サイズから、キャプションカードを含む document frame と page 本体位置を算出します。
+    ///
+    /// - Parameters:
+    ///   - pageWidth: page canvas の幅。
+    ///   - pageHeight: page canvas の高さ。
+    /// - Returns: キャプションカードと page 本体の表示矩形。
+    static func resolve(pageWidth: CGFloat, pageHeight: CGFloat) -> CanvasPageVisualLayout {
+        let normalizedWidth = max(pageWidth, 1)
+        let normalizedHeight = max(pageHeight, 1)
+        let captionTextWidth = max(
+            min(normalizedWidth, CanvasMetrics.pageNameCardMaxTextWidth),
+            CanvasMetrics.pageNameCardMinTextWidth
+        )
+        let captionWidth = captionTextWidth + CanvasMetrics.pageNameCardHorizontalInset * 2
+        let pageBodyFrame = CGRect(
+            x: 0,
+            y: CanvasMetrics.pageNameCardOutsideOffset,
+            width: normalizedWidth,
+            height: normalizedHeight
+        )
+        let captionHitFrame = CGRect(
+            x: 0,
+            y: 0,
+            width: captionWidth,
+            height: CanvasMetrics.pageNameCardHeight
+        )
+        return CanvasPageVisualLayout(
+            documentSize: CGSize(
+                width: max(normalizedWidth, captionWidth),
+                height: normalizedHeight + CanvasMetrics.pageNameCardOutsideOffset
+            ),
+            pageBodyFrame: pageBodyFrame,
+            captionHitFrame: captionHitFrame,
+            captionTextWidth: captionTextWidth
+        )
     }
 }
 
@@ -1141,6 +1386,7 @@ private struct CanvasProjectBounds {
 /// - `pageNameCardMinTextWidth`: ページ名カードの最小テキスト幅。
 /// - `pageNameCardMaxTextWidth`: ページ名カードの最大テキスト幅。
 /// - `pageNameCardOutsideOffset`: ページ名カードをページ枠外へ出す垂直オフセット。
+/// - `pageDragMinimumDistance`: キャプションカードのドラッグ開始距離。
 private enum CanvasMetrics {
     static let documentPadding: CGFloat = 72
     static let projectCoordinateSpaceName = "OpenGraphiteCanvasProject"
@@ -1150,6 +1396,67 @@ private enum CanvasMetrics {
     static let pageNameCardMinTextWidth: CGFloat = 176
     static let pageNameCardMaxTextWidth: CGFloat = 280
     static let pageNameCardOutsideOffset = pageNameCardHeight + pageNameCardGap
+    static let pageDragMinimumDistance: CGFloat = 2
+}
+
+/// 論理名（日本語）: キャンバスページドラッグ解決器
+/// 概要: 画面上のドラッグ量を OpenGraphite canvas 座標の移動量と確定位置へ変換します。
+///
+/// 定義内容:
+/// - `canvasTranslation(screenTranslation:zoom:)`: 画面座標のドラッグ量を canvas 座標の移動量へ変換します。
+/// - `finalizedPosition(for:screenTranslation:zoom:)`: ドラッグ終了時に保存する canvas 位置を算出します。
+enum CanvasPageDragResolver {
+    /// 論理名（日本語）: キャンバスドラッグ量変換関数
+    /// 処理概要: ズーム適用後の画面上の移動量を、未拡大の canvas 座標系の移動量へ戻します。
+    ///
+    /// - Parameters:
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: canvas 座標系での移動量。倍率や移動量が不正な場合は `.zero`。
+    static func canvasTranslation(screenTranslation: CGSize, zoom: Double) -> CGSize {
+        normalizedCanvasTranslation(screenTranslation: screenTranslation, zoom: zoom) ?? .zero
+    }
+
+    /// 論理名（日本語）: ドラッグ確定位置算出関数
+    /// 処理概要: 元の canvas 位置へドラッグ量を加算し、manifest に保存しやすい整数座標へ丸めます。
+    ///
+    /// - Parameters:
+    ///   - canvas: ドラッグ開始時の page canvas 定義。
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: 保存対象の canvas 左上座標。
+    static func finalizedPosition(for canvas: OpenGraphiteCanvas, screenTranslation: CGSize, zoom: Double) -> CGPoint {
+        guard let translation = normalizedCanvasTranslation(screenTranslation: screenTranslation, zoom: zoom) else {
+            return CGPoint(x: CGFloat(canvas.x), y: CGFloat(canvas.y))
+        }
+
+        return CGPoint(
+            x: (CGFloat(canvas.x) + translation.width).rounded(),
+            y: (CGFloat(canvas.y) + translation.height).rounded()
+        )
+    }
+
+    /// 論理名（日本語）: 正規化済みキャンバスドラッグ量生成関数
+    /// 処理概要: 不正な倍率や無限値を除外し、有効な場合だけ canvas 座標系の移動量を返します。
+    ///
+    /// - Parameters:
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: 有効な canvas 移動量。変換できない場合は `nil`。
+    private static func normalizedCanvasTranslation(screenTranslation: CGSize, zoom: Double) -> CGSize? {
+        guard zoom.isFinite, zoom > 0,
+              screenTranslation.width.isFinite,
+              screenTranslation.height.isFinite
+        else {
+            return nil
+        }
+
+        let scale = CGFloat(zoom)
+        return CGSize(
+            width: screenTranslation.width / scale,
+            height: screenTranslation.height / scale
+        )
+    }
 }
 
 /// 論理名（日本語）: キャンバスオーバーレイ回避値
@@ -1304,6 +1611,32 @@ enum CanvasZoomAnchorResolver {
     }
 }
 
+/// 論理名（日本語）: キャンバス原点変化補正解決器
+/// 概要: canvas bounds の原点が変化したとき、同じ表示領域を保つための scroll origin 補正量を計算します。
+///
+/// 定義内容:
+/// - `scrollAdjustment(previousOrigin:newOrigin:zoom:)`: bounds 原点差分を document 座標の scroll 補正量へ変換します。
+enum CanvasViewportOriginAdjustmentResolver {
+    /// 論理名（日本語）: スクロール補正量算出関数
+    /// 処理概要: 旧 canvas 原点と新 canvas 原点の差分に現在倍率を掛け、clip origin に加算する補正量を返します。
+    ///
+    /// - Parameters:
+    ///   - previousOrigin: 更新前の canvas bounds 原点。
+    ///   - newOrigin: 更新後の canvas bounds 原点。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: document 座標上の scroll origin 補正量。不正な倍率や値の場合は `.zero`。
+    static func scrollAdjustment(previousOrigin: CGPoint, newOrigin: CGPoint, zoom: Double) -> CGPoint {
+        guard zoom.isFinite, zoom > 0 else { return .zero }
+
+        let adjustment = CGPoint(
+            x: (previousOrigin.x - newOrigin.x) * CGFloat(zoom),
+            y: (previousOrigin.y - newOrigin.y) * CGFloat(zoom)
+        )
+        guard adjustment.x.isFinite, adjustment.y.isFinite else { return .zero }
+        return adjustment
+    }
+}
+
 /// 論理名（日本語）: キャンバスズームHUD
 /// 概要: キャンバス右下に現在倍率とズームイン/アウトボタンを表示します。
 ///
@@ -1368,11 +1701,15 @@ private struct CanvasZoomHUD: View {
 /// プロパティ:
 /// - `zoom`: 双方向バインディングされたキャンバス倍率。
 /// - `documentID`: 表示中ドキュメントの識別子。
+/// - `contentRevisionID`: 表示内容の更新要否を表す識別子。
+/// - `contentCanvasOrigin`: canvas content を document 座標へ写すときの原点。
 /// - `onEmptyCanvasClick`: ページ群の外側がクリックされたときの処理。
 /// - `content`: スクロールビュー内に表示する SwiftUI content。
 private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     @Binding var zoom: Double
     var documentID: String
+    var contentRevisionID: String
+    var contentCanvasOrigin: CGPoint
     var overlayAvoidance: CanvasOverlayAvoidance
     var onEmptyCanvasClick: () -> Void
     var content: () -> Content
@@ -1383,18 +1720,24 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - Parameters:
     ///   - zoom: キャンバス倍率のバインディング。
     ///   - documentID: 表示中ドキュメントの識別子。
+    ///   - contentRevisionID: 表示内容の更新要否を表す識別子。
+    ///   - contentCanvasOrigin: canvas content を document 座標へ写すときの原点。
     ///   - overlayAvoidance: 左右カラムを避ける操作 UI 用余白。
     ///   - onEmptyCanvasClick: ページ群の外側がクリックされたときの処理。
     ///   - content: スクロールビュー内に表示する SwiftUI content。
     init(
         zoom: Binding<Double>,
         documentID: String,
+        contentRevisionID: String,
+        contentCanvasOrigin: CGPoint,
         overlayAvoidance: CanvasOverlayAvoidance = CanvasOverlayAvoidance(),
         onEmptyCanvasClick: @escaping () -> Void = {},
         @ViewBuilder content: @escaping () -> Content
     ) {
         self._zoom = zoom
         self.documentID = documentID
+        self.contentRevisionID = contentRevisionID
+        self.contentCanvasOrigin = contentCanvasOrigin
         self.overlayAvoidance = overlayAvoidance
         self.onEmptyCanvasClick = onEmptyCanvasClick
         self.content = content
@@ -1408,6 +1751,8 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         Coordinator(
             zoom: $zoom,
             documentID: documentID,
+            contentRevisionID: contentRevisionID,
+            contentCanvasOrigin: contentCanvasOrigin,
             onEmptyCanvasClick: onEmptyCanvasClick,
             content: content
         )
@@ -1445,7 +1790,12 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.zoom = $zoom
         context.coordinator.onEmptyCanvasClick = onEmptyCanvasClick
-        context.coordinator.updateContent(documentID: documentID, content: content)
+        context.coordinator.updateContent(
+            documentID: documentID,
+            contentRevisionID: contentRevisionID,
+            contentCanvasOrigin: contentCanvasOrigin,
+            content: content
+        )
         context.coordinator.refreshDocumentSizeIfNeeded()
         if let scrollView = scrollView as? CanvasOverlayScrollView {
             scrollView.overlayAvoidance = overlayAvoidance
@@ -1483,6 +1833,8 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         private weak var scrollView: NSScrollView?
         private var monitor: Any?
         private var renderedDocumentID: String
+        private var renderedContentRevisionID: String
+        private var renderedContentCanvasOrigin: CGPoint
         private var lastViewportSize: NSSize = .zero
         private var lastZoom: Double
         private var pendingZoomAnchor: CanvasZoomAnchorSnapshot?
@@ -1493,11 +1845,15 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         /// - Parameters:
         ///   - zoom: キャンバス倍率のバインディング。
         ///   - documentID: 表示中ドキュメントの識別子。
+        ///   - contentRevisionID: 表示内容の更新要否を表す識別子。
+        ///   - contentCanvasOrigin: canvas content を document 座標へ写すときの原点。
         ///   - onEmptyCanvasClick: ページ群の外側がクリックされたときの処理。
         ///   - content: 初期表示する SwiftUI content。
         init(
             zoom: Binding<Double>,
             documentID: String,
+            contentRevisionID: String,
+            contentCanvasOrigin: CGPoint,
             onEmptyCanvasClick: @escaping () -> Void,
             content: @escaping () -> Content
         ) {
@@ -1505,6 +1861,8 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             self.content = content
             self.onEmptyCanvasClick = onEmptyCanvasClick
             self.renderedDocumentID = documentID
+            self.renderedContentRevisionID = contentRevisionID
+            self.renderedContentCanvasOrigin = contentCanvasOrigin
             self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
             self.hostingView = NSHostingView(rootView: content())
             self.hostingView.isFlipped = true
@@ -1532,32 +1890,52 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             }
         }
 
-        /// 論理名（日本語）: content更新関数
-        /// 処理概要: ドキュメント ID またはズームが変化したときに hosting view の rootView とサイズを更新します。
+        /// 論理名（日本語）: Content更新関数
+        /// 処理概要: ドキュメント ID、content revision、ズームの変化に応じて rootView とサイズを更新します。
         ///
         /// - Parameters:
         ///   - documentID: 表示中ドキュメントの識別子。
+        ///   - contentRevisionID: 表示内容の更新要否を表す識別子。
+        ///   - contentCanvasOrigin: canvas content を document 座標へ写すときの原点。
         ///   - content: 新しい SwiftUI content。
-        func updateContent(documentID: String, content: @escaping () -> Content) {
+        func updateContent(
+            documentID: String,
+            contentRevisionID: String,
+            contentCanvasOrigin: CGPoint,
+            content: @escaping () -> Content
+        ) {
             self.content = content
             let currentZoom = CanvasZoom.clamped(zoom.wrappedValue)
             let didChangeDocument = renderedDocumentID != documentID
+            let didChangeContent = renderedContentRevisionID != contentRevisionID
+            let previousContentCanvasOrigin = renderedContentCanvasOrigin
+            let didChangeCanvasOrigin = renderedContentCanvasOrigin != contentCanvasOrigin
             let previousRenderedZoom = lastZoom
             let didChangeZoom = abs(lastZoom - currentZoom) > 0.0005
-            guard didChangeDocument || didChangeZoom else { return }
+            guard didChangeDocument || didChangeContent || didChangeCanvasOrigin || didChangeZoom else { return }
 
             let zoomAnchor = didChangeZoom && !didChangeDocument
                 ? pendingZoomAnchor ?? centeredZoomAnchor(renderedZoom: previousRenderedZoom)
                 : nil
+            let canvasOriginAdjustment = didChangeDocument || didChangeZoom
+                ? .zero
+                : CanvasViewportOriginAdjustmentResolver.scrollAdjustment(
+                    previousOrigin: previousContentCanvasOrigin,
+                    newOrigin: contentCanvasOrigin,
+                    zoom: currentZoom
+                )
             pendingZoomAnchor = nil
 
             renderedDocumentID = documentID
+            renderedContentRevisionID = contentRevisionID
+            renderedContentCanvasOrigin = contentCanvasOrigin
             lastZoom = currentZoom
             hostingView.rootView = content()
             if didChangeDocument {
                 resetDocumentViewPosition()
             }
             refreshDocumentSize(force: true)
+            applyCanvasOriginAdjustment(canvasOriginAdjustment)
             if let zoomAnchor {
                 applyZoomAnchor(zoomAnchor, targetZoom: currentZoom)
             }
@@ -1586,6 +1964,32 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
 
             scrollView.contentView.scroll(to: .zero)
             scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+
+        /// 論理名（日本語）: キャンバス原点変化補正関数
+        /// 処理概要: content の bounds 原点が変わっても、ユーザーの表示領域が配置先へ追従しないよう clip origin を補正します。
+        ///
+        /// - Parameter adjustment: document 座標上で加算する scroll origin 補正量。
+        private func applyCanvasOriginAdjustment(_ adjustment: CGPoint) {
+            guard adjustment != .zero,
+                  let scrollView,
+                  let documentSize = scrollView.documentView?.frame.size
+            else {
+                return
+            }
+
+            let visibleOrigin = scrollView.contentView.bounds.origin
+            let origin = CanvasZoomAnchorResolver.clampedDocumentOrigin(
+                CGPoint(
+                    x: visibleOrigin.x + adjustment.x,
+                    y: visibleOrigin.y + adjustment.y
+                ),
+                documentSize: documentSize,
+                viewportSize: scrollView.contentView.bounds.size
+            )
+            scrollView.contentView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            (scrollView as? CanvasOverlayScrollView)?.refreshScrollIndicators()
         }
 
         /// 論理名（日本語）: ドキュメントサイズ内部更新関数

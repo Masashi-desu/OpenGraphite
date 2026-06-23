@@ -1448,6 +1448,27 @@ final class EditorStore: ObservableObject {
         )
     }
 
+    /// 論理名（日本語）: 選択ページキャンバス位置更新関数
+    /// 処理概要: 選択中ページの既存の配置名、解像度、preview Mock State を維持したまま、canvas 座標だけを `.ogp` へ保存します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    func updateSelectedPageCanvasPosition(x: Double, y: Double) {
+        guard let canvas = selectedPage?.canvas else { return }
+        persistSelectedPageCanvas(
+            x: x,
+            y: y,
+            width: canvas.width,
+            height: canvas.height,
+            name: canvas.name,
+            previewContext: canvas.previewContext,
+            statusMessageBuilder: { page in
+                "\(page.path) のキャンバス位置を更新しました。"
+            }
+        )
+    }
+
     /// 論理名（日本語）: 選択ページキャンバス配置更新関数
     /// 処理概要: 選択中ページのキャンバス配置名、座標、解像度、preview Mock State を `.ogp` へ保存し、表示中 project state へ反映します。
     ///
@@ -1465,6 +1486,37 @@ final class EditorStore: ObservableObject {
         height: Double,
         name: String,
         previewContext: OpenGraphitePreviewContext
+    ) {
+        persistSelectedPageCanvas(
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            name: name,
+            previewContext: previewContext,
+            statusMessageBuilder: nil
+        )
+    }
+
+    /// 論理名（日本語）: 選択ページキャンバス保存関数
+    /// 処理概要: 選択中 page / component canvas の配置情報を検証し、`.ogp` と表示中 project state へ反映します。
+    ///
+    /// - Parameters:
+    ///   - x: キャンバス上の X 座標。
+    ///   - y: キャンバス上の Y 座標。
+    ///   - width: ページプレビュー幅。0 より大きい値が必要です。
+    ///   - height: ページプレビュー高さ。0 より大きい値が必要です。
+    ///   - name: フロー解決で利用する配置名。空白のみの場合は空文字として保存します。
+    ///   - previewContext: エディター内 preview へ注入する runtime Mock State。
+    ///   - statusMessageBuilder: 保存成功時のステータス文言を作る任意クロージャ。
+    private func persistSelectedPageCanvas(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        name: String,
+        previewContext: OpenGraphitePreviewContext,
+        statusMessageBuilder: ((OpenGraphitePage) -> String)?
     ) {
         guard x.isFinite, y.isFinite, width.isFinite, height.isFinite, width > 0, height > 0 else {
             lastError = "キャンバス配置の入力が不正です。"
@@ -1533,7 +1585,8 @@ final class EditorStore: ObservableObject {
             try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
             self.loadedProject = loadedProject
             lastError = nil
-            statusMessage = "\(updatedPage.path) のキャンバス配置を更新しました。Mock State も保存しました。"
+            statusMessage = statusMessageBuilder?(updatedPage)
+                ?? "\(updatedPage.path) のキャンバス配置を更新しました。Mock State も保存しました。"
             restartExternalProjectMonitoring(force: true)
         } catch {
             lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"

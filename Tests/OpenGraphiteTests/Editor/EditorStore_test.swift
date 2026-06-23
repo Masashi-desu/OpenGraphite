@@ -1027,6 +1027,107 @@ struct EditorStoreTests {
         #expect(persistedPage.canvas.width == 414)
     }
 
+    /// 論理名（日本語）: 選択ページキャンバス位置保存テスト
+    /// 概要: ドラッグ確定用の位置更新で、解像度、配置名、preview Mock State が維持されることを検証します。
+    @Test("選択ページのキャンバス位置だけをogpへ保存する")
+    func testUpdateSelectedPageCanvasPositionPreservesCanvasMetadata() throws {
+        // コンディション：一時プロジェクトを開き、配置名と Mock State を含む canvas を保存しておく（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let previewContext = OpenGraphitePreviewContext(fieldMocks: ["selectedLanguage": "ja"])
+        store.updateSelectedPageCanvas(
+            x: 10,
+            y: 20,
+            width: 390,
+            height: 844,
+            name: "Desktop",
+            previewContext: previewContext
+        )
+
+        // 検証内容：位置だけを更新する（When）
+        store.updateSelectedPageCanvasPosition(x: 120, y: -32)
+
+        // 期待値：x/y だけが更新され、既存 metadata は維持される（Then）
+        let expectedCanvas = OpenGraphiteCanvas(
+            name: "Desktop",
+            x: 120,
+            y: -32,
+            width: 390,
+            height: 844,
+            previewContext: previewContext
+        )
+        #expect(store.selectedPage?.canvas == expectedCanvas)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedPage = try #require(reloadedProject.project.allPages.first)
+        #expect(persistedPage.canvas == expectedCanvas)
+        #expect(store.statusMessage.contains("キャンバス位置を更新"))
+    }
+
+    /// 論理名（日本語）: Componentキャンバス位置保存テスト
+    /// 概要: Components セグメントの component canvas でも、ドラッグ確定用の位置更新が `.ogp` に保存されることを検証します。
+    @Test("Component canvasの位置だけをogpへ保存する")
+    func testUpdateSelectedPageCanvasPositionPersistsComponentCanvas() throws {
+        // コンディション：page と component canvas を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let previewContext = OpenGraphitePreviewContext(fieldMocks: ["variant": "compact"])
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "History Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                )
+            ],
+            components: [
+                OpenGraphitePage(
+                    id: "design-system",
+                    path: "_components/design-system.html",
+                    canvas: OpenGraphiteCanvas(
+                        name: "Desktop",
+                        x: 200,
+                        y: 16,
+                        width: 1180,
+                        height: 900,
+                        previewContext: previewContext
+                    )
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.selectComponentsSegment()
+
+        // 検証内容：Components セグメントで選択中の component canvas の位置だけを更新する（When）
+        store.updateSelectedPageCanvasPosition(x: 320, y: -48)
+
+        // 期待値：component canvas の x/y だけが更新され、page canvas と component metadata は維持される（Then）
+        let expectedComponentCanvas = OpenGraphiteCanvas(
+            name: "Desktop",
+            x: 320,
+            y: -48,
+            width: 1180,
+            height: 900,
+            previewContext: previewContext
+        )
+        #expect(store.selectedCanvasSegment == .components)
+        #expect(store.selectedPage?.canvas == expectedComponentCanvas)
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let persistedPage = try #require(reloadedProject.project.chapters.first?.pages.first)
+        let persistedComponent = try #require(reloadedProject.project.components.first)
+        #expect(persistedPage.canvas == OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100))
+        #expect(persistedComponent.canvas == expectedComponentCanvas)
+    }
+
     /// 論理名（日本語）: 不正キャンバス配置拒否テスト
     /// 概要: 解像度が 0 以下の場合に Store と `.ogp` を更新しないことを検証します。
     @Test("不正な解像度ではキャンバス配置を更新しない")
