@@ -907,6 +907,15 @@ struct OpenGraphiteAgentCoreTests {
             "<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>",
             to: fixture.rootURL.appendingPathComponent("downloads.html")
         )
+        let downloadsHTMLURL = fixture.rootURL.appendingPathComponent("downloads.html")
+        let downloadsCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: downloadsHTMLURL)
+        try """
+        [data-og-internal-id="page"] {
+          color: rgb(12, 12, 12);
+        }
+        """.write(to: downloadsCSSURL, atomically: true, encoding: .utf8)
+        let originalDownloadsHTML = try String(contentsOf: downloadsHTMLURL, encoding: .utf8)
+        let originalDownloadsCSS = try String(contentsOf: downloadsCSSURL, encoding: .utf8)
         try fixture.writeProject(to: projectURL)
 
         // 検証内容：downloads page を追加する
@@ -923,6 +932,14 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages.map(\.id) == ["home", "downloads"])
         #expect(summary.pages[1].path == "downloads.html")
         #expect(summary.pages[1].canvas.x == 1480)
+        let finalDownloadsHTML = try String(contentsOf: downloadsHTMLURL, encoding: .utf8)
+        let finalDownloadsCSS = try String(contentsOf: downloadsCSSURL, encoding: .utf8)
+        #expect(finalDownloadsHTML == originalDownloadsHTML)
+        #expect(finalDownloadsCSS == originalDownloadsCSS)
+        #expect(!finalDownloadsHTML.contains("--og-edit-width"))
+        #expect(!finalDownloadsHTML.contains("--og-edit-min-height"))
+        #expect(!finalDownloadsCSS.contains("--og-edit-width"))
+        #expect(!finalDownloadsCSS.contains("--og-edit-min-height"))
     }
 
     /// 論理名（日本語）: プロジェクトページ同一path追加テスト
@@ -934,6 +951,8 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        let homeCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        #expect(!FileManager.default.fileExists(atPath: homeCompanionCSSURL.path))
         try fixture.writeProject(to: projectURL)
 
         // 検証内容：同じ path を別 ID で preview canvas として追加する
@@ -949,6 +968,7 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages.map(\.id) == ["home", "home-eng"])
         #expect(summary.pages.map(\.path) == ["index.html", "index.html"])
         #expect(summary.pages[1].canvas.y == 1280)
+        #expect(!FileManager.default.fileExists(atPath: homeCompanionCSSURL.path))
     }
 
     /// 論理名（日本語）: プロジェクトページ配置テスト
@@ -960,6 +980,15 @@ struct OpenGraphiteAgentCoreTests {
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
         try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="page"] {
+              background: white;
+            }
+            """
+        )
+        let originalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let originalCSS = try fixture.readCompanionCSS()
         try fixture.writeProject(to: projectURL)
 
         // 検証内容：既存 home page の x/y だけを外部 page ID 指定で更新する
@@ -979,6 +1008,14 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.pages[0].canvas.y == 80)
         #expect(summary.pages[0].canvas.width == 1440)
         #expect(summary.pages[0].canvas.height == 1200)
+        let finalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let finalCSS = try fixture.readCompanionCSS()
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+        #expect(!finalHTML.contains("--og-edit-width"))
+        #expect(!finalHTML.contains("--og-edit-min-height"))
+        #expect(!finalCSS.contains("--og-edit-width"))
+        #expect(!finalCSS.contains("--og-edit-min-height"))
     }
 
     /// 論理名（日本語）: 複合ページ参照解決テスト

@@ -638,11 +638,19 @@ struct EditorStoreTests {
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         let existingHTMLURL = fixture.publicURL.appendingPathComponent("landing.html")
+        let existingCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: existingHTMLURL)
         try "<!doctype html>\n<html><body>landing</body></html>".write(
             to: existingHTMLURL,
             atomically: true,
             encoding: .utf8
         )
+        try """
+        body {
+          color: rgb(20, 20, 20);
+        }
+        """.write(to: existingCompanionCSSURL, atomically: true, encoding: .utf8)
+        let originalHTML = try String(contentsOf: existingHTMLURL, encoding: .utf8)
+        let originalCSS = try String(contentsOf: existingCompanionCSSURL, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         store.addChapter()
@@ -654,6 +662,8 @@ struct EditorStoreTests {
         let addedPage = try #require(store.selectedPage)
         let addedChapter = try #require(store.selectedChapter)
         let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let finalHTML = try String(contentsOf: existingHTMLURL, encoding: .utf8)
+        let finalCSS = try String(contentsOf: existingCompanionCSSURL, encoding: .utf8)
 
         #expect(addedChapter.id == "chapter-1")
         #expect(addedPage.id == "landing")
@@ -663,12 +673,44 @@ struct EditorStoreTests {
         #expect(addedPage.canvas.y == 0)
         #expect(addedPage.canvas.width == 100)
         #expect(addedPage.canvas.height == 100)
-        #expect(try String(contentsOf: existingHTMLURL, encoding: .utf8).contains("landing"))
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+        #expect(!finalHTML.contains("--og-edit-width"))
+        #expect(!finalHTML.contains("--og-edit-min-height"))
+        #expect(!finalCSS.contains("--og-edit-width"))
+        #expect(!finalCSS.contains("--og-edit-min-height"))
         #expect(store.selectedCanvasSegment == .pages)
         #expect(store.lastError == nil)
         #expect(reloadedProject.project.chapters[0].pages.map(\.id) == ["home"])
         #expect(reloadedProject.project.chapters[1].pages.map(\.id) == ["landing"])
         #expect(reloadedProject.project.chapters[1].pages[0].internalID == addedPage.internalID)
+    }
+
+    /// 論理名（日本語）: 既存HTML追加時のCSS非作成テスト
+    /// 概要: OpenGraphite 導入前の既存 HTML を page entry として追加しても、同名 companion CSS を自動作成しないことを検証します。
+    @Test("既存HTML追加はcompanion CSSを自動作成しない")
+    func testAddExistingPageDoesNotCreateCompanionCSS() throws {
+        // コンディション：companion CSS を持たない既存 HTML を public 配下に用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let existingHTMLURL = fixture.publicURL.appendingPathComponent("archive.html")
+        let existingCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: existingHTMLURL)
+        let originalHTML = "<!doctype html>\n<html><body>archive</body></html>"
+        try originalHTML.write(to: existingHTMLURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.addChapter()
+        #expect(!FileManager.default.fileExists(atPath: existingCompanionCSSURL.path))
+
+        // 検証内容：既存 HTML を page entry として追加する（When）
+        store.addExistingPage(at: existingHTMLURL)
+
+        // 期待値：manifest 追加だけが行われ、HTML と companion CSS は永続化されない（Then）
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+        #expect(reloadedProject.project.chapters[1].pages.map(\.path) == ["archive.html"])
+        #expect(try String(contentsOf: existingHTMLURL, encoding: .utf8) == originalHTML)
+        #expect(!FileManager.default.fileExists(atPath: existingCompanionCSSURL.path))
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: 既存HTML重複追加拒否テスト
