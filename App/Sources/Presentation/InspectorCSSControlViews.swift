@@ -276,7 +276,7 @@ struct CSSPairVariableField: View {
 }
 
 /// 論理名（日本語）: CSS位置オフセット変数グループ
-/// 概要: `top`、`right`、`bottom`、`left` を実際の辺位置に合わせた十字配置で編集します。
+/// 概要: `top`、`right`、`bottom`、`left` を狭い Inspector 幅に収まる縦配置で編集します。
 ///
 /// プロパティ:
 /// - `idPrefix`: 入力欄 identity の接頭辞。
@@ -296,19 +296,15 @@ struct CSSInsetVariableGroup: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             dimensionField(key: "top", value: top)
-
-            HStack(alignment: .top, spacing: 8) {
-                dimensionField(key: "left", value: left)
-                dimensionField(key: "right", value: right)
-            }
-
+            dimensionField(key: "left", value: left)
+            dimensionField(key: "right", value: right)
             dimensionField(key: "bottom", value: bottom)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 論理名（日本語）: CSS位置オフセット入力生成関数
-    /// 処理概要: 指定 CSS property の dimension 入力を生成し、狭幅では割り当て領域でクリップします。
+    /// 処理概要: 指定 CSS property の dimension 入力を生成し、親レイアウトから与えられた幅へ収めます。
     ///
     /// - Parameters:
     ///   - key: CSS property 名。
@@ -549,16 +545,7 @@ struct CSSDimensionVariableField: View {
             if dimensionValue.kind == .unsupported {
                 CSSUnsupportedValueNotice(value: dimensionValue.cssString)
             } else {
-                Picker("", selection: kindBinding) {
-                    Text("unset").tag(CSSDimensionKind.empty)
-                    Text("length").tag(CSSDimensionKind.length)
-                    Text("keyword").tag(CSSDimensionKind.keyword)
-                    Text("function").tag(CSSDimensionKind.function)
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
+                CSSDimensionKindPicker(selection: kindBinding)
 
                 switch dimensionValue.kind {
                 case .empty:
@@ -731,6 +718,95 @@ struct CSSDimensionVariableField: View {
         dimensionValue = CSSDimensionValue(cssString: nextValue)
         guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
         onCommit(nextValue)
+    }
+}
+
+/// 論理名（日本語）: CSS寸法種別セグメント
+/// 概要: 標準 segmented Picker の intrinsic width に依存せず、Inspector の親幅内で寸法値の種別を切り替えます。
+///
+/// プロパティ:
+/// - `selection`: 現在選択している CSS dimension 種別。
+private struct CSSDimensionKindPicker: View {
+    @Binding var selection: CSSDimensionKind
+
+    private let options: [CSSDimensionKind] = [.empty, .length, .keyword, .function]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(options.enumerated()), id: \.element) { option in
+                segmentButton(for: option.element)
+
+                if option.offset < options.count - 1 {
+                    divider
+                }
+            }
+        }
+        .padding(1)
+        .frame(maxWidth: .infinity)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+    }
+
+    /// 論理名（日本語）: CSS寸法種別セグメントボタン生成関数
+    /// 処理概要: 指定種別を選択する等幅ボタンを生成します。
+    ///
+    /// - Parameter kind: ボタンが選択する CSS dimension 種別。
+    /// - Returns: 種別切り替えボタン。
+    private func segmentButton(for kind: CSSDimensionKind) -> some View {
+        let isSelected = selection == kind
+        return Button {
+            guard selection != kind else { return }
+            selection = kind
+        } label: {
+            Text(title(for: kind))
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.84))
+                .padding(.horizontal, 2)
+                .frame(maxWidth: .infinity, minHeight: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius - 1)
+                    .fill(Color.accentColor)
+            }
+        }
+        .accessibilityLabel(title(for: kind))
+        .accessibilityValue(isSelected ? "selected" : "")
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(EditorColumnStyle.separatorColor)
+            .frame(width: 1, height: 14)
+            .padding(.horizontal, 1)
+    }
+
+    /// 論理名（日本語）: CSS寸法種別表示名生成関数
+    /// 処理概要: CSS dimension 種別に対応するセグメント表示名を返します。
+    ///
+    /// - Parameter kind: 表示対象の CSS dimension 種別。
+    /// - Returns: セグメントに表示する文字列。
+    private func title(for kind: CSSDimensionKind) -> String {
+        switch kind {
+        case .empty:
+            return "unset"
+        case .length:
+            return "length"
+        case .keyword:
+            return "keyword"
+        case .function:
+            return "function"
+        case .unsupported:
+            return "unsupported"
+        }
     }
 }
 
