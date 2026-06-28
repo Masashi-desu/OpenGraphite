@@ -1,113 +1,142 @@
 {
+  "version" : "0.1.0",
+  "htmlRoot" : "public",
+  "repositoryRoot" : "..",
+  "cssLibrary" : "CSS\/OpenGraphite.css",
+  "name" : "OpenGraphite Sample",
   "chapters" : [
     {
-      "id" : "main",
-      "internalID" : "1gibtxulofmr0",
       "pages" : [
         {
           "canvas" : {
-            "height" : 1200,
+            "width" : 1440,
             "name" : "Desktop",
+            "height" : 1200,
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"
               }
             },
-            "width" : 1440,
-            "x" : 0,
-            "y" : 0
+            "x" : -423,
+            "y" : -359
           },
           "id" : "home",
-          "internalID" : "kl1xxsgkiuue",
-          "path" : "index.html"
+          "path" : "index.html",
+          "internalID" : "kl1xxsgkiuue"
         },
         {
           "canvas" : {
-            "height" : 1200,
+            "width" : 1440,
             "name" : "Desktop",
+            "height" : 1200,
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"
               }
             },
-            "width" : 1440,
             "x" : 1520,
             "y" : 0
           },
           "id" : "downloads",
-          "internalID" : "2s5pn481hyrao",
-          "path" : "downloads.html"
+          "path" : "downloads.html",
+          "internalID" : "2s5pn481hyrao"
         },
         {
           "canvas" : {
-            "height" : 1200,
+            "width" : 1440,
             "name" : "Desktop",
+            "height" : 1200,
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"
               }
             },
-            "width" : 1440,
             "x" : 3040,
             "y" : 0
           },
           "id" : "docs",
-          "internalID" : "2opic2blumreb",
-          "path" : "docs.html"
+          "path" : "docs.html",
+          "internalID" : "2opic2blumreb"
         },
         {
           "canvas" : {
+            "width" : 1440,
+            "name" : "Desktop \/ eng",
             "height" : 1200,
-            "name" : "Desktop / eng",
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "eng"
               }
             },
-            "width" : 1440,
             "x" : 0,
             "y" : 1280
           },
           "id" : "home-eng",
-          "internalID" : "ecam046890kg",
-          "path" : "index.html"
+          "path" : "index.html",
+          "internalID" : "ecam046890kg"
         },
         {
           "canvas" : {
+            "width" : 1440,
+            "name" : "Desktop \/ eng",
             "height" : 1200,
-            "name" : "Desktop / eng",
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "eng"
               }
             },
-            "width" : 1440,
             "x" : 1520,
             "y" : 1280
           },
           "id" : "downloads-eng",
-          "internalID" : "3ep2yvn3v4s96",
-          "path" : "downloads.html"
+          "path" : "downloads.html",
+          "internalID" : "3ep2yvn3v4s96"
         },
         {
           "canvas" : {
+            "width" : 1440,
+            "name" : "Desktop \/ eng",
             "height" : 1200,
-            "name" : "Desktop / eng",
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "eng"
               }
             },
-            "width" : 1440,
             "x" : 3040,
             "y" : 1280
           },
           "id" : "docs-eng",
-          "internalID" : "js0y82wvglh",
-          "path" : "docs.html"
+          "path" : "docs.html",
+          "internalID" : "js0y82wvglh"
         }
       ],
-      "title" : "Main"
+      "internalID" : "1gibtxulofmr0",
+      "title" : "Main",
+      "id" : "main"
+    },
+    {
+      "pages" : [
+        {
+          "canvas" : {
+            "width" : 906,
+            "name" : "Desktop",
+            "height" : 826,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "ja"
+              }
+            },
+            "x" : 91,
+            "y" : 93
+          },
+          "id" : "page-1",
+          "path" : "page-1.html",
+          "internalID" : "2oz0h0zhsvky"
+        }
+      ],
+      "internalID" : "2qrx5oessxa9d",
+      "title" : "Chapter 2",
+      "id" : "chapter-1"
     }
   ],
   "collections" : [
@@ -115,39 +144,34 @@
       "components" : [
         {
           "canvas" : {
-            "height" : 1900,
+            "width" : 1180,
             "name" : "Desktop",
+            "height" : 1900,
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"
               },
               "placementMocks" : {
-                "67a2e12dbed8" : {
-                  "codeViewerMode" : "preview",
-                  "selectedLanguage" : "ja"
-                },
                 "docsnavcollapsedplacement" : {
                   "placementMode" : "collapsed"
+                },
+                "67a2e12dbed8" : {
+                  "selectedLanguage" : "ja",
+                  "codeViewerMode" : "preview"
                 }
               }
             },
-            "width" : 1180,
             "x" : 1120,
             "y" : 0
           },
           "id" : "design-system",
-          "internalID" : "3bgx6phkz3jv5",
-          "path" : "_components/design-system.html"
+          "path" : "_components\/design-system.html",
+          "internalID" : "3bgx6phkz3jv5"
         }
       ],
-      "id" : "main",
       "internalID" : "component-main",
-      "title" : "Main"
+      "title" : "Main",
+      "id" : "main"
     }
-  ],
-  "cssLibrary" : "CSS/OpenGraphite.css",
-  "htmlRoot" : "public",
-  "name" : "OpenGraphite Sample",
-  "repositoryRoot" : "..",
-  "version" : "0.1.0"
+  ]
 }
