@@ -116,6 +116,18 @@ function resourcesList() {
       mimeType: "application/json"
     },
     {
+      uri: "opengraphite://design-tokens/sample",
+      name: "Sample Design Tokens",
+      description: "Design tokens from the sample project's CSS library.",
+      mimeType: "application/json"
+    },
+    {
+      uri: "opengraphite://design-tokens/current",
+      name: "Current App Project Design Tokens",
+      description: "Design tokens from the project currently opened by OpenGraphite.app.",
+      mimeType: "application/json"
+    },
+    {
       uri: "opengraphite://pages/sample",
       name: "Sample Pages",
       description: "Sample project pages as resolved by ogkiln.",
@@ -174,6 +186,10 @@ function readResource(uri) {
       return textResource(uri, "application/json", runOgkiln(["project", "inspect", "SampleProject/OpenGraphiteSample.ogp", "--json"]).stdout);
     case "opengraphite://project/current":
       return textResource(uri, "application/json", runOgkiln(["project", "current", "--json"]).stdout);
+    case "opengraphite://design-tokens/sample":
+      return textResource(uri, "application/json", runOgkiln(["design-token", "list", "SampleProject/OpenGraphiteSample.ogp", "--json"]).stdout);
+    case "opengraphite://design-tokens/current":
+      return textResource(uri, "application/json", runOgkiln(["design-token", "list", "current", "--json"]).stdout);
     case "opengraphite://pages/sample": {
       const project = JSON.parse(runOgkiln(["project", "inspect", "SampleProject/OpenGraphiteSample.ogp", "--json"]).stdout);
       return textResource(uri, "application/json", JSON.stringify(project.pages, null, 2));
@@ -220,6 +236,30 @@ function toolsList() {
       name: "get_contract",
       description: "Return the active OpenGraphite contract used by ogkiln.",
       inputSchema: objectSchema({}, [])
+    },
+    {
+      name: "list_design_tokens",
+      description: "List project-level design tokens stored as CSS custom properties in the project CSS :root rule.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." }
+      }, ["projectPath"])
+    },
+    {
+      name: "set_design_token",
+      description: "Set a project-level design token in the project CSS :root rule.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        name: { type: "string", description: "CSS custom property name, for example --color-primary." },
+        value: { type: "string", description: "CSS value stored on the token." }
+      }, ["projectPath", "name", "value"])
+    },
+    {
+      name: "remove_design_token",
+      description: "Remove a project-level design token from the project CSS :root rule.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        name: { type: "string", description: "CSS custom property name, for example --color-primary." }
+      }, ["projectPath", "name"])
     },
     {
       name: "build_project",
@@ -599,6 +639,26 @@ function commandForTool(name, args) {
       return ["validate", requiredArg(args, "projectPath"), "--json"];
     case "get_contract":
       return ["contract", "get", "--json"];
+    case "list_design_tokens":
+      return ["design-token", "list", requiredArg(args, "projectPath"), "--json"];
+    case "set_design_token":
+      return [
+        "design-token",
+        "set",
+        requiredArg(args, "projectPath"),
+        "--name",
+        requiredArg(args, "name"),
+        "--value",
+        requiredArg(args, "value")
+      ];
+    case "remove_design_token":
+      return [
+        "design-token",
+        "remove",
+        requiredArg(args, "projectPath"),
+        "--name",
+        requiredArg(args, "name")
+      ];
     case "build_project":
       return ["build", requiredArg(args, "projectPath"), "--output", requiredArg(args, "outputPath")];
     case "add_project_page":

@@ -60,6 +60,24 @@ struct OgkilnCLI {
             let summary = try core.inspectProject(at: projectURL)
             return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
 
+        case ["design-token", "list"]:
+            let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let result = try core.designTokens(projectURL: projectURL)
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
+        case ["design-token", "set"]:
+            let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let name = try requiredOption("--name", in: arguments)
+            let value = try requiredOption("--value", in: arguments)
+            let result = try core.setDesignToken(name, value: value, projectURL: projectURL)
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
+        case ["design-token", "remove"]:
+            let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let name = try requiredOption("--name", in: arguments)
+            let result = try core.setDesignToken(name, value: "", projectURL: projectURL)
+            return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
         case ["project", "page"]:
             guard arguments.indices.contains(2) else { break }
             switch arguments[2] {
@@ -829,6 +847,9 @@ struct OgkilnCLI {
       ogkiln contract get --json
       ogkiln project current --json
       ogkiln project inspect <project.ogp|current> --json
+      ogkiln design-token list <project.ogp|current> --json
+      ogkiln design-token set <project.ogp|current> --name <css-custom-property> --value <css-value>
+      ogkiln design-token remove <project.ogp|current> --name <css-custom-property>
       ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--allow-duplicate-path]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]

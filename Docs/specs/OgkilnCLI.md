@@ -89,6 +89,9 @@ ogkiln screenshot node <project.ogp|current> [--page-id <page-id>|--component-id
 ## Update Commands
 
 ```bash
+ogkiln design-token list <project.ogp|current> --json
+ogkiln design-token set <project.ogp|current> --name <css-custom-property> --value <css-value>
+ogkiln design-token remove <project.ogp|current> --name <css-custom-property>
 ogkiln node style set <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <id> --var <css-property> --value <css-value>
 ogkiln node style remove <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <id> --var <css-property>
 ogkiln node attr set <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <id> --name <data-og-attr> --value <value>
@@ -98,6 +101,8 @@ ogkiln node text set <project.ogp|current> [--page-id <page-id>|--component-id <
 ```
 
 `node style set/remove` は `OpenGraphite.contract.json` の編集対象 CSS 宣言だけを扱い、対象 HTML と同名の companion CSS にある `[data-og-internal-id="..."]` rule を更新する。HTML inline `style` は作らない。`node attr set/remove` は `OpenGraphite.contract.json` の `editableAttributes` に含まれる属性だけを扱い、`data-og-internal-id` は変更しない。component placement の mock injection は HTML 属性ではなく `.ogp` の `previewContext.placementMocks` に保存するため、`node attr set/remove` では扱わない。
+
+`design-token list/set/remove` は `.ogp` の `cssLibrary` が指す CSS file の `:root` custom property を扱う。token は project-level resource であり、HTML と companion CSS は変更しない。node 側から token を使う場合は `node style set ... --var background --value 'var(--color-accent)'` のように、通常の CSS 値として `var(...)` 参照を保存する。
 
 `node text set` は text として保存する。HTML 断片を入れる操作ではないため、`<`、`>`、`&` は escape する。
 

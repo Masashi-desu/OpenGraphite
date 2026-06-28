@@ -146,7 +146,7 @@
           "canvas" : {
             "width" : 1180,
             "name" : "Desktop",
-            "height" : 1900,
+            "height" : 4300,
             "previewContext" : {
               "fieldMocks" : {
                 "selectedLanguage" : "ja"

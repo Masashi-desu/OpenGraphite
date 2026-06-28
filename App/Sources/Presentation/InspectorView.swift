@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -21,7 +22,10 @@ struct InspectorView: View {
                 ProjectResourceInspectorView(
                     resource: projectResource,
                     loadedProject: store.loadedProject,
+                    designTokens: store.projectDesignTokens,
                     i18nInspection: store.projectI18nRuntimeInspection,
+                    onUpdateDesignToken: store.updateProjectDesignToken,
+                    onRemoveDesignToken: store.removeProjectDesignToken,
                     onRecommendI18n: store.recommendI18nForProject,
                     onUpdateI18nRuntime: store.updateProjectI18nRuntime
                 )
@@ -2142,7 +2146,10 @@ private struct LocaleTypographyFontSection: View {
 private struct ProjectResourceInspectorView: View {
     var resource: OpenGraphiteProjectResourceSelection
     var loadedProject: LoadedOpenGraphiteProject?
+    var designTokens: [OpenGraphiteDesignToken]
     var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var onUpdateDesignToken: (_ name: String, _ value: String) -> Void
+    var onRemoveDesignToken: (_ name: String) -> Void
     var onRecommendI18n: () -> Void
     var onUpdateI18nRuntime: (_ loadPath: String?, _ fallbackLocale: String?) -> Void
 
@@ -2158,6 +2165,15 @@ private struct ProjectResourceInspectorView: View {
                     pathResourceSection(title: "HTML Root", path: htmlRootPath)
                 case .cssLibrary:
                     pathResourceSection(title: "CSS", path: loadedProject?.project.cssLibrary ?? "-")
+                case .designTokens(let path):
+                    InspectorSection(title: "Design Tokens", sectionID: .designTokens) {
+                        DesignTokenEditorSection(
+                            cssPath: path,
+                            tokens: designTokens,
+                            onUpdate: onUpdateDesignToken,
+                            onRemove: onRemoveDesignToken
+                        )
+                    }
                 case .runtime(let path):
                     pathResourceSection(title: "Runtime", path: path)
                 case .iconCDN(let library, let provider, let package, let version, let usedCount, let iconNames):
@@ -2266,6 +2282,239 @@ private struct ProjectResourceInspectorView: View {
     }
 }
 
+/// 論理名（日本語）: デザイントークン編集セクション
+/// 概要: Project CSS の `:root` に保存された CSS custom property を一覧・追加・削除できる Inspector セクションです。
+///
+/// プロパティ:
+/// - `cssPath`: token を保存する CSS file path。
+/// - `tokens`: 表示する design token 一覧。
+/// - `onUpdate`: token 保存時に呼び出す処理。
+/// - `onRemove`: token 削除時に呼び出す処理。
+private struct DesignTokenEditorSection: View {
+    var cssPath: String
+    var tokens: [OpenGraphiteDesignToken]
+    var onUpdate: (_ name: String, _ value: String) -> Void
+    var onRemove: (_ name: String) -> Void
+
+    @State private var newTokenName = ""
+    @State private var newTokenValue = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            InspectorInfoRow(label: "path", value: cssPath)
+            InspectorInfoRow(label: "count", value: "\(tokens.count)")
+
+            if tokens.isEmpty {
+                Text("No tokens")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(tokens) { token in
+                        DesignTokenRow(
+                            token: token,
+                            onUpdate: onUpdate,
+                            onRemove: onRemove
+                        )
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("New Token")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.attribute("token"),
+                    iconHelp: "Token"
+                ) {
+                    TextField("--color-primary", text: $newTokenName)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .onSubmit(addTokenIfValid)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.cssVariable(newTokenName.isEmpty ? "--token" : newTokenName),
+                    iconHelp: "Value"
+                ) {
+                    TextField("#2563eb", text: $newTokenValue)
+                        .textFieldStyle(.plain)
+                        .font(.caption.monospaced())
+                        .onSubmit(addTokenIfValid)
+                        .frame(minWidth: 0, maxWidth: .infinity)
+                }
+
+                Button(action: addTokenIfValid) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(canAddToken ? Color.white : Color.secondary)
+                    .background(
+                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                            .fill(canAddToken ? Color.accentColor : EditorColumnStyle.elevatedRowFill)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canAddToken)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var canAddToken: Bool {
+        Self.isValidTokenName(newTokenName)
+            && !newTokenValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 論理名（日本語）: デザイントークン追加関数
+    /// 処理概要: 入力中の token 名と値を正規化し、保存後に draft を初期化します。
+    private func addTokenIfValid() {
+        guard canAddToken else { return }
+        let name = newTokenName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = newTokenValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        onUpdate(name, value)
+        newTokenName = ""
+        newTokenValue = ""
+    }
+
+    /// 論理名（日本語）: デザイントークン名UI判定関数
+    /// 処理概要: core 側と同じ ASCII 範囲の CSS custom property 名だけを追加ボタン有効条件にします。
+    private static func isValidTokenName(_ name: String) -> Bool {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedName.range(
+            of: #"^--[A-Za-z_][A-Za-z0-9_-]*$"#,
+            options: [.regularExpression]
+        ) != nil
+    }
+}
+
+/// 論理名（日本語）: デザイントークン行
+/// 概要: 既存 design token の値、参照文字列、削除操作を表示します。
+///
+/// プロパティ:
+/// - `token`: 表示対象 token。
+/// - `onUpdate`: 値更新時に呼び出す処理。
+/// - `onRemove`: 削除時に呼び出す処理。
+private struct DesignTokenRow: View {
+    var token: OpenGraphiteDesignToken
+    var onUpdate: (_ name: String, _ value: String) -> Void
+    var onRemove: (_ name: String) -> Void
+
+    @State private var draftValue: String
+    @FocusState private var isFocused: Bool
+
+    /// 論理名（日本語）: デザイントークン行初期化関数
+    /// 処理概要: token の現在値を draft として保持します。
+    ///
+    /// - Parameters:
+    ///   - token: 表示対象 token。
+    ///   - onUpdate: 値更新時に呼び出す処理。
+    ///   - onRemove: 削除時に呼び出す処理。
+    init(
+        token: OpenGraphiteDesignToken,
+        onUpdate: @escaping (_ name: String, _ value: String) -> Void,
+        onRemove: @escaping (_ name: String) -> Void
+    ) {
+        self.token = token
+        self.onUpdate = onUpdate
+        self.onRemove = onRemove
+        _draftValue = State(initialValue: token.value)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(token.name)
+                        .font(.caption.monospaced().weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(token.category)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Button(action: copyReference) {
+                    OpenGraphiteIconView(icon: .parameterLink, size: 13)
+                        .frame(width: 26, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(token.reference)
+
+                Button {
+                    onRemove(token.name)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 26, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Remove")
+            }
+
+            InspectorInputChrome(
+                icon: InspectorParameterIcon.cssVariable(token.name),
+                iconHelp: token.name
+            ) {
+                TextField("", text: $draftValue)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .focused($isFocused)
+                    .onSubmit(commitIfChanged)
+                    .frame(minWidth: 0, maxWidth: .infinity)
+            }
+
+            Text(token.reference)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(8)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+        .onChange(of: token.value) { _, newValue in
+            draftValue = newValue
+        }
+        .onChange(of: isFocused) { _, isFocused in
+            guard !isFocused else { return }
+            commitIfChanged()
+        }
+    }
+
+    /// 論理名（日本語）: デザイントークン値確定関数
+    /// 処理概要: draft 値を trim し、変更がある場合だけ Project CSS へ保存します。
+    private func commitIfChanged() {
+        let nextValue = draftValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        draftValue = nextValue
+        guard nextValue != token.value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onUpdate(token.name, nextValue)
+    }
+
+    /// 論理名（日本語）: デザイントークン参照コピー関数
+    /// 処理概要: `var(--token)` 形式の参照文字列を pasteboard へ保存します。
+    private func copyReference() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(token.reference, forType: .string)
+    }
+}
+
 /// 論理名（日本語）: Project資源概要パネル
 /// 概要: Project Inspector 上部に選択中実装資源の種類と補助情報を表示します。
 ///
@@ -2309,6 +2558,8 @@ private struct ProjectResourceSummaryPanel: View {
             return .i18nResource
         case .localeResource:
             return .localeResource
+        case .designTokens:
+            return .designTokenResource
         case .iconCDN:
             return .iconCDNResource
         case .htmlRoot, .cssLibrary, .runtime:

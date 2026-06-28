@@ -103,6 +103,8 @@ global theme variable は通常 `:root` に置く。
 - `--og-accent`
 - `--og-accent-foreground`
 
+project-wide design token は、`.ogp` の `cssLibrary` が指す CSS file の `:root` に CSS custom property として置く。`--color-accent`、`--space-medium`、`--radius-small` のような token は Project Inspector、`ogkiln design-token`、MCP design token tools から一覧・編集できる。node 側は companion CSS の標準 CSS property 値として `var(--color-accent)` や `var(--space-medium)` を参照する。design token は node-scoped declaration ではなく project-level resource であり、HTML inline style には置かない。
+
 box / layout の共通 variable:
 
 - `--og-width`, `--og-height`

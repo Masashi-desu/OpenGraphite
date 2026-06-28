@@ -995,6 +995,13 @@ private struct ProjectDependencyListView: View {
                 status: FileManager.default.fileExists(atPath: loadedProject.cssURL.path) ? "Found" : "Missing",
                 icon: .dependencyResource,
                 selection: .cssLibrary
+            ),
+            ProjectDependencyItem(
+                title: "Design Tokens",
+                detail: project.cssLibrary,
+                status: designTokenStatus(for: loadedProject),
+                icon: .designTokenResource,
+                selection: .designTokens(path: project.cssLibrary)
             )
         ]
 
@@ -1011,6 +1018,16 @@ private struct ProjectDependencyListView: View {
         )
         items.append(contentsOf: iconCDNDependencyItems(for: loadedProject))
         return items
+    }
+
+    private func designTokenStatus(for loadedProject: LoadedOpenGraphiteProject) -> String {
+        guard FileManager.default.fileExists(atPath: loadedProject.cssURL.path) else {
+            return "Missing"
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        let count = (try? core.designTokens(at: loadedProject.cssURL).tokens.count) ?? 0
+        return "\(count) tokens"
     }
 
     private func iconCDNDependencyItems(for loadedProject: LoadedOpenGraphiteProject) -> [ProjectDependencyItem] {

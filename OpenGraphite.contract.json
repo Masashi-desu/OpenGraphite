@@ -134,5 +134,10 @@
   ],
   "cssVariablePatterns": [
     { "pattern": "^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$", "category": "text", "syntax": "<font-family-list>|var()", "editable": true }
-  ]
+  ],
+  "designTokens": {
+    "selector": ":root",
+    "namePattern": "^--[A-Za-z_][A-Za-z0-9_-]*$",
+    "valueSyntax": "<declaration-value>"
+  }
 }

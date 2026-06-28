@@ -1,123 +1,123 @@
 [data-og-internal-id="a40992e00b6c"] {
   gap:0;
-  padding:0 52px 76px;
-  background:#08090a;
-  color:#f4f6f7;
-  --og-font-family-default:'Inter','Noto Sans JP',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --og-font-family-ja:'Noto Sans JP','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --og-font-family-eng:'Noto Sans','Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  padding:0 var(--space-page-inset) var(--space-page-bottom);
+  background:var(--color-canvas);
+  color:var(--color-text);
+  --og-font-family-default:var(--font-family-ui);
+  --og-font-family-ja:var(--font-family-ja);
+  --og-font-family-eng:var(--font-family-eng);
   min-height:100vh;
 }
 
 [data-og-internal-id="60447086753d"] {
-  padding:10px 14px;
-  border-radius:4px;
-  background:#08090a;
-  color:#dfe3e6;
-  border:1px solid #4b535b;
+  padding:var(--button-padding-compact);
+  border-radius:var(--radius-small);
+  background:var(--color-canvas);
+  color:var(--color-text-soft);
+  border:var(--border-strong);
 }
 
 [data-og-internal-id="downloadsnavhomelabel"] {
-  line-height:1;
+  line-height:var(--line-height-tight);
 }
 
 [data-og-internal-id="f6d325d312e5"] {
-  padding:10px 14px;
-  border-radius:4px;
-  background:#f5f7f8;
-  color:#08090a;
-  border:1px solid #f5f7f8;
+  padding:var(--button-padding-compact);
+  border-radius:var(--radius-small);
+  background:var(--color-accent);
+  color:var(--color-accent-foreground);
+  border:var(--border-accent);
 }
 
 [data-og-internal-id="downloadsnavdownloadslabel"] {
-  line-height:1;
+  line-height:var(--line-height-tight);
 }
 
 [data-og-internal-id="b991bf4b9a72"] {
-  padding:10px 14px;
-  border-radius:4px;
-  background:#08090a;
-  color:#dfe3e6;
-  border:1px solid #4b535b;
+  padding:var(--button-padding-compact);
+  border-radius:var(--radius-small);
+  background:var(--color-canvas);
+  color:var(--color-text-soft);
+  border:var(--border-strong);
 }
 
 [data-og-internal-id="downloadsnavdocslabel"] {
-  line-height:1;
+  line-height:var(--line-height-tight);
 }
 
 [data-og-internal-id="c6d8b2e4a119"] {
-  width:min(100%,1180px);
+  width:min(100%,var(--size-page-max));
   margin:0 auto;
-  min-height:calc(100vh - 118px);
+  min-height:calc(100vh - var(--size-header-offset));
   flex:1 1 auto;
-  gap:28px;
-  padding:34px 0 0;
+  gap:var(--space-section-gap);
+  padding:var(--space-page-top) 0 0;
 }
 
 [data-og-internal-id="407e00b97947"] {
   width:100%;
   margin:0;
-  gap:24px;
+  gap:var(--space-lg);
   padding:46px 0 52px;
-  border-bottom:1px solid #30363d;
+  border-bottom:var(--border-subtle);
   overflow:hidden;
 }
 
 [data-og-internal-id="f3e07d64565c"] {
-  color:#aeb6bd;
-  letter-spacing:0;
-  font-size:13px;
-  font-weight:760;
-  text-transform:uppercase;
+  color:var(--color-text-muted);
+  letter-spacing:var(--font-letter-spacing-normal);
+  font-size:var(--font-size-label);
+  font-weight:var(--font-weight-label);
+  text-transform:var(--text-transform-label);
 }
 
 [data-og-internal-id="5a88d2410af2"] {
-  font-size:56px;
-  font-weight:840;
-  line-height:1.02;
-  letter-spacing:0;
+  font-size:var(--font-size-page-title);
+  font-weight:var(--font-weight-title);
+  line-height:var(--line-height-page-title);
+  letter-spacing:var(--font-letter-spacing-normal);
   max-width:100%;
   overflow-wrap:anywhere;
 }
 
 [data-og-internal-id="539c456bb9d2"] {
-  font-size:20px;
-  line-height:1.72;
-  color:#b8c0c7;
+  font-size:var(--font-size-lead);
+  line-height:var(--line-height-lead);
+  color:var(--color-text-secondary);
   max-width:100%;
 }
 
 [data-og-internal-id="downloadsactions20260613"] {
-  gap:10px;
+  gap:var(--space-compact);
   align-items:flex-start;
-  padding:4px 0 0;
+  padding:var(--space-2xs) 0 0;
   width:100%;
 }
 
 [data-og-internal-id="downloadsprima20260613"] {
-  width:min(100%,280px);
-  padding:15px 22px;
-  border-radius:4px;
-  background:#f5f7f8;
-  color:#08090a;
-  border:1px solid #f5f7f8;
+  width:min(100%,var(--size-nav-width));
+  padding:var(--button-padding-action);
+  border-radius:var(--radius-small);
+  background:var(--color-accent);
+  color:var(--color-accent-foreground);
+  border:var(--border-accent);
 }
 
 [data-og-internal-id="downloadsprilabel20260613"] {
-  line-height:1;
+  line-height:var(--line-height-tight);
 }
 
 [data-og-internal-id="downloadssecond20260613"] {
-  width:min(100%,280px);
-  padding:15px 22px;
-  border-radius:4px;
-  background:#111315;
-  color:#f5f7f8;
-  border:1px solid #4b535b;
+  width:min(100%,var(--size-nav-width));
+  padding:var(--button-padding-action);
+  border-radius:var(--radius-small);
+  background:var(--color-surface);
+  color:var(--color-accent);
+  border:var(--border-strong);
 }
 
 [data-og-internal-id="downloadsseclabel20260613"] {
-  line-height:1;
+  line-height:var(--line-height-tight);
 }
 
 [data-og-internal-id="installstepsanchor20260613"] {
@@ -131,15 +131,15 @@
 }
 
 [data-og-internal-id="downloadclone20260613"] {
-  width:min(100%,500px);
-  font-size:14px;
-  line-height:1.75;
-  color:#dfe3e6;
-  background:#0d0f10;
-  padding:20px;
-  border-radius:4px;
-  border:1px solid #30363d;
-  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  width:min(100%,var(--size-code-max));
+  font-size:var(--font-size-body-small);
+  line-height:var(--line-height-code);
+  color:var(--color-text-soft);
+  background:var(--color-surface-code);
+  padding:var(--code-padding);
+  border-radius:var(--radius-small);
+  border:var(--border-subtle);
+  font-family:var(--font-family-mono);
   white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
@@ -150,15 +150,15 @@
 }
 
 [data-og-internal-id="82a86f279000"] {
-  width:min(100%,500px);
-  font-size:14px;
-  line-height:1.75;
-  color:#dfe3e6;
-  background:#0d0f10;
-  padding:20px;
-  border-radius:4px;
-  border:1px solid #30363d;
-  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  width:min(100%,var(--size-code-max));
+  font-size:var(--font-size-body-small);
+  line-height:var(--line-height-code);
+  color:var(--color-text-soft);
+  background:var(--color-surface-code);
+  padding:var(--code-padding);
+  border-radius:var(--radius-small);
+  border:var(--border-subtle);
+  font-family:var(--font-family-mono);
   white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
@@ -169,15 +169,15 @@
 }
 
 [data-og-internal-id="downloadsamplecode20260613"] {
-  width:min(100%,500px);
-  font-size:14px;
-  line-height:1.75;
-  color:#dfe3e6;
-  background:#0d0f10;
-  padding:20px;
-  border-radius:4px;
-  border:1px solid #30363d;
-  font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  width:min(100%,var(--size-code-max));
+  font-size:var(--font-size-body-small);
+  line-height:var(--line-height-code);
+  color:var(--color-text-soft);
+  background:var(--color-surface-code);
+  padding:var(--code-padding);
+  border-radius:var(--radius-small);
+  border:var(--border-subtle);
+  font-family:var(--font-family-mono);
   white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
@@ -214,6 +214,6 @@
 
 @media (max-width: 760px) {
   [data-og-internal-id="a40992e00b6c"] {
-    padding: 24px;
+    padding: var(--space-lg);
   }
 }

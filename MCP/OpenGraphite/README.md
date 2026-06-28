@@ -13,6 +13,8 @@ node MCP/OpenGraphite/server.mjs
 - `opengraphite://contract/css`
 - `opengraphite://project/sample`
 - `opengraphite://project/current`
+- `opengraphite://design-tokens/sample`
+- `opengraphite://design-tokens/current`
 - `opengraphite://pages/sample`
 - `opengraphite://pages/current`
 - `opengraphite://pages/sample/home/graph`
@@ -21,6 +23,9 @@ node MCP/OpenGraphite/server.mjs
 ## Tools
 
 - `get_contract`
+- `list_design_tokens`
+- `set_design_token`
+- `remove_design_token`
 - `add_project_page`
 - `create_project_page`
 - `place_project_page`

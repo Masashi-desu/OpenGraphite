@@ -13,6 +13,7 @@ OpenGraphite の AI 協業インターフェースは、リポジトリ上の HT
 - `ogkiln`: 人間、CI、MCP server が同じ挙動を再現できる CLI。
 - OpenGraphite MCP server: AI クライアントが構造化 resource / tool として OpenGraphite リポジトリを読むための stdio MCP server。
 - `OpenGraphite.contract.json`: `data-og-*`、編集対象 CSS 宣言、type、layout、HTML に残せる role、runtime 属性の機械可読な契約。
+- Design Tokens: `.ogp` の `cssLibrary` が指す CSS file の `:root` custom property。Project Inspector / CLI / MCP から一覧・編集でき、node の CSS declaration から `var(--token)` として参照する。
 - OpenGraphite app: 正本ファイルを `WKWebView` に表示し、外部変更を検出して Canvas、Layers、Inspector へ同期する UI。
 
 MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であり、MCP の write tool は `ogkiln` または同じ core 実装と同等の validation / diagnostics を必ず通す。
@@ -240,6 +241,9 @@ AI と MCP は HTML 全体の置換より次の node 単位操作を優先する
 ```bash
 ogkiln contract get --json
 ogkiln project current --json
+ogkiln design-token list SampleProject/OpenGraphiteSample.ogp --json
+ogkiln design-token set SampleProject/OpenGraphiteSample.ogp --name --color-accent --value '#f5f7f8'
+ogkiln design-token remove SampleProject/OpenGraphiteSample.ogp --name --space-medium
 ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id tutorial --path tutorial.html --title Tutorial --body-file tutorial.body.html --x 2960 --y 0
 ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id archive --path archive.html --x 4440 --y 0
 ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --name Desktop --x 3040 --y 0
@@ -299,6 +303,19 @@ Inspector は同じ node について、現在描画中の resolved variant と�
 Agent / CLI の `node text set` は headless な source operation であり、preview context を暗黙に推測しない。variant context が明示されていない場合は HTML fallback content を編集対象にする。locale JSON を CLI で編集する場合は `i18n resource set --key <data-i18n-key> --locale <locale>` のように対象 key と locale を明示し、Mock State の保存値を resource 保存先として流用しない。`text variant set` は HTML 同梱 fallback / sample 用の互換操作として残る。
 
 HTML 全体を直接編集する fallback は `ogkiln` / MCP の通常 tool では提供しない。node 単位操作で表現できない構造変更は、`node html insert` / `replace` で明示的な subtree 操作として表現する。
+
+### Design Tokens
+
+`ogkiln design-token list <project.ogp|current> --json` は `.ogp` の `cssLibrary` から `:root` の CSS custom property を抽出し、`name`、`value`、`category`、`reference` を返す。`reference` は node の CSS declaration に入れられる `var(--token-name)` 形式である。
+
+`ogkiln design-token set/remove` は `cssLibrary` を直接更新する project-level 操作であり、HTML や同名 companion CSS を書き換えない。token を使う node 側の値は、通常の `node style set` で `background: var(--color-accent)` のように保存する。
+
+write operation は次の制約を持つ。
+
+- token は `OpenGraphite.contract.json` の `designTokens.namePattern` に一致する CSS custom property 名であること。
+- token は `designTokens.selector`（現行は `:root`）の rule に保存すること。
+- token 値は CSS declaration value としてそのまま保存し、OpenGraphite 独自 IR へ分解しないこと。
+- token 削除は空値として扱い、該当 custom property declaration だけを削除すること。
 
 ### Project Dependencies
 

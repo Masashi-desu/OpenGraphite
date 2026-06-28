@@ -132,6 +132,108 @@ struct OpenGraphiteAgentCoreTests {
         #expect(css.contains("font-family: \"Noto Sans JP\", \"Hiragino Sans\", sans-serif;"))
     }
 
+    /// 論理名（日本語）: デザイントークン編集テスト
+    /// 概要: Project CSS の `:root` custom property を design token として一覧・更新・削除できることを確認します。
+    @Test("Project CSSのdesign tokenを一覧更新削除できる")
+    func testDesignTokensListSetAndRemove() throws {
+        // コンディション：CSS library に :root token を持つ project を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        try fixture.writeCSSLibrary(
+            """
+            :root {
+              --color-primary: #2563eb;
+              --space-medium: 16px;
+            }
+
+            [data-og-type] {
+              box-sizing: border-box;
+            }
+            """
+        )
+
+        // 検証内容：token 一覧を読み、値更新と削除を行う（When）
+        let initial = try fixture.core.designTokens(projectURL: projectURL)
+        let update = try fixture.core.setDesignToken("--space-medium", value: "20px", projectURL: projectURL)
+        let remove = try fixture.core.setDesignToken("--color-primary", value: "", projectURL: projectURL)
+        let invalid = try fixture.core.setDesignToken("color-primary", value: "#111111", projectURL: projectURL)
+        let css = try fixture.readCSSLibrary()
+
+        // 期待値：token は :root から抽出され、参照文字列を持ち、CSS library だけが更新される（Then）
+        #expect(initial.tokens.map(\.name) == ["--color-primary", "--space-medium"])
+        #expect(initial.tokens.first?.reference == "var(--color-primary)")
+        #expect(update.updated == true)
+        #expect(update.token?.value == "20px")
+        #expect(remove.updated == true)
+        #expect(remove.token == nil)
+        #expect(invalid.updated == false)
+        #expect(invalid.diagnostics.contains { $0.code == "invalid-design-token-name" })
+        #expect(css.contains("--space-medium: 20px;"))
+        #expect(!css.contains("--color-primary"))
+    }
+
+    /// 論理名（日本語）: CLIデザイントークン編集テスト
+    /// 概要: `ogkiln design-token` が project CSS library の token を編集できることを確認します。
+    @Test("CLIはdesign tokenをCSS libraryへ保存できる")
+    func testCLIDesignTokenSetListAndRemove() throws {
+        // コンディション：最小 project と CSS library を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        try fixture.writeCSSLibrary(":root {\n  --color-primary: #2563eb;\n}\n")
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：CLI で token を追加、一覧取得、削除する（When）
+        let setCode = cli.run(
+            arguments: [
+                "design-token", "set", "Sample.ogp",
+                "--name", "--space-medium",
+                "--value", "16px"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        stdout = ""
+        stderr = ""
+        let listCode = cli.run(
+            arguments: ["design-token", "list", "Sample.ogp", "--json"],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let listOutput = stdout
+        stdout = ""
+        stderr = ""
+        let removeCode = cli.run(
+            arguments: [
+                "design-token", "remove", "Sample.ogp",
+                "--name", "--color-primary"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let css = try fixture.readCSSLibrary()
+
+        // 期待値：CLI は成功し、JSON に参照文字列が出力され、削除後の CSS に対象 token が残らない（Then）
+        #expect(setCode == 0)
+        #expect(listCode == 0)
+        #expect(removeCode == 0)
+        #expect(stderr.isEmpty)
+        #expect(listOutput.contains("\"name\" : \"--space-medium\""))
+        #expect(listOutput.contains("\"reference\" : \"var(--space-medium)\""))
+        #expect(css.contains("--space-medium: 16px;"))
+        #expect(!css.contains("--color-primary"))
+    }
+
     /// 論理名（日本語）: CSS位置宣言編集テスト
     /// 概要: position と inset 系の標準 CSS property を node 単位で保存できることを確認します。
     @Test("標準CSSのpositionとinsetを保存できる")
@@ -2243,6 +2345,22 @@ private struct AgentInterfaceFixture {
     /// - Returns: companion CSS の全文。
     func readCompanionCSS() throws -> String {
         try String(contentsOf: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: htmlURL), encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: CSS library書き込み関数
+    /// 処理概要: fixture project が参照する `OpenGraphite.css` へ指定 CSS を書き込みます。
+    ///
+    /// - Parameter css: 書き込む CSS。
+    func writeCSSLibrary(_ css: String) throws {
+        try css.write(to: rootURL.appendingPathComponent("OpenGraphite.css"), atomically: true, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: CSS library読込関数
+    /// 処理概要: fixture project が参照する `OpenGraphite.css` を読み込みます。
+    ///
+    /// - Returns: CSS library の全文。
+    func readCSSLibrary() throws -> String {
+        try String(contentsOf: rootURL.appendingPathComponent("OpenGraphite.css"), encoding: .utf8)
     }
 
     /// 論理名（日本語）: テストHTML内部ID補完関数

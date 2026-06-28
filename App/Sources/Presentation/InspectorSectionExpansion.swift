@@ -25,6 +25,7 @@ import Foundation
 /// - `mockState`: preview mock state カード。
 /// - `canvas`: canvas 配置カード。
 /// - `project`: project 概要カード。
+/// - `designTokens`: design token カード。
 /// - `iconCDN`: icon CDN 依存性カード。
 /// - `localeResource`: locale resource カード。
 /// - `resourcePath`: project resource path カード。
@@ -50,6 +51,7 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
     case mockState
     case canvas
     case project
+    case designTokens
     case iconCDN
     case localeResource
     case resourcePath

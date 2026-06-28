@@ -91,6 +91,21 @@ locale 別の typography は翻訳リソースではなく page root node の CS
 
 Inspector が通常 UI として編集できない CSS 値は、無理に代替入力欄へ落とし込まず編集対象にしません。OpenGraphite はリポジトリの正本 HTML / CSS と同期してプレビューすることを目的にし、OpenGraphite 経由ではない編集や他ライブラリの CSS も許容します。`OpenGraphite.css` の編集契約に入らない値は、ブラウザ表示ではそのまま反映されますが、編集は別経路で行う前提です。HTML の inline `style` に editable design value を残すことは、companion CSS が存在する source では validation error です。
 
+## Design Token Contract
+
+Project 全体で共有する design token は、`.ogp` の `cssLibrary` が指す CSS file の `:root` rule に CSS custom property として保存します。token は `--color-accent`、`--space-medium`、`--radius-small` のような原子的な値であり、OpenGraphite は `OpenGraphite.contract.json` の `designTokens.selector` と `designTokens.namePattern` に従って抽出・編集します。
+
+```css
+:root {
+  --color-accent: #f5f7f8;
+  --space-medium: 16px;
+}
+```
+
+Design token は node-scoped な companion CSS declaration ではありません。node の見た目は引き続き `[data-og-internal-id="..."]` rule の標準 CSS property に保存し、その値として `var(--color-accent)` や `var(--space-medium)` を参照できます。このため token の変更は、参照している複数 page / component preview へ CSS cascade として反映されます。
+
+CLI / MCP / Project Inspector は、design token の一覧、追加、値変更、削除を CSS library に対する project-level resource 操作として扱います。token 名は CSS custom property 名でなければならず、現行契約では ASCII の `^--[A-Za-z_][A-Za-z0-9_-]*$` を保存対象にします。token 値は標準 CSS の declaration value として保存し、色、長さ、font stack、shadow、`clamp()`、`color-mix()` などを独自 IR へ分解しません。
+
 ## `data-og-*` Attribute Contract
 
 `data-og-*` は、source 上に保持される OpenGraphite の編集契約です。意味やコンポーネント名はタグ名へ置き、デザイン値は companion CSS の標準 property へ置き、`data-og-*` にはエディタが構造として解釈する情報だけを置きます。

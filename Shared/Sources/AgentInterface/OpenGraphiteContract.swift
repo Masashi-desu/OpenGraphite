@@ -12,6 +12,7 @@ import Foundation
 /// - `runtimeAttributes`: 正本 HTML に残さない実行時属性。
 /// - `cssVariables`: 既知の編集可能 CSS 宣言定義。標準 CSS property と OpenGraphite 固有 custom property を含む。
 /// - `cssVariablePatterns`: locale suffix など動的に許可する CSS custom property パターン。
+/// - `designTokens`: Project CSS に保存する design token の機械可読契約。
 struct OpenGraphiteContract: Codable, Equatable {
     var version: String
     var types: [String]
@@ -21,6 +22,7 @@ struct OpenGraphiteContract: Codable, Equatable {
     var runtimeAttributes: [String]
     var cssVariables: [OpenGraphiteCSSVariableContract]
     var cssVariablePatterns: [OpenGraphiteCSSVariablePatternContract]
+    var designTokens: OpenGraphiteDesignTokenContract
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -31,6 +33,7 @@ struct OpenGraphiteContract: Codable, Equatable {
         case runtimeAttributes
         case cssVariables
         case cssVariablePatterns
+        case designTokens
     }
 
     var typeSet: Set<String> { Set(types) }
@@ -55,6 +58,7 @@ struct OpenGraphiteContract: Codable, Equatable {
     ///   - runtimeAttributes: 正本 HTML に残さない実行時属性。
     ///   - cssVariables: 既知の編集可能 CSS 宣言定義。
     ///   - cssVariablePatterns: 動的に許可する CSS custom property パターン。
+    ///   - designTokens: Project CSS の `:root` design token 契約。
     init(
         version: String,
         types: [String],
@@ -63,7 +67,8 @@ struct OpenGraphiteContract: Codable, Equatable {
         editableAttributes: [String],
         runtimeAttributes: [String],
         cssVariables: [OpenGraphiteCSSVariableContract],
-        cssVariablePatterns: [OpenGraphiteCSSVariablePatternContract] = []
+        cssVariablePatterns: [OpenGraphiteCSSVariablePatternContract] = [],
+        designTokens: OpenGraphiteDesignTokenContract = .builtIn
     ) {
         self.version = version
         self.types = types
@@ -73,6 +78,7 @@ struct OpenGraphiteContract: Codable, Equatable {
         self.runtimeAttributes = runtimeAttributes
         self.cssVariables = cssVariables
         self.cssVariablePatterns = cssVariablePatterns
+        self.designTokens = designTokens
     }
 
     /// 論理名（日本語）: OpenGraphite契約デコード初期化関数
@@ -89,6 +95,7 @@ struct OpenGraphiteContract: Codable, Equatable {
         runtimeAttributes = try container.decode([String].self, forKey: .runtimeAttributes)
         cssVariables = try container.decode([OpenGraphiteCSSVariableContract].self, forKey: .cssVariables)
         cssVariablePatterns = try container.decodeIfPresent([OpenGraphiteCSSVariablePatternContract].self, forKey: .cssVariablePatterns) ?? []
+        designTokens = try container.decodeIfPresent(OpenGraphiteDesignTokenContract.self, forKey: .designTokens) ?? .builtIn
     }
 
     /// 論理名（日本語）: 編集可能属性判定関数
@@ -112,6 +119,15 @@ struct OpenGraphiteContract: Codable, Equatable {
         return cssVariablePatterns.contains { pattern in
             name.range(of: pattern.pattern, options: [.regularExpression]) != nil
         }
+    }
+
+    /// 論理名（日本語）: デザイントークン名判定関数
+    /// 処理概要: Project CSS の `:root` へ保存できる CSS custom property 名かを判定します。
+    ///
+    /// - Parameter name: 判定する CSS custom property 名。
+    /// - Returns: design token 名として保存できる場合は `true`。
+    func isValidDesignTokenName(_ name: String) -> Bool {
+        name.range(of: designTokens.namePattern, options: [.regularExpression]) != nil
     }
 
     /// 論理名（日本語）: 契約ファイル読み込み関数
@@ -293,7 +309,27 @@ struct OpenGraphiteContract: Codable, Equatable {
                 syntax: "<font-family-list>|var()",
                 editable: true
             )
-        ]
+        ],
+        designTokens: .builtIn
+    )
+}
+
+/// 論理名（日本語）: デザイントークン契約
+/// 概要: Project CSS 内で design token として扱う CSS custom property の保存場所と名前規則を表します。
+///
+/// プロパティ:
+/// - `selector`: token を保存する CSS selector。
+/// - `namePattern`: 許可する token 名の正規表現。
+/// - `valueSyntax`: token 値の概念的な CSS 構文。
+struct OpenGraphiteDesignTokenContract: Codable, Equatable {
+    var selector: String
+    var namePattern: String
+    var valueSyntax: String
+
+    static let builtIn = OpenGraphiteDesignTokenContract(
+        selector: ":root",
+        namePattern: #"^--[A-Za-z_][A-Za-z0-9_-]*$"#,
+        valueSyntax: "<declaration-value>"
     )
 }
 

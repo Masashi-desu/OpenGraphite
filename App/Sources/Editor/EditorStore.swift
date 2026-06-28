@@ -300,6 +300,13 @@ final class EditorStore: ObservableObject {
         return try? core.inspectI18n(projectURL: loadedProject.fileURL, pageID: pageID)
     }
 
+    var projectDesignTokens: [OpenGraphiteDesignToken] {
+        guard let loadedProject else { return [] }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        return (try? core.designTokens(at: loadedProject.cssURL).tokens) ?? []
+    }
+
     /// 論理名（日本語）: HTML同期対象生成関数
     /// 処理概要: 指定 HTML カードの object identity と現在解決済み URL を保存対象としてまとめます。
     ///
@@ -2014,6 +2021,40 @@ final class EditorStore: ObservableObject {
         } catch {
             lastError = "Project i18n runtime 設定の更新に失敗しました: \(error.localizedDescription)"
         }
+    }
+
+    /// 論理名（日本語）: Projectデザイントークン更新関数
+    /// 処理概要: CSS library の `:root` に design token を保存し、開いている preview を再読み込みします。
+    ///
+    /// - Parameters:
+    ///   - name: CSS custom property 名。
+    ///   - value: CSS 値。
+    func updateProjectDesignToken(name: String, value: String) {
+        guard let loadedProject else { return }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.setDesignToken(name, value: value, projectURL: loadedProject.fileURL)
+            if let error = result.diagnostics.first(where: { $0.severity == .error }) {
+                lastError = error.message
+                return
+            }
+            refreshProjectDependenciesFromDisk()
+            lastError = nil
+            statusMessage = result.updated
+                ? "\(name.trimmingCharacters(in: .whitespacesAndNewlines)) を Design Tokens に保存しました。"
+                : "Design Tokens は変更されていません。"
+        } catch {
+            lastError = "Design Tokens の更新に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Projectデザイントークン削除関数
+    /// 処理概要: CSS library の `:root` から design token を削除し、開いている preview を再読み込みします。
+    ///
+    /// - Parameter name: 削除する CSS custom property 名。
+    func removeProjectDesignToken(name: String) {
+        updateProjectDesignToken(name: name, value: "")
     }
 
     /// 論理名（日本語）: 静的フローリンクpayload取り込み関数

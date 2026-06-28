@@ -125,6 +125,57 @@ struct OpenGraphiteValidationResult: Codable, Equatable {
     var diagnostics: [OpenGraphiteDiagnostic]
 }
 
+/// 論理名（日本語）: デザイントークン
+/// 概要: Project CSS の `:root` に保存された CSS custom property を Inspector / CLI / MCP 向けに表します。
+///
+/// プロパティ:
+/// - `name`: CSS custom property 名。
+/// - `value`: CSS 値。
+/// - `category`: token 名から推定した分類。
+/// - `reference`: CSS declaration から参照する `var(...)` 形式の文字列。
+struct OpenGraphiteDesignToken: Codable, Equatable, Identifiable {
+    var name: String
+    var value: String
+    var category: String
+    var reference: String
+
+    var id: String { name }
+}
+
+/// 論理名（日本語）: デザイントークン一覧応答
+/// 概要: Project CSS から抽出した design token 一覧と診断を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `path`: 対象 CSS file path。
+/// - `tokens`: 抽出された design token。
+/// - `diagnostics`: 検出時の診断。
+struct OpenGraphiteDesignTokenListResult: Codable, Equatable {
+    var schemaVersion: String
+    var path: String
+    var tokens: [OpenGraphiteDesignToken]
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: デザイントークン編集応答
+/// 概要: Project CSS の design token 更新結果を表します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `updated`: CSS file を書き換えた場合は `true`。
+/// - `path`: 対象 CSS file path。
+/// - `token`: 更新後 token。削除時は `nil`。
+/// - `tokens`: 更新後の token 一覧。
+/// - `diagnostics`: 編集時の診断。
+struct OpenGraphiteDesignTokenEditResult: Codable, Equatable {
+    var schemaVersion: String
+    var updated: Bool
+    var path: String
+    var token: OpenGraphiteDesignToken?
+    var tokens: [OpenGraphiteDesignToken]
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
 /// 論理名（日本語）: ページ作成応答
 /// 概要: HTML page file 作成結果と作成後 graph を表します。
 ///
@@ -670,6 +721,121 @@ struct OpenGraphiteAgentCore {
             pages: pages,
             components: components,
             diagnostics: diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: Projectデザイントークン一覧関数
+    /// 処理概要: `.ogp` が参照する CSS library の `:root` から design token を抽出します。
+    ///
+    /// - Parameter projectURL: `.ogp` ファイル URL。
+    /// - Returns: design token 一覧。
+    func designTokens(projectURL: URL) throws -> OpenGraphiteDesignTokenListResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        return try designTokens(at: loadedProject.cssURL)
+    }
+
+    /// 論理名（日本語）: CSSデザイントークン一覧関数
+    /// 処理概要: 指定 CSS file の `:root` から CSS custom property を design token として抽出します。
+    ///
+    /// - Parameter cssURL: 対象 CSS file URL。
+    /// - Returns: design token 一覧。
+    func designTokens(at cssURL: URL) throws -> OpenGraphiteDesignTokenListResult {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: cssURL.path) else {
+            return OpenGraphiteDesignTokenListResult(
+                schemaVersion: Self.schemaVersion,
+                path: cssURL.path,
+                tokens: [],
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .warning,
+                        code: "missing-design-token-css",
+                        message: "design token を読み取る CSS file が見つかりません: \(cssURL.path)",
+                        path: cssURL.path,
+                        nodeID: nil
+                    )
+                ]
+            )
+        }
+
+        let document = OpenGraphiteCompanionCSSDocument(
+            css: try String(contentsOf: cssURL, encoding: .utf8)
+        )
+        return OpenGraphiteDesignTokenListResult(
+            schemaVersion: Self.schemaVersion,
+            path: cssURL.path,
+            tokens: document.designTokens(contract: contract),
+            diagnostics: []
+        )
+    }
+
+    /// 論理名（日本語）: Projectデザイントークン設定関数
+    /// 処理概要: `.ogp` が参照する CSS library の `:root` に design token を保存し、空値なら削除します。
+    ///
+    /// - Parameters:
+    ///   - name: CSS custom property 名。
+    ///   - value: CSS 値。空の場合は削除。
+    ///   - projectURL: `.ogp` ファイル URL。
+    /// - Returns: design token 編集結果。
+    func setDesignToken(
+        _ name: String,
+        value: String,
+        projectURL: URL
+    ) throws -> OpenGraphiteDesignTokenEditResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        return try setDesignToken(name, value: value, cssURL: loadedProject.cssURL)
+    }
+
+    /// 論理名（日本語）: CSSデザイントークン設定関数
+    /// 処理概要: 指定 CSS file の `:root` に design token を保存し、空値なら削除します。
+    ///
+    /// - Parameters:
+    ///   - name: CSS custom property 名。
+    ///   - value: CSS 値。空の場合は削除。
+    ///   - cssURL: 対象 CSS file URL。
+    /// - Returns: design token 編集結果。
+    func setDesignToken(
+        _ name: String,
+        value: String,
+        cssURL: URL
+    ) throws -> OpenGraphiteDesignTokenEditResult {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentCSS = (try? String(contentsOf: cssURL, encoding: .utf8)) ?? ""
+        var document = OpenGraphiteCompanionCSSDocument(css: currentCSS)
+        guard contract.isValidDesignTokenName(normalizedName) else {
+            return OpenGraphiteDesignTokenEditResult(
+                schemaVersion: Self.schemaVersion,
+                updated: false,
+                path: cssURL.path,
+                token: nil,
+                tokens: document.designTokens(contract: contract),
+                diagnostics: [
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "invalid-design-token-name",
+                        message: "\(name) は design token として保存できる CSS custom property 名ではありません。",
+                        path: cssURL.path,
+                        nodeID: nil
+                    )
+                ]
+            )
+        }
+
+        document.setDesignToken(normalizedName, value: value, contract: contract)
+        let updated = document.css != currentCSS
+        if updated {
+            try FileManager.default.createDirectory(at: cssURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try document.css.write(to: cssURL, atomically: true, encoding: .utf8)
+        }
+
+        let tokens = document.designTokens(contract: contract)
+        return OpenGraphiteDesignTokenEditResult(
+            schemaVersion: Self.schemaVersion,
+            updated: updated,
+            path: cssURL.path,
+            token: tokens.first { $0.name == normalizedName },
+            tokens: tokens,
+            diagnostics: []
         )
     }
 

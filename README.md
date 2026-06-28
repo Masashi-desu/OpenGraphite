@@ -88,6 +88,8 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ```bash
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln project current --json
+./Scripts/ogkiln design-token list SampleProject/OpenGraphiteSample.ogp --json
+./Scripts/ogkiln design-token set SampleProject/OpenGraphiteSample.ogp --name --color-accent --value '#f5f7f8'
 ./Scripts/ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id tutorial --path tutorial.html --title Tutorial --body-file tutorial.body.html --x 2960 --y 0
 ./Scripts/ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id archive --path archive.html --x 4440 --y 0
 ./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --name Desktop --x 3040 --y 0
@@ -205,6 +207,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
 - Inspector editing for common CSS design properties with companion CSS write-back
+- Project Inspector editing for `:root` CSS Custom Properties as design tokens, with CLI/MCP access through `ogkiln design-token`
 - Inspector editing for CSS animation and scroll-driven animation timeline declarations
 
 ## Standalone HTML

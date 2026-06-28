@@ -51,6 +51,76 @@ struct OpenGraphiteCompanionCSSDocument: Equatable {
         try css.write(to: cssURL, atomically: true, encoding: .utf8)
     }
 
+    /// 論理名（日本語）: デザイントークン抽出関数
+    /// 処理概要: Project CSS の `:root` rule に保存された CSS custom property を design token として抽出します。
+    ///
+    /// - Parameter contract: design token の selector と名前規則を定義する OpenGraphite 契約。
+    /// - Returns: cascade 順に解決した design token 一覧。
+    func designTokens(contract: OpenGraphiteContract = .builtIn) -> [OpenGraphiteDesignToken] {
+        let rootSelector = contract.designTokens.selector
+        var order: [String] = []
+        var values: [String: String] = [:]
+
+        for rule in Self.rules(in: css) where Self.selector(rule.selector, containsExactSelector: rootSelector) {
+            let style = OpenGraphiteCSSStyle.parse(rule.body)
+            for declaration in style.declarations where declaration.name.hasPrefix("--") {
+                guard contract.isValidDesignTokenName(declaration.name) else { continue }
+                if values[declaration.name] != nil {
+                    order.removeAll { $0 == declaration.name }
+                }
+                order.append(declaration.name)
+                values[declaration.name] = declaration.value
+            }
+        }
+
+        return order.compactMap { name in
+            guard let value = values[name] else { return nil }
+            return OpenGraphiteDesignToken(
+                name: name,
+                value: value,
+                category: Self.designTokenCategory(for: name),
+                reference: "var(\(name))"
+            )
+        }
+    }
+
+    /// 論理名（日本語）: デザイントークン設定関数
+    /// 処理概要: Project CSS の `:root` rule に CSS custom property を設定し、空値なら削除します。
+    ///
+    /// - Parameters:
+    ///   - name: 更新する design token 名。
+    ///   - value: CSS 値。空の場合は削除。
+    ///   - contract: design token の selector と名前規則を定義する OpenGraphite 契約。
+    mutating func setDesignToken(
+        _ name: String,
+        value: String,
+        contract: OpenGraphiteContract = .builtIn
+    ) {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard contract.isValidDesignTokenName(normalizedName) else { return }
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rootSelector = contract.designTokens.selector
+        let rules = Self.rules(in: css)
+
+        guard let matchingIndex = rules.lastIndex(where: { Self.selector($0.selector, containsExactSelector: rootSelector) }) else {
+            guard !normalizedValue.isEmpty else { return }
+            appendRule(
+                selector: rootSelector,
+                declarations: [OpenGraphiteCSSDeclaration(name: normalizedName, value: normalizedValue)]
+            )
+            return
+        }
+
+        let rule = rules[matchingIndex]
+        var style = OpenGraphiteCSSStyle.parse(rule.body)
+        style.set(normalizedName, value: normalizedValue)
+        if style.declarations.isEmpty {
+            css.replaceSubrange(rule.range, with: "")
+        } else {
+            css.replaceSubrange(rule.bodyRange, with: "\n\(Self.serializedDeclarations(style.declarations))")
+        }
+    }
+
     /// 論理名（日本語）: Node CSS宣言抽出関数
     /// 処理概要: `data-og-internal-id` selector に保存された編集対象 CSS 宣言を cascade 順に辞書化します。
     ///
@@ -138,6 +208,23 @@ struct OpenGraphiteCompanionCSSDocument: Equatable {
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .contains { $0 == expectedDouble || $0 == expectedSingle }
+    }
+
+    /// 論理名（日本語）: CSS selector含有判定関数
+    /// 処理概要: selector list に指定 selector が完全一致で含まれるか判定します。
+    private static func selector(_ selector: String, containsExactSelector expected: String) -> Bool {
+        selector
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .contains(expected)
+    }
+
+    /// 論理名（日本語）: デザイントークン分類生成関数
+    /// 処理概要: `--color-primary` なら `color` のように名前の先頭 segment を分類名にします。
+    private static func designTokenCategory(for name: String) -> String {
+        let tokenBody = name.dropFirst(2)
+        let category = tokenBody.split(separator: "-", maxSplits: 1).first.map(String.init) ?? ""
+        return category.isEmpty ? "token" : category
     }
 
     /// 論理名（日本語）: CSS rule走査関数

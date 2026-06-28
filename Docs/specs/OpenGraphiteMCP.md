@@ -25,6 +25,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `opengraphite://contract/css` | `application/json` | `OpenGraphite.contract.json` |
 | `opengraphite://project/sample` | `application/json` | sample `.ogp` の解決済み project summary |
 | `opengraphite://project/current` | `application/json` | OpenGraphite.app が現在開いている `.ogp` の project summary |
+| `opengraphite://design-tokens/sample` | `application/json` | sample project の CSS library に保存された design tokens |
+| `opengraphite://design-tokens/current` | `application/json` | OpenGraphite.app が現在開いている `.ogp` の design tokens |
 | `opengraphite://pages/sample` | `application/json` | sample project の pages |
 | `opengraphite://pages/current` | `application/json` | OpenGraphite.app が現在開いている `.ogp` の pages |
 | `opengraphite://components/sample` | `application/json` | sample project の component collections |
@@ -43,6 +45,9 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `get_contract` | active contract を返す | `contract get` |
 | `validate` | `.ogp` を検証する | `validate <project>` |
 | `build_project` | Pages の `<og-instance>` を component master で静的展開する | `build <project>` |
+| `list_design_tokens` | Project CSS の `:root` design token を返す | `design-token list` |
+| `set_design_token` | Project CSS の `:root` design token を設定する | `design-token set` |
+| `remove_design_token` | Project CSS の `:root` design token を削除する | `design-token remove` |
 | `add_project_page` | 既存 HTML を既定 Chapter の page entry として追加する | `project page add` |
 | `create_project_page` | HTML を新規作成し既定 Chapter の page entry として追加する | `project page create` |
 | `place_project_page` | 既存 page entry の canvas 配置を更新する | `project page place` |
@@ -86,6 +91,8 @@ component placement の状態差分は HTML 正本ではなく、`.ogp` canvas m
 `set_project_page_document_context` と `set_project_component_document_context` は HTML 正本の `<html>` attribute を編集する。`langSource` は `literal` / `binding`、`dirSource` は `literal` / `auto` / `binding` を受け取る。Binding の場合も `lang` / `dir` 属性には fallback 値を残し、field 名は `data-og-lang-field` / `data-og-dir-field` metadata として保存する。
 
 `set_text_content` は MCP / CLI 経由の source operation であり、App preview の Mock State を暗黙に推測しない。variant context が明示されていない場合は HTML fallback content を編集する。App の Canvas / preview から直接 text を編集する場合は、現在描画されている resolved text resource を対象にし、別 variant の text は Inspector から明示的に編集する。
+
+`list_design_tokens` / `set_design_token` / `remove_design_token` は project-level CSS resource を扱うため、`pageID` / `componentID` / `id` を受け取らない。token 名は `OpenGraphite.contract.json` の `designTokens.namePattern` に一致する CSS custom property 名である必要がある。node から token を参照する場合は `set_css_variable` の `value` に `var(--token-name)` を保存する。
 
 `remove_project_component.deleteFile` は既定で `false` である。`true` の場合のみ、`.ogp` からの登録削除に加えて component HTML file も削除する。
 
