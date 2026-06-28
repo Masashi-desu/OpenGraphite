@@ -54,12 +54,23 @@ enum HTMLObjectEditOperation: Equatable {
     case deleteNode(nodeInternalID: String, baselineNodeHash: String?)
     case moveNode(nodeInternalID: String, targetInternalID: String, position: OpenGraphiteHTMLInsertionPosition, baselineNodeHash: String?)
 
+    /// 論理名（日本語）: Absolute子配置宣言削除要否
+    /// 処理概要: 親 layout を absolute から flow layout へ戻す操作で、直下 child の位置指定 cleanup が必要か判定します。
+    var removesAbsoluteLayoutChildPositionDeclarations: Bool {
+        guard case let .setAttribute(_, name, value, expectedOldValue) = self else { return false }
+        return name == "data-og-layout"
+            && expectedOldValue.trimmingCharacters(in: .whitespacesAndNewlines) == "absolute"
+            && Self.isFlowLayout(value)
+    }
+
     /// 論理名（日本語）: WebView再読み込み要否
     /// 処理概要: WebView 側の DOM だけでは保存後の表示を継続できない操作かどうかを返します。
     var requiresWebViewReload: Bool {
         switch self {
-        case .setCSSVariable, .setCSSVariables, .setAttribute, .renameNodeID, .setTextContent:
+        case .setCSSVariable, .setCSSVariables, .renameNodeID, .setTextContent:
             return false
+        case .setAttribute:
+            return removesAbsoluteLayoutChildPositionDeclarations
         case .setIcon:
             return true
         case .insertHTML, .replaceNodeHTML, .deleteNode:
@@ -67,6 +78,16 @@ enum HTMLObjectEditOperation: Equatable {
         case .moveNode:
             return false
         }
+    }
+
+    /// 論理名（日本語）: Flow layout判定関数
+    /// 処理概要: 指定 layout 値が子要素を親のフローへ参加させる mode か判定します。
+    ///
+    /// - Parameter value: `data-og-layout` の候補値。
+    /// - Returns: `vertical` または `horizontal` の場合は `true`。
+    private static func isFlowLayout(_ value: String) -> Bool {
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedValue == "vertical" || normalizedValue == "horizontal"
     }
 }
 

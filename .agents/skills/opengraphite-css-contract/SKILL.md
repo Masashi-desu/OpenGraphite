@@ -89,6 +89,8 @@ component 参照では、master を component canvas HTML に置き、page 側�
 - `horizontal`: `display:flex`、row direction、`--og-align` default `center`、`--og-justify` default `flex-start`、`--og-gap` default `0`。
 - `absolute`: parent が positioned block になり、直接の `data-og-type` child は標準 CSS の `left` / `top` / `right` / `bottom` で absolutely positioned になる。
 
+親 node の layout は直下 child の配置ルールを所有する。親を `absolute` から `vertical` / `horizontal` へ変更した場合、直下 child は flow layout に参加し、OpenGraphite はその直下 child の `position`、`left`、`top`、`right`、`bottom` declaration を削除する。`width` / `height` と nested child の position declaration は layout 変更だけでは削除しない。flow layout でも child 自身の position override が必要な場合は、切替後に child 側で明示する。
+
 画面幅 760px 以下では、horizontal layout は vertical に積まれ、button は full width になり、`page-preview` は `--og-padding:24px` を使う。
 
 ## CSS 変数
@@ -267,7 +269,7 @@ component instance:
 3. layout が child だけでなく parent の `data-og-layout` に付いているか確認する。
 4. inline variable が valid な CSS declaration で、semicolon で終わっているか確認する。
 5. image / video sizing では、media element を `data-og-type="image"` wrapper の直接 child に置く。
-6. absolute layout では、parent に `data-og-layout="absolute"` を付け、直接 child element に `left` / `top` などの標準 CSS inset property を設定する。
+6. absolute layout では、parent に `data-og-layout="absolute"` を付け、直接 child element に `left` / `top` などの標準 CSS inset property を設定する。parent を flow layout へ戻したら、その直下 child の absolute 用 position / inset declaration は削除される前提で確認する。
 7. horizontal layout や button の形が変わる場合は、760px 以下の responsive behavior を確認する。
 8. `<og-instance>` では、page に valid な `rel="opengraphite-components"` link があり、runtime expansion を使う場合は `OpenGraphite.runtime.js` が読み込まれ、master 側に一致する `data-og-component` と `data-og-component-kind="master"` があることを確認する。
 9. runtime preview は正しいが deployment output が違う場合は、`ogkiln build <project.ogp|current> --output <dir>` を確認し、生成された static HTML を inspect する。

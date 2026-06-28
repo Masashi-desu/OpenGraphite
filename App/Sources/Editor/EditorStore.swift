@@ -14,6 +14,23 @@ struct OpenGraphiteNodeDragPreview: Equatable {
     var rect: CGRect
 }
 
+/// 論理名（日本語）: 選択オーバーレイ矩形
+/// 概要: WebView の `getBoundingClientRect()` 由来の実測矩形を、Canvas 側の選択枠へ渡すための状態です。
+///
+/// プロパティ:
+/// - `pageInternalID`: rect を送信した page card の内部 ID。
+/// - `primaryNodeID`: Inspector が扱う主選択 node ID。
+/// - `nodeIDs`: 実測 rect を持つ選択 node ID 一覧。
+/// - `nodeRectsByID`: node ID ごとの WebView viewport 座標上の実測矩形。
+/// - `rect`: 選択 node 群全体を覆う union 矩形。
+struct OpenGraphiteSelectionOverlayFrame: Equatable {
+    var pageInternalID: String?
+    var primaryNodeID: String
+    var nodeIDs: [String]
+    var nodeRectsByID: [String: CGRect]
+    var rect: CGRect
+}
+
 /// 論理名（日本語）: エディター状態ストア
 /// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
@@ -34,6 +51,7 @@ struct OpenGraphiteNodeDragPreview: Equatable {
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
+/// - `selectionOverlayFrame`: WebView 実測値から作る選択ノード表示枠。
 /// - `nodeDragPreview`: ドラッグ中だけ使う選択ノード矩形 preview。
 /// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
 /// - `staticFlowLinksByPageInternalID`: page card 内部 ID ごとに収集した静的フローリンク。
@@ -65,6 +83,7 @@ final class EditorStore: ObservableObject {
         didSet {
             if nodes.isEmpty {
                 cssVariableBaselinesByInternalID = [:]
+                selectionOverlayFrame = nil
             }
         }
     }
@@ -73,6 +92,7 @@ final class EditorStore: ObservableObject {
             guard oldValue != selectedNodeID else { return }
             synchronizeLayerNodeSelectionForPrimarySelection()
             inspectorSectionOpenRequest = nil
+            selectionOverlayFrame = nil
             nodeDragPreview = nil
         }
     }
@@ -82,6 +102,7 @@ final class EditorStore: ObservableObject {
     @Published var lastError: String?
     @Published var activeTool: CanvasTool = .select
     @Published var previewDisplayMode: OpenGraphitePreviewDisplayMode = .normal
+    @Published private(set) var selectionOverlayFrame: OpenGraphiteSelectionOverlayFrame?
     @Published private(set) var nodeDragPreview: OpenGraphiteNodeDragPreview?
     @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
     @Published private(set) var cssMutation: CSSVariableMutation?
@@ -115,6 +136,7 @@ final class EditorStore: ObservableObject {
     private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
     private var monitoredProjectURL: URL?
+    private static let absoluteLayoutChildPositionCSSKeys = ["position", "left", "top", "right", "bottom"]
     private static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
@@ -1487,6 +1509,74 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 選択オーバーレイpayload取り込み関数
+    /// 処理概要: WebView 実測 rect payload を検証し、Canvas 側の選択枠 source of truth として保存します。
+    ///
+    /// - Parameters:
+    ///   - payload: `active`、`id`、`nodes`、`x`、`y`、`width`、`height` を含む JavaScript bridge payload。
+    ///   - pageInternalID: payload を送信した page card の内部 ID。
+    func ingestSelectionOverlayPayload(_ payload: [String: Any]?, pageInternalID: String?) {
+        let normalizedPageInternalID = Self.normalizedOptionalString(pageInternalID)
+        guard let payload,
+              payload["active"] as? Bool == true
+        else {
+            clearSelectionOverlayFrame(pageInternalID: normalizedPageInternalID)
+            return
+        }
+
+        let selectedNodeIDsInOrder = selectedLayerNodeIDsInNodeOrder
+        guard let selectedNodeID,
+              !selectedNodeIDsInOrder.isEmpty
+        else {
+            clearSelectionOverlayFrame(pageInternalID: normalizedPageInternalID)
+            return
+        }
+
+        let rawNodePayloads = payload["nodes"] as? [[String: Any]] ?? [payload]
+        let selectedNodeIDSet = Set(selectedNodeIDsInOrder)
+        var nodeRectsByID: [String: CGRect] = [:]
+        for rawNodePayload in rawNodePayloads {
+            guard let nodeFrame = Self.selectionOverlayNodeFrame(from: rawNodePayload),
+                  selectedNodeIDSet.contains(nodeFrame.id)
+            else {
+                continue
+            }
+            nodeRectsByID[nodeFrame.id] = nodeFrame.rect
+        }
+
+        let measuredNodeIDs = selectedNodeIDsInOrder.filter { nodeRectsByID[$0] != nil }
+        guard !measuredNodeIDs.isEmpty,
+              let unionRect = Self.unionRect(measuredNodeIDs.compactMap { nodeRectsByID[$0] })
+        else {
+            clearSelectionOverlayFrame(pageInternalID: normalizedPageInternalID)
+            return
+        }
+
+        let payloadPrimaryID = (payload["id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let primaryNodeID = selectedNodeIDSet.contains(payloadPrimaryID) ? payloadPrimaryID : selectedNodeID
+        selectionOverlayFrame = OpenGraphiteSelectionOverlayFrame(
+            pageInternalID: normalizedPageInternalID,
+            primaryNodeID: primaryNodeID,
+            nodeIDs: measuredNodeIDs,
+            nodeRectsByID: nodeRectsByID,
+            rect: unionRect
+        )
+    }
+
+    /// 論理名（日本語）: 選択オーバーレイ解除関数
+    /// 処理概要: 選択解除や対象 page 切り替え時に実測選択枠を破棄します。
+    ///
+    /// - Parameter pageInternalID: 解除対象を page card 内部 ID で限定します。`nil` の場合は無条件で解除します。
+    func clearSelectionOverlayFrame(pageInternalID: String? = nil) {
+        guard let pageInternalID else {
+            selectionOverlayFrame = nil
+            return
+        }
+        if selectionOverlayFrame?.pageInternalID == pageInternalID {
+            selectionOverlayFrame = nil
+        }
+    }
+
     /// 論理名（日本語）: ノードドラッグpreview payload取り込み関数
     /// 処理概要: WebView でドラッグ中の選択 node 矩形を受け取り、Canvas 側の選択枠を一時的に追従させます。
     ///
@@ -2412,7 +2502,8 @@ final class EditorStore: ObservableObject {
                 expectedOldValue: expectedOldValue
             )
         )
-        guard applyHTMLObjectEdit(edit).updated else { return }
+        let editResult = applyHTMLObjectEdit(edit)
+        guard editResult.updated else { return }
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             switch name {
@@ -2431,15 +2522,44 @@ final class EditorStore: ObservableObject {
             }
         }
 
-        attributeMutationSequence += 1
-        attributeMutation = NodeAttributeMutation(
-            sequence: attributeMutationSequence,
-            pageURL: target.htmlURL,
-            nodeID: selectedNode.id,
-            name: name,
-            value: normalizedValue
-        )
+        if edit.operation.removesAbsoluteLayoutChildPositionDeclarations {
+            removeCachedDirectChildPositionDeclarations(parentNodeID: selectedNodeID)
+        }
+
+        if editResult.requiresReload {
+            requestDocumentReplacementFromDisk(for: target, selectedNodeID: selectedNode.id)
+        } else {
+            attributeMutationSequence += 1
+            attributeMutation = NodeAttributeMutation(
+                sequence: attributeMutationSequence,
+                pageURL: target.htmlURL,
+                nodeID: selectedNode.id,
+                name: name,
+                value: normalizedValue
+            )
+        }
         statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
+    }
+
+    /// 論理名（日本語）: Cached direct child位置宣言削除関数
+    /// 処理概要: 親 layout が absolute から flow へ変わった際、直下 child の位置指定を app 内 cache から削除します。
+    ///
+    /// - Parameter parentNodeID: 直下 child を更新する親 node の選択 ID。
+    private func removeCachedDirectChildPositionDeclarations(parentNodeID: String) {
+        guard let parentIndex = nodes.firstIndex(where: { $0.id == parentNodeID }) else { return }
+        let parentDepth = nodes[parentIndex].depth
+        let directChildDepth = parentDepth + 1
+        var index = nodes.index(after: parentIndex)
+        while index < nodes.endIndex {
+            guard nodes[index].depth > parentDepth else { break }
+            if nodes[index].depth == directChildDepth {
+                for key in Self.absoluteLayoutChildPositionCSSKeys {
+                    nodes[index].cssVariables.removeValue(forKey: key)
+                    recordCSSVariableBaseline(nodeInternalID: nodes[index].internalID, key: key, value: "")
+                }
+            }
+            index = nodes.index(after: index)
+        }
     }
 
     /// 論理名（日本語）: ノード表示ID更新関数
@@ -3357,6 +3477,16 @@ final class EditorStore: ObservableObject {
         mutationHTML: String,
         contract: OpenGraphiteContract
     ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
+        if edit.operation.removesAbsoluteLayoutChildPositionDeclarations,
+           case let .setAttribute(parentInternalID, _, _, _) = edit.operation {
+            return try removingAbsoluteLayoutChildPositionDeclarations(
+                parentInternalID: parentInternalID,
+                html: mutationHTML,
+                htmlURL: edit.target.htmlURL,
+                contract: contract
+            )
+        }
+
         guard case .insertHTML = edit.operation else {
             return (mutationHTML, nil)
         }
@@ -3368,6 +3498,52 @@ final class EditorStore: ObservableObject {
         var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: edit.target.htmlURL)
         migrateInlineOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS, contract: contract)
         return (sanitizedHTML, companionCSS)
+    }
+
+    /// 論理名（日本語）: Absolute layout child位置宣言削除関数
+    /// 処理概要: absolute 親から flow layout へ戻す際、直下 child の position / inset 宣言を正本 HTML/CSS から削除します。
+    ///
+    /// - Parameters:
+    ///   - parentInternalID: layout を変更した親 node の `data-og-internal-id`。
+    ///   - html: layout 属性変更後の HTML。
+    ///   - htmlURL: companion CSS を解決する HTML URL。
+    ///   - contract: CSS declaration の判定に使う OpenGraphite 契約。
+    /// - Returns: cleanup 後の HTML と、変更された companion CSS。
+    private func removingAbsoluteLayoutChildPositionDeclarations(
+        parentInternalID: String,
+        html: String,
+        htmlURL: URL,
+        contract: OpenGraphiteContract
+    ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
+        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: htmlURL)
+        let originalCompanionCSS = companionCSS.css
+        let document = OpenGraphiteHTMLDocument(html: html)
+        let nodes = document.nodes(companionCSS: companionCSS, contract: contract)
+        guard let parentNode = nodes.first(where: { $0.internalID == parentInternalID }) else {
+            return (html, nil)
+        }
+
+        let childInternalIDs = nodes
+            .filter { $0.parentID == parentNode.id && !$0.internalID.isEmpty }
+            .map(\.internalID)
+        guard !childInternalIDs.isEmpty else {
+            return (html, nil)
+        }
+
+        var cleanedHTML = html
+        for childInternalID in childInternalIDs {
+            for key in Self.absoluteLayoutChildPositionCSSKeys {
+                companionCSS.setCSSVariable(key, value: "", forNodeInternalID: childInternalID)
+                let mutation = OpenGraphiteHTMLDocument(html: cleanedHTML)
+                    .settingCSSVariable(key, value: "", forNodeID: childInternalID, contract: contract)
+                if mutation.diagnostics.filter({ $0.severity == .error }).isEmpty {
+                    cleanedHTML = mutation.html
+                }
+            }
+        }
+
+        let changedCompanionCSS = companionCSS.css == originalCompanionCSS ? nil : companionCSS
+        return (cleanedHTML, changedCompanionCSS)
     }
 
     /// 論理名（日本語）: Inline design value移行関数
@@ -4923,6 +5099,49 @@ final class EditorStore: ObservableObject {
         timelineProviderPropertyKeys.reduce(into: Set<String>()) { names, key in
             names.formUnion(dashedIdentifiers(in: cssVariables[key] ?? ""))
         }
+    }
+
+    /// 論理名（日本語）: 選択オーバーレイnode frame変換関数
+    /// 処理概要: JavaScript bridge payload の単一 node rect を Swift の選択枠用 tuple へ変換します。
+    ///
+    /// - Parameter payload: `id`、`x`、`y`、`width`、`height` を含む辞書。
+    /// - Returns: node ID と有効な矩形。変換できない場合は `nil`。
+    private static func selectionOverlayNodeFrame(from payload: [String: Any]) -> (id: String, rect: CGRect)? {
+        let id = (payload["id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty,
+              let x = cgFloatValue(payload["x"]),
+              let y = cgFloatValue(payload["y"]),
+              let width = cgFloatValue(payload["width"]),
+              let height = cgFloatValue(payload["height"]),
+              width > 0,
+              height > 0
+        else {
+            return nil
+        }
+        return (id, CGRect(x: x, y: y, width: width, height: height))
+    }
+
+    /// 論理名（日本語）: 矩形Union生成関数
+    /// 処理概要: 複数の実測矩形をすべて覆う単一矩形へまとめます。
+    ///
+    /// - Parameter rects: 対象矩形一覧。
+    /// - Returns: すべての矩形を覆う union 矩形。空の場合は `nil`。
+    private static func unionRect(_ rects: [CGRect]) -> CGRect? {
+        guard let first = rects.first else { return nil }
+        return rects.dropFirst().reduce(first) { partialResult, rect in
+            partialResult.union(rect)
+        }
+    }
+
+    /// 論理名（日本語）: 任意文字列正規化関数
+    /// 処理概要: 前後空白を除去し、空文字を `nil` に変換します。
+    ///
+    /// - Parameter value: 正規化する任意文字列。
+    /// - Returns: 空でない正規化済み文字列。
+    private static func normalizedOptionalString(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 
     /// 論理名（日本語）: CGFloat payload変換関数

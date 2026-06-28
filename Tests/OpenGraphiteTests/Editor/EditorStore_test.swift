@@ -329,6 +329,82 @@ struct EditorStoreTests {
         #expect(store.selectedNodeIDs.isEmpty)
     }
 
+    /// 論理名（日本語）: 選択オーバーレイ実測矩形取り込みテスト
+    /// 概要: 選択枠が companion CSS の位置推定ではなく WebView の実測 rect を保持することを検証します。
+    @Test("選択overlayはWebView実測rectをsource of truthにする")
+    func testIngestSelectionOverlayPayloadUsesMeasuredRect() throws {
+        // コンディション：CSS 上は top を持たない flow child を選択している（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            [
+                "id": "frame",
+                "tagName": "opengraphiteframe",
+                "type": "frame",
+                "cssVariables": ["width": "287px", "height": "54px"],
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: "frame")
+
+        // 検証内容：WebView から flow 後の実測 rect payload を取り込む（When）
+        store.ingestSelectionOverlayPayload(
+            [
+                "active": true,
+                "id": "frame",
+                "nodes": [
+                    ["id": "frame", "x": 0.0, "y": 31.0, "width": 287.0, "height": 54.0]
+                ]
+            ],
+            pageInternalID: "page-1"
+        )
+
+        // 期待値：CSS 推定の y=0 ではなく、実測された y=31 の矩形が保持される（Then）
+        let overlay = try #require(store.selectionOverlayFrame)
+        #expect(overlay.pageInternalID == "page-1")
+        #expect(overlay.primaryNodeID == "frame")
+        #expect(overlay.nodeIDs == ["frame"])
+        #expect(overlay.rect == CGRect(x: 0, y: 31, width: 287, height: 54))
+        #expect(overlay.nodeRectsByID["frame"] == CGRect(x: 0, y: 31, width: 287, height: 54))
+    }
+
+    /// 論理名（日本語）: 複数選択オーバーレイ実測矩形取り込みテスト
+    /// 概要: 同時選択時に WebView 実測 rect の union と node 別 rect が保持されることを検証します。
+    @Test("複数選択overlayは実測rectのunionと個別rectを保持する")
+    func testIngestSelectionOverlayPayloadStoresMeasuredGroupRects() throws {
+        // コンディション：Sidebar Layers で2つの node を同時選択している（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            ["id": "hero", "tagName": "hero", "type": "frame", "depth": 0],
+            ["id": "card", "tagName": "card", "type": "frame", "depth": 1],
+            ["id": "title", "tagName": "title", "type": "text", "depth": 2]
+        ])
+        store.selectNode(id: "hero")
+        store.selectNodeRange(to: "card", visibleNodeIDs: ["hero", "card", "title"])
+
+        // 検証内容：選択外 node も混じった WebView 実測 payload を取り込む（When）
+        store.ingestSelectionOverlayPayload(
+            [
+                "active": true,
+                "id": "card",
+                "nodes": [
+                    ["id": "hero", "x": 10.0, "y": 20.0, "width": 100.0, "height": 30.0],
+                    ["id": "card", "x": 10.0, "y": 60.0, "width": 200.0, "height": 40.0],
+                    ["id": "title", "x": 999.0, "y": 999.0, "width": 20.0, "height": 20.0]
+                ]
+            ],
+            pageInternalID: "page-1"
+        )
+
+        // 期待値：選択中 node だけで union が作られ、個別 rect も実測値で保持される（Then）
+        let overlay = try #require(store.selectionOverlayFrame)
+        #expect(overlay.primaryNodeID == "card")
+        #expect(overlay.nodeIDs == ["hero", "card"])
+        #expect(overlay.rect == CGRect(x: 10, y: 20, width: 200, height: 80))
+        #expect(overlay.nodeRectsByID["hero"] == CGRect(x: 10, y: 20, width: 100, height: 30))
+        #expect(overlay.nodeRectsByID["card"] == CGRect(x: 10, y: 60, width: 200, height: 40))
+        #expect(overlay.nodeRectsByID["title"] == nil)
+    }
+
     /// 論理名（日本語）: Sidebar Layers範囲選択テスト
     /// 概要: Shift クリック相当の範囲選択で、アンカーから終端までの表示中ノードが同時選択されることを検証します。
     @Test("Sidebar Layersでアンカーから表示順範囲を同時選択する")
@@ -1904,6 +1980,163 @@ struct EditorStoreTests {
         #expect(diskCSS.contains("top: 24px;"))
         #expect(diskCSS.contains("width: 160px;"))
         #expect(diskCSS.contains("height: 90px;"))
+    }
+
+    /// 論理名（日本語）: Absolute layout flow化時の子位置宣言削除テスト
+    /// 概要: 親 layout を absolute から vertical へ変更した際、直下 child の position / inset 宣言だけが削除されることを確認します。
+    @Test("absoluteからflowへ戻すと直下childの位置宣言を削除する")
+    func testLayoutChangeFromAbsoluteToFlowRemovesDirectChildPositionDeclarations() throws {
+        // コンディション：absolute page の直下 child と nested child に位置宣言を持つ一時プロジェクトを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="absolute">
+            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical"></OpenGraphiteFrame>
+            <Wrapper data-og-id="wrapper" data-og-internal-id="wrapper-node" data-og-type="frame" data-og-layout="vertical">
+              <Nested data-og-id="nested" data-og-internal-id="nested-node" data-og-type="frame" data-og-layout="vertical"></Nested>
+            </Wrapper>
+          </OpenGraphitePage>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="frame-node"] {
+              position: absolute;
+              left: 12px;
+              top: 24px;
+              width: 160px;
+              height: 90px;
+            }
+
+            [data-og-internal-id="wrapper-node"] {
+              position: absolute;
+              left: 40px;
+              top: 50px;
+              width: 320px;
+            }
+
+            [data-og-internal-id="nested-node"] {
+              position: absolute;
+              left: 4px;
+              top: 8px;
+              width: 64px;
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+
+        // 検証内容：WebView bridge 由来の layout 変更 payload を保存する（When）
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+        let result = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setAttribute",
+                "nodeInternalID": "page-node",
+                "name": "data-og-layout",
+                "value": "vertical",
+                "previousValue": "absolute"
+            ],
+            target: target
+        )
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let cssDocument = OpenGraphiteCompanionCSSDocument(css: try fixture.readCompanionCSS())
+        let frameCSS = cssDocument.cssVariables(forNodeInternalID: "frame-node")
+        let wrapperCSS = cssDocument.cssVariables(forNodeInternalID: "wrapper-node")
+        let nestedCSS = cssDocument.cssVariables(forNodeInternalID: "nested-node")
+
+        // 期待値：親は vertical へ変わり、直下 child の位置宣言だけが削除される（Then）
+        #expect(result.updated == true)
+        #expect(result.requiresReload == true)
+        #expect(diskHTML.contains(#"data-og-layout="vertical""#))
+        #expect(frameCSS["position"] == nil)
+        #expect(frameCSS["left"] == nil)
+        #expect(frameCSS["top"] == nil)
+        #expect(frameCSS["width"] == "160px")
+        #expect(wrapperCSS["position"] == nil)
+        #expect(wrapperCSS["left"] == nil)
+        #expect(wrapperCSS["top"] == nil)
+        #expect(wrapperCSS["width"] == "320px")
+        #expect(nestedCSS["position"] == "absolute")
+        #expect(nestedCSS["left"] == "4px")
+        #expect(nestedCSS["top"] == "8px")
+    }
+
+    /// 論理名（日本語）: Inspector layout flow化時のcache同期テスト
+    /// 概要: Inspector から親 layout を absolute から horizontal へ変更した際、直下 child の cache と再読み込み要求が同期することを確認します。
+    @Test("Inspectorでabsoluteからflowへ戻すとchild cacheも追従する")
+    func testInspectorLayoutChangeFromAbsoluteToFlowUpdatesChildCache() throws {
+        // コンディション：absolute page と直下 child の位置宣言を app 内 cache へ取り込む（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="absolute">
+            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical"></OpenGraphiteFrame>
+          </OpenGraphitePage>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="frame-node"] {
+              position: absolute;
+              left: 12px;
+              top: 24px;
+              width: 160px;
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "page",
+                "internalID": "page-node",
+                "tagName": "opengraphitepage",
+                "type": "page",
+                "layout": "absolute",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ],
+            [
+                "id": "frame",
+                "internalID": "frame-node",
+                "tagName": "opengraphiteframe",
+                "type": "frame",
+                "layout": "vertical",
+                "cssVariables": [
+                    "position": "absolute",
+                    "left": "12px",
+                    "top": "24px",
+                    "width": "160px"
+                ],
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: "page")
+
+        // 検証内容：Inspector 相当の属性更新で horizontal へ切り替える（When）
+        store.updateNodeAttribute(name: "data-og-layout", value: "horizontal")
+        let cssDocument = OpenGraphiteCompanionCSSDocument(css: try fixture.readCompanionCSS())
+        let frameCSS = cssDocument.cssVariables(forNodeInternalID: "frame-node")
+        let cachedFrame = try #require(store.nodes.first { $0.id == "frame" })
+
+        // 期待値：直下 child の位置宣言が正本と cache から消え、WebView 再同期要求が出る（Then）
+        #expect(store.nodes.first { $0.id == "page" }?.layout == "horizontal")
+        #expect(frameCSS["position"] == nil)
+        #expect(frameCSS["left"] == nil)
+        #expect(frameCSS["top"] == nil)
+        #expect(frameCSS["width"] == "160px")
+        #expect(cachedFrame.cssVariables["position"] == nil)
+        #expect(cachedFrame.cssVariables["left"] == nil)
+        #expect(cachedFrame.cssVariables["top"] == nil)
+        #expect(cachedFrame.cssVariables["width"] == "160px")
+        #expect(store.attributeMutation == nil)
+        #expect(store.documentReplacementRequest?.selectedNodeID == "page")
     }
 
     /// 論理名（日本語）: 同時編集競合拒否テスト

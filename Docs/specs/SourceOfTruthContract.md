@@ -186,9 +186,11 @@ Icon のサイズは companion CSS 上の `width` / `height`、色は `color`、
 
 - `vertical`: 子要素を縦方向に並べる。
 - `horizontal`: 子要素を横方向に並べる。
-- `absolute`: 子要素を `position:absolute` と標準 CSS の `left` / `top` / `right` / `bottom` で配置する。
+- `absolute`: 直下の子要素を `position:absolute` と標準 CSS の `left` / `top` / `right` / `bottom` で配置する。
 
 `data-og-layout` は主に `page` と `frame` に付与します。layout を持つノードでは、`gap`、`align-items`、`justify-content`、`padding` などの標準 CSS property が配置のデザイン値になります。
+
+親 node の `data-og-layout` は直下 child の配置ルールを所有します。`absolute` layout で直下 child に保存された `position` / `left` / `top` / `right` / `bottom` は、その親が absolute placement を行うための値です。親 layout を `absolute` から `vertical` または `horizontal` へ変更した場合、直下 child は親の flow layout に参加し、OpenGraphite は直下 child の `position` / inset 系 declaration を削除します。`width` / `height` などの寸法や、さらに内側の nested child の position declaration はこの layout 変更だけでは削除しません。flow layout へ変更した後も child 自身に独立した position override が必要な場合は、変更後に child の Position 設定として明示します。
 
 ### `data-og-role`
 

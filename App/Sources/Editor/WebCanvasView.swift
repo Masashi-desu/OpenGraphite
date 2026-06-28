@@ -153,7 +153,6 @@ final class WebScrollStateRegistry {
 private struct WebCanvasEditingOverlay {
     enum Style {
         case placementPreview
-        case selection
     }
 
     var rect: CGRect
@@ -208,11 +207,6 @@ private final class WebCanvasEditingOverlayView: NSView {
             NSColor.systemBlue.withAlphaComponent(0.16).setFill()
             path.fill()
             NSColor.systemBlue.withAlphaComponent(0.95).setStroke()
-            path.lineWidth = 2
-        case .selection:
-            NSColor.systemBlue.withAlphaComponent(0.08).setFill()
-            path.fill()
-            NSColor.systemBlue.withAlphaComponent(0.98).setStroke()
             path.lineWidth = 2
         }
         path.stroke()
@@ -273,7 +267,6 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     private var framePlacementPreviewStartPoint: CGPoint?
     private var framePlacementPreviewDidBegin = false
     private var framePlacementPreviewOverlay: WebCanvasEditingOverlay?
-    private var selectedFrameOverlay: WebCanvasEditingOverlay?
 
     /// 論理名（日本語）: WebView不透明判定
     /// 概要: WebKit の未描画期間に親キャンバス背景を透過表示するため、常に非不透明 view として扱います。
@@ -363,57 +356,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
         framePlacementPreviewStartPoint = nil
         framePlacementPreviewDidBegin = false
         framePlacementPreviewOverlay = nil
-        selectedFrameOverlay = nil
         refreshEditingOverlays()
-    }
-
-    /// 論理名（日本語）: 選択フレームオーバーレイ更新関数
-    /// 処理概要: JavaScript bridge から届いた viewport 矩形を AppKit overlay へ反映し、空 frame でも選択枠を表示します。
-    ///
-    /// - Parameter payload: `id`、`x`、`y`、`width`、`height` を持つ JavaScript payload。無効値では overlay を消去します。
-    func updateSelectedFrameOverlay(from payload: [String: Any]?) {
-        guard let payload,
-              let x = Self.doubleValue(payload["x"]),
-              let y = Self.doubleValue(payload["y"]),
-              let width = Self.doubleValue(payload["width"]),
-              let height = Self.doubleValue(payload["height"]),
-              width > 0,
-              height > 0
-        else {
-            clearSelectedFrameOverlay()
-            return
-        }
-
-        let id = (payload["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        selectedFrameOverlay = WebCanvasEditingOverlay(
-            rect: CGRect(x: x, y: y, width: width, height: height),
-            label: id,
-            style: .selection
-        )
-        refreshEditingOverlays()
-    }
-
-    /// 論理名（日本語）: 選択フレームオーバーレイ消去関数
-    /// 処理概要: 選択解除や frame 以外の選択時に AppKit 側の選択枠だけを非表示にします。
-    func clearSelectedFrameOverlay() {
-        selectedFrameOverlay = nil
-        refreshEditingOverlays()
-    }
-
-    /// 論理名（日本語）: JavaScript数値変換関数
-    /// 処理概要: WKScriptMessage 由来の `Double` または `NSNumber` を overlay 用の数値へ変換します。
-    ///
-    /// - Parameter value: JavaScript payload の数値候補。
-    /// - Returns: 有効な有限数値。変換できない場合は `nil`。
-    private static func doubleValue(_ value: Any?) -> Double? {
-        if let value = value as? Double, value.isFinite {
-            return value
-        }
-        if let value = value as? NSNumber {
-            let doubleValue = value.doubleValue
-            return doubleValue.isFinite ? doubleValue : nil
-        }
-        return nil
     }
 
     /// 論理名（日本語）: プレビュー背景透明化関数
@@ -489,7 +432,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     private func refreshEditingOverlays() {
         ensureEditingOverlayView()
         layoutEditingOverlay()
-        editingOverlayView.overlays = [selectedFrameOverlay, framePlacementPreviewOverlay].compactMap { $0 }
+        editingOverlayView.overlays = [framePlacementPreviewOverlay].compactMap { $0 }
     }
 
     /// 論理名（日本語）: フレーム配置preview追跡開始関数
@@ -1336,7 +1279,7 @@ struct WebCanvasView: NSViewRepresentable {
 
             if message.name == "openGraphiteSelectionOverlay" {
                 Task { @MainActor in
-                    updateSelectedFrameOverlayPayload(message.body)
+                    ingestSelectionOverlayPayload(message.body)
                 }
             }
 
@@ -1348,13 +1291,12 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         @MainActor
-        /// 論理名（日本語）: 選択フレームオーバーレイ受信関数
-        /// 処理概要: WebView JavaScript から届いた選択 frame 矩形を OpenGraphiteCommandWebView の native overlay に反映します。
+        /// 論理名（日本語）: 選択オーバーレイ受信関数
+        /// 処理概要: WebView JavaScript から届いた実測選択矩形を Store に反映します。
         ///
-        /// - Parameter body: script message body。frame 選択時は辞書、それ以外は空辞書または不正値です。
-        private func updateSelectedFrameOverlayPayload(_ body: Any) {
-            guard let commandWebView = webView as? OpenGraphiteCommandWebView else { return }
-            commandWebView.updateSelectedFrameOverlay(from: body as? [String: Any])
+        /// - Parameter body: script message body。選択中は辞書、それ以外は空辞書または不正値です。
+        private func ingestSelectionOverlayPayload(_ body: Any) {
+            store.ingestSelectionOverlayPayload(body as? [String: Any], pageInternalID: pageInternalID)
         }
 
         /// 論理名（日本語）: WebView読み込み完了関数
@@ -1615,7 +1557,7 @@ struct WebCanvasView: NSViewRepresentable {
             lastSelectedNodeID = primaryID
             lastSelectedNodeIDs = ids
             if primaryID == nil && ids.isEmpty {
-                (webView as? OpenGraphiteCommandWebView)?.clearSelectedFrameOverlay()
+                store.clearSelectionOverlayFrame(pageInternalID: pageInternalID)
             }
             let idsLiteral = Self.jsonLiteral(ids)
             let primaryIDLiteral = Self.javaScriptLiteral(primaryID ?? "")
@@ -2440,20 +2382,19 @@ struct WebCanvasView: NSViewRepresentable {
           style.id = 'opengraphite-editor-selection-style';
           style.textContent = [
             'html,body{scroll-padding:24px;}',
-            '[data-og-selected="true"]{scroll-margin:24px;}',
+            '[data-og-selected="true"]{outline:none!important;box-shadow:none!important;scroll-margin:24px;}',
             '[data-og-selected="true"][data-og-component],',
-            '[data-og-selected="true"][data-og-component-kind="master"]{outline-color:#8b5cf6!important;}',
+            '[data-og-selected="true"][data-og-component-kind="master"]{outline:none!important;box-shadow:none!important;}',
             '[data-og-dragging="true"]{cursor:grabbing!important;filter:drop-shadow(0 14px 24px rgba(0,0,0,.28));z-index:2147483647;}',
             '[data-og-reorder-dragging="true"]{pointer-events:none;transform:translate3d(var(--og-drag-x,0),var(--og-drag-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:none!important;will-change:transform;}',
             '[data-og-reorder-animating="true"]{transform:translate3d(var(--og-reorder-x,0),var(--og-reorder-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:transform 160ms cubic-bezier(.2,0,.2,1)!important;will-change:transform;}',
             '[data-og-reorder-preparing="true"]{transition:none!important;}',
             'html[data-og-frame-guides="true"] [data-og-type="frame"]:not([data-og-selected="true"]){outline:1px dashed rgba(29,155,240,.35)!important;outline-offset:-1px!important;}',
-            '[data-og-selected="true"][data-og-type="frame"]{outline:2px solid #1d9bf0!important;outline-offset:2px!important;box-shadow:0 0 0 1px rgba(29,155,240,.9) inset,0 0 0 1px rgba(29,155,240,.9)!important;}',
+            '[data-og-selected="true"][data-og-type="frame"]{outline:none!important;box-shadow:none!important;}',
             '[data-og-frame-preview="true"]{background:rgba(29,155,240,.14)!important;border:1px solid rgba(29,155,240,.75)!important;outline:1px solid #1d9bf0!important;outline-offset:0!important;box-shadow:0 0 0 1px rgba(29,155,240,.45) inset!important;pointer-events:none!important;position:absolute!important;z-index:2147483645!important;}',
             '[data-og-editor-artifact="true"]{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important;}',
-            '[data-og-frame-placement-overlay="true"],[data-og-selection-overlay="true"]{box-sizing:border-box!important;contain:layout style paint!important;position:fixed!important;}',
+            '[data-og-frame-placement-overlay="true"]{box-sizing:border-box!important;contain:layout style paint!important;position:fixed!important;}',
             '[data-og-frame-placement-overlay="true"]{background:rgba(29,155,240,.16)!important;border:1px solid #60a5fa!important;box-shadow:0 0 0 1px rgba(29,155,240,.92),0 12px 30px rgba(29,155,240,.22)!important;z-index:2147483647!important;}',
-            '[data-og-selection-overlay="true"]{background:rgba(29,155,240,.055)!important;border:1px solid #1d9bf0!important;box-shadow:0 0 0 1px rgba(29,155,240,.5),0 0 0 1px rgba(29,155,240,.35) inset!important;z-index:2147483646!important;}',
             '[data-og-frame-placement-overlay="true"]::after{background:#0a84ff;border-radius:4px;color:#fff;display:block;font:600 10px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;left:-1px;max-width:260px;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;top:-21px;white-space:nowrap;}',
             '[data-og-frame-placement-overlay="true"]::after{content:attr(data-og-placement-label);}',
             '[data-og-frame-placement-overlay="true"][data-og-overlay-label-position="inside"]::after{left:2px;top:2px;}'
@@ -2820,11 +2761,8 @@ struct WebCanvasView: NSViewRepresentable {
           setFixedOverlayRect(overlay, rect);
         }
 
-        function selectedFrameOverlayPayload() {
-          const element = selectionOverlayTarget();
-          if (!element || typeof element.getBoundingClientRect !== 'function') {
-            return null;
-          }
+        function selectedElementFramePayload(element) {
+          if (!element || typeof element.getBoundingClientRect !== 'function') { return null; }
           const rect = element.getBoundingClientRect();
           if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
               !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
@@ -2832,11 +2770,38 @@ struct WebCanvasView: NSViewRepresentable {
             return null;
           }
           return {
-            id: elementID(element) || element.tagName.toLowerCase(),
+            id: selectionIDForElement(element) || elementID(element) || element.tagName.toLowerCase(),
             x: rect.left,
             y: rect.top,
             width: rect.width,
             height: rect.height
+          };
+        }
+
+        function selectionOverlayPayload() {
+          const nodes = selectedElements()
+            .map(selectedElementFramePayload)
+            .filter((payload) => payload !== null);
+          if (nodes.length === 0) { return null; }
+
+          const left = Math.min.apply(null, nodes.map((node) => node.x));
+          const top = Math.min.apply(null, nodes.map((node) => node.y));
+          const right = Math.max.apply(null, nodes.map((node) => node.x + node.width));
+          const bottom = Math.max.apply(null, nodes.map((node) => node.y + node.height));
+          if (!Number.isFinite(left) || !Number.isFinite(top) ||
+              !Number.isFinite(right) || !Number.isFinite(bottom) ||
+              right <= left || bottom <= top) {
+            return null;
+          }
+
+          return {
+            active: true,
+            id: currentSelectedID || nodes[0].id,
+            x: left,
+            y: top,
+            width: right - left,
+            height: bottom - top,
+            nodes: nodes
           };
         }
 
@@ -2887,69 +2852,27 @@ struct WebCanvasView: NSViewRepresentable {
           postNodeDragPreviewPayload({ active: false });
         }
 
-        function ensureSelectionOverlay() {
-          if (selectionOverlay && selectionOverlay.isConnected) {
-            return selectionOverlay;
+        function removeSelectionOverlay() {
+          if (selectionOverlay) {
+            selectionOverlay.remove();
           }
-
-          selectionOverlay = document.createElement('div');
-          selectionOverlay.setAttribute('data-og-editor-artifact', 'true');
-          selectionOverlay.setAttribute('data-og-selection-overlay', 'true');
-          selectionOverlay.setAttribute('aria-hidden', 'true');
-          selectionOverlay.style.setProperty('display', 'none');
-          document.documentElement.appendChild(selectionOverlay);
-          return selectionOverlay;
+          selectionOverlay = null;
         }
 
         function hideSelectionOverlay() {
-          if (selectionOverlay) {
-            selectionOverlay.style.setProperty('display', 'none');
-          }
+          removeSelectionOverlay();
           postSelectionOverlayPayload(null);
-        }
-
-        function isSelectionOverlayElement(element) {
-          const type = element ? element.getAttribute('data-og-type') || '' : '';
-          return type === 'frame' || type === 'icon';
-        }
-
-        function selectionOverlayTarget() {
-          if (selectedElements().length !== 1) {
-            return null;
-          }
-          const element = selectedElement();
-          if (!isSelectionOverlayElement(element)) {
-            return null;
-          }
-          return element;
         }
 
         function updateSelectionOverlay() {
           selectionOverlayFrame = null;
-          const element = selectionOverlayTarget();
-          if (!element || typeof element.getBoundingClientRect !== 'function') {
+          const payload = selectionOverlayPayload();
+          if (!payload) {
             hideSelectionOverlay();
             return;
           }
-
-          const rect = element.getBoundingClientRect();
-          if (!Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
-              !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
-              rect.width <= 0 || rect.height <= 0) {
-            hideSelectionOverlay();
-            return;
-          }
-
-          const overlay = ensureSelectionOverlay();
-          overlay.removeAttribute('data-og-selection-label');
-          setFixedOverlayRect(overlay, rect);
-          postSelectionOverlayPayload({
-            id: elementID(element) || element.tagName.toLowerCase(),
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height
-          });
+          removeSelectionOverlay();
+          postSelectionOverlayPayload(payload);
         }
 
         function scheduleSelectionOverlayUpdate() {
@@ -4951,7 +4874,7 @@ struct WebCanvasView: NSViewRepresentable {
           installEditorSelectionStyle: installEditorSelectionStyle,
           selectNode: selectNode,
           selectNodes: selectNodes,
-          selectedFrameOverlayPayload: selectedFrameOverlayPayload,
+          selectionOverlayPayload: selectionOverlayPayload,
           setActiveTool: setActiveTool,
           handleFramePlacementNativeEvent: handleFramePlacementNativeEvent,
           setCSSVariable: setCSSVariable,
