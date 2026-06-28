@@ -900,19 +900,27 @@ private struct CanvasDocumentView: View {
     var isFlowHoverEnabled: Bool
     var onFlowTargetPageHover: (String, Bool) -> Void
     @State private var pageDragTranslation: CGSize = .zero
+    @State private var pageResizePreview: CanvasPageResizePreview?
     @State private var nodeResizePreview: CanvasNodeResizePreview?
 
     var body: some View {
-        let width = max(CGFloat(page.canvas.width), 1)
-        let height = max(CGFloat(page.canvas.height), 1)
+        let displayedCanvas = pageResizePreview?.pageInternalID == page.internalID
+            ? pageResizePreview?.canvas ?? page.canvas
+            : page.canvas
+        let width = max(CGFloat(displayedCanvas.width), 1)
+        let height = max(CGFloat(displayedCanvas.height), 1)
         let layout = CanvasPageVisualLayout.resolve(pageWidth: width, pageHeight: height)
         let pageSize = CGSize(width: width, height: height)
+        let pageResizeTranslation = CGSize(
+            width: CGFloat(displayedCanvas.x - page.canvas.x),
+            height: CGFloat(displayedCanvas.y - page.canvas.y)
+        )
         let baseSelectedNodeOverlay = selectedNodeOverlayFrame(pageSize: pageSize)
         let selectedNodeOverlay = displayedSelectedNodeOverlayFrame(
             baseOverlay: baseSelectedNodeOverlay,
             pageSize: pageSize
         )
-        let showsSelectedPageBorder = isSelected && store.selectedNodeID == nil
+        let showsSelectedPageOverlay = isSelected && store.selectedNodeID == nil
 
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
@@ -973,9 +981,9 @@ private struct CanvasDocumentView: View {
 
             CanvasPageNameCard(
                 title: page.id,
-                placementName: page.canvas.displayName,
+                placementName: displayedCanvas.displayName,
                 path: page.path,
-                resolution: page.canvas.resolutionLabel,
+                resolution: displayedCanvas.resolutionLabel,
                 isSelected: isSelected,
                 maxTextWidth: layout.captionTextWidth
             )
@@ -998,13 +1006,27 @@ private struct CanvasDocumentView: View {
         }
         .frame(width: layout.documentSize.width, height: layout.documentSize.height, alignment: .topLeading)
         .overlay(alignment: .topLeading) {
-            Rectangle()
-                .stroke(showsSelectedPageBorder ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: showsSelectedPageBorder ? 3 : 1)
-                .frame(width: layout.pageBodyFrame.width, height: layout.pageBodyFrame.height)
-                .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+            if showsSelectedPageOverlay {
+                CanvasSelectedPageOverlay(
+                    canvas: displayedCanvas,
+                    rect: layout.pageBodyFrame,
+                    documentSize: layout.documentSize,
+                    zoom: zoom,
+                    onResizeChanged: handlePageResizeChanged,
+                    onResizeEnded: handlePageResizeEnded
+                )
+            } else {
+                Rectangle()
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    .frame(width: layout.pageBodyFrame.width, height: layout.pageBodyFrame.height)
+                    .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+            }
         }
-        .offset(x: pageDragTranslation.width, y: pageDragTranslation.height)
-        .zIndex(pageDragTranslation == .zero ? (isSelected ? 1 : 0) : 2)
+        .offset(
+            x: pageDragTranslation.width + pageResizeTranslation.width,
+            y: pageDragTranslation.height + pageResizeTranslation.height
+        )
+        .zIndex(pageDragTranslation == .zero && pageResizePreview == nil ? (isSelected ? 1 : 0) : 2)
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isSelected else { return }
@@ -1028,6 +1050,7 @@ private struct CanvasDocumentView: View {
         }
         .onChange(of: store.selectedNodeID) { _, _ in
             nodeResizePreview = nil
+            pageResizePreview = nil
         }
         .onChange(of: store.selectedNodeIDs) { _, _ in
             nodeResizePreview = nil
@@ -1067,6 +1090,33 @@ private struct CanvasDocumentView: View {
     private func selectPageForCaptionInteraction() {
         guard store.selectedPage?.internalID != page.internalID else { return }
         store.selectPage(internalID: page.internalID)
+    }
+
+    /// 論理名（日本語）: ページリサイズpreview更新関数
+    /// 処理概要: ページ枠ハンドルのドラッグ中に、`.ogp` 保存前の canvas 矩形をローカル state へ保持します。
+    ///
+    /// - Parameter canvas: ドラッグ中の page canvas 定義。
+    private func handlePageResizeChanged(canvas: OpenGraphiteCanvas) {
+        selectPageForCaptionInteraction()
+        pageResizePreview = CanvasPageResizePreview(
+            pageInternalID: page.internalID,
+            canvas: canvas
+        )
+    }
+
+    /// 論理名（日本語）: ページリサイズ確定関数
+    /// 処理概要: ページ枠ハンドルのドラッグ終了時に、canvas 座標と解像度を `.ogp` へ保存します。
+    ///
+    /// - Parameter canvas: 保存する page canvas 定義。
+    private func handlePageResizeEnded(canvas: OpenGraphiteCanvas) {
+        pageResizePreview = nil
+        selectPageForCaptionInteraction()
+        store.updateSelectedPageCanvas(
+            x: canvas.x,
+            y: canvas.y,
+            width: canvas.width,
+            height: canvas.height
+        )
     }
 
     /// 論理名（日本語）: 表示用選択ノードオーバーレイ矩形生成関数
@@ -1309,6 +1359,17 @@ private struct CanvasNodeResizePreview: Equatable {
     var rect: CGRect
 }
 
+/// 論理名（日本語）: Canvasページリサイズプレビュー
+/// 概要: ページ枠ドラッグ中の canvas 座標と解像度を一時表示するための状態です。
+///
+/// プロパティ:
+/// - `pageInternalID`: preview を表示する page card の内部 ID。
+/// - `canvas`: ドラッグ中の page canvas 定義。
+private struct CanvasPageResizePreview: Equatable {
+    var pageInternalID: String
+    var canvas: OpenGraphiteCanvas
+}
+
 /// 論理名（日本語）: Canvas選択ノードオーバーレイ矩形
 /// 概要: WebView の DOM overlay に依存せず、Canvas 座標上で選択 object を可視化するための矩形です。
 private struct CanvasSelectedNodeOverlayFrame: Equatable {
@@ -1417,6 +1478,88 @@ private struct CanvasSelectedNodeOverlayFrame: Equatable {
             return nil
         }
         return CGFloat(doubleValue)
+    }
+}
+
+/// 論理名（日本語）: Canvas選択ページオーバーレイ
+/// 概要: 選択中ページの枠とリサイズハンドルを SwiftUI レイヤーとして描画します。
+///
+/// プロパティ:
+/// - `canvas`: 表示中またはドラッグ中の page canvas 定義。
+/// - `rect`: document 座標上の page 本体矩形。
+/// - `documentSize`: キャプションを含む document view 全体サイズ。
+/// - `zoom`: 現在の canvas 表示倍率。
+/// - `onResizeChanged`: ドラッグ中 canvas が変わったときに呼ぶ処理。
+/// - `onResizeEnded`: ドラッグ終了時 canvas を保存する処理。
+private struct CanvasSelectedPageOverlay: View {
+    var canvas: OpenGraphiteCanvas
+    var rect: CGRect
+    var documentSize: CGSize
+    var zoom: Double
+    var onResizeChanged: (OpenGraphiteCanvas) -> Void
+    var onResizeEnded: (OpenGraphiteCanvas) -> Void
+    @State private var resizeStartCanvas: OpenGraphiteCanvas?
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.04))
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.accentColor, lineWidth: 3)
+                )
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+
+            ForEach(CanvasNodeResizeHandle.allCases) { handle in
+                CanvasNodeResizeHandleView(
+                    handle: handle,
+                    inverseZoomScale: inverseZoomScale
+                )
+                .position(handle.position(in: rect))
+                .gesture(resizeGesture(for: handle))
+            }
+        }
+        .frame(width: documentSize.width, height: documentSize.height, alignment: .topLeading)
+    }
+
+    private var inverseZoomScale: CGFloat {
+        guard zoom.isFinite, zoom > 0 else { return 1 }
+        return 1 / CGFloat(zoom)
+    }
+
+    /// 論理名（日本語）: ページリサイズジェスチャ生成関数
+    /// 処理概要: 指定ハンドルのドラッグ量を page canvas 座標と解像度へ変換し、変更中と終了時の callback を呼びます。
+    ///
+    /// - Parameter handle: 操作対象のリサイズハンドル。
+    /// - Returns: ハンドルへ付与するドラッグジェスチャ。
+    private func resizeGesture(for handle: CanvasNodeResizeHandle) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                let startCanvas = resizeStartCanvas ?? canvas
+                if resizeStartCanvas == nil {
+                    resizeStartCanvas = startCanvas
+                }
+                let resizedCanvas = CanvasPageResizeResolver.resizedCanvas(
+                    for: startCanvas,
+                    handle: handle,
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+                onResizeChanged(resizedCanvas)
+            }
+            .onEnded { value in
+                let startCanvas = resizeStartCanvas ?? canvas
+                let resizedCanvas = CanvasPageResizeResolver.resizedCanvas(
+                    for: startCanvas,
+                    handle: handle,
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+                resizeStartCanvas = nil
+                onResizeEnded(resizedCanvas)
+            }
     }
 }
 
@@ -2316,6 +2459,118 @@ enum CanvasPageDragResolver {
         return CGSize(
             width: screenTranslation.width / scale,
             height: screenTranslation.height / scale
+        )
+    }
+}
+
+/// 論理名（日本語）: キャンバスページリサイズ解決器
+/// 概要: ページ枠ハンドルの画面ドラッグ量を `.ogp` の canvas 座標と解像度へ変換します。
+///
+/// 定義内容:
+/// - `resizedCanvas(for:handle:screenTranslation:zoom:)`: ドラッグ後に保存する page canvas 定義を生成します。
+/// - `resizedRect(startRect:handle:screenTranslation:zoom:)`: ドラッグ後の canvas 矩形を算出します。
+enum CanvasPageResizeResolver {
+    static let minimumSize: CGFloat = 2
+
+    /// 論理名（日本語）: リサイズ後Canvas生成関数
+    /// 処理概要: 既存の配置名と preview Mock State を保持し、リサイズ後の座標と寸法だけを更新します。
+    ///
+    /// - Parameters:
+    ///   - canvas: ドラッグ開始時の page canvas 定義。
+    ///   - handle: 操作中のリサイズハンドル。
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: リサイズ後の page canvas 定義。
+    static func resizedCanvas(
+        for canvas: OpenGraphiteCanvas,
+        handle: CanvasNodeResizeHandle,
+        screenTranslation: CGSize,
+        zoom: Double
+    ) -> OpenGraphiteCanvas {
+        let rect = resizedRect(
+            startRect: CGRect(
+                x: CGFloat(canvas.x),
+                y: CGFloat(canvas.y),
+                width: CGFloat(canvas.width),
+                height: CGFloat(canvas.height)
+            ),
+            handle: handle,
+            screenTranslation: screenTranslation,
+            zoom: zoom
+        )
+        return OpenGraphiteCanvas(
+            name: canvas.name,
+            x: Double(rect.minX),
+            y: Double(rect.minY),
+            width: Double(rect.width),
+            height: Double(rect.height),
+            previewContext: canvas.previewContext
+        )
+    }
+
+    /// 論理名（日本語）: リサイズ後矩形生成関数
+    /// 処理概要: ズーム適用後の画面ドラッグ量を canvas 座標へ戻し、操作辺と最小サイズから page 矩形を補正します。
+    ///
+    /// - Parameters:
+    ///   - startRect: ドラッグ開始時の canvas 座標上の page 矩形。
+    ///   - handle: 操作中のリサイズハンドル。
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    /// - Returns: 補正済みの page canvas 矩形。
+    static func resizedRect(
+        startRect: CGRect,
+        handle: CanvasNodeResizeHandle,
+        screenTranslation: CGSize,
+        zoom: Double
+    ) -> CGRect {
+        let normalizedStartRect = normalizedRect(startRect)
+        let translation = CanvasPageDragResolver.canvasTranslation(
+            screenTranslation: screenTranslation,
+            zoom: zoom
+        )
+        var minX = normalizedStartRect.minX
+        var maxX = normalizedStartRect.maxX
+        var minY = normalizedStartRect.minY
+        var maxY = normalizedStartRect.maxY
+
+        if handle.horizontalDirection < 0 {
+            minX = min(normalizedStartRect.minX + translation.width, normalizedStartRect.maxX - minimumSize)
+        } else if handle.horizontalDirection > 0 {
+            maxX = max(normalizedStartRect.maxX + translation.width, normalizedStartRect.minX + minimumSize)
+        }
+
+        if handle.verticalDirection < 0 {
+            minY = min(normalizedStartRect.minY + translation.height, normalizedStartRect.maxY - minimumSize)
+        } else if handle.verticalDirection > 0 {
+            maxY = max(normalizedStartRect.maxY + translation.height, normalizedStartRect.minY + minimumSize)
+        }
+
+        return CGRect(
+            x: minX.rounded(),
+            y: minY.rounded(),
+            width: max((maxX - minX).rounded(), minimumSize),
+            height: max((maxY - minY).rounded(), minimumSize)
+        )
+    }
+
+    /// 論理名（日本語）: 正規化矩形生成関数
+    /// 処理概要: 不正な矩形値を避け、最小サイズ以上の canvas 矩形へ補正します。
+    ///
+    /// - Parameter rect: ドラッグ開始時の page 矩形。
+    /// - Returns: リサイズ計算に使える矩形。
+    private static func normalizedRect(_ rect: CGRect) -> CGRect {
+        guard rect.minX.isFinite,
+              rect.minY.isFinite,
+              rect.width.isFinite,
+              rect.height.isFinite
+        else {
+            return CGRect(x: 0, y: 0, width: minimumSize, height: minimumSize)
+        }
+        return CGRect(
+            x: rect.minX,
+            y: rect.minY,
+            width: max(rect.width, minimumSize),
+            height: max(rect.height, minimumSize)
         )
     }
 }

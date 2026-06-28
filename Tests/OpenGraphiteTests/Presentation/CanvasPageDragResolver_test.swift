@@ -2,9 +2,9 @@ import CoreGraphics
 import Testing
 @testable import OpenGraphite
 
-/// 論理名（日本語）: キャンバスページドラッグ解決関連のテストスイート
-/// 概要: キャプションカードのドラッグ量を canvas 座標へ戻す計算を検証します。
-@Suite("キャンバスページドラッグ解決関連のテストスイート")
+/// 論理名（日本語）: キャンバスページ操作解決関連のテストスイート
+/// 概要: キャプションカード移動とページ枠リサイズのドラッグ量を canvas 座標へ戻す計算を検証します。
+@Suite("キャンバスページ操作解決関連のテストスイート")
 struct CanvasPageDragResolverTests {
     /// 論理名（日本語）: ズーム適用ドラッグ量変換テスト
     /// 概要: 画面上のドラッグ量が現在倍率で割られ、未拡大の canvas 移動量になることを検証します。
@@ -77,6 +77,78 @@ struct CanvasPageDragResolverTests {
         #expect(pageBodyWidth == 120)
         #expect(captionWidth > pageBodyWidth)
         #expect(documentWidth == captionWidth)
+    }
+
+    /// 論理名（日本語）: 右辺ページリサイズズーム換算テスト
+    /// 概要: 画面上のドラッグ量が現在倍率で割られ、page canvas の width 変更になることを検証します。
+    @Test("右辺ドラッグはpage canvasのwidthへ変換できる")
+    func testRightHandleDividesTranslationByZoom() {
+        // コンディション：50% 表示中の page canvas と右辺ドラッグ量を用意する（Given）
+        let previewContext = OpenGraphitePreviewContext(fieldMocks: ["theme": "dark"])
+        let canvas = OpenGraphiteCanvas(
+            name: "Desktop",
+            x: 40,
+            y: 50,
+            width: 100,
+            height: 80,
+            previewContext: previewContext
+        )
+
+        // 検証内容：右辺ハンドルでリサイズ後 canvas を算出する（When）
+        let resizedCanvas = CanvasPageResizeResolver.resizedCanvas(
+            for: canvas,
+            handle: .right,
+            screenTranslation: CGSize(width: 20, height: 0),
+            zoom: 0.5
+        )
+
+        // 期待値：canvas 座標では 40pt 広がり、metadata と位置は変わらない（Then）
+        #expect(resizedCanvas == OpenGraphiteCanvas(
+            name: "Desktop",
+            x: 40,
+            y: 50,
+            width: 140,
+            height: 80,
+            previewContext: previewContext
+        ))
+    }
+
+    /// 論理名（日本語）: 左上ページリサイズテスト
+    /// 概要: 左上角のドラッグで page canvas の x/y と width/height が同時に更新されることを検証します。
+    @Test("左上角ドラッグはpage canvasの位置と寸法を同時に変更する")
+    func testTopLeftHandleUpdatesOriginAndSize() {
+        // コンディション：canvas 上の page と、ズーム中の左上角ドラッグ量を用意する（Given）
+        let canvas = OpenGraphiteCanvas(x: 100, y: 80, width: 300, height: 200)
+
+        // 検証内容：左上角ハンドルでリサイズ後 canvas を算出する（When）
+        let resizedCanvas = CanvasPageResizeResolver.resizedCanvas(
+            for: canvas,
+            handle: .topLeft,
+            screenTranslation: CGSize(width: 20, height: -10),
+            zoom: 0.5
+        )
+
+        // 期待値：画面ドラッグ量を 2 倍換算した分だけ左上が動き、右下は開始時の位置を保つ（Then）
+        #expect(resizedCanvas == OpenGraphiteCanvas(x: 140, y: 60, width: 260, height: 220))
+    }
+
+    /// 論理名（日本語）: Page最小サイズクランプテスト
+    /// 概要: 辺を反対側へドラッグしすぎても page canvas が最小サイズを下回らないことを検証します。
+    @Test("page canvasの辺リサイズは最小サイズで止まる")
+    func testPageResizeClampsToMinimumSize() {
+        // コンディション：幅 100pt の page canvas と右端を越える左辺ドラッグ量を用意する（Given）
+        let canvas = OpenGraphiteCanvas(x: 10, y: 20, width: 100, height: 80)
+
+        // 検証内容：左辺ハンドルでリサイズ後 canvas を算出する（When）
+        let resizedCanvas = CanvasPageResizeResolver.resizedCanvas(
+            for: canvas,
+            handle: .left,
+            screenTranslation: CGSize(width: 400, height: 0),
+            zoom: 1
+        )
+
+        // 期待値：右辺を保ったまま幅が最小サイズの 2pt で止まる（Then）
+        #expect(resizedCanvas == OpenGraphiteCanvas(x: 108, y: 20, width: 2, height: 80))
     }
 }
 
