@@ -905,6 +905,8 @@ private struct CanvasDocumentView: View {
         let width = max(CGFloat(page.canvas.width), 1)
         let height = max(CGFloat(page.canvas.height), 1)
         let layout = CanvasPageVisualLayout.resolve(pageWidth: width, pageHeight: height)
+        let selectedNodeOverlay = selectedNodeOverlayFrame(pageSize: CGSize(width: width, height: height))
+        let showsSelectedPageBorder = isSelected && store.selectedNodeID == nil
 
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
@@ -925,6 +927,11 @@ private struct CanvasDocumentView: View {
                 )
                 .frame(width: width, height: height)
                 .allowsHitTesting(isSelected)
+
+                if let selectedNodeOverlay {
+                    CanvasSelectedNodeOverlay(id: selectedNodeOverlay.id, rect: selectedNodeOverlay.rect)
+                        .allowsHitTesting(false)
+                }
             }
             .frame(width: width, height: height, alignment: .topLeading)
             .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
@@ -957,7 +964,7 @@ private struct CanvasDocumentView: View {
         .frame(width: layout.documentSize.width, height: layout.documentSize.height, alignment: .topLeading)
         .overlay(alignment: .topLeading) {
             Rectangle()
-                .stroke(isSelected ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: isSelected ? 3 : 1)
+                .stroke(showsSelectedPageBorder ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: showsSelectedPageBorder ? 3 : 1)
                 .frame(width: layout.pageBodyFrame.width, height: layout.pageBodyFrame.height)
                 .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
         }
@@ -1019,6 +1026,136 @@ private struct CanvasDocumentView: View {
     private func selectPageForCaptionInteraction() {
         guard store.selectedPage?.internalID != page.internalID else { return }
         store.selectPage(internalID: page.internalID)
+    }
+
+    /// 論理名（日本語）: 選択ノードオーバーレイ矩形生成関数
+    /// 処理概要: drag preview または companion CSS 由来の位置とサイズから、選択中 object を page 内座標の矩形へ変換します。
+    ///
+    /// - Parameter pageSize: page canvas の表示サイズ。
+    /// - Returns: Canvas 上で描画する選択 node overlay。対象外または寸法が不正な場合は `nil`。
+    private func selectedNodeOverlayFrame(pageSize: CGSize) -> CanvasSelectedNodeOverlayFrame? {
+        guard isSelected,
+              let selectedNodeID = store.selectedNodeID
+        else {
+            return nil
+        }
+
+        if let dragPreview = store.nodeDragPreview,
+           dragPreview.nodeID == selectedNodeID,
+           dragPreview.pageInternalID == page.internalID {
+            return CanvasSelectedNodeOverlayFrame(id: dragPreview.nodeID, rect: dragPreview.rect, pageSize: pageSize)
+        }
+
+        guard let selectedNode = store.nodes.first(where: { $0.id == selectedNodeID }),
+              selectedNode.type != "page"
+        else {
+            return nil
+        }
+        return CanvasSelectedNodeOverlayFrame(node: selectedNode, pageSize: pageSize)
+    }
+}
+
+/// 論理名（日本語）: Canvas選択ノードオーバーレイ矩形
+/// 概要: WebView の DOM overlay に依存せず、Canvas 座標上で選択 object を可視化するための矩形です。
+private struct CanvasSelectedNodeOverlayFrame: Equatable {
+    var id: String
+    var rect: CGRect
+
+    /// 論理名（日本語）: ノード由来初期化関数
+    /// 処理概要: node の CSS declaration から `left`、`top`、`width`、`height` を読み、page 範囲内の矩形へ丸めます。
+    ///
+    /// - Parameters:
+    ///   - node: 選択中の OpenGraphite node。
+    ///   - pageSize: page canvas の表示サイズ。
+    init?(node: OpenGraphiteNode, pageSize: CGSize) {
+        guard let width = Self.cssLength(node.cssVariables["width"]),
+              let height = Self.cssLength(node.cssVariables["height"]),
+              width > 0,
+              height > 0
+        else {
+            return nil
+        }
+
+        let left = Self.cssLength(node.cssVariables["left"]) ?? 0
+        let top = Self.cssLength(node.cssVariables["top"]) ?? 0
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        let nodeRect = CGRect(x: left, y: top, width: width, height: height)
+        let visibleRect = nodeRect.intersection(pageRect)
+        guard !visibleRect.isNull, visibleRect.width > 0, visibleRect.height > 0 else {
+            return nil
+        }
+
+        id = node.id
+        rect = visibleRect
+    }
+
+    /// 論理名（日本語）: 矩形指定初期化関数
+    /// 処理概要: WebView から届いたドラッグ中矩形を page 範囲内へ丸め、overlay 表示用に保持します。
+    ///
+    /// - Parameters:
+    ///   - id: 選択中 node ID。
+    ///   - rect: page content 座標上の矩形。
+    ///   - pageSize: page canvas の表示サイズ。
+    init?(id: String, rect: CGRect, pageSize: CGSize) {
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        let visibleRect = rect.intersection(pageRect)
+        guard !visibleRect.isNull, visibleRect.width > 0, visibleRect.height > 0 else {
+            return nil
+        }
+        self.id = id
+        self.rect = visibleRect
+    }
+
+    /// 論理名（日本語）: CSS長さ変換関数
+    /// 処理概要: `px` または単位なしの CSS 数値を Canvas 描画用の CGFloat へ変換します。
+    ///
+    /// - Parameter value: CSS declaration の文字列値。
+    /// - Returns: 有限な数値。変換できない場合は `nil`。
+    private static func cssLength(_ value: String?) -> CGFloat? {
+        guard var normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty
+        else {
+            return nil
+        }
+        if normalized.hasSuffix("px") {
+            normalized.removeLast(2)
+            normalized = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let doubleValue = Double(normalized), doubleValue.isFinite else {
+            return nil
+        }
+        return CGFloat(doubleValue)
+    }
+}
+
+/// 論理名（日本語）: Canvas選択ノードオーバーレイ
+/// 概要: page preview の上に、選択中 object の枠とラベルを SwiftUI レイヤーとして描画します。
+private struct CanvasSelectedNodeOverlay: View {
+    var id: String
+    var rect: CGRect
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.08))
+                .overlay(
+                    Rectangle()
+                        .stroke(Color.accentColor, lineWidth: 2)
+                )
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+
+            if !id.isEmpty {
+                Text(id)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 36, minHeight: 16)
+                    .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 4))
+                    .offset(x: rect.minX, y: rect.minY >= 20 ? rect.minY - 18 : rect.minY + 3)
+            }
+        }
     }
 }
 

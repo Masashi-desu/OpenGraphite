@@ -1,6 +1,19 @@
 import AppKit
 import Foundation
 
+/// 論理名（日本語）: ノードドラッグプレビュー
+/// 概要: WebView 内でドラッグ中の選択ノード矩形を、Canvas 側の選択枠へ一時反映するための状態です。
+///
+/// プロパティ:
+/// - `pageInternalID`: preview を送信した page card の内部 ID。
+/// - `nodeID`: ドラッグ中の node ID。
+/// - `rect`: page content 座標上のドラッグ中矩形。
+struct OpenGraphiteNodeDragPreview: Equatable {
+    var pageInternalID: String?
+    var nodeID: String
+    var rect: CGRect
+}
+
 /// 論理名（日本語）: エディター状態ストア
 /// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
@@ -20,6 +33,7 @@ import Foundation
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
+/// - `nodeDragPreview`: ドラッグ中だけ使う選択ノード矩形 preview。
 /// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
 /// - `staticFlowLinksByPageInternalID`: page card 内部 ID ごとに収集した静的フローリンク。
 /// - `cssMutation`: WebView へ反映待ちの CSS declaration 変更。
@@ -56,6 +70,7 @@ final class EditorStore: ObservableObject {
         didSet {
             guard oldValue != selectedNodeID else { return }
             inspectorSectionOpenRequest = nil
+            nodeDragPreview = nil
         }
     }
     @Published var zoom: Double = 0.72
@@ -63,6 +78,7 @@ final class EditorStore: ObservableObject {
     @Published var lastError: String?
     @Published var activeTool: CanvasTool = .select
     @Published var previewDisplayMode: OpenGraphitePreviewDisplayMode = .normal
+    @Published private(set) var nodeDragPreview: OpenGraphiteNodeDragPreview?
     @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
     @Published private(set) var cssMutation: CSSVariableMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
@@ -1344,6 +1360,52 @@ final class EditorStore: ObservableObject {
             selectedProjectResource = nil
         }
         selectedNodeID = id
+    }
+
+    /// 論理名（日本語）: ノードドラッグpreview payload取り込み関数
+    /// 処理概要: WebView でドラッグ中の選択 node 矩形を受け取り、Canvas 側の選択枠を一時的に追従させます。
+    ///
+    /// - Parameters:
+    ///   - payload: `active`、`id`、`x`、`y`、`width`、`height` を含む JavaScript bridge payload。
+    ///   - pageInternalID: payload を送信した page card の内部 ID。
+    func ingestNodeDragPreviewPayload(_ payload: [String: Any], pageInternalID: String?) {
+        guard payload["active"] as? Bool == true else {
+            clearNodeDragPreview(pageInternalID: pageInternalID)
+            return
+        }
+
+        let id = (payload["id"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty,
+              id == selectedNodeID,
+              let x = Self.cgFloatValue(payload["x"]),
+              let y = Self.cgFloatValue(payload["y"]),
+              let width = Self.cgFloatValue(payload["width"]),
+              let height = Self.cgFloatValue(payload["height"]),
+              width > 0,
+              height > 0
+        else {
+            return
+        }
+
+        nodeDragPreview = OpenGraphiteNodeDragPreview(
+            pageInternalID: pageInternalID?.trimmingCharacters(in: .whitespacesAndNewlines),
+            nodeID: id,
+            rect: CGRect(x: x, y: y, width: width, height: height)
+        )
+    }
+
+    /// 論理名（日本語）: ノードドラッグpreview解除関数
+    /// 処理概要: ドラッグ終了や対象 page 切り替え時に一時 preview を破棄します。
+    ///
+    /// - Parameter pageInternalID: 解除対象を page card 内部 ID で限定します。`nil` の場合は無条件で解除します。
+    func clearNodeDragPreview(pageInternalID: String? = nil) {
+        guard let pageInternalID else {
+            nodeDragPreview = nil
+            return
+        }
+        if nodeDragPreview?.pageInternalID == pageInternalID {
+            nodeDragPreview = nil
+        }
     }
 
     /// 論理名（日本語）: プレビューテキスト編集中payload取り込み関数
@@ -4561,6 +4623,22 @@ final class EditorStore: ObservableObject {
         timelineProviderPropertyKeys.reduce(into: Set<String>()) { names, key in
             names.formUnion(dashedIdentifiers(in: cssVariables[key] ?? ""))
         }
+    }
+
+    /// 論理名（日本語）: CGFloat payload変換関数
+    /// 処理概要: JavaScript bridge 由来の数値を Canvas preview に使う有限な `CGFloat` へ変換します。
+    ///
+    /// - Parameter value: JavaScript payload の数値候補。
+    /// - Returns: 有限な数値。変換できない場合は `nil`。
+    private static func cgFloatValue(_ value: Any?) -> CGFloat? {
+        if let value = value as? Double, value.isFinite {
+            return CGFloat(value)
+        }
+        if let value = value as? NSNumber {
+            let doubleValue = value.doubleValue
+            return doubleValue.isFinite ? CGFloat(doubleValue) : nil
+        }
+        return nil
     }
 
     /// 論理名（日本語）: CSS dashed ident抽出関数
