@@ -37,6 +37,7 @@ struct OpenGraphiteNodeDragPreview: Equatable {
 /// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
 /// - `staticFlowLinksByPageInternalID`: page card 内部 ID ごとに収集した静的フローリンク。
 /// - `cssMutation`: WebView へ反映待ちの CSS declaration 変更。
+/// - `cssVariablesMutation`: WebView へ反映待ちの複数 CSS declaration 変更。
 /// - `attributeMutation`: WebView へ反映待ちの属性変更。
 /// - `textMutation`: WebView へ反映待ちの text content 変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
@@ -81,6 +82,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var nodeDragPreview: OpenGraphiteNodeDragPreview?
     @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
     @Published private(set) var cssMutation: CSSVariableMutation?
+    @Published private(set) var cssVariablesMutation: CSSVariablesMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
     @Published private(set) var textMutation: NodeTextContentMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
@@ -758,6 +760,7 @@ final class EditorStore: ObservableObject {
         guard var loadedProject else { return }
 
         guard cssMutation == nil,
+              cssVariablesMutation == nil,
               attributeMutation == nil,
               textMutation == nil,
               documentReplacementRequest == nil
@@ -1086,6 +1089,7 @@ final class EditorStore: ObservableObject {
             selectedNodeID = nil
             nodes = []
             cssMutation = nil
+            cssVariablesMutation = nil
             attributeMutation = nil
             textMutation = nil
             documentReplacementRequest = nil
@@ -1949,6 +1953,74 @@ final class EditorStore: ObservableObject {
         statusMessage = "\(selectedNode.displayID) の \(key) を更新しました。"
     }
 
+    /// 論理名（日本語）: 選択ノード複数CSS宣言更新関数
+    /// 処理概要: 選択中ノードの複数 CSS declaration を一括更新し、WebView へまとめて反映する mutation を発行します。
+    ///
+    /// - Parameter values: 更新する CSS property または OpenGraphite 予約 custom property 名と値の組。
+    func updateSelectedNodeCSSVariables(values: [String: String]) {
+        guard let selectedNodeID,
+              let selectedNode,
+              let displayTarget = currentHTMLSyncTarget(),
+              let editTarget = cssEditTarget(for: selectedNode)
+        else {
+            return
+        }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
+
+        let normalizedValues = values.reduce(into: [String: String]()) { result, entry in
+            let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !key.isEmpty else { return }
+            result[key] = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !normalizedValues.isEmpty,
+              let index = nodes.firstIndex(where: { $0.id == selectedNodeID })
+        else {
+            return
+        }
+
+        let changedValues = normalizedValues.filter { key, value in
+            (nodes[index].cssVariables[key] ?? "") != value
+        }
+        guard !changedValues.isEmpty else { return }
+
+        let expectedOldValues = changedValues.reduce(into: [String: String]()) { result, entry in
+            result[entry.key] = expectedOldCSSVariableValue(
+                for: selectedNode,
+                key: entry.key,
+                fallback: selectedNode.cssVariables[entry.key] ?? ""
+            )
+        }
+        let edit = HTMLObjectEdit(
+            target: editTarget,
+            operation: .setCSSVariables(
+                nodeInternalID: selectedNode.internalID,
+                values: changedValues,
+                expectedOldValues: expectedOldValues
+            )
+        )
+        guard applyHTMLObjectEdit(edit).updated else { return }
+
+        for (key, value) in changedValues {
+            if value.isEmpty {
+                nodes[index].cssVariables.removeValue(forKey: key)
+            } else {
+                nodes[index].cssVariables[key] = value
+            }
+        }
+
+        mutationSequence += 1
+        cssVariablesMutation = CSSVariablesMutation(
+            sequence: mutationSequence,
+            pageURL: displayTarget.htmlURL,
+            nodeID: selectedNode.id,
+            values: changedValues
+        )
+        statusMessage = "\(selectedNode.displayID) のサイズを更新しました。"
+    }
+
     /// 論理名（日本語）: 選択ページルートCSS宣言更新関数
     /// 処理概要: Page Inspector からページ root node の編集対象 CSS declaration を更新し、WebView へ反映する mutation を発行します。
     ///
@@ -2538,6 +2610,15 @@ final class EditorStore: ObservableObject {
         cssMutation = nil
     }
 
+    /// 論理名（日本語）: 複数CSS宣言mutation適用完了関数
+    /// 処理概要: WebView への反映が完了した複数 CSS mutation を順序番号で確認してクリアします。
+    ///
+    /// - Parameter sequence: 適用完了した mutation の順序番号。
+    func markVariablesMutationApplied(sequence: Int) {
+        guard cssVariablesMutation?.sequence == sequence else { return }
+        cssVariablesMutation = nil
+    }
+
     /// 論理名（日本語）: 属性mutation適用完了関数
     /// 処理概要: WebView への反映が完了した属性 mutation を順序番号で確認してクリアします。
     ///
@@ -2686,6 +2767,7 @@ final class EditorStore: ObservableObject {
         }
 
         guard cssMutation == nil,
+              cssVariablesMutation == nil,
               attributeMutation == nil,
               textMutation == nil,
               documentReplacementRequest == nil

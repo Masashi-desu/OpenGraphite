@@ -741,6 +741,12 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.applyMutation(mutation)
         }
 
+        if let mutation = store.cssVariablesMutation,
+           mutation.pageURL == context.coordinator.loadedURL,
+           context.coordinator.lastAppliedVariablesMutationSequence != mutation.sequence {
+            context.coordinator.applyVariablesMutation(mutation)
+        }
+
         if let mutation = store.attributeMutation,
            mutation.pageURL == context.coordinator.loadedURL,
            context.coordinator.lastAppliedAttributeMutationSequence != mutation.sequence {
@@ -1130,6 +1136,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastPreviewContext = OpenGraphitePreviewContext.empty
         var lastAllowsComponentPlacements = false
         var lastAppliedMutationSequence = 0
+        var lastAppliedVariablesMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedTextMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
@@ -1627,6 +1634,37 @@ struct WebCanvasView: NSViewRepresentable {
 
                     if (result as? Bool) == true {
                         self.store.markMutationApplied(sequence: mutation.sequence)
+                    }
+                }
+            }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: 複数CSS宣言mutation反映関数
+        /// 処理概要: 複数 CSS declaration mutation を DOM へまとめて適用し、成功時に mutation を完了扱いにします。
+        ///
+        /// - Parameter mutation: 反映対象の複数 CSS declaration mutation。
+        func applyVariablesMutation(_ mutation: CSSVariablesMutation) {
+            guard let webView else { return }
+            lastAppliedVariablesMutationSequence = mutation.sequence
+
+            let script = """
+            window.OpenGraphite && window.OpenGraphite.setCSSVariables(
+              \(Self.javaScriptLiteral(mutation.nodeID)),
+              \(Self.jsonLiteral(mutation.values))
+            );
+            """
+
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error {
+                        self.store.reportWebError("CSS宣言の反映に失敗しました: \(error.localizedDescription)")
+                        return
+                    }
+
+                    if (result as? Bool) == true {
+                        self.store.markVariablesMutationApplied(sequence: mutation.sequence)
                     }
                 }
             }
@@ -3426,20 +3464,46 @@ struct WebCanvasView: NSViewRepresentable {
           }
         }
 
-      function setCSSVariable(id, key, value) {
-        const element = editElementForSelectionID(id);
-        if (!element) { return false; }
+      function applyCSSVariableValue(element, key, value) {
         if ((value || '').trim().length === 0) {
           element.style.removeProperty(key);
         } else {
           element.style.setProperty(key, value);
         }
+      }
+
+      function shouldReapplyLocaleFont(key) {
         if (key === '--og-font-family-default' || key.indexOf('--og-font-family-') === 0) {
+          return true;
+        }
+        return false;
+      }
+
+      function reapplyLocaleFontIfNeeded(keys) {
+        if (!keys.some(shouldReapplyLocaleFont)) { return; }
           const locale = document.documentElement.getAttribute('data-og-preview-locale') || document.documentElement.lang || '';
           if (typeof window.__OPENGRAPHITE_APPLY_LOCALE_FONT__ === 'function') {
             window.__OPENGRAPHITE_APPLY_LOCALE_FONT__(locale);
           }
-        }
+      }
+
+      function setCSSVariable(id, key, value) {
+        const element = editElementForSelectionID(id);
+        if (!element) { return false; }
+        applyCSSVariableValue(element, key, value);
+        reapplyLocaleFontIfNeeded([key]);
+        collectNodes();
+        return true;
+      }
+
+      function setCSSVariables(id, values) {
+        const element = editElementForSelectionID(id);
+        if (!element || !values || typeof values !== 'object') { return false; }
+        const keys = Object.keys(values);
+        keys.forEach((key) => {
+          applyCSSVariableValue(element, key, values[key] || '');
+        });
+        reapplyLocaleFontIfNeeded(keys);
         collectNodes();
         return true;
       }
@@ -4748,6 +4812,7 @@ struct WebCanvasView: NSViewRepresentable {
           setActiveTool: setActiveTool,
           handleFramePlacementNativeEvent: handleFramePlacementNativeEvent,
           setCSSVariable: setCSSVariable,
+          setCSSVariables: setCSSVariables,
           setAttributeValue: setAttributeValue,
           setTextContent: setTextContent,
           copyPayload: copyPayload,

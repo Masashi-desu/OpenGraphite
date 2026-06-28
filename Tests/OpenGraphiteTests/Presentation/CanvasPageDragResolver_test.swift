@@ -80,6 +80,116 @@ struct CanvasPageDragResolverTests {
     }
 }
 
+/// 論理名（日本語）: Canvasノードリサイズ解決関連のテストスイート
+/// 概要: 選択ノードの四辺・四隅ハンドル操作を page content 座標と CSS 値へ変換する計算を検証します。
+@Suite("Canvasノードリサイズ解決関連のテストスイート")
+struct CanvasNodeResizeResolverTests {
+    /// 論理名（日本語）: 右辺リサイズズーム換算テスト
+    /// 概要: 画面上のドラッグ量が現在倍率で割られ、右辺の width 変更になることを検証します。
+    @Test("右辺ドラッグはzoom換算後のwidthへ変換できる")
+    func testRightHandleDividesTranslationByZoom() {
+        // コンディション：50% 表示中の選択矩形と右辺ドラッグ量を用意する（Given）
+        let startRect = CGRect(x: 40, y: 50, width: 100, height: 80)
+
+        // 検証内容：右辺ハンドルでリサイズ後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.resizedRect(
+            startRect: startRect,
+            handle: .right,
+            screenTranslation: CGSize(width: 20, height: 0),
+            zoom: 0.5,
+            pageSize: CGSize(width: 320, height: 240)
+        )
+
+        // 期待値：canvas 座標では 40pt 広がり、位置と高さは変わらない（Then）
+        #expect(rect == CGRect(x: 40, y: 50, width: 140, height: 80))
+    }
+
+    /// 論理名（日本語）: 左上角リサイズテスト
+    /// 概要: 左上角のドラッグで left/top と width/height が同時に更新されることを検証します。
+    @Test("左上角ドラッグは位置と寸法を同時に変更する")
+    func testTopLeftHandleUpdatesOriginAndSize() {
+        // コンディション：page 内にある選択矩形と内側へ向かう左上角ドラッグ量を用意する（Given）
+        let startRect = CGRect(x: 50, y: 60, width: 100, height: 80)
+
+        // 検証内容：左上角ハンドルでリサイズ後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.resizedRect(
+            startRect: startRect,
+            handle: .topLeft,
+            screenTranslation: CGSize(width: 30, height: 20),
+            zoom: 1,
+            pageSize: CGSize(width: 320, height: 240)
+        )
+        let values = CanvasNodeResizeResolver.cssValues(
+            for: rect,
+            handle: .topLeft,
+            originalRect: startRect
+        )
+
+        // 期待値：左上が移動し、その分だけ幅と高さが縮む（Then）
+        #expect(rect == CGRect(x: 80, y: 80, width: 70, height: 60))
+        #expect(values == ["left": "80px", "top": "80px", "width": "70px", "height": "60px"])
+    }
+
+    /// 論理名（日本語）: Page境界クランプテスト
+    /// 概要: 左上方向へ大きくドラッグしても page の左上境界を超えないことを検証します。
+    @Test("左上方向へのリサイズはpage境界で止まる")
+    func testResizeClampsToPageBounds() {
+        // コンディション：page 内の選択矩形と page 外へ向かう大きなドラッグ量を用意する（Given）
+        let startRect = CGRect(x: 50, y: 60, width: 100, height: 80)
+
+        // 検証内容：左上角ハンドルでリサイズ後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.resizedRect(
+            startRect: startRect,
+            handle: .topLeft,
+            screenTranslation: CGSize(width: -120, height: -120),
+            zoom: 1,
+            pageSize: CGSize(width: 320, height: 240)
+        )
+
+        // 期待値：矩形の左上は page 原点で止まり、右下は開始時の位置を保つ（Then）
+        #expect(rect == CGRect(x: 0, y: 0, width: 150, height: 140))
+    }
+
+    /// 論理名（日本語）: 最小サイズクランプテスト
+    /// 概要: 辺を反対側へドラッグしすぎても最小サイズを下回らないことを検証します。
+    @Test("辺リサイズは最小サイズで止まる")
+    func testResizeClampsToMinimumSize() {
+        // コンディション：幅 100pt の選択矩形と右端を越える左辺ドラッグ量を用意する（Given）
+        let startRect = CGRect(x: 50, y: 60, width: 100, height: 80)
+
+        // 検証内容：左辺ハンドルでリサイズ後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.resizedRect(
+            startRect: startRect,
+            handle: .left,
+            screenTranslation: CGSize(width: 140, height: 0),
+            zoom: 1,
+            pageSize: CGSize(width: 320, height: 240)
+        )
+
+        // 期待値：右辺を保ったまま幅が最小サイズの 2pt で止まる（Then）
+        #expect(rect == CGRect(x: 148, y: 60, width: 2, height: 80))
+    }
+
+    /// 論理名（日本語）: CSS差分キー生成テスト
+    /// 概要: 操作された辺に関係する CSS declaration だけが保存対象になることを検証します。
+    @Test("操作辺に関係するCSS値だけを生成する")
+    func testCSSValuesContainOnlyAffectedKeys() {
+        // コンディション：下辺だけを伸ばした選択矩形を用意する（Given）
+        let startRect = CGRect(x: 40, y: 50, width: 100, height: 80)
+        let finalRect = CGRect(x: 40, y: 50, width: 100, height: 110)
+
+        // 検証内容：下辺ハンドル用の CSS 値を生成する（When）
+        let values = CanvasNodeResizeResolver.cssValues(
+            for: finalRect,
+            handle: .bottom,
+            originalRect: startRect
+        )
+
+        // 期待値：保存対象は height だけになる（Then）
+        #expect(values == ["height": "110px"])
+    }
+}
+
 /// 論理名（日本語）: キャンバスドキュメント識別子解決関連のテストスイート
 /// 概要: page 配置変更時に表示領域を維持しつつ、SwiftUI content だけが更新される ID 分離を検証します。
 @Suite("キャンバスドキュメント識別子解決関連のテストスイート")

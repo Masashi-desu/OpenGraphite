@@ -308,6 +308,21 @@ struct CSSVariableMutation: Equatable {
     var value: String
 }
 
+/// 論理名（日本語）: 複数CSS宣言変更要求
+/// 概要: リサイズなどで複数の CSS declaration を同時に WebView 側 DOM へ反映するための mutation です。
+///
+/// プロパティ:
+/// - `sequence`: mutation の順序番号。
+/// - `pageURL`: mutation を適用する HTML ファイル URL。
+/// - `nodeID`: 対象ノードの `data-og-id`。
+/// - `values`: CSS property または OpenGraphite 予約 custom property 名と反映値の組。
+struct CSSVariablesMutation: Equatable {
+    var sequence: Int
+    var pageURL: URL
+    var nodeID: String
+    var values: [String: String]
+}
+
 /// 論理名（日本語）: ノード属性変更要求
 /// 概要: Inspector で編集された `data-og-*` 属性を WebView 側 DOM へ反映するための mutation です。
 ///

@@ -900,12 +900,18 @@ private struct CanvasDocumentView: View {
     var isFlowHoverEnabled: Bool
     var onFlowTargetPageHover: (String, Bool) -> Void
     @State private var pageDragTranslation: CGSize = .zero
+    @State private var nodeResizePreview: CanvasNodeResizePreview?
 
     var body: some View {
         let width = max(CGFloat(page.canvas.width), 1)
         let height = max(CGFloat(page.canvas.height), 1)
         let layout = CanvasPageVisualLayout.resolve(pageWidth: width, pageHeight: height)
-        let selectedNodeOverlay = selectedNodeOverlayFrame(pageSize: CGSize(width: width, height: height))
+        let pageSize = CGSize(width: width, height: height)
+        let baseSelectedNodeOverlay = selectedNodeOverlayFrame(pageSize: pageSize)
+        let selectedNodeOverlay = displayedSelectedNodeOverlayFrame(
+            baseOverlay: baseSelectedNodeOverlay,
+            pageSize: pageSize
+        )
         let showsSelectedPageBorder = isSelected && store.selectedNodeID == nil
 
         ZStack(alignment: .topLeading) {
@@ -929,8 +935,23 @@ private struct CanvasDocumentView: View {
                 .allowsHitTesting(isSelected)
 
                 if let selectedNodeOverlay {
-                    CanvasSelectedNodeOverlay(id: selectedNodeOverlay.id, rect: selectedNodeOverlay.rect)
-                        .allowsHitTesting(false)
+                    CanvasSelectedNodeOverlay(
+                        id: selectedNodeOverlay.id,
+                        rect: selectedNodeOverlay.rect,
+                        pageSize: pageSize,
+                        zoom: zoom,
+                        isResizable: canResizeSelectedNode(id: selectedNodeOverlay.id),
+                        onResizeChanged: { rect in
+                            handleNodeResizeChanged(id: selectedNodeOverlay.id, rect: rect)
+                        },
+                        onResizeEnded: { handle, finalRect, originalRect in
+                            handleNodeResizeEnded(
+                                handle: handle,
+                                finalRect: finalRect,
+                                originalRect: originalRect
+                            )
+                        }
+                    )
                 }
             }
             .frame(width: width, height: height, alignment: .topLeading)
@@ -991,6 +1012,9 @@ private struct CanvasDocumentView: View {
             guard isFlowHoverEnabled else { return }
             onFlowTargetPageHover(page.internalID, isHovering)
         }
+        .onChange(of: store.selectedNodeID) { _, _ in
+            nodeResizePreview = nil
+        }
     }
 
     /// 論理名（日本語）: キャプションカードドラッグジェスチャ生成関数
@@ -1028,6 +1052,31 @@ private struct CanvasDocumentView: View {
         store.selectPage(internalID: page.internalID)
     }
 
+    /// 論理名（日本語）: 表示用選択ノードオーバーレイ矩形生成関数
+    /// 処理概要: リサイズ中の preview 矩形があれば通常の選択矩形より優先して表示します。
+    ///
+    /// - Parameters:
+    ///   - baseOverlay: CSS または drag preview から解決した基準オーバーレイ。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: 表示に使う選択 node overlay。対象外の場合は `nil`。
+    private func displayedSelectedNodeOverlayFrame(
+        baseOverlay: CanvasSelectedNodeOverlayFrame?,
+        pageSize: CGSize
+    ) -> CanvasSelectedNodeOverlayFrame? {
+        guard let baseOverlay else { return nil }
+        guard let nodeResizePreview,
+              nodeResizePreview.pageInternalID == page.internalID,
+              nodeResizePreview.nodeID == baseOverlay.id
+        else {
+            return baseOverlay
+        }
+        return CanvasSelectedNodeOverlayFrame(
+            id: nodeResizePreview.nodeID,
+            rect: nodeResizePreview.rect,
+            pageSize: pageSize
+        ) ?? baseOverlay
+    }
+
     /// 論理名（日本語）: 選択ノードオーバーレイ矩形生成関数
     /// 処理概要: drag preview または companion CSS 由来の位置とサイズから、選択中 object を page 内座標の矩形へ変換します。
     ///
@@ -1053,6 +1102,67 @@ private struct CanvasDocumentView: View {
         }
         return CanvasSelectedNodeOverlayFrame(node: selectedNode, pageSize: pageSize)
     }
+
+    /// 論理名（日本語）: 選択ノードリサイズ可否判定関数
+    /// 処理概要: 現在の選択 node が page root やロック済み preview clone ではなく、CSS サイズ保存先を持つか判定します。
+    ///
+    /// - Parameter id: 判定する選択 node ID。
+    /// - Returns: リサイズハンドルを操作可能にする場合は `true`。
+    private func canResizeSelectedNode(id: String) -> Bool {
+        guard let selectedNode = store.nodes.first(where: { $0.id == id }) else { return false }
+        return selectedNode.type != "page"
+            && !selectedNode.isLocked
+            && !selectedNode.isPlacementGenerated
+            && !selectedNode.internalID.isEmpty
+    }
+
+    /// 論理名（日本語）: ノードリサイズpreview更新関数
+    /// 処理概要: ドラッグ中のリサイズ矩形をローカル state へ保持し、選択枠だけを即時更新します。
+    ///
+    /// - Parameters:
+    ///   - id: リサイズ中 node ID。
+    ///   - rect: page content 座標上の preview 矩形。
+    private func handleNodeResizeChanged(id: String, rect: CGRect) {
+        nodeResizePreview = CanvasNodeResizePreview(
+            pageInternalID: page.internalID,
+            nodeID: id,
+            rect: rect
+        )
+    }
+
+    /// 論理名（日本語）: ノードリサイズ確定関数
+    /// 処理概要: ドラッグ終了時の矩形から変更対象 CSS declaration を生成し、ストア経由で正本へ保存します。
+    ///
+    /// - Parameters:
+    ///   - handle: 操作されたリサイズハンドル。
+    ///   - finalRect: ドラッグ終了時の page content 座標上の矩形。
+    ///   - originalRect: ドラッグ開始時の page content 座標上の矩形。
+    private func handleNodeResizeEnded(
+        handle: CanvasNodeResizeHandle,
+        finalRect: CGRect,
+        originalRect: CGRect
+    ) {
+        nodeResizePreview = nil
+        let values = CanvasNodeResizeResolver.cssValues(
+            for: finalRect,
+            handle: handle,
+            originalRect: originalRect
+        )
+        store.updateSelectedNodeCSSVariables(values: values)
+    }
+}
+
+/// 論理名（日本語）: Canvasノードリサイズプレビュー
+/// 概要: リサイズドラッグ中の選択ノード矩形を Canvas 側で一時表示するための状態です。
+///
+/// プロパティ:
+/// - `pageInternalID`: preview を表示する page card の内部 ID。
+/// - `nodeID`: リサイズ中の node ID。
+/// - `rect`: page content 座標上の preview 矩形。
+private struct CanvasNodeResizePreview: Equatable {
+    var pageInternalID: String
+    var nodeID: String
+    var rect: CGRect
 }
 
 /// 論理名（日本語）: Canvas選択ノードオーバーレイ矩形
@@ -1133,6 +1243,12 @@ private struct CanvasSelectedNodeOverlayFrame: Equatable {
 private struct CanvasSelectedNodeOverlay: View {
     var id: String
     var rect: CGRect
+    var pageSize: CGSize
+    var zoom: Double
+    var isResizable: Bool
+    var onResizeChanged: (CGRect) -> Void
+    var onResizeEnded: (CanvasNodeResizeHandle, CGRect, CGRect) -> Void
+    @State private var resizeStartRect: CGRect?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -1144,6 +1260,7 @@ private struct CanvasSelectedNodeOverlay: View {
                 )
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
 
             if !id.isEmpty {
                 Text(id)
@@ -1154,7 +1271,303 @@ private struct CanvasSelectedNodeOverlay: View {
                     .frame(minWidth: 36, minHeight: 16)
                     .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 4))
                     .offset(x: rect.minX, y: rect.minY >= 20 ? rect.minY - 18 : rect.minY + 3)
+                    .allowsHitTesting(false)
             }
+
+            if isResizable {
+                ForEach(CanvasNodeResizeHandle.allCases) { handle in
+                    CanvasNodeResizeHandleView(
+                        handle: handle,
+                        inverseZoomScale: inverseZoomScale
+                    )
+                    .position(handle.position(in: rect))
+                    .gesture(resizeGesture(for: handle))
+                }
+            }
+        }
+        .frame(width: pageSize.width, height: pageSize.height, alignment: .topLeading)
+    }
+
+    private var inverseZoomScale: CGFloat {
+        guard zoom.isFinite, zoom > 0 else { return 1 }
+        return 1 / CGFloat(zoom)
+    }
+
+    /// 論理名（日本語）: リサイズジェスチャ生成関数
+    /// 処理概要: 指定ハンドルのドラッグ量を page content 座標上の矩形へ変換し、変更中と終了時の callback を呼びます。
+    ///
+    /// - Parameter handle: 操作対象のリサイズハンドル。
+    /// - Returns: ハンドルへ付与するドラッグジェスチャ。
+    private func resizeGesture(for handle: CanvasNodeResizeHandle) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .onChanged { value in
+                let startRect = resizeStartRect ?? rect
+                if resizeStartRect == nil {
+                    resizeStartRect = startRect
+                }
+                let resizedRect = CanvasNodeResizeResolver.resizedRect(
+                    startRect: startRect,
+                    handle: handle,
+                    screenTranslation: value.translation,
+                    zoom: zoom,
+                    pageSize: pageSize
+                )
+                onResizeChanged(resizedRect)
+            }
+            .onEnded { value in
+                let startRect = resizeStartRect ?? rect
+                let resizedRect = CanvasNodeResizeResolver.resizedRect(
+                    startRect: startRect,
+                    handle: handle,
+                    screenTranslation: value.translation,
+                    zoom: zoom,
+                    pageSize: pageSize
+                )
+                resizeStartRect = nil
+                onResizeEnded(handle, resizedRect, startRect)
+            }
+    }
+}
+
+/// 論理名（日本語）: CanvasノードリサイズハンドルView
+/// 概要: 選択枠の辺と角に配置する、ズームに依存しない操作点です。
+///
+/// プロパティ:
+/// - `handle`: 表示するハンドル種別。
+/// - `inverseZoomScale`: 親 Canvas のズームを相殺する表示倍率。
+private struct CanvasNodeResizeHandleView: View {
+    var handle: CanvasNodeResizeHandle
+    var inverseZoomScale: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color(nsColor: .controlBackgroundColor))
+                .overlay(
+                    Circle()
+                        .stroke(Color.accentColor, lineWidth: 1.5)
+                )
+                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                .frame(width: 8, height: 8)
+        }
+        .frame(width: 18, height: 18)
+        .contentShape(Rectangle())
+        .scaleEffect(inverseZoomScale)
+        .accessibilityLabel(handle.accessibilityLabel)
+        .help(handle.accessibilityLabel)
+    }
+}
+
+/// 論理名（日本語）: Canvasノードリサイズハンドル
+/// 概要: 選択中オブジェクトの四辺と四隅に配置するリサイズ操作点を表します。
+///
+/// 定義内容:
+/// - `topLeft`: 左上角。
+/// - `top`: 上辺。
+/// - `topRight`: 右上角。
+/// - `right`: 右辺。
+/// - `bottomRight`: 右下角。
+/// - `bottom`: 下辺。
+/// - `bottomLeft`: 左下角。
+/// - `left`: 左辺。
+enum CanvasNodeResizeHandle: String, CaseIterable, Identifiable {
+    case topLeft
+    case top
+    case topRight
+    case right
+    case bottomRight
+    case bottom
+    case bottomLeft
+    case left
+
+    var id: String { rawValue }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .topLeft:
+            "Resize top left"
+        case .top:
+            "Resize top"
+        case .topRight:
+            "Resize top right"
+        case .right:
+            "Resize right"
+        case .bottomRight:
+            "Resize bottom right"
+        case .bottom:
+            "Resize bottom"
+        case .bottomLeft:
+            "Resize bottom left"
+        case .left:
+            "Resize left"
+        }
+    }
+
+    var horizontalDirection: CGFloat {
+        switch self {
+        case .topLeft, .bottomLeft, .left:
+            -1
+        case .topRight, .right, .bottomRight:
+            1
+        case .top, .bottom:
+            0
+        }
+    }
+
+    var verticalDirection: CGFloat {
+        switch self {
+        case .topLeft, .top, .topRight:
+            -1
+        case .bottomRight, .bottom, .bottomLeft:
+            1
+        case .right, .left:
+            0
+        }
+    }
+
+    /// 論理名（日本語）: ハンドル位置生成関数
+    /// 処理概要: 選択矩形上でこのハンドルを置く中心座標を返します。
+    ///
+    /// - Parameter rect: page content 座標上の選択矩形。
+    /// - Returns: ハンドル中心座標。
+    func position(in rect: CGRect) -> CGPoint {
+        let x = horizontalDirection < 0
+            ? rect.minX
+            : (horizontalDirection > 0 ? rect.maxX : rect.midX)
+        let y = verticalDirection < 0
+            ? rect.minY
+            : (verticalDirection > 0 ? rect.maxY : rect.midY)
+        return CGPoint(x: x, y: y)
+    }
+}
+
+/// 論理名（日本語）: Canvasノードリサイズ解決器
+/// 概要: 画面上のハンドルドラッグ量を page content 座標の矩形と CSS declaration 値へ変換します。
+///
+/// 定義内容:
+/// - `resizedRect(startRect:handle:screenTranslation:zoom:pageSize:)`: ドラッグ中または終了時の矩形を算出します。
+/// - `cssValues(for:handle:originalRect:)`: 保存対象 CSS declaration を生成します。
+enum CanvasNodeResizeResolver {
+    static let minimumSize: CGFloat = 2
+
+    /// 論理名（日本語）: リサイズ後矩形生成関数
+    /// 処理概要: ズーム適用後の画面ドラッグ量を page content 座標へ戻し、page 範囲と最小サイズで矩形を補正します。
+    ///
+    /// - Parameters:
+    ///   - startRect: ドラッグ開始時の page content 座標上の矩形。
+    ///   - handle: 操作中のリサイズハンドル。
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: 補正済みのリサイズ後矩形。
+    static func resizedRect(
+        startRect: CGRect,
+        handle: CanvasNodeResizeHandle,
+        screenTranslation: CGSize,
+        zoom: Double,
+        pageSize: CGSize
+    ) -> CGRect {
+        let translation = CanvasPageDragResolver.canvasTranslation(
+            screenTranslation: screenTranslation,
+            zoom: zoom
+        )
+        let bounds = CGRect(origin: .zero, size: pageSize)
+        var minX = startRect.minX
+        var maxX = startRect.maxX
+        var minY = startRect.minY
+        var maxY = startRect.maxY
+
+        if handle.horizontalDirection < 0 {
+            minX = min(startRect.minX + translation.width, startRect.maxX - minimumSize)
+            minX = max(bounds.minX, minX)
+        } else if handle.horizontalDirection > 0 {
+            maxX = max(startRect.maxX + translation.width, startRect.minX + minimumSize)
+            maxX = min(bounds.maxX, maxX)
+        }
+
+        if handle.verticalDirection < 0 {
+            minY = min(startRect.minY + translation.height, startRect.maxY - minimumSize)
+            minY = max(bounds.minY, minY)
+        } else if handle.verticalDirection > 0 {
+            maxY = max(startRect.maxY + translation.height, startRect.minY + minimumSize)
+            maxY = min(bounds.maxY, maxY)
+        }
+
+        return CGRect(
+            x: minX.rounded(),
+            y: minY.rounded(),
+            width: max((maxX - minX).rounded(), minimumSize),
+            height: max((maxY - minY).rounded(), minimumSize)
+        )
+    }
+
+    /// 論理名（日本語）: CSS値生成関数
+    /// 処理概要: 操作ハンドルに応じて保存が必要な `left`、`top`、`width`、`height` だけを CSS px 値として返します。
+    ///
+    /// - Parameters:
+    ///   - rect: リサイズ後の page content 座標上の矩形。
+    ///   - handle: 操作されたリサイズハンドル。
+    ///   - originalRect: ドラッグ開始時の page content 座標上の矩形。
+    /// - Returns: 保存対象 CSS declaration 値。
+    static func cssValues(
+        for rect: CGRect,
+        handle: CanvasNodeResizeHandle,
+        originalRect: CGRect
+    ) -> [String: String] {
+        var values: [String: String] = [:]
+
+        if handle.horizontalDirection < 0 {
+            values["left"] = cssPixelString(rect.minX)
+            values["width"] = cssPixelString(rect.width)
+        } else if handle.horizontalDirection > 0 {
+            values["width"] = cssPixelString(rect.width)
+        }
+
+        if handle.verticalDirection < 0 {
+            values["top"] = cssPixelString(rect.minY)
+            values["height"] = cssPixelString(rect.height)
+        } else if handle.verticalDirection > 0 {
+            values["height"] = cssPixelString(rect.height)
+        }
+
+        return values.filter { key, value in
+            originalCSSValue(for: key, rect: originalRect) != value
+        }
+    }
+
+    /// 論理名（日本語）: CSSピクセル文字列生成関数
+    /// 処理概要: Canvas 座標値を小数 1 桁までの `px` 文字列へ変換します。
+    ///
+    /// - Parameter value: CSS 値へ変換する座標または寸法。
+    /// - Returns: `px` 単位の CSS 文字列。
+    static func cssPixelString(_ value: CGFloat) -> String {
+        let rounded = (Double(value) * 10).rounded() / 10
+        let normalized = abs(rounded) < 0.05 ? 0 : rounded
+        if normalized.rounded() == normalized {
+            return "\(Int(normalized))px"
+        }
+        return "\(normalized)px"
+    }
+
+    /// 論理名（日本語）: 元矩形CSS値生成関数
+    /// 処理概要: 変更判定用に元矩形から CSS property に対応する値を生成します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS property 名。
+    ///   - rect: 変換元の page content 座標上の矩形。
+    /// - Returns: 比較用 CSS 値。
+    private static func originalCSSValue(for key: String, rect: CGRect) -> String {
+        switch key {
+        case "left":
+            cssPixelString(rect.minX)
+        case "top":
+            cssPixelString(rect.minY)
+        case "width":
+            cssPixelString(rect.width)
+        case "height":
+            cssPixelString(rect.height)
+        default:
+            ""
         }
     }
 }
