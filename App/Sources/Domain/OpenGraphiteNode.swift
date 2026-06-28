@@ -323,6 +323,19 @@ struct CSSVariablesMutation: Equatable {
     var values: [String: String]
 }
 
+/// 論理名（日本語）: 複数ノードCSS宣言変更要求
+/// 概要: 同時選択した複数ノードの CSS declaration を WebView 側 DOM へまとめて反映するための mutation です。
+///
+/// プロパティ:
+/// - `sequence`: mutation の順序番号。
+/// - `pageURL`: mutation を適用する HTML ファイル URL。
+/// - `nodeValues`: 対象ノードの `data-og-id` ごとの CSS declaration 群。
+struct CSSVariablesBatchMutation: Equatable {
+    var sequence: Int
+    var pageURL: URL
+    var nodeValues: [String: [String: String]]
+}
+
 /// 論理名（日本語）: ノード属性変更要求
 /// 概要: Inspector で編集された `data-og-*` 属性を WebView 側 DOM へ反映するための mutation です。
 ///

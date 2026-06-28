@@ -188,6 +188,65 @@ struct CanvasNodeResizeResolverTests {
         // 期待値：保存対象は height だけになる（Then）
         #expect(values == ["height": "110px"])
     }
+
+    /// 論理名（日本語）: 合成枠移動テスト
+    /// 概要: 同時選択の合成枠をドラッグしたとき、page 範囲内へ移動後矩形が補正されることを検証します。
+    @Test("同時選択枠の移動はpage境界内に収まる")
+    func testMovedRectClampsGroupFrameToPageBounds() {
+        // コンディション：page 右下付近の合成選択枠と page 外へ向かうドラッグ量を用意する（Given）
+        let startRect = CGRect(x: 200, y: 150, width: 90, height: 70)
+
+        // 検証内容：合成枠の移動後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.movedRect(
+            startRect: startRect,
+            screenTranslation: CGSize(width: 80, height: 80),
+            zoom: 1,
+            pageSize: CGSize(width: 320, height: 240)
+        )
+
+        // 期待値：合成枠が page の右下境界に収まる（Then）
+        #expect(rect == CGRect(x: 230, y: 170, width: 90, height: 70))
+    }
+
+    /// 論理名（日本語）: 合成枠リサイズ内ノード変換テスト
+    /// 概要: 同時選択の合成枠リサイズ比率が個別 node の位置と寸法へ適用されることを検証します。
+    @Test("同時選択枠リサイズは個別nodeへ比率適用する")
+    func testGroupResizeScalesChildNodeRect() {
+        // コンディション：2倍に拡大された合成選択枠内の子 node 矩形を用意する（Given）
+        let nodeRect = CGRect(x: 20, y: 30, width: 40, height: 50)
+        let originalGroupRect = CGRect(x: 10, y: 20, width: 100, height: 100)
+        let resizedGroupRect = CGRect(x: 10, y: 20, width: 200, height: 200)
+
+        // 検証内容：子 node のリサイズ後矩形を算出する（When）
+        let rect = CanvasNodeResizeResolver.resizedRect(
+            forNodeRect: nodeRect,
+            originalGroupRect: originalGroupRect,
+            resizedGroupRect: resizedGroupRect
+        )
+
+        // 期待値：合成枠内の相対位置と寸法が同じ比率で拡大される（Then）
+        #expect(rect == CGRect(x: 30, y: 40, width: 80, height: 100))
+    }
+
+    /// 論理名（日本語）: 合成枠リサイズCSS保存値テスト
+    /// 概要: 同時選択の合成枠リサイズでは、個別 node の位置と寸法を保存対象にすることを検証します。
+    @Test("同時選択枠リサイズは位置と寸法を保存する")
+    func testGroupResizePersistsChildFrameValues() {
+        // コンディション：合成枠リサイズで位置と寸法が変わった子 node 矩形を用意する（Given）
+        let originalRect = CGRect(x: 20, y: 30, width: 40, height: 50)
+        let resizedRect = CGRect(x: 35, y: 45, width: 80, height: 100)
+
+        // 検証内容：保存対象の CSS declaration を生成する（When）
+        let values = CanvasNodeResizeResolver.cssFrameValues(for: resizedRect, originalRect: originalRect)
+
+        // 期待値：left / top / width / height がすべて個別 node へ永続化される（Then）
+        #expect(values == [
+            "left": "35px",
+            "top": "45px",
+            "width": "80px",
+            "height": "100px"
+        ])
+    }
 }
 
 /// 論理名（日本語）: キャンバスドキュメント識別子解決関連のテストスイート

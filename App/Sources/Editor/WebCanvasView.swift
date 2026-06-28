@@ -709,12 +709,14 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.loadedURL = nil
             context.coordinator.lastReloadToken = reloadToken
             context.coordinator.lastSelectedNodeID = nil
+            context.coordinator.lastSelectedNodeIDs = []
         }
 
         guard isInteractive else {
-            if context.coordinator.lastSelectedNodeID != nil {
+            if context.coordinator.lastSelectedNodeID != nil || !context.coordinator.lastSelectedNodeIDs.isEmpty {
                 context.coordinator.lastSelectedNodeID = nil
-                context.coordinator.selectNode(nil)
+                context.coordinator.lastSelectedNodeIDs = []
+                context.coordinator.selectNodes([], primaryID: nil)
             }
             return
         }
@@ -722,12 +724,16 @@ struct WebCanvasView: NSViewRepresentable {
         if becameInteractive {
             context.coordinator.collectNodes()
             context.coordinator.lastSelectedNodeID = nil
+            context.coordinator.lastSelectedNodeIDs = []
             context.coordinator.lastActiveTool = nil
         }
 
-        if context.coordinator.lastSelectedNodeID != store.selectedNodeID {
+        let selectedNodeIDs = store.selectedLayerNodeIDsInNodeOrder
+        if context.coordinator.lastSelectedNodeID != store.selectedNodeID
+            || context.coordinator.lastSelectedNodeIDs != selectedNodeIDs {
             context.coordinator.lastSelectedNodeID = store.selectedNodeID
-            context.coordinator.selectNode(store.selectedNodeID)
+            context.coordinator.lastSelectedNodeIDs = selectedNodeIDs
+            context.coordinator.selectNodes(selectedNodeIDs, primaryID: store.selectedNodeID)
         }
 
         if context.coordinator.lastActiveTool != store.activeTool {
@@ -745,6 +751,12 @@ struct WebCanvasView: NSViewRepresentable {
            mutation.pageURL == context.coordinator.loadedURL,
            context.coordinator.lastAppliedVariablesMutationSequence != mutation.sequence {
             context.coordinator.applyVariablesMutation(mutation)
+        }
+
+        if let mutation = store.cssVariablesBatchMutation,
+           mutation.pageURL == context.coordinator.loadedURL,
+           context.coordinator.lastAppliedVariablesBatchMutationSequence != mutation.sequence {
+            context.coordinator.applyVariablesBatchMutation(mutation)
         }
 
         if let mutation = store.attributeMutation,
@@ -1132,11 +1144,13 @@ struct WebCanvasView: NSViewRepresentable {
         var loadedURL: URL?
         var lastReloadToken = 0
         var lastSelectedNodeID: String?
+        var lastSelectedNodeIDs: [String] = []
         var lastActiveTool: CanvasTool?
         var lastPreviewContext = OpenGraphitePreviewContext.empty
         var lastAllowsComponentPlacements = false
         var lastAppliedMutationSequence = 0
         var lastAppliedVariablesMutationSequence = 0
+        var lastAppliedVariablesBatchMutationSequence = 0
         var lastAppliedAttributeMutationSequence = 0
         var lastAppliedTextMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
@@ -1253,7 +1267,16 @@ struct WebCanvasView: NSViewRepresentable {
 
             if message.name == "openGraphiteSelection", let id = message.body as? String {
                 Task { @MainActor in
-                    store.selectNode(id: id.isEmpty ? nil : id)
+                    let selectedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !selectedID.isEmpty else {
+                        store.selectNode(id: nil)
+                        return
+                    }
+                    if store.selectPrimaryNodeWithinCurrentSelection(id: selectedID) {
+                        selectNodes(store.selectedLayerNodeIDsInNodeOrder, primaryID: selectedID)
+                    } else {
+                        store.selectNode(id: selectedID)
+                    }
                 }
             }
 
@@ -1577,17 +1600,34 @@ struct WebCanvasView: NSViewRepresentable {
         ///
         /// - Parameter id: 選択する node ID。placement clone 内では表示専用の合成 ID、選択解除時は `nil`。
         func selectNode(_ id: String?) {
+            selectNodes(id.map { [$0] } ?? [], primaryID: id)
+        }
+
+        @MainActor
+        /// 論理名（日本語）: WebView複数ノード選択関数
+        /// 処理概要: Swift 側の選択 ID 群を JavaScript bridge 経由で DOM の選択表示へ反映します。
+        ///
+        /// - Parameters:
+        ///   - ids: 選択する node ID 群。
+        ///   - primaryID: Inspector / Canvas 操作用の主選択 ID。選択解除時は `nil`。
+        func selectNodes(_ ids: [String], primaryID: String?) {
             guard let webView else { return }
-            if id == nil {
+            lastSelectedNodeID = primaryID
+            lastSelectedNodeIDs = ids
+            if primaryID == nil && ids.isEmpty {
                 (webView as? OpenGraphiteCommandWebView)?.clearSelectedFrameOverlay()
             }
-            let idLiteral = Self.javaScriptLiteral(id ?? "")
+            let idsLiteral = Self.jsonLiteral(ids)
+            let primaryIDLiteral = Self.javaScriptLiteral(primaryID ?? "")
             let script = """
             (function() {
+              if (window.OpenGraphite && typeof window.OpenGraphite.selectNodes === 'function') {
+                return !!window.OpenGraphite.selectNodes(\(idsLiteral), \(primaryIDLiteral));
+              }
               if (!window.OpenGraphite || typeof window.OpenGraphite.selectNode !== 'function') {
                 return false;
               }
-              return !!window.OpenGraphite.selectNode(\(idLiteral));
+              return !!window.OpenGraphite.selectNode(\(primaryIDLiteral));
             })();
             """
             webView.evaluateJavaScript(script, completionHandler: nil)
@@ -1665,6 +1705,36 @@ struct WebCanvasView: NSViewRepresentable {
 
                     if (result as? Bool) == true {
                         self.store.markVariablesMutationApplied(sequence: mutation.sequence)
+                    }
+                }
+            }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: 複数ノードCSS宣言mutation反映関数
+        /// 処理概要: 同時選択ノード群の CSS declaration mutation を DOM へまとめて適用し、成功時に mutation を完了扱いにします。
+        ///
+        /// - Parameter mutation: 反映対象の複数ノード CSS declaration mutation。
+        func applyVariablesBatchMutation(_ mutation: CSSVariablesBatchMutation) {
+            guard let webView else { return }
+            lastAppliedVariablesBatchMutationSequence = mutation.sequence
+
+            let script = """
+            window.OpenGraphite && window.OpenGraphite.setCSSVariablesBatch(
+              \(Self.jsonLiteral(mutation.nodeValues))
+            );
+            """
+
+            webView.evaluateJavaScript(script) { [weak self] result, error in
+                guard let self else { return }
+                Task { @MainActor in
+                    if let error {
+                        self.store.reportWebError("CSS宣言の反映に失敗しました: \(error.localizedDescription)")
+                        return
+                    }
+
+                    if (result as? Bool) == true {
+                        self.store.markVariablesBatchMutationApplied(sequence: mutation.sequence)
                     }
                 }
             }
@@ -2320,14 +2390,14 @@ struct WebCanvasView: NSViewRepresentable {
             }
         }
 
-        /// 論理名（日本語）: JavaScript辞書リテラル生成関数
-        /// 処理概要: Swift の文字列辞書を JSON 化し、JavaScript へ安全に渡せるリテラルへ変換します。
+        /// 論理名（日本語）: JavaScript JSONリテラル生成関数
+        /// 処理概要: Swift の JSON 化可能な値を文字列化し、JavaScript へ安全に渡せるリテラルへ変換します。
         ///
-        /// - Parameter dictionary: JavaScript に渡す文字列辞書。
-        /// - Returns: JavaScript オブジェクトリテラルとして利用できる JSON 文字列。
-        private static func jsonLiteral(_ dictionary: [String: String]) -> String {
-            let data = (try? JSONSerialization.data(withJSONObject: dictionary)) ?? Data("{}".utf8)
-            return String(data: data, encoding: .utf8) ?? "{}"
+        /// - Parameter value: JavaScript に渡す JSON 化可能な値。
+        /// - Returns: JavaScript リテラルとして利用できる JSON 文字列。
+        private static func jsonLiteral(_ value: Any) -> String {
+            let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data("null".utf8)
+            return String(data: data, encoding: .utf8) ?? "null"
         }
     }
 
@@ -2361,6 +2431,7 @@ struct WebCanvasView: NSViewRepresentable {
         var editingOriginalText = '';
         var suppressNextClick = false;
         var clickSequenceStartSelectedID = '';
+        var currentSelectedIDs = new Set();
         let minimumFramePlacementSize = 2;
 
         function installEditorSelectionStyle() {
@@ -2662,6 +2733,16 @@ struct WebCanvasView: NSViewRepresentable {
           return document.querySelector('[data-og-selected="true"]');
         }
 
+        function selectedElements() {
+          const elements = [];
+          currentSelectedIDs.forEach((id) => {
+            const element = nodeWithID(id);
+            if (element) { elements.push(element); }
+          });
+          if (elements.length > 0) { return elements; }
+          return Array.from(document.querySelectorAll('[data-og-selected="true"]'));
+        }
+
         function isFrameElement(element) {
           return element && element.getAttribute('data-og-type') === 'frame';
         }
@@ -2833,6 +2914,9 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function selectionOverlayTarget() {
+          if (selectedElements().length !== 1) {
+            return null;
+          }
           const element = selectedElement();
           if (!isSelectionOverlayElement(element)) {
             return null;
@@ -3196,23 +3280,61 @@ struct WebCanvasView: NSViewRepresentable {
             element.removeAttribute('data-og-selected');
           });
           currentSelectedID = '';
+          currentSelectedIDs = new Set();
           hideSelectionOverlay();
           updateFrameGuideState();
         }
 
         function selectNode(id) {
-          if (editingTextElement && elementID(editingTextElement) !== id) {
+          return selectNodes(id ? [id] : [], id || '');
+        }
+
+        function selectNodes(ids, primaryID) {
+          const requestedIDs = Array.isArray(ids) ? ids : [];
+          const normalizedIDs = requestedIDs
+            .map((id) => typeof id === 'string' ? id.trim() : '')
+            .filter((id, index, all) => id.length > 0 && all.indexOf(id) === index);
+          const primary = typeof primaryID === 'string' ? primaryID.trim() : '';
+          if (editingTextElement && !normalizedIDs.includes(selectionIDForElement(editingTextElement))) {
             finishTextEditing(false, false);
           }
           clearSelection();
-          if (!id) { return false; }
-          const element = nodeWithID(id);
-          if (!element) { return false; }
-          currentSelectedID = id;
-          element.setAttribute('data-og-selected', 'true');
-          revealElementForSelection(element);
+          if (normalizedIDs.length === 0) { return false; }
+
+          const selected = [];
+          normalizedIDs.forEach((id) => {
+            const element = nodeWithID(id);
+            if (!element) { return; }
+            element.setAttribute('data-og-selected', 'true');
+            selected.push({ id: id, element: element });
+          });
+          if (selected.length === 0) { return false; }
+
+          currentSelectedIDs = new Set(selected.map((item) => item.id));
+          const primarySelection = selected.find((item) => item.id === primary) || selected[selected.length - 1];
+          currentSelectedID = primarySelection.id;
+          revealElementForSelection(primarySelection.element);
           updateFrameGuideState();
           scheduleSelectionOverlayUpdate();
+          return true;
+        }
+
+        function selectedGroupIDForClick(element, proposedID) {
+          if (currentSelectedIDs.size <= 1) { return ''; }
+          const proposed = typeof proposedID === 'string' ? proposedID.trim() : '';
+          if (proposed && currentSelectedIDs.has(proposed)) { return proposed; }
+          const chain = selectableChainFor(element);
+          const selected = chain.find((item) => currentSelectedIDs.has(selectionIDForElement(item)));
+          return selected ? selectionIDForElement(selected) : '';
+        }
+
+        function preserveMultiSelectionForClick(element, proposedID) {
+          const selectedID = selectedGroupIDForClick(element, proposedID);
+          if (!selectedID) { return false; }
+          const ids = Array.from(currentSelectedIDs);
+          selectNodes(ids, selectedID);
+          notifySelection(selectedID);
+          collectNodes();
           return true;
         }
 
@@ -3504,6 +3626,25 @@ struct WebCanvasView: NSViewRepresentable {
           applyCSSVariableValue(element, key, values[key] || '');
         });
         reapplyLocaleFontIfNeeded(keys);
+        collectNodes();
+        return true;
+      }
+
+      function setCSSVariablesBatch(nodeValues) {
+        if (!nodeValues || typeof nodeValues !== 'object') { return false; }
+        let didApply = false;
+        const changedKeys = new Set();
+        Object.entries(nodeValues).forEach(([id, values]) => {
+          const element = editElementForSelectionID(id);
+          if (!element || !values || typeof values !== 'object') { return; }
+          Object.keys(values).forEach((key) => {
+            changedKeys.add(key);
+            applyCSSVariableValue(element, key, values[key] || '');
+          });
+          didApply = true;
+        });
+        if (!didApply) { return false; }
+        reapplyLocaleFontIfNeeded(Array.from(changedKeys));
         collectNodes();
         return true;
       }
@@ -4586,6 +4727,7 @@ struct WebCanvasView: NSViewRepresentable {
           const nextRoot = document.importNode(parsedDocument.documentElement, true);
           document.documentElement.replaceWith(nextRoot);
           currentSelectedID = '';
+          currentSelectedIDs = new Set();
           installEditorSelectionStyle();
           collectNodes();
 
@@ -4808,11 +4950,13 @@ struct WebCanvasView: NSViewRepresentable {
           ensureInternalIDs: ensureInternalIDs,
           installEditorSelectionStyle: installEditorSelectionStyle,
           selectNode: selectNode,
+          selectNodes: selectNodes,
           selectedFrameOverlayPayload: selectedFrameOverlayPayload,
           setActiveTool: setActiveTool,
           handleFramePlacementNativeEvent: handleFramePlacementNativeEvent,
           setCSSVariable: setCSSVariable,
           setCSSVariables: setCSSVariables,
+          setCSSVariablesBatch: setCSSVariablesBatch,
           setAttributeValue: setAttributeValue,
           setTextContent: setTextContent,
           copyPayload: copyPayload,
@@ -5032,6 +5176,10 @@ struct WebCanvasView: NSViewRepresentable {
           if (!element) { return; }
           event.preventDefault();
           event.stopPropagation();
+          const id = nextSelectionIDForClick(element);
+          if (preserveMultiSelectionForClick(element, id)) {
+            return;
+          }
           const textElement = textElementForEditing(element, editingSelectionBaselineForClick(event));
           if (textElement) {
             suppressNextClick = false;
@@ -5042,7 +5190,6 @@ struct WebCanvasView: NSViewRepresentable {
             });
             return;
           }
-          const id = nextSelectionIDForClick(element);
           selectNode(id);
           notifySelection(id);
           collectNodes();

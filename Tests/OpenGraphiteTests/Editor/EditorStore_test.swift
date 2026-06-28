@@ -326,6 +326,124 @@ struct EditorStoreTests {
 
         // 期待値：存在しない old-node の選択が解除される
         #expect(store.selectedNodeID == nil)
+        #expect(store.selectedNodeIDs.isEmpty)
+    }
+
+    /// 論理名（日本語）: Sidebar Layers範囲選択テスト
+    /// 概要: Shift クリック相当の範囲選択で、アンカーから終端までの表示中ノードが同時選択されることを検証します。
+    @Test("Sidebar Layersでアンカーから表示順範囲を同時選択する")
+    func testSelectNodeRangeSelectsVisibleLayerRange() {
+        // コンディション：Sidebar Layers に表示される複数ノードを取り込み、先頭ノードを通常選択する（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            ["id": "hero", "tagName": "hero", "type": "frame", "depth": 0],
+            ["id": "card", "tagName": "card", "type": "frame", "depth": 1],
+            ["id": "title", "tagName": "title", "type": "text", "depth": 2],
+            ["id": "cta", "tagName": "button", "type": "button", "depth": 1]
+        ])
+        store.selectNode(id: "hero")
+
+        // 検証内容：表示順で title までの範囲を選択する（When）
+        store.selectNodeRange(to: "title", visibleNodeIDs: ["hero", "card", "title", "cta"])
+
+        // 期待値：主選択は終端に移り、アンカーから終端までのノードが同時選択される（Then）
+        #expect(store.selectedNodeID == "title")
+        #expect(store.selectedNodeIDs == Set(["hero", "card", "title"]))
+    }
+
+    /// 論理名（日本語）: Sidebar Layers同時選択内主選択切替テスト
+    /// 概要: 同時選択中の node を Preview 側でクリックしたとき、同時選択セットを維持したまま主選択だけ切り替わることを検証します。
+    @Test("Sidebar Layers同時選択内のPreviewクリックは同時選択を維持する")
+    func testSelectPrimaryNodeWithinCurrentSelectionKeepsRange() {
+        // コンディション：Sidebar Layers の範囲選択で3つの node を同時選択する（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            ["id": "hero", "tagName": "hero", "type": "frame", "depth": 0],
+            ["id": "card", "tagName": "card", "type": "frame", "depth": 1],
+            ["id": "title", "tagName": "title", "type": "text", "depth": 2]
+        ])
+        store.selectNode(id: "hero")
+        store.selectNodeRange(to: "title", visibleNodeIDs: ["hero", "card", "title"])
+
+        // 検証内容：同時選択内の別 node を Preview クリック相当で主選択にする（When）
+        let didSelect = store.selectPrimaryNodeWithinCurrentSelection(id: "card")
+
+        // 期待値：主選択は切り替わり、同時選択セットは維持される（Then）
+        #expect(didSelect)
+        #expect(store.selectedNodeID == "card")
+        #expect(store.selectedNodeIDs == Set(["hero", "card", "title"]))
+    }
+
+    /// 論理名（日本語）: Sidebar Layers通常選択復帰テスト
+    /// 概要: 範囲選択後に通常選択した場合、同時選択が解除されて単一ノードだけが残ることを検証します。
+    @Test("Sidebar Layersの通常選択で同時選択を解除する")
+    func testSelectNodeResetsLayerRangeSelection() {
+        // コンディション：範囲選択済みの Sidebar Layers 状態を用意する（Given）
+        let store = EditorStore()
+        store.ingestNodePayload([
+            ["id": "hero", "tagName": "hero", "type": "frame", "depth": 0],
+            ["id": "card", "tagName": "card", "type": "frame", "depth": 1],
+            ["id": "title", "tagName": "title", "type": "text", "depth": 2]
+        ])
+        store.selectNode(id: "hero")
+        store.selectNodeRange(to: "title", visibleNodeIDs: ["hero", "card", "title"])
+
+        // 検証内容：別ノードを通常選択する（When）
+        store.selectNode(id: "card")
+
+        // 期待値：主選択と同時選択セットが通常選択したノードだけになる（Then）
+        #expect(store.selectedNodeID == "card")
+        #expect(store.selectedNodeIDs == Set(["card"]))
+    }
+
+    /// 論理名（日本語）: Sidebar Layers同時選択CSS保存テスト
+    /// 概要: 同時選択中の Inspector 相当 CSS 更新が各 node の companion CSS と WebView mutation に分配されることを検証します。
+    @Test("Sidebar Layers同時選択中のCSS更新は各nodeへ保存する")
+    func testUpdateCSSVariableAppliesToSelectedLayerNodes() throws {
+        // コンディション：2つの frame node を持つ HTML と companion CSS を用意し、Sidebar Layers で同時選択する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <Hero data-og-id="hero" data-og-internal-id="hero-node" data-og-type="frame"></Hero>
+          <Card data-og-id="card" data-og-internal-id="card-node" data-og-type="frame"></Card>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            [data-og-internal-id="hero-node"] {
+              gap: 8px;
+            }
+
+            [data-og-internal-id="card-node"] {
+              gap: 12px;
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            ["id": "hero", "internalID": "hero-node", "tagName": "hero", "type": "frame", "cssVariables": ["gap": "8px"], "depth": 0],
+            ["id": "card", "internalID": "card-node", "tagName": "card", "type": "frame", "cssVariables": ["gap": "12px"], "depth": 0]
+        ])
+        store.selectNode(id: "hero")
+        store.selectNodeRange(to: "card", visibleNodeIDs: ["hero", "card"])
+
+        // 検証内容：Inspector 相当で gap を同じ値へ更新する（When）
+        store.updateCSSVariable(key: "gap", value: "24px")
+        let diskCSS = try fixture.readCompanionCSS()
+
+        // 期待値：両 node の CSS と WebView batch mutation に更新値が反映される（Then）
+        #expect(store.nodes.first(where: { $0.id == "hero" })?.cssVariables["gap"] == "24px")
+        #expect(store.nodes.first(where: { $0.id == "card" })?.cssVariables["gap"] == "24px")
+        #expect(store.cssVariablesBatchMutation?.nodeValues["hero"] == ["gap": "24px"])
+        #expect(store.cssVariablesBatchMutation?.nodeValues["card"] == ["gap": "24px"])
+        #expect(diskCSS.contains(#"[data-og-internal-id="hero-node"]"#))
+        #expect(diskCSS.contains(#"[data-og-internal-id="card-node"]"#))
+        #expect(diskCSS.components(separatedBy: "gap: 24px;").count == 3)
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: ページ選択解除テスト

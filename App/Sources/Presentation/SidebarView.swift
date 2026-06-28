@@ -1607,7 +1607,8 @@ private struct PageLayerListView: View {
                                 isSelected: isSelected(page, in: group),
                                 isExpanded: expansionState.isExpanded(pageID: page.internalID),
                                 nodes: isSelected(page, in: group) ? store.nodes : [],
-                                selectedNodeID: $store.selectedNodeID,
+                                selectedNodeID: store.selectedNodeID,
+                                selectedNodeIDs: store.selectedNodeIDs,
                                 editingPageID: $editingPageID,
                                 icon: segment == .components ? .componentDocument : .pageDocument,
                                 onSelect: {
@@ -1628,8 +1629,12 @@ private struct PageLayerListView: View {
                                     store.selectNode(id: node.id)
                                     store.copyNodeReferenceIDToPasteboard(node)
                                 },
-                                onSelectNode: { nodeID in
-                                    store.selectNode(id: nodeID)
+                                onSelectNode: { nodeID, visibleNodeIDs, extendsSelection in
+                                    if extendsSelection {
+                                        store.selectNodeRange(to: nodeID, visibleNodeIDs: visibleNodeIDs)
+                                    } else {
+                                        store.selectNode(id: nodeID)
+                                    }
                                 },
                                 onRenameNode: { node, value in
                                     store.selectNode(id: node.id)
@@ -2029,14 +2034,15 @@ private struct PageLayerListView: View {
 /// - `isSelected`: 現在選択中のページか。
 /// - `isExpanded`: レイヤー階層を展開中か。
 /// - `nodes`: 選択中 HTML から収集された DOM ノード一覧。
-/// - `selectedNodeID`: 選択中ノード ID のバインディング。
+/// - `selectedNodeID`: Inspector / Canvas が扱う主選択ノード ID。
+/// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
 /// - `editingPageID`: 現在ファイル名編集中の HTML カード内部 ID。
 /// - `icon`: 見出しに表示するアイコン。
 /// - `onSelect`: 行選択時に呼び出す処理。
 /// - `onToggle`: 展開切替時に呼び出す処理。
 /// - `onCopyReferenceID`: HTML カード参照 ID コピー時に呼び出す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
-/// - `onSelectNode`: DOM node 選択時に呼び出す処理。
+/// - `onSelectNode`: DOM node 選択時にノード ID、表示中ノード ID、範囲選択フラグを渡す処理。
 /// - `onRenameNode`: DOM node 名変更時に呼び出す処理。
 /// - `onRenamePageFile`: HTML カードのファイル名変更時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
@@ -2045,14 +2051,15 @@ private struct PageLayerCard: View {
     var isSelected: Bool
     var isExpanded: Bool
     var nodes: [OpenGraphiteNode]
-    @Binding var selectedNodeID: String?
+    var selectedNodeID: String?
+    var selectedNodeIDs: Set<String>
     @Binding var editingPageID: String?
     var icon: OpenGraphiteIcon
     var onSelect: () -> Void
     var onToggle: () -> Void
     var onCopyReferenceID: () -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
-    var onSelectNode: (String) -> Void
+    var onSelectNode: (String, [String], Bool) -> Void
     var onRenameNode: (OpenGraphiteNode, String) -> Void
     var onRenamePageFile: (String) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
@@ -2145,7 +2152,8 @@ private struct PageLayerCard: View {
             if isExpanded {
                 LayerOutlineContentView(
                     nodes: nodes,
-                    selectedNodeID: $selectedNodeID,
+                    selectedNodeID: selectedNodeID,
+                    selectedNodeIDs: selectedNodeIDs,
                     onSelectNode: onSelectNode,
                     onCopyNodeReferenceID: onCopyNodeReferenceID,
                     onRenameNode: onRenameNode,
@@ -2206,40 +2214,45 @@ private struct PageLayerCard: View {
 ///
 /// プロパティ:
 /// - `nodes`: WebView から抽出されたノード一覧。
-/// - `selectedNodeID`: 選択中ノード ID のバインディング。
-/// - `onSelectNode`: DOM node 選択時に呼び出す処理。
+/// - `selectedNodeID`: Inspector / Canvas が扱う主選択ノード ID。
+/// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
+/// - `onSelectNode`: DOM node 選択時にノード ID、表示中ノード ID、範囲選択フラグを渡す処理。
 /// - `onCopyNodeReferenceID`: DOM node 参照 ID コピー時に呼び出す処理。
 /// - `onRenameNode`: DOM node 名変更時に呼び出す処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct LayerOutlineContentView: View {
     var nodes: [OpenGraphiteNode]
-    @Binding var selectedNodeID: String?
+    var selectedNodeID: String?
+    var selectedNodeIDs: Set<String>
     @State private var expandedNodeIDs: Set<String> = []
     @State private var editingNodeID: String?
-    var onSelectNode: (String) -> Void
+    var onSelectNode: (String, [String], Bool) -> Void
     var onCopyNodeReferenceID: (OpenGraphiteNode) -> Void
     var onRenameNode: (OpenGraphiteNode, String) -> Void
     var nodeReferenceID: (OpenGraphiteNode) -> String?
 
     var body: some View {
+        let rows = visibleRows
+        let visibleNodeIDs = rows.map(\.id)
+
         LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(visibleRows) { row in
+            ForEach(rows) { row in
                 LayerRow(
                     row: row,
                     isCollapsed: !expandedNodeIDs.contains(row.id),
-                    isSelected: row.id == selectedNodeID,
+                    isSelected: selectedNodeIDs.contains(row.id) || (selectedNodeIDs.isEmpty && row.id == selectedNodeID),
                     onToggle: {
                         toggle(row.id)
                     },
-                    onSelect: {
-                        onSelectNode(row.id)
+                    onSelect: { extendsSelection in
+                        onSelectNode(row.id, visibleNodeIDs, extendsSelection)
                     },
                     editingNodeID: $editingNodeID,
                     onRename: { value in
                         onRenameNode(row.node, value)
                     },
                     onCopyReferenceID: {
-                        onSelectNode(row.id)
+                        onSelectNode(row.id, visibleNodeIDs, false)
                         onCopyNodeReferenceID(row.node)
                     }
                 )
@@ -2452,7 +2465,7 @@ private enum SidebarPanel: String, CaseIterable, Identifiable {
 /// - `isCollapsed`: 子レイヤーが折りたたまれているか。
 /// - `isSelected`: 現在選択中の行か。
 /// - `onToggle`: 展開切替処理。
-/// - `onSelect`: 選択処理。
+/// - `onSelect`: 選択処理。Shift クリック時は `true` を渡します。
 /// - `editingNodeID`: 現在名前編集中のノード ID。
 /// - `onRename`: 名前確定時の更新処理。
 /// - `onCopyReferenceID`: 参照 ID コピー処理。
@@ -2461,7 +2474,7 @@ private struct LayerRow: View {
     var isCollapsed: Bool
     var isSelected: Bool
     var onToggle: () -> Void
-    var onSelect: () -> Void
+    var onSelect: (Bool) -> Void
     @Binding var editingNodeID: String?
     var onRename: (String) -> Void
     var onCopyReferenceID: () -> Void
@@ -2533,7 +2546,9 @@ private struct LayerRow: View {
                     beginNameEdit()
                 }
         )
-        .onTapGesture(perform: onSelect)
+        .onTapGesture {
+            onSelect(isShiftClick)
+        }
         .onChange(of: isEditing) { _, newValue in
             if newValue {
                 draftName = row.node.displayID
@@ -2559,6 +2574,12 @@ private struct LayerRow: View {
         editingNodeID == row.id
     }
 
+    private var isShiftClick: Bool {
+        NSApplication.shared.currentEvent?.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .contains(.shift) == true
+    }
+
     private var detailText: String {
         [row.node.tagName, row.node.detailLine]
             .filter { !$0.isEmpty }
@@ -2568,7 +2589,7 @@ private struct LayerRow: View {
     /// 論理名（日本語）: 名前編集開始関数
     /// 処理概要: レイヤー行を選択してから、表示 ID のインライン編集状態へ切り替えます。
     private func beginNameEdit() {
-        onSelect()
+        onSelect(false)
         draftName = row.node.displayID
         editingNodeID = row.id
     }

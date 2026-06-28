@@ -30,6 +30,7 @@ struct OpenGraphiteNodeDragPreview: Equatable {
 /// - `selectedComponentPageInternalID`: 選択中 component canvas カードの内部 ID。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
+/// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
 /// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
@@ -70,10 +71,12 @@ final class EditorStore: ObservableObject {
     @Published var selectedNodeID: String? {
         didSet {
             guard oldValue != selectedNodeID else { return }
+            synchronizeLayerNodeSelectionForPrimarySelection()
             inspectorSectionOpenRequest = nil
             nodeDragPreview = nil
         }
     }
+    @Published private(set) var selectedNodeIDs: Set<String> = []
     @Published var zoom: Double = 0.72
     @Published var statusMessage = "HTMLを正本として開きます。"
     @Published var lastError: String?
@@ -83,6 +86,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
     @Published private(set) var cssMutation: CSSVariableMutation?
     @Published private(set) var cssVariablesMutation: CSSVariablesMutation?
+    @Published private(set) var cssVariablesBatchMutation: CSSVariablesBatchMutation?
     @Published private(set) var attributeMutation: NodeAttributeMutation?
     @Published private(set) var textMutation: NodeTextContentMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
@@ -105,6 +109,8 @@ final class EditorStore: ObservableObject {
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var cssVariableBaselinesByInternalID: [String: [String: String]] = [:]
+    private var selectedNodeSelectionAnchorID: String?
+    private var isApplyingNodeRangeSelection = false
     private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
@@ -325,6 +331,18 @@ final class EditorStore: ObservableObject {
     var selectedNode: OpenGraphiteNode? {
         guard let selectedNodeID else { return nil }
         return nodes.first { $0.id == selectedNodeID }
+    }
+
+    var selectedLayerNodes: [OpenGraphiteNode] {
+        guard !selectedNodeIDs.isEmpty else {
+            return selectedNode.map { [$0] } ?? []
+        }
+
+        return nodes.filter { selectedNodeIDs.contains($0.id) }
+    }
+
+    var selectedLayerNodeIDsInNodeOrder: [String] {
+        selectedLayerNodes.map(\.id)
     }
 
     var selectedComponentSource: OpenGraphiteComponentSource? {
@@ -1090,6 +1108,7 @@ final class EditorStore: ObservableObject {
             nodes = []
             cssMutation = nil
             cssVariablesMutation = nil
+            cssVariablesBatchMutation = nil
             attributeMutation = nil
             textMutation = nil
             documentReplacementRequest = nil
@@ -1363,7 +1382,109 @@ final class EditorStore: ObservableObject {
         if id != nil {
             selectedProjectResource = nil
         }
+        selectedNodeSelectionAnchorID = id
+        selectedNodeIDs = id.map { Set([$0]) } ?? []
         selectedNodeID = id
+    }
+
+    /// 論理名（日本語）: ノード範囲選択関数
+    /// 処理概要: Sidebar Layers の表示順を基準に、選択アンカーから指定ノードまでを同時選択状態にします。
+    ///
+    /// - Parameters:
+    ///   - id: 範囲選択の終端にするノード ID。
+    ///   - visibleNodeIDs: 現在 Sidebar Layers に表示されているノード ID の順序付き一覧。
+    func selectNodeRange(to id: String, visibleNodeIDs: [String]) {
+        let orderedIDs = visibleNodeIDs.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard let targetIndex = orderedIDs.firstIndex(of: id) else {
+            selectNode(id: id)
+            return
+        }
+
+        let anchorID = selectedNodeSelectionAnchorID ?? selectedNodeID
+        guard let anchorID,
+              let anchorIndex = orderedIDs.firstIndex(of: anchorID)
+        else {
+            selectNode(id: id)
+            return
+        }
+
+        selectedProjectResource = nil
+        let bounds = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        selectedNodeIDs = Set(orderedIDs[bounds])
+        selectedNodeSelectionAnchorID = anchorID
+        isApplyingNodeRangeSelection = true
+        selectedNodeID = id
+        isApplyingNodeRangeSelection = false
+    }
+
+    /// 論理名（日本語）: 同時選択内主ノード選択関数
+    /// 処理概要: Sidebar Layers の同時選択セットを維持したまま、Inspector が扱う主選択 node だけを切り替えます。
+    ///
+    /// - Parameter id: 主選択へ切り替える node ID。
+    /// - Returns: 同時選択内の主選択として処理できた場合は `true`。
+    @discardableResult
+    func selectPrimaryNodeWithinCurrentSelection(id: String) -> Bool {
+        let normalizedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedID.isEmpty,
+              selectedNodeIDs.count > 1,
+              selectedNodeIDs.contains(normalizedID)
+        else {
+            return false
+        }
+
+        selectedProjectResource = nil
+        isApplyingNodeRangeSelection = true
+        defer { isApplyingNodeRangeSelection = false }
+        selectedNodeID = normalizedID
+        return true
+    }
+
+    /// 論理名（日本語）: 主ノード選択同期関数
+    /// 処理概要: 単一選択系の更新では Sidebar Layers の同時選択を単一行へ戻し、範囲選択中のみ既存セットを維持します。
+    private func synchronizeLayerNodeSelectionForPrimarySelection() {
+        guard let selectedNodeID else {
+            selectedNodeIDs = []
+            selectedNodeSelectionAnchorID = nil
+            return
+        }
+
+        guard isApplyingNodeRangeSelection else {
+            selectedNodeIDs = Set([selectedNodeID])
+            selectedNodeSelectionAnchorID = selectedNodeID
+            return
+        }
+
+        if !selectedNodeIDs.contains(selectedNodeID) {
+            selectedNodeIDs.insert(selectedNodeID)
+        }
+        if selectedNodeSelectionAnchorID == nil {
+            selectedNodeSelectionAnchorID = selectedNodeID
+        }
+    }
+
+    /// 論理名（日本語）: ノード一覧同期後選択整理関数
+    /// 処理概要: WebView から再取得したノード一覧に存在しない Sidebar Layers の同時選択を破棄します。
+    private func synchronizeLayerNodeSelectionWithAvailableNodes() {
+        guard let selectedNodeID else {
+            selectedNodeIDs = []
+            selectedNodeSelectionAnchorID = nil
+            return
+        }
+
+        let availableNodeIDs = Set(nodes.map(\.id))
+        guard availableNodeIDs.contains(selectedNodeID) else {
+            self.selectedNodeID = nil
+            return
+        }
+
+        selectedNodeIDs.formIntersection(availableNodeIDs)
+        selectedNodeIDs.insert(selectedNodeID)
+        if let selectedNodeSelectionAnchorID,
+           !availableNodeIDs.contains(selectedNodeSelectionAnchorID) {
+            self.selectedNodeSelectionAnchorID = selectedNodeID
+        } else if selectedNodeSelectionAnchorID == nil {
+            selectedNodeSelectionAnchorID = selectedNodeID
+        }
     }
 
     /// 論理名（日本語）: ノードドラッグpreview payload取り込み関数
@@ -1887,9 +2008,7 @@ final class EditorStore: ObservableObject {
         }
         cssVariableBaselinesByInternalID = nextCSSVariableBaselines
 
-        if let selectedNodeID, !nodes.contains(where: { $0.id == selectedNodeID }) {
-            self.selectedNodeID = nil
-        }
+        synchronizeLayerNodeSelectionWithAvailableNodes()
     }
 
     /// 論理名（日本語）: CSS宣言更新関数
@@ -1899,6 +2018,17 @@ final class EditorStore: ObservableObject {
     ///   - key: 更新する CSS property または OpenGraphite 予約 custom property 名。
     ///   - value: Inspector から入力された値。前後空白は除去します。
     func updateCSSVariable(key: String, value: String) {
+        let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selectedLayerNodes.count > 1, !normalizedKey.isEmpty {
+            let valuesByNodeID = Dictionary(
+                uniqueKeysWithValues: selectedLayerNodes.map { node in
+                    (node.id, [normalizedKey: value])
+                }
+            )
+            updateSelectedLayerNodeCSSVariables(valuesByNodeID: valuesByNodeID)
+            return
+        }
+
         guard let selectedNodeID,
               let selectedNode,
               let displayTarget = currentHTMLSyncTarget(),
@@ -1911,15 +2041,15 @@ final class EditorStore: ObservableObject {
             return
         }
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let selectedOldValue = selectedNode.cssVariables[key] ?? ""
+        let selectedOldValue = selectedNode.cssVariables[normalizedKey] ?? ""
         let expectedOldValue = expectedOldCSSVariableValue(
             for: selectedNode,
-            key: key,
+            key: normalizedKey,
             fallback: selectedOldValue
         )
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
-            let currentValue = nodes[index].cssVariables[key] ?? ""
+            let currentValue = nodes[index].cssVariables[normalizedKey] ?? ""
             guard currentValue != normalizedValue else { return }
         }
 
@@ -1927,7 +2057,7 @@ final class EditorStore: ObservableObject {
             target: editTarget,
             operation: .setCSSVariable(
                 nodeInternalID: selectedNode.internalID,
-                key: key,
+                key: normalizedKey,
                 value: normalizedValue,
                 expectedOldValue: expectedOldValue
             )
@@ -1936,9 +2066,9 @@ final class EditorStore: ObservableObject {
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             if normalizedValue.isEmpty {
-                nodes[index].cssVariables.removeValue(forKey: key)
+                nodes[index].cssVariables.removeValue(forKey: normalizedKey)
             } else {
-                nodes[index].cssVariables[key] = normalizedValue
+                nodes[index].cssVariables[normalizedKey] = normalizedValue
             }
         }
 
@@ -1947,10 +2077,10 @@ final class EditorStore: ObservableObject {
             sequence: mutationSequence,
             pageURL: displayTarget.htmlURL,
             nodeID: selectedNode.id,
-            key: key,
+            key: normalizedKey,
             value: normalizedValue
         )
-        statusMessage = "\(selectedNode.displayID) の \(key) を更新しました。"
+        statusMessage = "\(selectedNode.displayID) の \(normalizedKey) を更新しました。"
     }
 
     /// 論理名（日本語）: 選択ノード複数CSS宣言更新関数
@@ -1958,6 +2088,16 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter values: 更新する CSS property または OpenGraphite 予約 custom property 名と値の組。
     func updateSelectedNodeCSSVariables(values: [String: String]) {
+        if selectedLayerNodes.count > 1 {
+            let valuesByNodeID = Dictionary(
+                uniqueKeysWithValues: selectedLayerNodes.map { node in
+                    (node.id, values)
+                }
+            )
+            updateSelectedLayerNodeCSSVariables(valuesByNodeID: valuesByNodeID)
+            return
+        }
+
         guard let selectedNodeID,
               let selectedNode,
               let displayTarget = currentHTMLSyncTarget(),
@@ -2019,6 +2159,75 @@ final class EditorStore: ObservableObject {
             values: changedValues
         )
         statusMessage = "\(selectedNode.displayID) のサイズを更新しました。"
+    }
+
+    /// 論理名（日本語）: 選択レイヤー群CSS宣言更新関数
+    /// 処理概要: 同時選択中ノードそれぞれの CSS declaration を保存し、WebView へ node ごとの mutation として反映します。
+    ///
+    /// - Parameter valuesByNodeID: ノード ID ごとの CSS property または OpenGraphite 予約 custom property 名と値の組。
+    func updateSelectedLayerNodeCSSVariables(valuesByNodeID: [String: [String: String]]) {
+        guard let displayTarget = currentHTMLSyncTarget() else { return }
+        var changedValuesByNodeID: [String: [String: String]] = [:]
+
+        for node in selectedLayerNodes {
+            guard let requestedValues = valuesByNodeID[node.id],
+                  !node.internalID.isEmpty,
+                  let editTarget = cssEditTarget(for: node)
+            else {
+                continue
+            }
+
+            let normalizedValues = requestedValues.reduce(into: [String: String]()) { result, entry in
+                let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !key.isEmpty else { return }
+                result[key] = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard !normalizedValues.isEmpty,
+                  let index = nodes.firstIndex(where: { $0.id == node.id })
+            else {
+                continue
+            }
+
+            let changedValues = normalizedValues.filter { key, value in
+                (nodes[index].cssVariables[key] ?? "") != value
+            }
+            guard !changedValues.isEmpty else { continue }
+
+            let expectedOldValues = changedValues.reduce(into: [String: String]()) { result, entry in
+                result[entry.key] = expectedOldCSSVariableValue(
+                    for: node,
+                    key: entry.key,
+                    fallback: node.cssVariables[entry.key] ?? ""
+                )
+            }
+            let edit = HTMLObjectEdit(
+                target: editTarget,
+                operation: .setCSSVariables(
+                    nodeInternalID: node.internalID,
+                    values: changedValues,
+                    expectedOldValues: expectedOldValues
+                )
+            )
+            guard applyHTMLObjectEdit(edit).updated else { continue }
+
+            for (key, value) in changedValues {
+                if value.isEmpty {
+                    nodes[index].cssVariables.removeValue(forKey: key)
+                } else {
+                    nodes[index].cssVariables[key] = value
+                }
+            }
+            changedValuesByNodeID[node.id] = changedValues
+        }
+
+        guard !changedValuesByNodeID.isEmpty else { return }
+        mutationSequence += 1
+        cssVariablesBatchMutation = CSSVariablesBatchMutation(
+            sequence: mutationSequence,
+            pageURL: displayTarget.htmlURL,
+            nodeValues: changedValuesByNodeID
+        )
+        statusMessage = "\(changedValuesByNodeID.count)個のオブジェクトを更新しました。"
     }
 
     /// 論理名（日本語）: 選択ページルートCSS宣言更新関数
@@ -2617,6 +2826,15 @@ final class EditorStore: ObservableObject {
     func markVariablesMutationApplied(sequence: Int) {
         guard cssVariablesMutation?.sequence == sequence else { return }
         cssVariablesMutation = nil
+    }
+
+    /// 論理名（日本語）: 複数ノードCSS宣言mutation適用完了関数
+    /// 処理概要: WebView への反映が完了した複数ノード CSS mutation を順序番号で確認してクリアします。
+    ///
+    /// - Parameter sequence: 適用完了した mutation の順序番号。
+    func markVariablesBatchMutationApplied(sequence: Int) {
+        guard cssVariablesBatchMutation?.sequence == sequence else { return }
+        cssVariablesBatchMutation = nil
     }
 
     /// 論理名（日本語）: 属性mutation適用完了関数

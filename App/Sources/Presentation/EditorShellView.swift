@@ -940,15 +940,29 @@ private struct CanvasDocumentView: View {
                         rect: selectedNodeOverlay.rect,
                         pageSize: pageSize,
                         zoom: zoom,
-                        isResizable: canResizeSelectedNode(id: selectedNodeOverlay.id),
+                        isMovable: selectedNodeOverlay.nodeIDs.count > 1 && canEditSelectedNodeIDs(selectedNodeOverlay.nodeIDs),
+                        isResizable: canEditSelectedNodeIDs(selectedNodeOverlay.nodeIDs),
+                        onMoveChanged: { rect in
+                            handleNodeResizeChanged(id: selectedNodeOverlay.id, rect: rect)
+                        },
+                        onMoveEnded: { finalRect, originalRect in
+                            handleNodeMoveEnded(
+                                nodeIDs: selectedNodeOverlay.nodeIDs,
+                                finalRect: finalRect,
+                                originalRect: originalRect,
+                                pageSize: pageSize
+                            )
+                        },
                         onResizeChanged: { rect in
                             handleNodeResizeChanged(id: selectedNodeOverlay.id, rect: rect)
                         },
                         onResizeEnded: { handle, finalRect, originalRect in
                             handleNodeResizeEnded(
+                                nodeIDs: selectedNodeOverlay.nodeIDs,
                                 handle: handle,
                                 finalRect: finalRect,
-                                originalRect: originalRect
+                                originalRect: originalRect,
+                                pageSize: pageSize
                             )
                         }
                     )
@@ -1015,6 +1029,9 @@ private struct CanvasDocumentView: View {
         .onChange(of: store.selectedNodeID) { _, _ in
             nodeResizePreview = nil
         }
+        .onChange(of: store.selectedNodeIDs) { _, _ in
+            nodeResizePreview = nil
+        }
     }
 
     /// 論理名（日本語）: キャプションカードドラッグジェスチャ生成関数
@@ -1071,7 +1088,8 @@ private struct CanvasDocumentView: View {
             return baseOverlay
         }
         return CanvasSelectedNodeOverlayFrame(
-            id: nodeResizePreview.nodeID,
+            id: baseOverlay.id,
+            nodeIDs: baseOverlay.nodeIDs,
             rect: nodeResizePreview.rect,
             pageSize: pageSize
         ) ?? baseOverlay
@@ -1089,6 +1107,17 @@ private struct CanvasDocumentView: View {
             return nil
         }
 
+        let selectedNodes = store.selectedLayerNodes.filter { node in
+            node.type != "page"
+        }
+        if selectedNodes.count > 1 {
+            let overlays = selectedNodes.compactMap { node in
+                CanvasSelectedNodeOverlayFrame(node: node, pageSize: pageSize)
+            }
+            guard overlays.count >= 2 else { return nil }
+            return CanvasSelectedNodeOverlayFrame(groupFrames: overlays, pageSize: pageSize)
+        }
+
         if let dragPreview = store.nodeDragPreview,
            dragPreview.nodeID == selectedNodeID,
            dragPreview.pageInternalID == page.internalID {
@@ -1103,17 +1132,20 @@ private struct CanvasDocumentView: View {
         return CanvasSelectedNodeOverlayFrame(node: selectedNode, pageSize: pageSize)
     }
 
-    /// 論理名（日本語）: 選択ノードリサイズ可否判定関数
-    /// 処理概要: 現在の選択 node が page root やロック済み preview clone ではなく、CSS サイズ保存先を持つか判定します。
+    /// 論理名（日本語）: 選択ノード編集可否判定関数
+    /// 処理概要: 選択 node 群が page root やロック済み preview clone ではなく、CSS サイズ保存先を持つか判定します。
     ///
-    /// - Parameter id: 判定する選択 node ID。
-    /// - Returns: リサイズハンドルを操作可能にする場合は `true`。
-    private func canResizeSelectedNode(id: String) -> Bool {
-        guard let selectedNode = store.nodes.first(where: { $0.id == id }) else { return false }
-        return selectedNode.type != "page"
-            && !selectedNode.isLocked
-            && !selectedNode.isPlacementGenerated
-            && !selectedNode.internalID.isEmpty
+    /// - Parameter ids: 判定する選択 node ID 群。
+    /// - Returns: 合成枠操作を可能にする場合は `true`。
+    private func canEditSelectedNodeIDs(_ ids: [String]) -> Bool {
+        guard !ids.isEmpty else { return false }
+        return ids.allSatisfy { id in
+            guard let selectedNode = store.nodes.first(where: { $0.id == id }) else { return false }
+            return selectedNode.type != "page"
+                && !selectedNode.isLocked
+                && !selectedNode.isPlacementGenerated
+                && !selectedNode.internalID.isEmpty
+        }
     }
 
     /// 論理名（日本語）: ノードリサイズpreview更新関数
@@ -1138,17 +1170,129 @@ private struct CanvasDocumentView: View {
     ///   - finalRect: ドラッグ終了時の page content 座標上の矩形。
     ///   - originalRect: ドラッグ開始時の page content 座標上の矩形。
     private func handleNodeResizeEnded(
+        nodeIDs: [String],
         handle: CanvasNodeResizeHandle,
         finalRect: CGRect,
-        originalRect: CGRect
+        originalRect: CGRect,
+        pageSize: CGSize
     ) {
         nodeResizePreview = nil
-        let values = CanvasNodeResizeResolver.cssValues(
-            for: finalRect,
-            handle: handle,
-            originalRect: originalRect
+        if nodeIDs.count > 1 {
+            let values = resizedCSSValuesByNodeID(
+                nodeIDs: nodeIDs,
+                finalRect: finalRect,
+                originalRect: originalRect,
+                pageSize: pageSize
+            )
+            store.updateSelectedLayerNodeCSSVariables(valuesByNodeID: values)
+        } else {
+            let values = CanvasNodeResizeResolver.cssValues(
+                for: finalRect,
+                handle: handle,
+                originalRect: originalRect
+            )
+            store.updateSelectedNodeCSSVariables(values: values)
+        }
+    }
+
+    /// 論理名（日本語）: ノード移動確定関数
+    /// 処理概要: 合成選択枠の移動量を各 node の `left` / `top` に分配し、ストア経由で正本へ保存します。
+    ///
+    /// - Parameters:
+    ///   - nodeIDs: 移動対象 node ID 群。
+    ///   - finalRect: ドラッグ終了時の合成枠矩形。
+    ///   - originalRect: ドラッグ開始時の合成枠矩形。
+    ///   - pageSize: page canvas の表示サイズ。
+    private func handleNodeMoveEnded(
+        nodeIDs: [String],
+        finalRect: CGRect,
+        originalRect: CGRect,
+        pageSize: CGSize
+    ) {
+        nodeResizePreview = nil
+        guard nodeIDs.count > 1 else { return }
+        let translation = CGSize(
+            width: finalRect.minX - originalRect.minX,
+            height: finalRect.minY - originalRect.minY
         )
-        store.updateSelectedNodeCSSVariables(values: values)
+        let values = movedCSSValuesByNodeID(
+            nodeIDs: nodeIDs,
+            translation: translation,
+            pageSize: pageSize
+        )
+        store.updateSelectedLayerNodeCSSVariables(valuesByNodeID: values)
+    }
+
+    /// 論理名（日本語）: 複数ノードリサイズCSS値生成関数
+    /// 処理概要: 合成選択枠のリサイズ結果を各 node の相対位置と寸法へ変換します。
+    ///
+    /// - Parameters:
+    ///   - nodeIDs: 対象 node ID 群。
+    ///   - finalRect: リサイズ後の合成枠矩形。
+    ///   - originalRect: リサイズ前の合成枠矩形。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: node ID ごとの保存対象 CSS declaration 値。
+    private func resizedCSSValuesByNodeID(
+        nodeIDs: [String],
+        finalRect: CGRect,
+        originalRect: CGRect,
+        pageSize: CGSize
+    ) -> [String: [String: String]] {
+        let nodeRects = rectsByNodeID(nodeIDs: nodeIDs, pageSize: pageSize)
+        return nodeRects.reduce(into: [String: [String: String]]()) { result, entry in
+            let resizedRect = CanvasNodeResizeResolver.resizedRect(
+                forNodeRect: entry.value,
+                originalGroupRect: originalRect,
+                resizedGroupRect: finalRect
+            )
+            let values = CanvasNodeResizeResolver.cssFrameValues(
+                for: resizedRect,
+                originalRect: entry.value
+            )
+            if !values.isEmpty {
+                result[entry.key] = values
+            }
+        }
+    }
+
+    /// 論理名（日本語）: 複数ノード移動CSS値生成関数
+    /// 処理概要: 合成選択枠の移動量を各 node の `left` / `top` CSS 値へ変換します。
+    ///
+    /// - Parameters:
+    ///   - nodeIDs: 対象 node ID 群。
+    ///   - translation: 合成枠の移動量。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: node ID ごとの保存対象 CSS declaration 値。
+    private func movedCSSValuesByNodeID(
+        nodeIDs: [String],
+        translation: CGSize,
+        pageSize: CGSize
+    ) -> [String: [String: String]] {
+        rectsByNodeID(nodeIDs: nodeIDs, pageSize: pageSize).reduce(into: [String: [String: String]]()) { result, entry in
+            let movedRect = entry.value.offsetBy(dx: translation.width, dy: translation.height)
+            let values = CanvasNodeResizeResolver.cssPositionValues(for: movedRect, originalRect: entry.value)
+            if !values.isEmpty {
+                result[entry.key] = values
+            }
+        }
+    }
+
+    /// 論理名（日本語）: ノード矩形辞書生成関数
+    /// 処理概要: node ID 群から Canvas 座標上の矩形を引ける辞書を生成します。
+    ///
+    /// - Parameters:
+    ///   - nodeIDs: 対象 node ID 群。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: node ID ごとの Canvas 矩形。
+    private func rectsByNodeID(nodeIDs: [String], pageSize: CGSize) -> [String: CGRect] {
+        nodeIDs.reduce(into: [String: CGRect]()) { result, id in
+            guard let node = store.nodes.first(where: { $0.id == id }),
+                  let frame = CanvasSelectedNodeOverlayFrame(node: node, pageSize: pageSize)
+            else {
+                return
+            }
+            result[id] = frame.rect
+        }
     }
 }
 
@@ -1169,6 +1313,7 @@ private struct CanvasNodeResizePreview: Equatable {
 /// 概要: WebView の DOM overlay に依存せず、Canvas 座標上で選択 object を可視化するための矩形です。
 private struct CanvasSelectedNodeOverlayFrame: Equatable {
     var id: String
+    var nodeIDs: [String]
     var rect: CGRect
 
     /// 論理名（日本語）: ノード由来初期化関数
@@ -1196,6 +1341,30 @@ private struct CanvasSelectedNodeOverlayFrame: Equatable {
         }
 
         id = node.id
+        nodeIDs = [node.id]
+        rect = visibleRect
+    }
+
+    /// 論理名（日本語）: 複数ノード由来初期化関数
+    /// 処理概要: 個別ノードの選択矩形をすべて覆う union 矩形を生成します。
+    ///
+    /// - Parameters:
+    ///   - groupFrames: 同時選択中ノードの個別矩形。
+    ///   - pageSize: page canvas の表示サイズ。
+    init?(groupFrames: [CanvasSelectedNodeOverlayFrame], pageSize: CGSize) {
+        let frames = groupFrames.filter { !$0.rect.isNull && $0.rect.width > 0 && $0.rect.height > 0 }
+        guard let first = frames.first else { return nil }
+        let unionRect = frames.dropFirst().reduce(first.rect) { partialResult, frame in
+            partialResult.union(frame.rect)
+        }
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        let visibleRect = unionRect.intersection(pageRect)
+        guard !visibleRect.isNull, visibleRect.width > 0, visibleRect.height > 0 else {
+            return nil
+        }
+
+        id = "\(frames.count) objects"
+        nodeIDs = frames.flatMap(\.nodeIDs)
         rect = visibleRect
     }
 
@@ -1207,12 +1376,25 @@ private struct CanvasSelectedNodeOverlayFrame: Equatable {
     ///   - rect: page content 座標上の矩形。
     ///   - pageSize: page canvas の表示サイズ。
     init?(id: String, rect: CGRect, pageSize: CGSize) {
+        self.init(id: id, nodeIDs: [id], rect: rect, pageSize: pageSize)
+    }
+
+    /// 論理名（日本語）: 複数ノード矩形指定初期化関数
+    /// 処理概要: ドラッグ中の合成選択枠を page 範囲内へ丸め、元の編集対象 node ID 群を保持します。
+    ///
+    /// - Parameters:
+    ///   - id: 選択枠の表示 ID。
+    ///   - nodeIDs: 選択枠に含まれる編集対象 node ID 群。
+    ///   - rect: page content 座標上の矩形。
+    ///   - pageSize: page canvas の表示サイズ。
+    init?(id: String, nodeIDs: [String], rect: CGRect, pageSize: CGSize) {
         let pageRect = CGRect(origin: .zero, size: pageSize)
         let visibleRect = rect.intersection(pageRect)
         guard !visibleRect.isNull, visibleRect.width > 0, visibleRect.height > 0 else {
             return nil
         }
         self.id = id
+        self.nodeIDs = nodeIDs
         self.rect = visibleRect
     }
 
@@ -1245,9 +1427,13 @@ private struct CanvasSelectedNodeOverlay: View {
     var rect: CGRect
     var pageSize: CGSize
     var zoom: Double
+    var isMovable: Bool
     var isResizable: Bool
+    var onMoveChanged: (CGRect) -> Void
+    var onMoveEnded: (CGRect, CGRect) -> Void
     var onResizeChanged: (CGRect) -> Void
     var onResizeEnded: (CanvasNodeResizeHandle, CGRect, CGRect) -> Void
+    @State private var moveStartRect: CGRect?
     @State private var resizeStartRect: CGRect?
 
     var body: some View {
@@ -1260,7 +1446,9 @@ private struct CanvasSelectedNodeOverlay: View {
                 )
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
-                .allowsHitTesting(false)
+                .contentShape(Rectangle())
+                .gesture(moveGesture())
+                .allowsHitTesting(isMovable)
 
             if !id.isEmpty {
                 Text(id)
@@ -1291,6 +1479,38 @@ private struct CanvasSelectedNodeOverlay: View {
     private var inverseZoomScale: CGFloat {
         guard zoom.isFinite, zoom > 0 else { return 1 }
         return 1 / CGFloat(zoom)
+    }
+
+    /// 論理名（日本語）: 移動ジェスチャ生成関数
+    /// 処理概要: 合成選択枠のドラッグ量を page content 座標上の移動後矩形へ変換します。
+    ///
+    /// - Returns: 合成選択枠へ付与するドラッグジェスチャ。
+    private func moveGesture() -> some Gesture {
+        DragGesture(minimumDistance: CanvasMetrics.pageDragMinimumDistance, coordinateSpace: .global)
+            .onChanged { value in
+                let startRect = moveStartRect ?? rect
+                if moveStartRect == nil {
+                    moveStartRect = startRect
+                }
+                let movedRect = CanvasNodeResizeResolver.movedRect(
+                    startRect: startRect,
+                    screenTranslation: value.translation,
+                    zoom: zoom,
+                    pageSize: pageSize
+                )
+                onMoveChanged(movedRect)
+            }
+            .onEnded { value in
+                let startRect = moveStartRect ?? rect
+                let movedRect = CanvasNodeResizeResolver.movedRect(
+                    startRect: startRect,
+                    screenTranslation: value.translation,
+                    zoom: zoom,
+                    pageSize: pageSize
+                )
+                moveStartRect = nil
+                onMoveEnded(movedRect, startRect)
+            }
     }
 
     /// 論理名（日本語）: リサイズジェスチャ生成関数
@@ -1450,6 +1670,36 @@ enum CanvasNodeResizeHandle: String, CaseIterable, Identifiable {
 enum CanvasNodeResizeResolver {
     static let minimumSize: CGFloat = 2
 
+    /// 論理名（日本語）: 移動後矩形生成関数
+    /// 処理概要: ズーム適用後の画面ドラッグ量を page content 座標へ戻し、page 範囲内へ収めた移動後矩形を返します。
+    ///
+    /// - Parameters:
+    ///   - startRect: ドラッグ開始時の page content 座標上の矩形。
+    ///   - screenTranslation: `DragGesture` が返す画面上の移動量。
+    ///   - zoom: 現在の canvas 表示倍率。
+    ///   - pageSize: page canvas の表示サイズ。
+    /// - Returns: 補正済みの移動後矩形。
+    static func movedRect(
+        startRect: CGRect,
+        screenTranslation: CGSize,
+        zoom: Double,
+        pageSize: CGSize
+    ) -> CGRect {
+        let translation = CanvasPageDragResolver.canvasTranslation(
+            screenTranslation: screenTranslation,
+            zoom: zoom
+        )
+        let bounds = CGRect(origin: .zero, size: pageSize)
+        let minX = min(max(startRect.minX + translation.width, bounds.minX), max(bounds.maxX - startRect.width, bounds.minX))
+        let minY = min(max(startRect.minY + translation.height, bounds.minY), max(bounds.maxY - startRect.height, bounds.minY))
+        return CGRect(
+            x: minX.rounded(),
+            y: minY.rounded(),
+            width: startRect.width,
+            height: startRect.height
+        )
+    }
+
     /// 論理名（日本語）: リサイズ後矩形生成関数
     /// 処理概要: ズーム適用後の画面ドラッグ量を page content 座標へ戻し、page 範囲と最小サイズで矩形を補正します。
     ///
@@ -1501,6 +1751,33 @@ enum CanvasNodeResizeResolver {
         )
     }
 
+    /// 論理名（日本語）: グループリサイズ内ノード矩形生成関数
+    /// 処理概要: 合成選択枠のリサイズ比率を個別 node の相対位置と寸法へ適用します。
+    ///
+    /// - Parameters:
+    ///   - nodeRect: リサイズ前の個別 node 矩形。
+    ///   - originalGroupRect: リサイズ前の合成選択枠矩形。
+    ///   - resizedGroupRect: リサイズ後の合成選択枠矩形。
+    /// - Returns: 合成枠リサイズ後の個別 node 矩形。
+    static func resizedRect(
+        forNodeRect nodeRect: CGRect,
+        originalGroupRect: CGRect,
+        resizedGroupRect: CGRect
+    ) -> CGRect {
+        let scaleX = originalGroupRect.width > 0 ? resizedGroupRect.width / originalGroupRect.width : 1
+        let scaleY = originalGroupRect.height > 0 ? resizedGroupRect.height / originalGroupRect.height : 1
+        let x = resizedGroupRect.minX + (nodeRect.minX - originalGroupRect.minX) * scaleX
+        let y = resizedGroupRect.minY + (nodeRect.minY - originalGroupRect.minY) * scaleY
+        let width = max(nodeRect.width * scaleX, minimumSize)
+        let height = max(nodeRect.height * scaleY, minimumSize)
+        return CGRect(
+            x: x.rounded(),
+            y: y.rounded(),
+            width: width.rounded(),
+            height: height.rounded()
+        )
+    }
+
     /// 論理名（日本語）: CSS値生成関数
     /// 処理概要: 操作ハンドルに応じて保存が必要な `left`、`top`、`width`、`height` だけを CSS px 値として返します。
     ///
@@ -1531,6 +1808,40 @@ enum CanvasNodeResizeResolver {
         }
 
         return values.filter { key, value in
+            originalCSSValue(for: key, rect: originalRect) != value
+        }
+    }
+
+    /// 論理名（日本語）: CSS位置値生成関数
+    /// 処理概要: 移動後の矩形から保存対象の `left` / `top` CSS px 値を返します。
+    ///
+    /// - Parameters:
+    ///   - rect: 移動後の page content 座標上の矩形。
+    ///   - originalRect: 移動前の page content 座標上の矩形。
+    /// - Returns: 保存対象 CSS declaration 値。
+    static func cssPositionValues(for rect: CGRect, originalRect: CGRect) -> [String: String] {
+        [
+            "left": cssPixelString(rect.minX),
+            "top": cssPixelString(rect.minY)
+        ].filter { key, value in
+            originalCSSValue(for: key, rect: originalRect) != value
+        }
+    }
+
+    /// 論理名（日本語）: CSS矩形値生成関数
+    /// 処理概要: 合成選択枠の変形後に個別 node へ保存する `left` / `top` / `width` / `height` 差分を返します。
+    ///
+    /// - Parameters:
+    ///   - rect: 変形後の page content 座標上の矩形。
+    ///   - originalRect: 変形前の page content 座標上の矩形。
+    /// - Returns: 保存対象 CSS declaration 値。
+    static func cssFrameValues(for rect: CGRect, originalRect: CGRect) -> [String: String] {
+        [
+            "left": cssPixelString(rect.minX),
+            "top": cssPixelString(rect.minY),
+            "width": cssPixelString(rect.width),
+            "height": cssPixelString(rect.height)
+        ].filter { key, value in
             originalCSSValue(for: key, rect: originalRect) != value
         }
     }
