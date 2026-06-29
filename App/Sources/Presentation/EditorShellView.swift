@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SwiftUI
 import WebKit
 
@@ -1453,8 +1454,260 @@ private struct CanvasSelectedNodeOverlayFrame: Equatable {
     }
 }
 
+/// 論理名（日本語）: Canvasスクロール活動通知
+/// 概要: AppKit scroll view から選択 chrome へ、wheel scroll 中かどうかを伝えます。
+private extension Notification.Name {
+    static let canvasScrollActivityDidChange = Notification.Name("dev.opengraphite.canvasScrollActivityDidChange")
+}
+
+/// 論理名（日本語）: Canvasスクロール活動通知キー
+/// 概要: `canvasScrollActivityDidChange` の userInfo key を定義します。
+private enum CanvasScrollActivityNotificationKey {
+    static let isActive = "isActive"
+}
+
+/// 論理名（日本語）: Canvas選択Chromeレイヤー幾何
+/// 概要: SwiftUI overlay 座標から Core Animation layer へ渡す選択枠とハンドル位置を計算します。
+enum CanvasSelectionChromeLayerGeometry {
+    /// 論理名（日本語）: ローカル選択矩形取得関数
+    /// 処理概要: SwiftUI が選択 chrome view 自体を配置できるよう、layer 内部で使う矩形を原点ゼロへ正規化します。
+    ///
+    /// - Parameter rect: overlay 座標上の選択対象矩形。
+    /// - Returns: layer 内部で使うローカル矩形。
+    static func localRect(for rect: CGRect) -> CGRect {
+        CGRect(origin: .zero, size: rect.size)
+    }
+
+    /// 論理名（日本語）: 選択枠レイヤー矩形取得関数
+    /// 処理概要: SwiftUI と同じ上原点座標のまま、stroke 幅だけ内側に入れた CAShapeLayer path 矩形を返します。
+    ///
+    /// - Parameters:
+    ///   - rect: 選択対象の overlay 座標矩形。
+    ///   - lineWidth: stroke 幅。
+    /// - Returns: CAShapeLayer path に使う矩形。
+    static func borderRect(for rect: CGRect, lineWidth: CGFloat) -> CGRect {
+        rect.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+    }
+
+    /// 論理名（日本語）: ハンドルレイヤー位置取得関数
+    /// 処理概要: SwiftUI hit area と同じ上原点座標で、指定ハンドルの中心位置を返します。
+    ///
+    /// - Parameters:
+    ///   - handle: 位置を求める resize handle。
+    ///   - rect: 選択対象の overlay 座標矩形。
+    /// - Returns: CAShapeLayer の position。
+    static func handlePosition(for handle: CanvasNodeResizeHandle, in rect: CGRect) -> CGPoint {
+        handle.position(in: rect)
+    }
+}
+
+/// 論理名（日本語）: Canvas選択ChromeView
+/// 概要: 選択枠とリサイズハンドルの描画を Core Animation layer へ委譲します。
+///
+/// プロパティ:
+/// - `rect`: 選択枠の content 座標矩形。
+/// - `canvasSize`: overlay 全体の content 座標サイズ。
+/// - `lineWidth`: 選択枠 stroke 幅。
+/// - `zoom`: 現在の canvas 表示倍率。
+/// - `showsHandles`: リサイズハンドルを描画するかどうか。
+private struct CanvasSelectionChromeView: NSViewRepresentable {
+    var rect: CGRect
+    var canvasSize: CGSize
+    var lineWidth: CGFloat
+    var zoom: Double
+    var showsHandles: Bool
+
+    /// 論理名（日本語）: AppKit選択Chrome生成関数
+    /// 処理概要: CAShapeLayer で選択枠を描画する NSView を生成します。
+    ///
+    /// - Parameter context: SwiftUI representable context。
+    /// - Returns: 選択 chrome を描画する AppKit view。
+    func makeNSView(context: Context) -> CanvasSelectionChromeNSView {
+        CanvasSelectionChromeNSView()
+    }
+
+    /// 論理名（日本語）: AppKit選択Chrome更新関数
+    /// 処理概要: SwiftUI から渡された選択矩形と表示設定を既存 layer へ反映します。
+    ///
+    /// - Parameters:
+    ///   - nsView: 更新対象の AppKit view。
+    ///   - context: SwiftUI representable context。
+    func updateNSView(_ nsView: CanvasSelectionChromeNSView, context: Context) {
+        nsView.update(
+            rect: rect,
+            canvasSize: canvasSize,
+            lineWidth: lineWidth,
+            zoom: zoom,
+            showsHandles: showsHandles
+        )
+    }
+}
+
+/// 論理名（日本語）: Canvas選択Chrome AppKit View
+/// 概要: 選択枠とリサイズハンドルを CAShapeLayer で保持し、scroll 中は handle shadow を落とします。
+private final class CanvasSelectionChromeNSView: NSView {
+    private let borderLayer = CAShapeLayer()
+    private var handleLayers: [CanvasNodeResizeHandle: CAShapeLayer] = [:]
+    private var scrollObserver: NSObjectProtocol?
+    private var selectionRect = CGRect.zero
+    private var canvasSize = CGSize.zero
+    private var lineWidth: CGFloat = 2
+    private var zoom: Double = 1
+    private var showsHandles = true
+    private var suppressesHandleShadow = false
+
+    override var isFlipped: Bool { true }
+
+    /// 論理名（日本語）: Canvas選択Chrome初期化関数
+    /// 処理概要: Core Animation layer を構築し、scroll activity 通知を購読します。
+    ///
+    /// - Parameter frameRect: 初期 frame。
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.isGeometryFlipped = true
+        layer?.masksToBounds = false
+        configureLayers()
+        scrollObserver = NotificationCenter.default.addObserver(
+            forName: .canvasScrollActivityDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let isActive = notification.userInfo?[CanvasScrollActivityNotificationKey.isActive] as? Bool ?? false
+            self?.setSuppressesHandleShadow(isActive)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    deinit {
+        if let scrollObserver {
+            NotificationCenter.default.removeObserver(scrollObserver)
+        }
+    }
+
+    /// 論理名（日本語）: 選択Chrome更新関数
+    /// 処理概要: 最新の選択矩形、倍率、ハンドル表示可否を layer に反映します。
+    ///
+    /// - Parameters:
+    ///   - rect: 選択枠の content 座標矩形。
+    ///   - canvasSize: overlay 全体の content 座標サイズ。
+    ///   - lineWidth: 選択枠 stroke 幅。
+    ///   - zoom: 現在の canvas 表示倍率。
+    ///   - showsHandles: リサイズハンドルを描画するかどうか。
+    func update(rect: CGRect, canvasSize: CGSize, lineWidth: CGFloat, zoom: Double, showsHandles: Bool) {
+        self.selectionRect = rect
+        self.canvasSize = canvasSize
+        self.lineWidth = lineWidth
+        self.zoom = zoom
+        self.showsHandles = showsHandles
+        updateLayers()
+    }
+
+    /// 論理名（日本語）: レイアウト更新関数
+    /// 処理概要: SwiftUI 側の frame 変更に合わせて既存 layer の path と位置を再計算します。
+    override func layout() {
+        super.layout()
+        updateLayers()
+    }
+
+    private func configureLayers() {
+        borderLayer.isGeometryFlipped = true
+        borderLayer.fillColor = NSColor.clear.cgColor
+        borderLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        borderLayer.lineJoin = .round
+        layer?.addSublayer(borderLayer)
+
+        CanvasNodeResizeHandle.allCases.forEach { handle in
+            let handleLayer = CAShapeLayer()
+            handleLayer.fillColor = NSColor.controlBackgroundColor.cgColor
+            handleLayer.strokeColor = NSColor.controlAccentColor.cgColor
+            handleLayer.masksToBounds = false
+            handleLayers[handle] = handleLayer
+            layer?.addSublayer(handleLayer)
+        }
+    }
+
+    private func setSuppressesHandleShadow(_ nextValue: Bool) {
+        guard suppressesHandleShadow != nextValue else { return }
+        suppressesHandleShadow = nextValue
+        updateHandleShadows()
+    }
+
+    private func updateLayers() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+
+        let resolvedBounds = CGRect(origin: .zero, size: resolvedCanvasSize())
+        borderLayer.frame = resolvedBounds
+        guard selectionRect.width > 0, selectionRect.height > 0 else {
+            borderLayer.isHidden = true
+            handleLayers.values.forEach { $0.isHidden = true }
+            return
+        }
+
+        borderLayer.isHidden = false
+        borderLayer.strokeColor = NSColor.controlAccentColor.cgColor
+        borderLayer.lineWidth = lineWidth
+        let borderRect = CanvasSelectionChromeLayerGeometry.borderRect(for: selectionRect, lineWidth: lineWidth)
+        borderLayer.path = CGPath(rect: borderRect, transform: nil)
+
+        updateHandles()
+    }
+
+    private func updateHandles() {
+        let inverseZoomScale = inverseZoomScale
+        let diameter = max(4, 8 * inverseZoomScale)
+        let handleBounds = CGRect(origin: .zero, size: CGSize(width: diameter, height: diameter))
+        let handlePath = CGPath(ellipseIn: handleBounds, transform: nil)
+
+        CanvasNodeResizeHandle.allCases.forEach { handle in
+            guard let handleLayer = handleLayers[handle] else { return }
+            handleLayer.isHidden = !showsHandles
+            handleLayer.bounds = handleBounds
+            handleLayer.path = handlePath
+            handleLayer.position = CanvasSelectionChromeLayerGeometry.handlePosition(for: handle, in: selectionRect)
+            handleLayer.lineWidth = max(0.75, 1.5 * inverseZoomScale)
+            handleLayer.fillColor = NSColor.controlBackgroundColor.cgColor
+            handleLayer.strokeColor = NSColor.controlAccentColor.cgColor
+            handleLayer.shadowPath = handlePath
+        }
+        updateHandleShadows()
+    }
+
+    private func updateHandleShadows() {
+        let inverseZoomScale = inverseZoomScale
+        handleLayers.values.forEach { handleLayer in
+            if suppressesHandleShadow || handleLayer.isHidden {
+                handleLayer.shadowOpacity = 0
+                return
+            }
+            handleLayer.shadowColor = NSColor.black.cgColor
+            handleLayer.shadowOpacity = 0.2
+            handleLayer.shadowRadius = 2 * inverseZoomScale
+            handleLayer.shadowOffset = CGSize(width: 0, height: -1 * inverseZoomScale)
+        }
+    }
+
+    private var inverseZoomScale: CGFloat {
+        guard zoom.isFinite, zoom > 0 else { return 1 }
+        return 1 / CGFloat(zoom)
+    }
+
+    private func resolvedCanvasSize() -> CGSize {
+        CGSize(
+            width: max(bounds.width, canvasSize.width, 1),
+            height: max(bounds.height, canvasSize.height, 1)
+        )
+    }
+}
+
 /// 論理名（日本語）: Canvas選択ページオーバーレイ
-/// 概要: 選択中ページの枠とリサイズハンドルを SwiftUI レイヤーとして描画します。
+/// 概要: 選択中ページの枠を Core Animation で描画し、SwiftUI 側にはリサイズ操作領域だけを置きます。
 ///
 /// プロパティ:
 /// - `canvas`: 表示中またはドラッグ中の page canvas 定義。
@@ -1474,18 +1727,19 @@ private struct CanvasSelectedPageOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color.accentColor.opacity(0.04))
-                .overlay(
-                    Rectangle()
-                        .stroke(Color.accentColor, lineWidth: 3)
-                )
-                .frame(width: rect.width, height: rect.height)
-                .offset(x: rect.minX, y: rect.minY)
-                .allowsHitTesting(false)
+            CanvasSelectionChromeView(
+                rect: CanvasSelectionChromeLayerGeometry.localRect(for: rect),
+                canvasSize: rect.size,
+                lineWidth: 3,
+                zoom: zoom,
+                showsHandles: true
+            )
+            .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+            .offset(x: rect.minX, y: rect.minY)
+            .allowsHitTesting(false)
 
             ForEach(CanvasNodeResizeHandle.allCases) { handle in
-                CanvasNodeResizeHandleView(
+                CanvasNodeResizeHandleHitArea(
                     handle: handle,
                     inverseZoomScale: inverseZoomScale
                 )
@@ -1536,7 +1790,7 @@ private struct CanvasSelectedPageOverlay: View {
 }
 
 /// 論理名（日本語）: Canvas選択ノードオーバーレイ
-/// 概要: page preview の上に、選択中 object の枠とラベルを SwiftUI レイヤーとして描画します。
+/// 概要: page preview の上に、Core Animation の選択枠と SwiftUI の操作領域を重ねます。
 private struct CanvasSelectedNodeOverlay: View {
     var id: String
     var rect: CGRect
@@ -1553,12 +1807,19 @@ private struct CanvasSelectedNodeOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
+            CanvasSelectionChromeView(
+                rect: CanvasSelectionChromeLayerGeometry.localRect(for: rect),
+                canvasSize: rect.size,
+                lineWidth: 2,
+                zoom: zoom,
+                showsHandles: isResizable
+            )
+            .frame(width: rect.width, height: rect.height, alignment: .topLeading)
+            .offset(x: rect.minX, y: rect.minY)
+            .allowsHitTesting(false)
+
             Rectangle()
-                .fill(Color.accentColor.opacity(0.08))
-                .overlay(
-                    Rectangle()
-                        .stroke(Color.accentColor, lineWidth: 2)
-                )
+                .fill(Color.clear)
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
                 .contentShape(Rectangle())
@@ -1579,7 +1840,7 @@ private struct CanvasSelectedNodeOverlay: View {
 
             if isResizable {
                 ForEach(CanvasNodeResizeHandle.allCases) { handle in
-                    CanvasNodeResizeHandleView(
+                    CanvasNodeResizeHandleHitArea(
                         handle: handle,
                         inverseZoomScale: inverseZoomScale
                     )
@@ -1664,32 +1925,24 @@ private struct CanvasSelectedNodeOverlay: View {
     }
 }
 
-/// 論理名（日本語）: CanvasノードリサイズハンドルView
-/// 概要: 選択枠の辺と角に配置する、ズームに依存しない操作点です。
+/// 論理名（日本語）: Canvasノードリサイズハンドル操作領域
+/// 概要: Core Animation が描画するハンドルの上に置く、ズームに依存しない透明な操作点です。
 ///
 /// プロパティ:
 /// - `handle`: 表示するハンドル種別。
 /// - `inverseZoomScale`: 親 Canvas のズームを相殺する表示倍率。
-private struct CanvasNodeResizeHandleView: View {
+private struct CanvasNodeResizeHandleHitArea: View {
     var handle: CanvasNodeResizeHandle
     var inverseZoomScale: CGFloat
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color(nsColor: .controlBackgroundColor))
-                .overlay(
-                    Circle()
-                        .stroke(Color.accentColor, lineWidth: 1.5)
-                )
-                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
-                .frame(width: 8, height: 8)
-        }
-        .frame(width: 18, height: 18)
-        .contentShape(Rectangle())
-        .scaleEffect(inverseZoomScale)
-        .accessibilityLabel(handle.accessibilityLabel)
-        .help(handle.accessibilityLabel)
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
+            .scaleEffect(inverseZoomScale)
+            .accessibilityLabel(handle.accessibilityLabel)
+            .help(handle.accessibilityLabel)
     }
 }
 
@@ -2926,6 +3179,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         private var lastViewportSize: NSSize = .zero
         private var lastZoom: Double
         private var pendingZoomAnchor: CanvasZoomAnchorSnapshot?
+        private weak var cachedScrollRoutingWebView: WKWebView?
 
         /// 論理名（日本語）: キャンバススクロールコーディネーター初期化関数
         /// 処理概要: ズームバインディング、ドキュメント ID、初期 content を hosting view に保持します。
@@ -3019,6 +3273,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             renderedContentCanvasOrigin = contentCanvasOrigin
             lastZoom = currentZoom
             hostingView.rootView = content()
+            cachedScrollRoutingWebView = nil
             if didChangeDocument {
                 resetDocumentViewPosition()
             }
@@ -3103,6 +3358,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
             }
             monitor = nil
+            cachedScrollRoutingWebView = nil
         }
 
         /// 論理名（日本語）: 入力イベント処理関数
@@ -3295,27 +3551,21 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         }
 
         /// 論理名（日本語）: キャンバススクロールルーティング関数
-        /// 処理概要: ポインタ直下の WebView がスクロールできない場合だけ外側 NSScrollView へイベントを渡します。
+        /// 処理概要: Canvas 内の通常 wheel を外側 NSScrollView へ渡し、明示的な overflow 要素だけ WebView 側へ残します。
         ///
         /// - Parameters:
         ///   - event: scroll wheel イベント。
         ///   - scrollView: 外側のキャンバス NSScrollView。
         /// - Returns: 外側 scroll view へルーティングして消費した場合は `true`。
         private func routeCanvasScrollIfNeeded(_ event: NSEvent, in scrollView: NSScrollView) -> Bool {
-            guard let webView = webViewUnderEvent(event, in: scrollView),
-                  let scrollState = WebScrollStateRegistry.shared.state(for: webView),
-                  scrollState.isInside
-            else {
-                return false
+            guard let webView = webViewUnderEvent(event, in: scrollView) else {
+                scrollView.scrollWheel(with: event)
+                return true
             }
 
-            if let direction = dominantScrollDirection(for: event),
-               scrollState.canScroll(direction) {
-                return false
-            }
-
-            if dominantScrollDirection(for: event) == nil,
-               scrollState.canScrollAnyDirection {
+            let scrollState = WebScrollStateRegistry.shared.state(for: webView)
+            let direction = dominantScrollDirection(for: event)
+            guard CanvasScrollRoutePolicy.shouldRouteToCanvas(scrollState: scrollState, direction: direction) else {
                 return false
             }
 
@@ -3335,22 +3585,79 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         }
 
         /// 論理名（日本語）: イベント直下WebView取得関数
-        /// 処理概要: 入力イベント位置を hitTest し、祖先をたどって WKWebView を探します。
+        /// 処理概要: 選択用 SwiftUI overlay の hit-test 経路を避け、WKWebView の window frame から入力位置を判定します。
         ///
         /// - Parameters:
         ///   - event: 判定する入力イベント。
         ///   - scrollView: 探索の基準となる NSScrollView。
         /// - Returns: ポインタ直下にある WKWebView。存在しない場合は `nil`。
         private func webViewUnderEvent(_ event: NSEvent, in scrollView: NSScrollView) -> WKWebView? {
-            let point = scrollView.convert(event.locationInWindow, from: nil)
-            var view = scrollView.hitTest(point)
-            while let current = view {
-                if let webView = current as? WKWebView {
-                    return webView
-                }
-                view = current.superview
+            let windowPoint = event.locationInWindow
+            if let webView = cachedWebView(containing: windowPoint, in: scrollView) {
+                return webView
             }
-            return nil
+
+            let webViews = containedWebViews(in: scrollView.documentView ?? scrollView)
+            let frames = webViews.map { $0.convert($0.bounds, to: nil) }
+            guard let index = CanvasWindowFrameResolver.topmostFrameIndex(
+                containing: windowPoint,
+                frames: frames
+            ) else {
+                cachedScrollRoutingWebView = nil
+                return nil
+            }
+
+            let webView = webViews[index]
+            cachedScrollRoutingWebView = webView
+            return webView
+        }
+
+        /// 論理名（日本語）: キャッシュ済みWebView取得関数
+        /// 処理概要: 連続 wheel 入力では直前の WKWebView の window frame だけを再評価し、view tree 探索を避けます。
+        ///
+        /// - Parameters:
+        ///   - windowPoint: window 座標上の入力位置。
+        ///   - scrollView: 対象キャンバス scroll view。
+        /// - Returns: 入力位置を含むキャッシュ済み WebView。無効な場合は `nil`。
+        private func cachedWebView(containing windowPoint: CGPoint, in scrollView: NSScrollView) -> WKWebView? {
+            guard let webView = cachedScrollRoutingWebView,
+                  webView.window === scrollView.window,
+                  !webView.isHidden,
+                  CanvasWindowFrameResolver.contains(windowPoint, in: webView.convert(webView.bounds, to: nil))
+            else {
+                cachedScrollRoutingWebView = nil
+                return nil
+            }
+
+            return webView
+        }
+
+        /// 論理名（日本語）: 内包WebView一覧取得関数
+        /// 処理概要: Canvas document view 配下の WKWebView を描画順で収集します。
+        ///
+        /// - Parameter rootView: 探索を開始する AppKit view。
+        /// - Returns: 配下にある WKWebView の一覧。
+        private func containedWebViews(in rootView: NSView) -> [WKWebView] {
+            var webViews: [WKWebView] = []
+            appendContainedWebViews(in: rootView, to: &webViews)
+            return webViews
+        }
+
+        /// 論理名（日本語）: 内包WebView再帰収集関数
+        /// 処理概要: SwiftUI hosting 階層をたどり、表示中の WKWebView を描画順の配列へ追加します。
+        ///
+        /// - Parameters:
+        ///   - rootView: 探索対象の AppKit view。
+        ///   - webViews: 見つかった WKWebView を追加する配列。
+        private func appendContainedWebViews(in rootView: NSView, to webViews: inout [WKWebView]) {
+            if let webView = rootView as? WKWebView, !webView.isHidden {
+                webViews.append(webView)
+                return
+            }
+
+            for subview in rootView.subviews {
+                appendContainedWebViews(in: subview, to: &webViews)
+            }
         }
 
         /// 論理名（日本語）: 主スクロール方向判定関数
@@ -3437,6 +3744,62 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     }
 }
 
+/// 論理名（日本語）: キャンバススクロール配送ポリシー
+/// 概要: 選択中 WebView 上の wheel 入力を内側 DOM へ残すか、外側 Canvas へ渡すかを判定します。
+///
+/// 定義内容:
+/// - `shouldRouteToCanvas(scrollState:direction:)`: document root のスクロール可否を無視し、overflow 要素だけを WebView 側優先にします。
+enum CanvasScrollRoutePolicy {
+    /// 論理名（日本語）: キャンバス配送判定関数
+    /// 処理概要: 明示的な overflow scroll 要素が入力方向へ動ける場合だけ WebView へ残し、それ以外は Canvas へ渡します。
+    ///
+    /// - Parameters:
+    ///   - scrollState: WebView JavaScript から受け取ったポインタ直下のスクロール可否。
+    ///   - direction: scroll wheel の主方向。差分がない場合は `nil`。
+    /// - Returns: 外側 Canvas の scroll view へ入力を渡す場合は `true`。
+    static func shouldRouteToCanvas(scrollState: WebScrollState?, direction: WebScrollDirection?) -> Bool {
+        guard let scrollState, scrollState.isInside else { return true }
+
+        if let direction {
+            return !scrollState.canScrollElement(direction)
+        }
+
+        return !scrollState.canScrollAnyElementDirection
+    }
+}
+
+/// 論理名（日本語）: キャンバスwindow frame解決
+/// 概要: Canvas 上の AppKit view frame 群から、window 座標の入力位置に対応する最前面候補を解決します。
+///
+/// 定義内容:
+/// - `contains(_:in:)`: 入力点が指定 frame 内にあるかを判定します。
+/// - `topmostFrameIndex(containing:frames:)`: 入力点を含む最前面 frame の index を返します。
+enum CanvasWindowFrameResolver {
+    /// 論理名（日本語）: frame包含判定関数
+    /// 処理概要: window 座標の入力点が view の window frame に含まれるか判定します。
+    ///
+    /// - Parameters:
+    ///   - windowPoint: window 座標上の入力点。
+    ///   - frame: 判定対象の window frame。
+    /// - Returns: 入力点が frame 内にあれば `true`。
+    static func contains(_ windowPoint: CGPoint, in frame: CGRect) -> Bool {
+        frame.contains(windowPoint)
+    }
+
+    /// 論理名（日本語）: 最前面frame index取得関数
+    /// 処理概要: 描画順に並んだ frame 群を後方から調べ、入力点を含む最前面候補を返します。
+    ///
+    /// - Parameters:
+    ///   - windowPoint: window 座標上の入力点。
+    ///   - frames: 背面から前面の順に並んだ window frame 群。
+    /// - Returns: 入力点を含む最前面 frame の index。該当しない場合は `nil`。
+    static func topmostFrameIndex(containing windowPoint: CGPoint, frames: [CGRect]) -> Int? {
+        frames.indices.reversed().first { index in
+            contains(windowPoint, in: frames[index])
+        }
+    }
+}
+
 /// 論理名（日本語）: キャンバス無限ドキュメントコンテナ
 /// 概要: `NSScrollView` が無限キャンバス用 documentView として扱うための最小インターフェースです。
 ///
@@ -3485,6 +3848,61 @@ private struct CanvasInfiniteAdjustment {
     var didResize = false
 }
 
+/// 論理名（日本語）: キャンバス無限余白解決
+/// 概要: wheel 入力中に追加・削除する無限キャンバス余白量を計算します。
+///
+/// 定義内容:
+/// - `edgeExpansionTolerance`: 表示領域が端へ到達したとみなす許容値。
+/// - `expansionAmount(for:)`: 端方向へ追加する余白量。
+/// - `leadingContractionAmount(currentLeadingInset:visibleStart:)`: 左上側から削除できる余白量。
+/// - `trailingContractionSize(currentSize:minimumSize:visibleEnd:)`: 右下側の未使用余白を削った documentView サイズ。
+enum CanvasInfiniteMarginResolver {
+    static var edgeExpansionTolerance: CGFloat { 120 }
+    static var minimumExpansionStep: CGFloat { 320 }
+    static var maximumExpansionStep: CGFloat { 640 }
+    static var contractionPadding: CGFloat { 160 }
+    static var minimumContractionStep: CGFloat { 256 }
+
+    /// 論理名（日本語）: 拡張量取得関数
+    /// 処理概要: 細かい trackpad delta ごとの frame resize を避けるため、端到達時の余白をまとまった単位で追加します。
+    ///
+    /// - Parameter scrollDelta: 対象軸のスクロール意図値。
+    /// - Returns: 追加する余白量。
+    static func expansionAmount(for scrollDelta: CGFloat) -> CGFloat {
+        min(max(abs(scrollDelta), minimumExpansionStep), maximumExpansionStep)
+    }
+
+    /// 論理名（日本語）: 先頭余白縮小量取得関数
+    /// 処理概要: 左上側の未使用余白が一定量以上たまった場合だけ削除量を返します。
+    ///
+    /// - Parameters:
+    ///   - currentLeadingInset: 現在の左または上の余白量。
+    ///   - visibleStart: 対象軸の表示開始位置。
+    /// - Returns: 削除できる余白量。小さすぎる場合は `0`。
+    static func leadingContractionAmount(currentLeadingInset: CGFloat, visibleStart: CGFloat) -> CGFloat {
+        let contraction = min(currentLeadingInset, max(visibleStart - contractionPadding, 0))
+        return contraction >= minimumContractionStep ? contraction : 0
+    }
+
+    /// 論理名（日本語）: 末尾余白縮小サイズ取得関数
+    /// 処理概要: 右下側の未使用余白が一定量以上たまった場合だけ documentView を縮小します。
+    ///
+    /// - Parameters:
+    ///   - currentSize: 対象軸の現在の documentView サイズ。
+    ///   - minimumSize: 実コンテンツと viewport を含む対象軸の最小サイズ。
+    ///   - visibleEnd: 対象軸の表示終了位置。
+    /// - Returns: 縮小後の対象軸サイズ。小さすぎる場合は現在値。
+    static func trailingContractionSize(
+        currentSize: CGFloat,
+        minimumSize: CGFloat,
+        visibleEnd: CGFloat
+    ) -> CGFloat {
+        let targetSize = min(currentSize, max(minimumSize, visibleEnd + contractionPadding))
+        let contraction = currentSize - targetSize
+        return contraction >= minimumContractionStep ? targetSize : currentSize
+    }
+}
+
 /// 論理名（日本語）: キャンバス無限ドキュメントビュー
 /// 概要: SwiftUI のキャンバス内容を保持し、スクロール方向に応じて documentView の余白を調整します。
 ///
@@ -3492,11 +3910,6 @@ private struct CanvasInfiniteAdjustment {
 /// - `hostingView`: 実際の SwiftUI キャンバス内容。
 /// - `emptyClickHandler`: SwiftUI content 外側の余白がクリックされたときの処理。
 private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInfiniteDocumentContainer {
-    private static var edgeExpansionTolerance: CGFloat { 4 }
-    private static var minimumExpansionStep: CGFloat { 24 }
-    private static var maximumExpansionStep: CGFloat { 320 }
-    private static var contractionPadding: CGFloat { 160 }
-
     let hostingView: NSHostingView<Content>
     var emptyClickHandler: (() -> Void)?
 
@@ -3593,29 +4006,29 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
 
         if allowsExpansion {
             let horizontalExpansion = expansionAmount(for: scrollIntent.x)
-            if scrollIntent.x < 0, visibleRect.minX <= Self.edgeExpansionTolerance {
+            if scrollIntent.x < 0, visibleRect.minX <= CanvasInfiniteMarginResolver.edgeExpansionTolerance {
                 contentOrigin.x += horizontalExpansion
                 newSize.width += horizontalExpansion
                 adjustment.originAdjustment.x += horizontalExpansion
                 shouldLayoutContent = true
             }
 
-            if scrollIntent.x > 0, visibleRect.maxX >= frame.width - Self.edgeExpansionTolerance {
+            if scrollIntent.x > 0,
+               visibleRect.maxX >= frame.width - CanvasInfiniteMarginResolver.edgeExpansionTolerance {
                 newSize.width += horizontalExpansion
-                adjustment.originAdjustment.x += horizontalExpansion
             }
 
             let verticalExpansion = expansionAmount(for: scrollIntent.y)
-            if scrollIntent.y < 0, visibleRect.minY <= Self.edgeExpansionTolerance {
+            if scrollIntent.y < 0, visibleRect.minY <= CanvasInfiniteMarginResolver.edgeExpansionTolerance {
                 contentOrigin.y += verticalExpansion
                 newSize.height += verticalExpansion
                 adjustment.originAdjustment.y += verticalExpansion
                 shouldLayoutContent = true
             }
 
-            if scrollIntent.y > 0, visibleRect.maxY >= frame.height - Self.edgeExpansionTolerance {
+            if scrollIntent.y > 0,
+               visibleRect.maxY >= frame.height - CanvasInfiniteMarginResolver.edgeExpansionTolerance {
                 newSize.height += verticalExpansion
-                adjustment.originAdjustment.y += verticalExpansion
             }
         }
 
@@ -3694,7 +4107,7 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
     /// - Parameter scrollDelta: 対象軸のスクロール意図値。
     /// - Returns: 追加する余白量。
     private func expansionAmount(for scrollDelta: CGFloat) -> CGFloat {
-        min(max(abs(scrollDelta), Self.minimumExpansionStep), Self.maximumExpansionStep)
+        CanvasInfiniteMarginResolver.expansionAmount(for: scrollDelta)
     }
 
     /// 論理名（日本語）: 先頭余白縮小量取得関数
@@ -3705,7 +4118,10 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
     ///   - visibleStart: 対象軸の表示開始位置。
     /// - Returns: 削除できる余白量。
     private func leadingContractionAmount(currentLeadingInset: CGFloat, visibleStart: CGFloat) -> CGFloat {
-        min(currentLeadingInset, max(visibleStart - Self.contractionPadding, 0))
+        CanvasInfiniteMarginResolver.leadingContractionAmount(
+            currentLeadingInset: currentLeadingInset,
+            visibleStart: visibleStart
+        )
     }
 
     /// 論理名（日本語）: 末尾余白縮小サイズ取得関数
@@ -3721,7 +4137,11 @@ private final class CanvasInfiniteDocumentView<Content: View>: NSView, CanvasInf
         minimumSize: CGFloat,
         visibleEnd: CGFloat
     ) -> CGFloat {
-        min(currentSize, max(minimumSize, visibleEnd + Self.contractionPadding))
+        CanvasInfiniteMarginResolver.trailingContractionSize(
+            currentSize: currentSize,
+            minimumSize: minimumSize,
+            visibleEnd: visibleEnd
+        )
     }
 }
 
@@ -3822,6 +4242,8 @@ private final class CanvasOverlayScrollView: NSScrollView {
 
     private let verticalIndicator = CanvasScrollIndicatorView(axis: .vertical)
     private let horizontalIndicator = CanvasScrollIndicatorView(axis: .horizontal)
+    private var scrollActivityGeneration = 0
+    private var isScrollActivityActive = false
 
     /// 論理名（日本語）: キャンバスオーバーレイスクロールビュー初期化関数
     /// 処理概要: overlay indicator を subview として追加し、初期表示を非表示にします。
@@ -3835,6 +4257,10 @@ private final class CanvasOverlayScrollView: NSScrollView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+
+    deinit {
+        setScrollActivityActive(false)
     }
 
     /// 論理名（日本語）: レイアウト更新関数
@@ -3854,23 +4280,45 @@ private final class CanvasOverlayScrollView: NSScrollView {
     }
 
     /// 論理名（日本語）: スクロールホイール処理関数
-    /// 処理概要: スクロール前に必要な余白を追加し、標準処理後に未使用余白と indicator を更新します。
+    /// 処理概要: スクロール前に必要な余白を追加し、wheel 中は戻り方向の余白縮小を行わず indicator を更新します。
     ///
     /// - Parameter event: scroll wheel イベント。
     override func scrollWheel(with event: NSEvent) {
+        setScrollActivityActive(true)
         let scrollIntent = scrollIntent(for: event)
         applyInfiniteCanvasAdjustment(
             scrollIntent: scrollIntent,
             allowsExpansion: true,
-            allowsContraction: true
+            allowsContraction: false
         )
         super.scrollWheel(with: event)
-        applyInfiniteCanvasAdjustment(
-            scrollIntent: scrollIntent,
-            allowsExpansion: false,
-            allowsContraction: true
-        )
         refreshScrollIndicators()
+        scheduleScrollActivityReset()
+    }
+
+    /// 論理名（日本語）: スクロール活動状態更新関数
+    /// 処理概要: wheel scroll が開始または終了したことを selection chrome へ通知します。
+    ///
+    /// - Parameter isActive: scroll 中の場合は `true`。
+    private func setScrollActivityActive(_ isActive: Bool) {
+        guard isScrollActivityActive != isActive else { return }
+        isScrollActivityActive = isActive
+        NotificationCenter.default.post(
+            name: .canvasScrollActivityDidChange,
+            object: self,
+            userInfo: [CanvasScrollActivityNotificationKey.isActive: isActive]
+        )
+    }
+
+    /// 論理名（日本語）: スクロール活動終了予約関数
+    /// 処理概要: 連続 wheel event の最後から短時間後に scroll 中状態を解除します。
+    private func scheduleScrollActivityReset() {
+        scrollActivityGeneration += 1
+        let generation = scrollActivityGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(140)) { [weak self] in
+            guard let self, scrollActivityGeneration == generation else { return }
+            setScrollActivityActive(false)
+        }
     }
 
     /// 論理名（日本語）: スクロールインジケータ更新関数
@@ -4032,13 +4480,24 @@ private final class CanvasOverlayScrollView: NSScrollView {
         placement: CanvasScrollIndicatorPlacement?
     ) {
         guard let placement else {
-            indicator.isHidden = true
+            if !indicator.isHidden {
+                indicator.isHidden = true
+            }
             return
         }
 
-        indicator.isHidden = false
-        indicator.frame = placement.frame.integral
-        indicator.layer?.cornerRadius = min(indicator.bounds.width, indicator.bounds.height) / 2
+        let nextFrame = placement.frame.integral
+        if indicator.isHidden {
+            indicator.isHidden = false
+        }
+        if indicator.frame != nextFrame {
+            indicator.frame = nextFrame
+        }
+
+        let nextCornerRadius = min(indicator.bounds.width, indicator.bounds.height) / 2
+        if indicator.layer?.cornerRadius != nextCornerRadius {
+            indicator.layer?.cornerRadius = nextCornerRadius
+        }
     }
 
     /// 論理名（日本語）: インジケータ配置計算関数

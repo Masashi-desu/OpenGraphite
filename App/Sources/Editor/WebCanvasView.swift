@@ -26,12 +26,20 @@ enum WebScrollDirection {
 /// - `canScrollDown`: DOM が下方向へスクロールできるか。
 /// - `canScrollLeft`: DOM が左方向へスクロールできるか。
 /// - `canScrollRight`: DOM が右方向へスクロールできるか。
+/// - `canScrollElementUp`: document root 以外の DOM が上方向へスクロールできるか。
+/// - `canScrollElementDown`: document root 以外の DOM が下方向へスクロールできるか。
+/// - `canScrollElementLeft`: document root 以外の DOM が左方向へスクロールできるか。
+/// - `canScrollElementRight`: document root 以外の DOM が右方向へスクロールできるか。
 struct WebScrollState: Equatable {
     var isInside: Bool
     var canScrollUp: Bool
     var canScrollDown: Bool
     var canScrollLeft: Bool
     var canScrollRight: Bool
+    var canScrollElementUp: Bool
+    var canScrollElementDown: Bool
+    var canScrollElementLeft: Bool
+    var canScrollElementRight: Bool
 
     static let outside = WebScrollState(
         isInside: false,
@@ -50,31 +58,47 @@ struct WebScrollState: Equatable {
     ///   - canScrollDown: 下方向へスクロールできるか。
     ///   - canScrollLeft: 左方向へスクロールできるか。
     ///   - canScrollRight: 右方向へスクロールできるか。
+    ///   - canScrollElementUp: document root 以外の DOM が上方向へスクロールできるか。
+    ///   - canScrollElementDown: document root 以外の DOM が下方向へスクロールできるか。
+    ///   - canScrollElementLeft: document root 以外の DOM が左方向へスクロールできるか。
+    ///   - canScrollElementRight: document root 以外の DOM が右方向へスクロールできるか。
     init(
         isInside: Bool,
         canScrollUp: Bool,
         canScrollDown: Bool,
         canScrollLeft: Bool,
-        canScrollRight: Bool
+        canScrollRight: Bool,
+        canScrollElementUp: Bool = false,
+        canScrollElementDown: Bool = false,
+        canScrollElementLeft: Bool = false,
+        canScrollElementRight: Bool = false
     ) {
         self.isInside = isInside
         self.canScrollUp = canScrollUp
         self.canScrollDown = canScrollDown
         self.canScrollLeft = canScrollLeft
         self.canScrollRight = canScrollRight
+        self.canScrollElementUp = canScrollElementUp
+        self.canScrollElementDown = canScrollElementDown
+        self.canScrollElementLeft = canScrollElementLeft
+        self.canScrollElementRight = canScrollElementRight
     }
 
     /// 論理名（日本語）: payload初期化関数
     /// 処理概要: JavaScript から届く辞書 payload を Web スクロール状態へ変換します。
     ///
-    /// - Parameter payload: `inside`、`up`、`down`、`left`、`right` を持つ辞書。
+    /// - Parameter payload: `inside`、全体スクロール可否、要素スクロール可否を持つ辞書。
     init(payload: [String: Any]) {
         self.init(
             isInside: payload["inside"] as? Bool ?? false,
             canScrollUp: payload["up"] as? Bool ?? false,
             canScrollDown: payload["down"] as? Bool ?? false,
             canScrollLeft: payload["left"] as? Bool ?? false,
-            canScrollRight: payload["right"] as? Bool ?? false
+            canScrollRight: payload["right"] as? Bool ?? false,
+            canScrollElementUp: payload["elementUp"] as? Bool ?? false,
+            canScrollElementDown: payload["elementDown"] as? Bool ?? false,
+            canScrollElementLeft: payload["elementLeft"] as? Bool ?? false,
+            canScrollElementRight: payload["elementRight"] as? Bool ?? false
         )
     }
 
@@ -96,8 +120,30 @@ struct WebScrollState: Equatable {
         }
     }
 
+    /// 論理名（日本語）: 要素方向別スクロール可否判定関数
+    /// 処理概要: document root 以外の DOM が指定方向へスクロールできるかを返します。
+    ///
+    /// - Parameter direction: 判定するスクロール方向。
+    /// - Returns: 明示的な overflow scroll 要素が指定方向へスクロールできる場合は `true`。
+    func canScrollElement(_ direction: WebScrollDirection) -> Bool {
+        switch direction {
+        case .up:
+            canScrollElementUp
+        case .down:
+            canScrollElementDown
+        case .left:
+            canScrollElementLeft
+        case .right:
+            canScrollElementRight
+        }
+    }
+
     var canScrollAnyDirection: Bool {
         canScrollUp || canScrollDown || canScrollLeft || canScrollRight
+    }
+
+    var canScrollAnyElementDirection: Bool {
+        canScrollElementUp || canScrollElementDown || canScrollElementLeft || canScrollElementRight
     }
 }
 
@@ -2368,6 +2414,8 @@ struct WebCanvasView: NSViewRepresentable {
         var framePlacementOverlay = null;
         var selectionOverlay = null;
         var selectionOverlayFrame = null;
+        var selectionOverlayUpdateTimer = null;
+        var lastSelectionOverlayUpdateTime = 0;
         var reorderAnimationToken = 0;
         var editingTextElement = null;
         var editingOriginalText = '';
@@ -2864,8 +2912,15 @@ struct WebCanvasView: NSViewRepresentable {
           postSelectionOverlayPayload(null);
         }
 
+        function clearSelectionOverlayUpdateTimer() {
+          if (selectionOverlayUpdateTimer === null) { return; }
+          window.clearTimeout(selectionOverlayUpdateTimer);
+          selectionOverlayUpdateTimer = null;
+        }
+
         function updateSelectionOverlay() {
           selectionOverlayFrame = null;
+          lastSelectionOverlayUpdateTime = window.performance.now();
           const payload = selectionOverlayPayload();
           if (!payload) {
             hideSelectionOverlay();
@@ -2875,8 +2930,25 @@ struct WebCanvasView: NSViewRepresentable {
           postSelectionOverlayPayload(payload);
         }
 
-        function scheduleSelectionOverlayUpdate() {
+        function scheduleSelectionOverlayUpdate(options) {
           if (selectionOverlayFrame !== null) { return; }
+          const throttled = !!(options && options.throttled);
+          if (!throttled) {
+            clearSelectionOverlayUpdateTimer();
+          } else {
+            const minimumInterval = 80;
+            const now = window.performance.now();
+            const elapsed = now - lastSelectionOverlayUpdateTime;
+            if (elapsed < minimumInterval) {
+              if (selectionOverlayUpdateTimer === null) {
+                selectionOverlayUpdateTimer = window.setTimeout(function() {
+                  selectionOverlayUpdateTimer = null;
+                  scheduleSelectionOverlayUpdate();
+                }, minimumInterval - elapsed);
+              }
+              return;
+            }
+          }
           selectionOverlayFrame = window.requestAnimationFrame(updateSelectionOverlay);
         }
 
@@ -4092,7 +4164,17 @@ struct WebCanvasView: NSViewRepresentable {
         let lastScrollStateSignature = '';
 
         function emptyScrollState(isInside) {
-          return { inside: !!isInside, up: false, down: false, left: false, right: false };
+          return {
+            inside: !!isInside,
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            elementUp: false,
+            elementDown: false,
+            elementLeft: false,
+            elementRight: false
+          };
         }
 
         function scrollStateForElement(element, includeDocument) {
@@ -4124,6 +4206,14 @@ struct WebCanvasView: NSViewRepresentable {
           return into;
         }
 
+        function mergeElementScrollState(into, state) {
+          into.elementUp = into.elementUp || state.up;
+          into.elementDown = into.elementDown || state.down;
+          into.elementLeft = into.elementLeft || state.left;
+          into.elementRight = into.elementRight || state.right;
+          return into;
+        }
+
         function scrollStateForTarget(target) {
           const result = emptyScrollState(!!target);
           let element = target;
@@ -4132,7 +4222,9 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           while (element && element !== document.documentElement) {
-            mergeScrollState(result, scrollStateForElement(element, false));
+            const elementState = scrollStateForElement(element, false);
+            mergeScrollState(result, elementState);
+            mergeElementScrollState(result, elementState);
             element = element.parentElement;
           }
 
@@ -4147,7 +4239,11 @@ struct WebCanvasView: NSViewRepresentable {
             state.up,
             state.down,
             state.left,
-            state.right
+            state.right,
+            state.elementUp,
+            state.elementDown,
+            state.elementLeft,
+            state.elementRight
           ].join(':');
           if (signature === lastScrollStateSignature) { return; }
           lastScrollStateSignature = signature;
@@ -4642,6 +4738,7 @@ struct WebCanvasView: NSViewRepresentable {
           framePlacement = null;
           removeFramePlacementOverlay();
           hideSelectionOverlay();
+          clearSelectionOverlayUpdateTimer();
           clearNodeDragPreview();
           selectionOverlay = null;
           selectionOverlayFrame = null;
@@ -5043,7 +5140,7 @@ struct WebCanvasView: NSViewRepresentable {
         document.addEventListener('scroll', function() {
           updateLastPointerScrollState();
           scheduleStaticFlowLinkCollection();
-          scheduleSelectionOverlayUpdate();
+          scheduleSelectionOverlayUpdate({ throttled: true });
         }, true);
 
         document.addEventListener('wheel', function(event) {
