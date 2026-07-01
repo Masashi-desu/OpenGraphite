@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 @testable import OpenGraphite
 
@@ -104,5 +105,85 @@ struct CanvasScrollRoutePolicyTests {
         #expect(canScrollDocumentUp == true)
         #expect(canScrollElementUp == false)
         #expect(canScrollElementDown == true)
+    }
+}
+
+/// 論理名（日本語）: キャンバス入力領域ポリシーテストスイート
+/// 概要: 全面配置された Canvas scroll view が左右カラムと上部クローム上の入力を消費しないことを検証します。
+@Suite("キャンバス入力領域ポリシーテストスイート")
+struct CanvasInputRegionPolicyTests {
+    /// 論理名（日本語）: 左右カラム入力除外テスト
+    /// 概要: Sidebar と Inspector に覆われた座標が Canvas の有効入力領域から外れることを検証します。
+    @Test("左右カラム上の入力はCanvas領域外として扱う")
+    func testExcludesOverlayColumnsFromCanvasInputRegion() {
+        // コンディション：全面 Canvas bounds と左右カラム分の overlay avoidance を用意する（Given）
+        let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let overlayAvoidance = CanvasOverlayAvoidance(leading: 280, trailing: 300, top: 50)
+
+        // 検証内容：左カラム、右カラム、中央プレビューの点を判定する（When）
+        let leftColumnPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 120, y: 400),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: true
+        )
+        let rightColumnPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 1040, y: 400),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: true
+        )
+        let centerPreviewPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 600, y: 400),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: true
+        )
+
+        // 期待値：左右カラムは Canvas 入力から除外され、中央プレビューだけが有効になる（Then）
+        #expect(leftColumnPoint == false)
+        #expect(rightColumnPoint == false)
+        #expect(centerPreviewPoint == true)
+    }
+
+    /// 論理名（日本語）: 上部クローム入力除外テスト
+    /// 概要: flipped / non-flipped のどちらの座標系でも上部クローム領域が Canvas 入力から外れることを検証します。
+    @Test("上部クローム上の入力は座標系に応じてCanvas領域外として扱う")
+    func testExcludesTopChromeFromCanvasInputRegion() {
+        // コンディション：上部クローム分の overlay avoidance を持つ Canvas bounds を用意する（Given）
+        let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let overlayAvoidance = CanvasOverlayAvoidance(leading: 0, trailing: 0, top: 50)
+
+        // 検証内容：flipped / non-flipped それぞれの上部座標と本文座標を判定する（When）
+        let flippedTopPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 600, y: 20),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: true
+        )
+        let nonFlippedTopPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 600, y: 780),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: false
+        )
+        let flippedBodyPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 600, y: 80),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: true
+        )
+        let nonFlippedBodyPoint = CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+            CGPoint(x: 600, y: 720),
+            bounds: bounds,
+            overlayAvoidance: overlayAvoidance,
+            isFlipped: false
+        )
+
+        // 期待値：上部クロームは Canvas 入力から除外され、本文側の点だけが有効になる（Then）
+        #expect(flippedTopPoint == false)
+        #expect(nonFlippedTopPoint == false)
+        #expect(flippedBodyPoint == true)
+        #expect(nonFlippedBodyPoint == true)
     }
 }

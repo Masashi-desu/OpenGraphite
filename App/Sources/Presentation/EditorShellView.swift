@@ -2807,10 +2807,75 @@ enum CanvasPageResizeResolver {
 /// - `leading`: 左カラムに隠れないための左側回避幅。
 /// - `trailing`: 右カラムに隠れないための右側回避幅。
 /// - `top`: 上部クロームに隠れないための上側回避幅。
-private struct CanvasOverlayAvoidance: Equatable {
+struct CanvasOverlayAvoidance: Equatable {
     var leading: CGFloat = 0
     var trailing: CGFloat = 0
     var top: CGFloat = 0
+}
+
+/// 論理名（日本語）: キャンバス入力領域ポリシー
+/// 概要: 全面配置された Canvas scroll view のうち、左右カラムと上部クロームに覆われない入力可能領域を判定します。
+///
+/// 定義内容:
+/// - `isPointInActiveCanvasRegion(_:bounds:overlayAvoidance:isFlipped:)`: window 入力座標を scroll view 内の有効 Canvas 領域へ限定します。
+enum CanvasInputRegionPolicy {
+    /// 論理名（日本語）: 有効キャンバス入力領域判定関数
+    /// 処理概要: scroll view の bounds から overlay avoidance 分を除いた矩形を作り、入力点がその内側にあるかを返します。
+    ///
+    /// - Parameters:
+    ///   - point: scroll view 座標へ変換済みの入力点。
+    ///   - bounds: scroll view の bounds。
+    ///   - overlayAvoidance: Sidebar、Inspector、上部クロームを避ける幅。
+    ///   - isFlipped: scroll view 座標系が flipped か。
+    /// - Returns: 入力点が中央の有効 Canvas 領域にある場合は `true`。
+    static func isPointInActiveCanvasRegion(
+        _ point: CGPoint,
+        bounds: CGRect,
+        overlayAvoidance: CanvasOverlayAvoidance,
+        isFlipped: Bool
+    ) -> Bool {
+        guard bounds.width > 0,
+              bounds.height > 0,
+              bounds.contains(point)
+        else {
+            return false
+        }
+
+        let leading = sanitizedInset(overlayAvoidance.leading, maximum: bounds.width)
+        let trailing = sanitizedInset(overlayAvoidance.trailing, maximum: bounds.width)
+        let top = sanitizedInset(overlayAvoidance.top, maximum: bounds.height)
+        let minX = bounds.minX + leading
+        let maxX = bounds.maxX - trailing
+        let minY: CGFloat
+        let maxY: CGFloat
+        if isFlipped {
+            minY = bounds.minY + top
+            maxY = bounds.maxY
+        } else {
+            minY = bounds.minY
+            maxY = bounds.maxY - top
+        }
+
+        guard minX < maxX, minY < maxY else { return false }
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        ).contains(point)
+    }
+
+    /// 論理名（日本語）: 入力領域余白正規化関数
+    /// 処理概要: 不正値や負値を 0 にし、対象 bounds の長さを超えない値へ丸めます。
+    ///
+    /// - Parameters:
+    ///   - value: 正規化前の余白値。
+    ///   - maximum: 対象軸の最大長。
+    /// - Returns: 入力領域計算に使える余白値。
+    private static func sanitizedInset(_ value: CGFloat, maximum: CGFloat) -> CGFloat {
+        guard value.isFinite, value > 0 else { return 0 }
+        return min(value, max(maximum, 0))
+    }
 }
 
 /// 論理名（日本語）: キャンバスズーム設定
@@ -3573,15 +3638,20 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             return true
         }
 
-        /// 論理名（日本語）: スクロールビュー内イベント判定関数
-        /// 処理概要: 入力イベントの window 座標が対象 NSScrollView の bounds 内か判定します。
+        /// 論理名（日本語）: キャンバス有効入力イベント判定関数
+        /// 処理概要: 入力イベントの window 座標が左右カラムと上部クロームを除いた Canvas 領域内か判定します。
         ///
         /// - Parameters:
         ///   - event: 判定する入力イベント。
         ///   - scrollView: 対象 NSScrollView。
-        /// - Returns: イベント位置が scroll view 内なら `true`。
+        /// - Returns: イベント位置が有効 Canvas 領域内なら `true`。
         private func isEventInsideScrollView(_ event: NSEvent, scrollView: NSScrollView) -> Bool {
-            scrollView.bounds.contains(scrollView.convert(event.locationInWindow, from: nil))
+            CanvasInputRegionPolicy.isPointInActiveCanvasRegion(
+                scrollView.convert(event.locationInWindow, from: nil),
+                bounds: scrollView.bounds,
+                overlayAvoidance: (scrollView as? CanvasOverlayScrollView)?.overlayAvoidance ?? CanvasOverlayAvoidance(),
+                isFlipped: scrollView.isFlipped
+            )
         }
 
         /// 論理名（日本語）: イベント直下WebView取得関数
