@@ -3616,25 +3616,20 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         }
 
         /// 論理名（日本語）: キャンバススクロールルーティング関数
-        /// 処理概要: Canvas 内の通常 wheel を外側 NSScrollView へ渡し、明示的な overflow 要素だけ WebView 側へ残します。
+        /// 処理概要: Canvas 内の通常 wheel を、ポインタ直下が WebView なら Page 側へ直接渡し、それ以外は外側 NSScrollView へ渡します。
         ///
         /// - Parameters:
         ///   - event: scroll wheel イベント。
         ///   - scrollView: 外側のキャンバス NSScrollView。
-        /// - Returns: 外側 scroll view へルーティングして消費した場合は `true`。
+        /// - Returns: Page または外側 scroll view へルーティングして消費した場合は `true`。
         private func routeCanvasScrollIfNeeded(_ event: NSEvent, in scrollView: NSScrollView) -> Bool {
-            guard let webView = webViewUnderEvent(event, in: scrollView) else {
+            let webView = webViewUnderEvent(event, in: scrollView)
+            if CanvasScrollRoutePolicy.shouldRouteToCanvas(isPointerOverWebView: webView != nil) {
                 scrollView.scrollWheel(with: event)
-                return true
+            } else {
+                webView?.scrollWheel(with: event)
             }
 
-            let scrollState = WebScrollStateRegistry.shared.state(for: webView)
-            let direction = dominantScrollDirection(for: event)
-            guard CanvasScrollRoutePolicy.shouldRouteToCanvas(scrollState: scrollState, direction: direction) else {
-                return false
-            }
-
-            scrollView.scrollWheel(with: event)
             return true
         }
 
@@ -3730,36 +3725,6 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             }
         }
 
-        /// 論理名（日本語）: 主スクロール方向判定関数
-        /// 処理概要: X/Y のスクロール差分から支配的なスクロール方向を決定します。
-        ///
-        /// - Parameter event: scroll wheel イベント。
-        /// - Returns: 主方向。差分がない場合は `nil`。
-        private func dominantScrollDirection(for event: NSEvent) -> WebScrollDirection? {
-            let delta = scrollDelta(for: event)
-            let deltaX = delta.x
-            let deltaY = delta.y
-            guard deltaX != 0 || deltaY != 0 else { return nil }
-
-            if abs(deltaX) > abs(deltaY) {
-                return deltaX < 0 ? .right : .left
-            }
-
-            return deltaY < 0 ? .down : .up
-        }
-
-        /// 論理名（日本語）: スクロール差分取得関数
-        /// 処理概要: precise delta と legacy delta を統合し、X/Y のスクロール差分を返します。
-        ///
-        /// - Parameter event: scroll wheel イベント。
-        /// - Returns: X/Y のスクロール差分。
-        private func scrollDelta(for event: NSEvent) -> CGPoint {
-            CGPoint(
-                x: axisScrollDelta(precise: event.scrollingDeltaX, legacy: event.deltaX).value,
-                y: axisScrollDelta(precise: event.scrollingDeltaY, legacy: event.deltaY).value
-            )
-        }
-
         /// 論理名（日本語）: 垂直スクロール差分取得関数
         /// 処理概要: ズーム計算に使う垂直方向のスクロール差分と precise 判定を返します。
         ///
@@ -3815,26 +3780,18 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
 }
 
 /// 論理名（日本語）: キャンバススクロール配送ポリシー
-/// 概要: 選択中 WebView 上の wheel 入力を内側 DOM へ残すか、外側 Canvas へ渡すかを判定します。
+/// 概要: 表示中 WebView 上の wheel 入力を内側 DOM へ渡すか、外側 Canvas へ渡すかを判定します。
 ///
 /// 定義内容:
-/// - `shouldRouteToCanvas(scrollState:direction:)`: document root のスクロール可否を無視し、overflow 要素だけを WebView 側優先にします。
+/// - `shouldRouteToCanvas(isPointerOverWebView:)`: ポインタが WebView 上かどうかから WebView 側優先にするかを決めます。
 enum CanvasScrollRoutePolicy {
     /// 論理名（日本語）: キャンバス配送判定関数
-    /// 処理概要: 明示的な overflow scroll 要素が入力方向へ動ける場合だけ WebView へ残し、それ以外は Canvas へ渡します。
+    /// 処理概要: ポインタが WebView 上なら Page へ wheel 入力を渡し、それ以外は Canvas へ渡します。
     ///
-    /// - Parameters:
-    ///   - scrollState: WebView JavaScript から受け取ったポインタ直下のスクロール可否。
-    ///   - direction: scroll wheel の主方向。差分がない場合は `nil`。
+    /// - Parameter isPointerOverWebView: ポインタが WKWebView の表示領域上にあるか。
     /// - Returns: 外側 Canvas の scroll view へ入力を渡す場合は `true`。
-    static func shouldRouteToCanvas(scrollState: WebScrollState?, direction: WebScrollDirection?) -> Bool {
-        guard let scrollState, scrollState.isInside else { return true }
-
-        if let direction {
-            return !scrollState.canScrollElement(direction)
-        }
-
-        return !scrollState.canScrollAnyElementDirection
+    static func shouldRouteToCanvas(isPointerOverWebView: Bool) -> Bool {
+        !isPointerOverWebView
     }
 }
 

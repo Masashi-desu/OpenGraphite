@@ -6,15 +6,31 @@ import Testing
 /// 概要: 選択中 WebView 上の wheel 入力が Canvas と DOM scroll のどちらへ配送されるかを検証します。
 @Suite("キャンバススクロール配送ポリシーテストスイート")
 struct CanvasScrollRoutePolicyTests {
-    /// 論理名（日本語）: Document rootスクロール配送テスト
-    /// 概要: page document 自体だけがスクロール可能な場合は外側 Canvas へ wheel 入力を渡すことを検証します。
-    @Test("document rootだけがスクロール可能ならCanvasへ配送する")
-    func testRoutesDocumentRootScrollToCanvas() {
-        // コンディション：WebView 内にはいるが、明示的な overflow 要素ではなく document root だけが下方向へスクロールできる（Given）
+    /// 論理名（日本語）: WebView上スクロール維持テスト
+    /// 概要: ポインタが WebView 上にある場合は Page 側へ wheel 入力を渡すことを検証します。
+    @Test("WebView上のwheelはPageへ渡す")
+    func testKeepsWheelInWebViewWhenPointerIsOverPage() {
+        // コンディション：ポインタが WebView の表示領域上にある（Given）
+        let isPointerOverWebView = true
+
+        // 検証内容：wheel 入力の配送先を判定する（When）
+        let shouldRoute = CanvasScrollRoutePolicy.shouldRouteToCanvas(
+            isPointerOverWebView: isPointerOverWebView
+        )
+
+        // 期待値：外側 Canvas へ配送せず、Page 側へ渡す（Then）
+        #expect(shouldRoute == false)
+    }
+
+    /// 論理名（日本語）: WebView端スクロール維持テスト
+    /// 概要: page document が入力方向へもう動けない場合でも WebView 側へ wheel 入力を渡すことを検証します。
+    @Test("Page端でもWebView上のwheelはPageへ渡す")
+    func testKeepsWheelInWebViewAtDocumentEdge() {
+        // コンディション：WebView 内の document root は下方向へスクロールできないが、ポインタは WebView 上にある（Given）
         let state = WebScrollState(
             isInside: true,
-            canScrollUp: false,
-            canScrollDown: true,
+            canScrollUp: true,
+            canScrollDown: false,
             canScrollLeft: false,
             canScrollRight: false,
             canScrollElementUp: false,
@@ -22,22 +38,23 @@ struct CanvasScrollRoutePolicyTests {
             canScrollElementLeft: false,
             canScrollElementRight: false
         )
+        let isPointerOverWebView = true
 
-        // 検証内容：下方向スクロールの配送先を判定する（When）
+        // 検証内容：下方向へ動けない状態で wheel 入力の配送先を判定する（When）
         let shouldRoute = CanvasScrollRoutePolicy.shouldRouteToCanvas(
-            scrollState: state,
-            direction: .down
+            isPointerOverWebView: isPointerOverWebView
         )
 
-        // 期待値：page document のスクロールに吸われず、外側 Canvas へ配送される（Then）
-        #expect(shouldRoute == true)
+        // 期待値：DOM の端到達状態に関係なく、Page 側へ wheel 入力を渡す（Then）
+        #expect(state.canScroll(.down) == false)
+        #expect(shouldRoute == false)
     }
 
     /// 論理名（日本語）: Overflow要素スクロール維持テスト
-    /// 概要: ポインタ直下の overflow 要素がスクロール可能な場合は WebView 側へ wheel 入力を残すことを検証します。
-    @Test("overflow要素がスクロール可能ならWebViewに残す")
+    /// 概要: ポインタ直下の overflow 要素がスクロール可能な場合は WebView 側へ wheel 入力を渡すことを検証します。
+    @Test("overflow要素がスクロール可能ならWebViewへ渡す")
     func testKeepsOverflowElementScrollInWebView() {
-        // コンディション：ポインタ直下の DOM overflow 要素が下方向へスクロールできる（Given）
+        // コンディション：ポインタが WebView の表示領域上にある（Given）
         let state = WebScrollState(
             isInside: true,
             canScrollUp: false,
@@ -49,31 +66,31 @@ struct CanvasScrollRoutePolicyTests {
             canScrollElementLeft: false,
             canScrollElementRight: false
         )
+        let isPointerOverWebView = true
 
-        // 検証内容：下方向スクロールの配送先を判定する（When）
+        // 検証内容：overflow 要素がある状態で wheel 入力の配送先を判定する（When）
         let shouldRoute = CanvasScrollRoutePolicy.shouldRouteToCanvas(
-            scrollState: state,
-            direction: .down
+            isPointerOverWebView: isPointerOverWebView
         )
 
-        // 期待値：DOM 内の明示的な scroll 操作として WebView 側に残る（Then）
+        // 期待値：DOM 内の明示的な scroll 操作として WebView 側へ渡す（Then）
+        #expect(state.canScrollElement(.down) == true)
         #expect(shouldRoute == false)
     }
 
-    /// 論理名（日本語）: 未同期スクロール状態配送テスト
-    /// 概要: WebView の scroll state がまだ届いていない初回 wheel は Canvas へ渡すことを検証します。
-    @Test("scroll state未同期ならCanvasへ配送する")
-    func testRoutesWhenScrollStateIsUnavailable() {
-        // コンディション：WebView hit-test は済んでいるが JavaScript 由来の scroll state がまだない（Given）
-        let state: WebScrollState? = nil
+    /// 論理名（日本語）: WebView外スクロール配送テスト
+    /// 概要: ポインタが WebView 上にない場合は外側 Canvas へ wheel 入力を渡すことを検証します。
+    @Test("WebView外のwheelはCanvasへ配送する")
+    func testRoutesWheelToCanvasOutsideWebView() {
+        // コンディション：ポインタが WebView の表示領域外にある（Given）
+        let isPointerOverWebView = false
 
-        // 検証内容：下方向スクロールの配送先を判定する（When）
+        // 検証内容：wheel 入力の配送先を判定する（When）
         let shouldRoute = CanvasScrollRoutePolicy.shouldRouteToCanvas(
-            scrollState: state,
-            direction: .down
+            isPointerOverWebView: isPointerOverWebView
         )
 
-        // 期待値：初回 wheel が document root scroll に吸われず、外側 Canvas へ配送される（Then）
+        // 期待値：外側 Canvas へ配送される（Then）
         #expect(shouldRoute == true)
     }
 
