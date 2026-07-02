@@ -653,6 +653,45 @@ struct OpenGraphiteAgentCoreTests {
         #expect(result.localeField == "selectedLanguage")
     }
 
+    /// 論理名（日本語）: i18n locale resource自動検出テスト
+    /// 概要: literal loadPath から実在する追加 locale JSON を検出することを確認します。
+    @Test("i18n inspectはliteral loadPath配下の追加locale JSONを検出する")
+    func testI18nInspectDiscoversExistingLocaleResources() throws {
+        // コンディション：loadPath 配下に default 以外の locale JSON を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML(
+            """
+            <!doctype html>
+            <html><head><script src="./i18n.js"></script></head><body>
+              <Title data-og-id="title" data-og-type="text" data-og-text-source="binding" data-i18n-key="home.title">日本語</Title>
+            </body></html>
+            """
+        )
+        try """
+        i18n.init({
+          lng: "ja",
+          fallbackLng: "ja",
+          backend: { loadPath: "/locales/{{lng}}.json" }
+        });
+        """.write(to: fixture.rootURL.appendingPathComponent("i18n.js"), atomically: true, encoding: .utf8)
+        let localeDirectory = fixture.rootURL.appendingPathComponent("locales")
+        try FileManager.default.createDirectory(at: localeDirectory, withIntermediateDirectories: true)
+        try #"{"home.title":"Titre"}"#.write(
+            to: localeDirectory.appendingPathComponent("fr.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try fixture.writeProject(to: projectURL)
+
+        // 検証内容：i18n runtime を検査する（When）
+        let result = try fixture.core.inspectI18n(projectURL: projectURL, pageID: "home")
+
+        // 期待値：明示指定していない fr locale resource も候補として返る（Then）
+        #expect(result.resources.contains { $0.locale == "fr" && $0.exists && $0.editable })
+    }
+
     /// 論理名（日本語）: i18n external loadPath検出テスト
     /// 概要: env 参照などの動的 loadPath を external readonly として扱うことを確認します。
     @Test("i18n inspectはenv参照loadPathをexternal readonlyとして検出する")

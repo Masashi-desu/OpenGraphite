@@ -1826,6 +1826,101 @@ struct EditorStoreTests {
         #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken)
     }
 
+    /// 論理名（日本語）: Inspector別locale更新テスト
+    /// 概要: preview 表示中ではない locale resource を保存しても現在の表示 cache と WebView mutation を変更しないことを検証します。
+    @Test("Inspectorの別locale更新は対象locale JSONだけを更新する")
+    func testUpdateInactiveResolvedTextContentPersistsOnlySelectedLocaleResource() throws {
+        // コンディション：selectedLanguage=ja の preview と ja / eng locale JSON を持つ一時プロジェクトを開く
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html lang="ja" data-og-lang-source="binding" data-og-lang-field="selectedLanguage"><head>
+          <script src="./i18n.js" defer></script>
+        </head><body>
+          <LeadText
+            data-og-id="hero-lead"
+            data-og-internal-id="lead-node"
+            data-og-type="text"
+            data-og-text-source="binding"
+            data-i18n-key="home.hero.lead">HTML fallback</LeadText>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try """
+        function selectedLanguage() { return "ja"; }
+        const i18n = { init(config) { return config; } };
+        i18n.init({
+          lng: selectedLanguage(),
+          fallbackLng: "ja",
+          backend: { loadPath: "/locales/{{lng}}.json" }
+        });
+        """.write(to: fixture.publicURL.appendingPathComponent("i18n.js"), atomically: true, encoding: .utf8)
+        let localeDirectory = fixture.publicURL.appendingPathComponent("locales")
+        try FileManager.default.createDirectory(at: localeDirectory, withIntermediateDirectories: true)
+        try #"{"home.hero.lead":"現在 ja"}"#.write(
+            to: localeDirectory.appendingPathComponent("ja.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try #"{"home.hero.lead":"Current English"}"#.write(
+            to: localeDirectory.appendingPathComponent("eng.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try fixture.writeProject(
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 100,
+                        previewContext: OpenGraphitePreviewContext(fieldMocks: ["selectedLanguage": "ja"])
+                    )
+                )
+            ]
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "hero-lead",
+                "internalID": "lead-node",
+                "tagName": "leadtext",
+                "type": "text",
+                "textContent": "現在 ja",
+                "fallbackTextContent": "HTML fallback",
+                "textSource": "binding",
+                "i18nKey": "home.hero.lead",
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero-lead")
+        let node = try #require(store.nodes.first)
+        let inspection = try #require(store.selectedI18nRuntimeInspection)
+
+        // 検証内容：別 locale の resource 値を読み取り、入力中 preview と確定保存を eng に対して行う
+        let values = store.i18nTextResourceValues(for: node, inspection: inspection)
+        let previewAccepted = store.previewActiveResolvedTextContent("Typing English", locale: "eng")
+        let saveAccepted = store.updateActiveResolvedTextContent("Updated English", locale: "eng")
+
+        // 期待値：eng resource だけが更新され、ja 表示中の cache と WebView mutation は変更されない
+        let jaResource = try Self.localeJSON(at: localeDirectory.appendingPathComponent("ja.json"))
+        let engResource = try Self.localeJSON(at: localeDirectory.appendingPathComponent("eng.json"))
+        #expect(values["ja"] == "現在 ja")
+        #expect(values["eng"] == "Current English")
+        #expect(previewAccepted == true)
+        #expect(saveAccepted == true)
+        #expect(jaResource["home.hero.lead"] as? String == "現在 ja")
+        #expect(engResource["home.hero.lead"] as? String == "Updated English")
+        #expect(store.nodes[0].textContent == "現在 ja")
+        #expect(store.textMutation == nil)
+    }
+
     /// 論理名（日本語）: 固定HTML同期対象保存テスト
     /// 概要: 選択ページが切り替わっても、object edit は capture 済み HTML target へ保存されることを検証します。
     @Test("object editは選択切替後も固定targetへ保存する")

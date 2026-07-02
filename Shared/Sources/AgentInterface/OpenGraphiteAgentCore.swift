@@ -1585,12 +1585,12 @@ struct OpenGraphiteAgentCore {
         pageID: String,
         locales: [String]
     ) throws -> OpenGraphiteI18nRecommendResult {
-        let normalizedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
+        let requestedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
         let target = try projectPageTarget(projectURL: projectURL, pageID: pageID)
         let htmlRootURL = target.loadedProject.rootURL
             .appendingPathComponent(target.loadedProject.project.htmlRoot)
             .standardizedFileURL
-        let beforeInspection = try inspectI18n(target: target, locales: normalizedLocales)
+        let beforeInspection = try inspectI18n(target: target, locales: requestedLocales)
         let html = try String(contentsOf: target.htmlURL, encoding: .utf8)
         var nextHTML = html
         var updated = false
@@ -1619,7 +1619,7 @@ struct OpenGraphiteAgentCore {
             : Self.recommendedI18nLoadPath
         let textBindings = OpenGraphiteHTMLDocument(html: nextHTML).textBindingResources()
         var resourceStatuses: [OpenGraphiteI18nResourceStatus] = []
-        for locale in normalizedLocales {
+        for locale in requestedLocales {
             let resourceURL = localeResourceURL(
                 loadPath: resourceLoadPath,
                 locale: locale,
@@ -2580,7 +2580,7 @@ struct OpenGraphiteAgentCore {
         target: OpenGraphiteProjectPageTarget,
         locales: [String]
     ) throws -> OpenGraphiteI18nRuntimeInspection {
-        let normalizedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
+        let requestedLocales = normalizedLocales(locales.isEmpty ? ["ja", "eng"] : locales)
         let html = try String(contentsOf: target.htmlURL, encoding: .utf8)
         let htmlDocument = OpenGraphiteHTMLDocument(html: html)
         let htmlRootURL = target.loadedProject.rootURL
@@ -2598,7 +2598,18 @@ struct OpenGraphiteAgentCore {
         let resourceLoadPath = detected.loadPath.value ?? Self.recommendedI18nLoadPath
         let configURL = detected.configSource.map { URL(fileURLWithPath: $0) }
         let resourceEditable = detected.loadPath.source != .external
-        let resources = normalizedLocales.map { locale in
+        let discoveredLocales = resourceEditable
+            ? discoveredLocaleResourceLocales(
+                loadPath: resourceLoadPath,
+                htmlRootURL: htmlRootURL,
+                pageURL: target.htmlURL,
+                configURL: configURL
+            )
+            : []
+        let localeCandidates = normalizedLocales(
+            requestedLocales + discoveredLocales
+        )
+        let resources = localeCandidates.map { locale in
             let resourceURL = localeResourceURL(
                 loadPath: resourceLoadPath,
                 locale: locale,
@@ -2769,6 +2780,106 @@ struct OpenGraphiteAgentCore {
         }
         let baseURL = configURL?.deletingLastPathComponent() ?? pageURL.deletingLastPathComponent()
         return baseURL.appendingPathComponent(path).standardizedFileURL
+    }
+
+    /// 論理名（日本語）: locale resource候補検出関数
+    /// 処理概要: literal loadPath の placeholder 位置から、実在する locale JSON の locale 名を逆算します。
+    ///
+    /// - Parameters:
+    ///   - loadPath: i18n backend.loadPath。
+    ///   - htmlRootURL: HTML root URL。
+    ///   - pageURL: 対象 HTML URL。
+    ///   - configURL: i18n config を検出した file URL。
+    /// - Returns: loadPath から参照できる locale 名一覧。
+    private func discoveredLocaleResourceLocales(
+        loadPath: String,
+        htmlRootURL: URL,
+        pageURL: URL,
+        configURL: URL?
+    ) -> [String] {
+        guard loadPath.contains("{{lng}}") || loadPath.contains("{{locale}}") else {
+            return []
+        }
+
+        let sentinel = "__OPENGRAPHITE_LOCALE__"
+        let templateURL = localeResourceURL(
+            loadPath: loadPath,
+            locale: sentinel,
+            htmlRootURL: htmlRootURL,
+            pageURL: pageURL,
+            configURL: configURL
+        )
+        let components = templateURL.standardizedFileURL.pathComponents
+        guard let templateIndex = components.firstIndex(where: { $0.contains(sentinel) }) else {
+            return []
+        }
+
+        let baseURL = Self.fileURL(fromPathComponents: Array(components.prefix(templateIndex)))
+        let templateComponent = components[templateIndex]
+        let suffixComponents = Array(components.dropFirst(templateIndex + 1))
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: baseURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        let discovered = entries.compactMap { entry -> String? in
+            guard let locale = Self.localeName(from: entry.lastPathComponent, template: templateComponent, sentinel: sentinel) else {
+                return nil
+            }
+            var candidateURL = baseURL.appendingPathComponent(
+                templateComponent.replacingOccurrences(of: sentinel, with: locale)
+            )
+            for component in suffixComponents {
+                candidateURL.appendPathComponent(component)
+            }
+            guard FileManager.default.fileExists(atPath: candidateURL.path) else {
+                return nil
+            }
+            return locale
+        }
+        return normalizedLocales(discovered)
+    }
+
+    /// 論理名（日本語）: path component URL生成関数
+    /// 処理概要: `URL.pathComponents` 由来の component 配列から file URL を復元します。
+    ///
+    /// - Parameter components: path component 配列。
+    /// - Returns: 復元した file URL。
+    private static func fileURL(fromPathComponents components: [String]) -> URL {
+        guard !components.isEmpty else {
+            return URL(fileURLWithPath: "/")
+        }
+        if components.first == "/" {
+            let path = "/" + components.dropFirst().joined(separator: "/")
+            return URL(fileURLWithPath: path.isEmpty ? "/" : path)
+        }
+        return URL(fileURLWithPath: components.joined(separator: "/"))
+    }
+
+    /// 論理名（日本語）: locale component逆算関数
+    /// 処理概要: sentinel を含む template component と実在 component から locale 名を取り出します。
+    ///
+    /// - Parameters:
+    ///   - component: 実在する path component。
+    ///   - template: sentinel を含む path component template。
+    ///   - sentinel: locale placeholder 代替文字列。
+    /// - Returns: 抽出できた locale 名。
+    private static func localeName(from component: String, template: String, sentinel: String) -> String? {
+        let parts = template.components(separatedBy: sentinel)
+        guard parts.count == 2 else { return nil }
+        let prefix = parts[0]
+        let suffix = parts[1]
+        guard component.hasPrefix(prefix), component.hasSuffix(suffix) else {
+            return nil
+        }
+        let start = component.index(component.startIndex, offsetBy: prefix.count)
+        let end = component.index(component.endIndex, offsetBy: -suffix.count)
+        guard start <= end else { return nil }
+        let locale = String(component[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return locale.isEmpty ? nil : locale
     }
 
     /// 論理名（日本語）: locale resource merge関数

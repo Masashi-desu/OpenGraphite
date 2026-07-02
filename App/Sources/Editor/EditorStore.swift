@@ -2753,15 +2753,58 @@ final class EditorStore: ObservableObject {
         return true
     }
 
+    /// 論理名（日本語）: i18nテキストresource値一覧取得関数
+    /// 処理概要: 選択中 text node の i18n key に対応する locale JSON 値を読み取ります。
+    ///
+    /// - Parameters:
+    ///   - node: 値を読み取る binding text node。
+    ///   - inspection: i18n runtime 検査結果。
+    /// - Returns: locale を key、resource 内 text を value とする辞書。
+    func i18nTextResourceValues(
+        for node: OpenGraphiteNode,
+        inspection: OpenGraphiteI18nRuntimeInspection?
+    ) -> [String: String] {
+        guard node.isTextBinding,
+              let i18nKey = Self.nonEmptyTrimmed(node.i18nKey),
+              let inspection
+        else {
+            return [:]
+        }
+
+        var values: [String: String] = [:]
+        for resource in inspection.resources {
+            let resourceURL = URL(fileURLWithPath: resource.path)
+            guard let value = Self.i18nTextResourceValue(at: resourceURL, key: i18nKey) else {
+                continue
+            }
+            values[resource.locale] = value
+        }
+        return values
+    }
+
     /// 論理名（日本語）: Active Resolvedテキスト編集文脈取得関数
     /// 処理概要: 選択中 binding text の表示 locale と locale JSON への書き戻し可否を返します。
     ///
     /// - Parameter node: 文脈を取得する text node。
     /// - Returns: 表示 locale と編集可否。binding text ではない場合や locale を解決できない場合は `nil`。
     func activeResolvedTextEditContext(for node: OpenGraphiteNode) -> (locale: String, isEditable: Bool)? {
+        resolvedTextEditContext(for: node, locale: nil)
+    }
+
+    /// 論理名（日本語）: Resolvedテキスト編集文脈取得関数
+    /// 処理概要: 指定 locale の locale JSON へ書き戻せるかを返します。locale 未指定時は preview 表示中 locale を使います。
+    ///
+    /// - Parameters:
+    ///   - node: 文脈を取得する text node。
+    ///   - locale: 対象 locale。`nil` の場合は active preview locale。
+    /// - Returns: 対象 locale と編集可否。binding text ではない場合や locale を解決できない場合は `nil`。
+    func resolvedTextEditContext(
+        for node: OpenGraphiteNode,
+        locale: String?
+    ) -> (locale: String, isEditable: Bool)? {
         guard node.isTextBinding,
               node.i18nKey != nil,
-              let locale = activeResolvedTextLocale()
+              let resolvedLocale = Self.nonEmptyTrimmed(locale) ?? activeResolvedTextLocale()
         else {
             return nil
         }
@@ -2769,12 +2812,12 @@ final class EditorStore: ObservableObject {
         guard let inspection = selectedI18nRuntimeInspection,
               inspection.adapter != .unknown
         else {
-            return (locale: locale, isEditable: false)
+            return (locale: resolvedLocale, isEditable: false)
         }
 
-        let resource = inspection.resources.first { $0.locale == locale }
+        let resource = inspection.resources.first { $0.locale == resolvedLocale }
         let isEditable = resource?.editable ?? (inspection.loadPath.source != .external)
-        return (locale: locale, isEditable: isEditable)
+        return (locale: resolvedLocale, isEditable: isEditable)
     }
 
     /// 論理名（日本語）: Active Resolvedテキスト内容プレビュー関数
@@ -2805,14 +2848,17 @@ final class EditorStore: ObservableObject {
             guard target.htmlURL.standardizedFileURL == expectedPageURL.standardizedFileURL else { return false }
         }
 
-        let resolvedLocale = Self.nonEmptyTrimmed(locale) ?? activeResolvedTextLocale()
-        guard resolvedLocale != nil else {
+        guard let resolvedLocale = Self.nonEmptyTrimmed(locale) ?? activeResolvedTextLocale() else {
             lastError = "表示中 locale を解決できないため Active Resolved を反映できません。"
             return false
         }
-        guard activeResolvedTextEditContext(for: selectedNode)?.isEditable == true else {
-            lastError = "表示中 locale の text resource は編集できません。Project の i18n 設定を確認してください。"
+        guard resolvedTextEditContext(for: selectedNode, locale: resolvedLocale)?.isEditable == true else {
+            lastError = "\(resolvedLocale) の text resource は編集できません。Project の i18n 設定を確認してください。"
             return false
+        }
+        guard isActiveResolvedLocale(resolvedLocale) else {
+            lastError = nil
+            return true
         }
         guard let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) else {
             return false
@@ -2868,7 +2914,7 @@ final class EditorStore: ObservableObject {
             lastError = "表示中 locale を解決できないため Active Resolved を保存できません。"
             return false
         }
-        guard activeResolvedTextEditContext(for: selectedNode)?.isEditable == true else {
+        guard resolvedTextEditContext(for: selectedNode, locale: resolvedLocale)?.isEditable == true else {
             lastError = "\(resolvedLocale) の locale JSON は編集できません。Project の i18n 設定を確認してください。"
             return false
         }
@@ -2888,15 +2934,16 @@ final class EditorStore: ObservableObject {
                 return false
             }
 
-            if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            if isActiveResolvedLocale(resolvedLocale),
+               let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
                 nodes[index].textContent = value
+                publishTextMutation(
+                    pageURL: target.htmlURL,
+                    nodeID: selectedNode.id,
+                    value: value,
+                    mode: .resolved
+                )
             }
-            publishTextMutation(
-                pageURL: target.htmlURL,
-                nodeID: selectedNode.id,
-                value: value,
-                mode: .resolved
-            )
             lastError = nil
             statusMessage = result.updated
                 ? "\(selectedNode.displayID) の \(resolvedLocale) text resource を更新しました。"
@@ -4098,6 +4145,34 @@ final class EditorStore: ObservableObject {
             return locale
         }
         return Self.nonEmptyTrimmed(htmlContext.langValue)
+    }
+
+    /// 論理名（日本語）: Active Resolved locale一致判定関数
+    /// 処理概要: 指定 locale が現在 preview 表示中の locale と一致するかを判定します。
+    ///
+    /// - Parameter locale: 判定対象 locale。
+    /// - Returns: active preview locale と一致する場合は `true`。
+    private func isActiveResolvedLocale(_ locale: String) -> Bool {
+        activeResolvedTextLocale() == locale
+    }
+
+    /// 論理名（日本語）: i18nテキストresource値読込関数
+    /// 処理概要: flat locale JSON から指定 key の文字列値だけを読み取ります。
+    ///
+    /// - Parameters:
+    ///   - url: locale JSON URL。
+    ///   - key: 読み取る i18n key。
+    /// - Returns: resource に保存された文字列値。未作成、非文字列、読込失敗時は `nil`。
+    private static func i18nTextResourceValue(at url: URL, key: String) -> String? {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              !data.isEmpty,
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let resource = object as? [String: Any]
+        else {
+            return nil
+        }
+        return resource[key] as? String
     }
 
     /// 論理名（日本語）: 空でないtrim済み文字列取得関数
