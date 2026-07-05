@@ -234,6 +234,51 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!css.contains("--color-primary"))
     }
 
+    /// 論理名（日本語）: CLIプロジェクト作成テスト
+    /// 概要: `ogkiln project create` が project root と `.ogp` 作成先を分けて初期 project を作成できることを確認します。
+    @Test("CLIはrootとogp作成先を指定してprojectを作成できる")
+    func testCLIProjectCreateWritesRootedProject() throws {
+        // コンディション：CLI の current directory に OpenGraphite.css seed を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let seedCSSURL = fixture.rootURL.appendingPathComponent("CSS/OpenGraphite.css")
+        try FileManager.default.createDirectory(
+            at: seedCSSURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "body { margin: 0; }\n".write(to: seedCSSURL, atomically: true, encoding: .utf8)
+        let cli = OgkilnCLI()
+        var stdout = ""
+        var stderr = ""
+
+        // 検証内容：project root と `.ogp` 出力先を指定して CLI を実行する（When）
+        let exitCode = cli.run(
+            arguments: [
+                "project", "create",
+                "--root", "WebRoot",
+                "--output", "Metadata/Created.ogp",
+                "--json"
+            ],
+            currentDirectory: fixture.rootURL,
+            stdout: { stdout += $0 },
+            stderr: { stderr += $0 }
+        )
+        let summary = try JSONDecoder().decode(OpenGraphiteProjectSummary.self, from: Data(stdout.utf8))
+        let projectURL = fixture.rootURL.appendingPathComponent("Metadata/Created.ogp")
+        let webRootURL = fixture.rootURL.appendingPathComponent("WebRoot")
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+
+        // 期待値：`.ogp` は output に、初期 HTML/CSS は root 配下に作成される（Then）
+        #expect(exitCode == 0)
+        #expect(stderr.isEmpty)
+        #expect(summary.projectURL == projectURL.path)
+        #expect(summary.rootURL == webRootURL.standardizedFileURL.path)
+        #expect(summary.pages.map(\.id) == ["home"])
+        #expect(loadedProject.project.repositoryRoot == "../WebRoot")
+        #expect(FileManager.default.fileExists(atPath: webRootURL.appendingPathComponent("public/index.html").path))
+        #expect(FileManager.default.fileExists(atPath: webRootURL.appendingPathComponent("CSS/OpenGraphite.css").path))
+    }
+
     /// 論理名（日本語）: CSS位置宣言編集テスト
     /// 概要: position と inset 系の標準 CSS property を node 単位で保存できることを確認します。
     @Test("標準CSSのpositionとinsetを保存できる")

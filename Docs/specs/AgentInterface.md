@@ -241,6 +241,7 @@ AI と MCP は HTML 全体の置換より次の node 単位操作を優先する
 ```bash
 ogkiln contract get --json
 ogkiln project current --json
+ogkiln project create --root ../MySite --output ../MySite/OpenGraphiteProject.ogp --json
 ogkiln design-token list SampleProject/OpenGraphiteSample.ogp --json
 ogkiln design-token set SampleProject/OpenGraphiteSample.ogp --name --color-accent --value '#f5f7f8'
 ogkiln design-token remove SampleProject/OpenGraphiteSample.ogp --name --space-medium

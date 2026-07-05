@@ -9,6 +9,7 @@ sources=(
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteProject.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteNode.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteReferenceID.swift"
+  "$ROOT_DIR/App/Sources/Infrastructure/ProjectCreator.swift"
   "$ROOT_DIR/App/Sources/Infrastructure/ProjectLoader.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteContract.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCurrentProjectStore.swift"
@@ -39,4 +40,4 @@ if [[ "$needs_build" -eq 1 ]]; then
   xcrun swiftc -O -framework AppKit -framework WebKit -o "$BINARY" "${sources[@]}"
 fi
 
-exec "$BINARY" "$@"
+OPENGRAPHITE_CSS_LIBRARY_SOURCE="${OPENGRAPHITE_CSS_LIBRARY_SOURCE:-$ROOT_DIR/CSS/OpenGraphite.css}" exec "$BINARY" "$@"

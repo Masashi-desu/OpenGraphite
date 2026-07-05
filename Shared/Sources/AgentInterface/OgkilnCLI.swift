@@ -55,6 +55,24 @@ struct OgkilnCLI {
             let summary = try core.inspectProject(at: projectURL)
             return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
 
+        case ["project", "create"]:
+            let root = try requiredOption("--root", in: arguments)
+            let output = try requiredOption("--output", in: arguments)
+            let rootURL = url(for: root, currentDirectory: currentDirectory)
+            let outputURL = url(for: output, currentDirectory: currentDirectory)
+            let creator = ProjectCreator(
+                cssLibrarySourceURL: {
+                    self.cssLibrarySourceURL(currentDirectory: currentDirectory, projectRootURL: rootURL)
+                }
+            )
+            let createdURL = try creator.createProject(
+                at: outputURL,
+                projectRootURL: rootURL,
+                copyCSSLibraryWhenPublicExists: true
+            )
+            let summary = try core.inspectProject(at: createdURL)
+            return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
         case ["project", "inspect"]:
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let summary = try core.inspectProject(at: projectURL)
@@ -754,6 +772,72 @@ struct OgkilnCLI {
         arguments.contains(name)
     }
 
+    /// 論理名（日本語）: CSSライブラリseed解決関数
+    /// 処理概要: CLI から新規 project を作る際にコピー元にする OpenGraphite.css を環境変数、作業ディレクトリ、bundle から探します。
+    ///
+    /// - Parameters:
+    ///   - currentDirectory: CLI の相対パス解決基準。
+    ///   - projectRootURL: 作成対象 project root。
+    /// - Returns: コピー元として利用できる OpenGraphite.css。見つからない場合は `nil`。
+    private func cssLibrarySourceURL(currentDirectory: URL, projectRootURL: URL) -> URL? {
+        let environmentPath = ProcessInfo.processInfo.environment["OPENGRAPHITE_CSS_LIBRARY_SOURCE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let environmentURL = environmentPath.flatMap { path -> URL? in
+            guard !path.isEmpty else { return nil }
+            return url(for: path, currentDirectory: currentDirectory)
+        }
+        let candidates = [
+            environmentURL,
+            nearestCSSLibraryURL(startingAt: currentDirectory),
+            nearestCSSLibraryURL(startingAt: projectRootURL),
+            Bundle.main.resourceURL?.appendingPathComponent("CSS/OpenGraphite.css"),
+            Bundle.main.url(forResource: "OpenGraphite", withExtension: "css", subdirectory: "CSS")
+        ]
+
+        return candidates
+            .compactMap { $0?.standardizedFileURL }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// 論理名（日本語）: 近傍CSSライブラリ探索関数
+    /// 処理概要: 指定 URL から親方向へ `CSS/OpenGraphite.css` を探します。
+    ///
+    /// - Parameter startingAt: 探索開始 URL。
+    /// - Returns: 見つかった CSS library URL。見つからない場合は `nil`。
+    private func nearestCSSLibraryURL(startingAt startURL: URL) -> URL? {
+        var currentPath = directoryURL(for: startURL).standardizedFileURL.path
+        let fileManager = FileManager.default
+        while true {
+            let current = URL(fileURLWithPath: currentPath, isDirectory: true)
+            let candidate = current.appendingPathComponent("CSS/OpenGraphite.css")
+            if fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+
+            let parentPath = (currentPath as NSString).deletingLastPathComponent
+            if parentPath == currentPath || parentPath.isEmpty {
+                return nil
+            }
+            currentPath = parentPath
+        }
+    }
+
+    /// 論理名（日本語）: ディレクトリURL解決関数
+    /// 処理概要: 存在するディレクトリまたはディレクトリとして扱うべき URL を探索開始点へ正規化します。
+    ///
+    /// - Parameter url: 入力 URL。
+    /// - Returns: 親探索に使うディレクトリ URL。
+    private func directoryURL(for url: URL) -> URL {
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return url
+        }
+        if url.hasDirectoryPath || url.pathExtension.isEmpty {
+            return url
+        }
+        return url.deletingLastPathComponent()
+    }
+
     private func doubleOption(_ name: String, in arguments: [String]) throws -> Double? {
         guard let value = try optionalOption(name, in: arguments) else {
             return nil
@@ -846,6 +930,7 @@ struct OgkilnCLI {
     Usage:
       ogkiln contract get --json
       ogkiln project current --json
+      ogkiln project create --root <project-root> --output <project.ogp> [--json]
       ogkiln project inspect <project.ogp|current> --json
       ogkiln design-token list <project.ogp|current> --json
       ogkiln design-token set <project.ogp|current> --name <css-custom-property> --value <css-value>

@@ -84,6 +84,74 @@ struct ProjectCreatorTests {
         #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.appendingPathComponent("CSS/OpenGraphite.css").path))
     }
 
+    /// 論理名（日本語）: 分離ルートプロジェクトseed作成テスト
+    /// 概要: `.ogp` の作成先と project root が異なる場合に、相対 repositoryRoot と root 配下の seed が作成されることを検証します。
+    @Test("rootとogp作成先を分けて新規projectを作成できる")
+    func testCreateProjectWithSeparateRootWritesRepositoryRoot() throws {
+        // コンディション：OpenGraphite.css seed、project root、`.ogp` 保存用ディレクトリを用意する（Given）
+        let fixture = try ProjectCreatorFixture()
+        defer { fixture.cleanUp() }
+        let webRootURL = fixture.rootURL.appendingPathComponent("WebRoot", isDirectory: true)
+        let metadataURL = fixture.rootURL.appendingPathComponent("Metadata", isDirectory: true)
+        let projectURL = metadataURL.appendingPathComponent("Separated.ogp")
+        let creator = ProjectCreator(cssLibrarySourceURL: { fixture.cssSourceURL })
+
+        // 検証内容：project root と `.ogp` 作成先を分けて新規 project を作成する（When）
+        let createdProjectURL = try creator.createProject(
+            at: projectURL,
+            projectRootURL: webRootURL,
+            copyCSSLibraryWhenPublicExists: false
+        )
+        let loadedProject = try ProjectLoader().loadProject(at: createdProjectURL)
+        let htmlURL = webRootURL.appendingPathComponent("public/index.html")
+        let cssURL = webRootURL.appendingPathComponent("CSS/OpenGraphite.css")
+
+        // 期待値：`.ogp` は指定先に作られ、HTML/CSS は project root 配下で解決される（Then）
+        #expect(createdProjectURL == projectURL.standardizedFileURL)
+        #expect(loadedProject.project.repositoryRoot == "../WebRoot")
+        #expect(loadedProject.rootURL == webRootURL.standardizedFileURL)
+        #expect(FileManager.default.fileExists(atPath: htmlURL.path))
+        #expect(FileManager.default.fileExists(atPath: cssURL.path))
+        #expect(loadedProject.htmlURL(for: loadedProject.project.chapters[0].pages[0]) == htmlURL.standardizedFileURL)
+    }
+
+    /// 論理名（日本語）: 既存public向けCSS補完テスト
+    /// 概要: 既存 `public` がある project root では HTML を自動登録せず、指定時だけ CSS library を補完することを検証します。
+    @Test("既存publicがあるrootでも指定時はCSS libraryを補完できる")
+    func testCreateProjectWithExistingPublicCanCopyCSSLibrary() throws {
+        // コンディション：既存 public を持つ project root と `.ogp` 保存用ディレクトリを用意する（Given）
+        let fixture = try ProjectCreatorFixture()
+        defer { fixture.cleanUp() }
+        let webRootURL = fixture.rootURL.appendingPathComponent("ExistingWeb", isDirectory: true)
+        let publicURL = webRootURL.appendingPathComponent("public", isDirectory: true)
+        let htmlURL = publicURL.appendingPathComponent("index.html")
+        let projectURL = fixture.rootURL
+            .appendingPathComponent("Metadata", isDirectory: true)
+            .appendingPathComponent("Existing Web.ogp")
+        try FileManager.default.createDirectory(at: publicURL, withIntermediateDirectories: true)
+        try "<!doctype html><html><body>Existing</body></html>".write(
+            to: htmlURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let creator = ProjectCreator(cssLibrarySourceURL: { fixture.cssSourceURL })
+
+        // 検証内容：CSS 補完を有効にして `.ogp` を作成する（When）
+        let createdProjectURL = try creator.createProject(
+            at: projectURL,
+            projectRootURL: webRootURL,
+            copyCSSLibraryWhenPublicExists: true
+        )
+        let loadedProject = try ProjectLoader().loadProject(at: createdProjectURL)
+        let cssURL = webRootURL.appendingPathComponent("CSS/OpenGraphite.css")
+
+        // 期待値：既存 HTML は触らず、空 Chapter と CSS library が project root に作成される（Then）
+        #expect(loadedProject.project.chapters[0].pages.isEmpty)
+        #expect(loadedProject.project.repositoryRoot == "../ExistingWeb")
+        #expect(try String(contentsOf: htmlURL, encoding: .utf8) == "<!doctype html><html><body>Existing</body></html>")
+        #expect(try String(contentsOf: cssURL, encoding: .utf8) == fixture.cssSeed)
+    }
+
     /// 論理名（日本語）: 既存ogp保護テスト
     /// 概要: 作成先 `.ogp` が既に存在する場合に上書きしないことを検証します。
     @Test("既存ogpは上書きしない")

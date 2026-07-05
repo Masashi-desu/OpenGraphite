@@ -86,6 +86,7 @@ The gate regenerates `OpenGraphite.xcodeproj` from `project.yml` and runs the Sw
 Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edits only pages registered under chapters or component canvases registered under collections in the target `.ogp`; use `current` to target the project currently opened by `OpenGraphite.app`.
 
 ```bash
+./Scripts/ogkiln project create --root ../MySite --output ../MySite/OpenGraphiteProject.ogp --json
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln project current --json
 ./Scripts/ogkiln design-token list SampleProject/OpenGraphiteSample.ogp --json
@@ -112,6 +113,8 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln node move SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id efeaffcc2273 --target 3aefceddb042 --position after
 ./Scripts/ogkiln node copy SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id d9778be9a854 --target b01aee52375f --position append --id-prefix copy-
 ```
+
+`project create` creates a new `.ogp` at `--output` and uses `--root` as the project root for `public` and `CSS` resources. If `public` does not exist, it seeds `public/index.html`, `public/index.css`, `CSS/OpenGraphite.css`, and a `home` page entry. If `public` already exists, it leaves existing HTML unregistered and creates an empty Chapter manifest while copying `CSS/OpenGraphite.css` when missing.
 
 `ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory.
 

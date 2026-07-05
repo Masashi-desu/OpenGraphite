@@ -70,6 +70,7 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: App/Sources/Domain
+      - path: App/Sources/Infrastructure/ProjectCreator.swift
       - path: App/Sources/Infrastructure/ProjectLoader.swift
       - path: Shared/Sources
       - path: Tools/ogkiln

@@ -56,25 +56,47 @@ struct ProjectCreator {
     }
 
     /// 論理名（日本語）: プロジェクト作成関数
-    /// 処理概要: 指定 URL に `.ogp` 拡張子を補完し、既存 `public` がなければ seed を、あれば空 Chapter の manifest だけを作成します。
+    /// 処理概要: 指定 URL に `.ogp` 拡張子を補完し、`.ogp` の親ディレクトリを project root として seed または空 manifest を作成します。
     ///
     /// - Parameter requestedURL: ユーザーが指定した `.ogp` 作成先 URL。
     /// - Returns: 実際に作成した `.ogp` URL。
     @discardableResult
     func createProject(at requestedURL: URL) throws -> URL {
+        try createProject(
+            at: requestedURL,
+            projectRootURL: requestedURL.deletingLastPathComponent(),
+            copyCSSLibraryWhenPublicExists: false
+        )
+    }
+
+    /// 論理名（日本語）: ルート指定プロジェクト作成関数
+    /// 処理概要: `.ogp` の作成先と HTML/CSS を解決する project root を分けて、seed または空 manifest を作成します。
+    ///
+    /// - Parameters:
+    ///   - requestedURL: ユーザーが指定した `.ogp` 作成先 URL。
+    ///   - requestedRootURL: `.ogp` の `repositoryRoot` として使う project root URL。
+    ///   - copyCSSLibraryWhenPublicExists: 既存 `public` がある場合にも CSS library がなければコピーするか。
+    /// - Returns: 実際に作成した `.ogp` URL。
+    @discardableResult
+    func createProject(
+        at requestedURL: URL,
+        projectRootURL requestedRootURL: URL,
+        copyCSSLibraryWhenPublicExists: Bool
+    ) throws -> URL {
         let projectURL = Self.normalizedProjectURL(requestedURL)
         let projectDirectoryURL = projectURL.deletingLastPathComponent()
-        let publicDirectoryURL = projectDirectoryURL
+        let projectRootURL = requestedRootURL.standardizedFileURL
+        let publicDirectoryURL = projectRootURL
             .appendingPathComponent(Self.htmlRoot, isDirectory: true)
             .standardizedFileURL
-        let htmlURL = projectDirectoryURL
+        let htmlURL = projectRootURL
             .appendingPathComponent(Self.htmlRoot, isDirectory: true)
             .appendingPathComponent(Self.initialPagePath)
             .standardizedFileURL
         let companionCSSURL = OpenGraphiteCompanionCSSDocument
             .companionURL(forHTMLURL: htmlURL)
             .standardizedFileURL
-        let cssURL = projectDirectoryURL
+        let cssURL = projectRootURL
             .appendingPathComponent(Self.cssLibraryPath)
             .standardizedFileURL
 
@@ -85,6 +107,8 @@ struct ProjectCreator {
         let publicAlreadyExists = fileManager.fileExists(atPath: publicDirectoryURL.path)
         let cssAlreadyExists = fileManager.fileExists(atPath: cssURL.path)
         let projectName = Self.projectName(from: projectURL)
+        let repositoryRoot = Self.repositoryRoot(from: projectDirectoryURL, to: projectRootURL)
+        let shouldCopyCSSLibrary = !cssAlreadyExists && (!publicAlreadyExists || copyCSSLibraryWhenPublicExists)
 
         do {
             try fileManager.createDirectory(
@@ -93,13 +117,17 @@ struct ProjectCreator {
             )
             let project: OpenGraphiteProject
             if publicAlreadyExists {
-                project = Self.emptyProject(name: projectName)
+                if shouldCopyCSSLibrary {
+                    try copyCSSLibrary(to: cssURL)
+                }
+                project = Self.emptyProject(name: projectName, repositoryRoot: repositoryRoot)
             } else {
-                if !cssAlreadyExists {
+                if shouldCopyCSSLibrary {
                     try copyCSSLibrary(to: cssURL)
                 }
                 project = try createSeedProject(
                     name: projectName,
+                    repositoryRoot: repositoryRoot,
                     projectURL: projectURL,
                     htmlURL: htmlURL,
                     cssURL: cssURL
@@ -114,7 +142,7 @@ struct ProjectCreator {
                 try? fileManager.removeItem(at: htmlURL)
                 try? fileManager.removeItem(at: companionCSSURL)
             }
-            if !publicAlreadyExists && !cssAlreadyExists {
+            if shouldCopyCSSLibrary {
                 try? fileManager.removeItem(at: cssURL)
             }
             throw error
@@ -126,12 +154,14 @@ struct ProjectCreator {
     ///
     /// - Parameters:
     ///   - name: project 表示名。
+    ///   - repositoryRoot: `.ogp` から見た project root。
     ///   - projectURL: 作成中 `.ogp` URL。
     ///   - htmlURL: 初期 HTML の作成先 URL。
     ///   - cssURL: OpenGraphite.css の URL。
     /// - Returns: 初期 page を持つ project manifest。
     private func createSeedProject(
         name: String,
+        repositoryRoot: String?,
         projectURL: URL,
         htmlURL: URL,
         cssURL: URL
@@ -171,7 +201,7 @@ struct ProjectCreator {
         return OpenGraphiteProject(
             version: "0.1.0",
             name: name,
-            repositoryRoot: nil,
+            repositoryRoot: repositoryRoot,
             htmlRoot: Self.htmlRoot,
             cssLibrary: Self.cssLibraryPath,
             pages: [page]
@@ -181,13 +211,15 @@ struct ProjectCreator {
     /// 論理名（日本語）: 空プロジェクトmanifest生成関数
     /// 処理概要: 既存 `public` へ自動 page 登録せず、ユーザーが後で参照を追加できる空 Chapter の `.ogp` を作ります。
     ///
-    /// - Parameter name: project 表示名。
+    /// - Parameters:
+    ///   - name: project 表示名。
+    ///   - repositoryRoot: `.ogp` から見た project root。
     /// - Returns: page 未登録の project manifest。
-    private static func emptyProject(name: String) -> OpenGraphiteProject {
+    private static func emptyProject(name: String, repositoryRoot: String?) -> OpenGraphiteProject {
         OpenGraphiteProject(
             version: "0.1.0",
             name: name,
-            repositoryRoot: nil,
+            repositoryRoot: repositoryRoot,
             htmlRoot: Self.htmlRoot,
             cssLibrary: Self.cssLibraryPath,
             chapters: [
@@ -254,6 +286,18 @@ struct ProjectCreator {
             return standardizedURL
         }
         return standardizedURL.appendingPathExtension("ogp")
+    }
+
+    /// 論理名（日本語）: リポジトリルート相対パス生成関数
+    /// 処理概要: `.ogp` 配置ディレクトリから project root への相対 path を返し、同一ディレクトリの場合は未指定にします。
+    ///
+    /// - Parameters:
+    ///   - projectDirectoryURL: `.ogp` を配置するディレクトリ。
+    ///   - projectRootURL: HTML/CSS を解決する project root。
+    /// - Returns: `.ogp` に保存する `repositoryRoot`。同一ディレクトリの場合は `nil`。
+    private static func repositoryRoot(from projectDirectoryURL: URL, to projectRootURL: URL) -> String? {
+        let path = relativePath(from: projectDirectoryURL, to: projectRootURL)
+        return path == "." ? nil : path
     }
 
     /// 論理名（日本語）: project名解決関数

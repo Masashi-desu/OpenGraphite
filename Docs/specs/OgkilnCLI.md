@@ -18,12 +18,15 @@
 ```bash
 ogkiln contract get --json
 ogkiln project current --json
+ogkiln project create --root <project-root> --output <project.ogp> --json
 ogkiln project inspect <project.ogp|current> --json
 ogkiln validate <project.ogp|current> --json
 ogkiln build <project.ogp|current> --output <dir>
 ```
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
+
+`project create` は `--root` で指定した project root を HTML/CSS の解決基準とし、`--output` で指定した場所に新規 `.ogp` を作成する。`--output` に `.ogp` 拡張子がない場合は補完する。`.ogp` の配置ディレクトリと project root が異なる場合は、`.ogp` から見た相対 `repositoryRoot` を保存する。project root に `public` がない場合は `public/index.html`、`public/index.css`、`CSS/OpenGraphite.css` と `home` page entry を作る。既存 `public` がある場合は HTML を自動登録せず空 Chapter の manifest を作り、`CSS/OpenGraphite.css` がなければ CLI が解決した seed をコピーする。
 
 `build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。
 
