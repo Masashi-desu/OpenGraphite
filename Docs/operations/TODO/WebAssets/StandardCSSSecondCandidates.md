@@ -34,8 +34,8 @@ OpenGraphite 固有 CSS custom property のうち、標準 CSS property へ寄�
 
 ## 参照
 
-- [SourceOfTruthContract.md](../../specs/SourceOfTruthContract.md)
-- [DesignPhilosophy.md](../../specs/DesignPhilosophy.md)
+- [SourceOfTruthContract.md](../../../specs/SourceOfTruthContract.md)
+- [DesignPhilosophy.md](../../../specs/DesignPhilosophy.md)
 - [OpenGraphite.css](../../../../CSS/OpenGraphite.css)
 
 ## 運用メモ
