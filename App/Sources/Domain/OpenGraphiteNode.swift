@@ -382,19 +382,27 @@ struct NodeTextContentMutation: Equatable {
 }
 
 /// 論理名（日本語）: キャンバス操作ツール
-/// 概要: プレビュー上で利用する選択、テキスト、フレーム、アイコン、ハンドの各操作モードを表します。
+/// 概要: HTML プレビュー編集と `.ogp` 専用キャンバス注釈に利用する各操作モードを表します。
 ///
 /// 定義内容:
 /// - `select`: ノード選択用の編集カーソル。
 /// - `text`: テキスト作成ツール。
 /// - `frame`: フレーム作成ツール。
 /// - `icon`: アイコン作成ツール。
+/// - `stickyNote`: `.ogp` キャンバスへ付箋を配置するツール。
+/// - `pen`: `.ogp` キャンバスへ手書きストロークを記録するツール。
+/// - `eraser`: `.ogp` キャンバス上の手書きストロークを消去するツール。
+/// - `lasso`: `.ogp` キャンバス注釈を囲んで選択するツール。
 /// - `hand`: キャンバス移動用ツール。
 enum CanvasTool: String, CaseIterable, Identifiable {
     case select
     case text
     case frame
     case icon
+    case stickyNote
+    case pen
+    case eraser
+    case lasso
     case hand
 
     var id: String { rawValue }
@@ -409,6 +417,14 @@ enum CanvasTool: String, CaseIterable, Identifiable {
             return "フレーム"
         case .icon:
             return "アイコン"
+        case .stickyNote:
+            return "付箋"
+        case .pen:
+            return "ペン"
+        case .eraser:
+            return "消しゴム"
+        case .lasso:
+            return "なげわ"
         case .hand:
             return "ハンド"
         }
@@ -424,6 +440,14 @@ enum CanvasTool: String, CaseIterable, Identifiable {
             return "square.dashed"
         case .icon:
             return "star"
+        case .stickyNote:
+            return "note.text"
+        case .pen:
+            return "pencil.tip"
+        case .eraser:
+            return "eraser"
+        case .lasso:
+            return "lasso"
         case .hand:
             return "hand.raised"
         }

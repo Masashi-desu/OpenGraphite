@@ -22,6 +22,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 
 - [`OgkilnCLI.md`](OgkilnCLI.md): CLI command、JSON output、編集操作。
 - [`OpenGraphiteMCP.md`](OpenGraphiteMCP.md): MCP resources / tools と `ogkiln` への対応。
+- [`CanvasAnnotations.md`](CanvasAnnotations.md): `.ogp` 注釈の schema、座標、Sidecar、CLI/MCP、screenshot 契約。
 
 ## Project Summary
 
@@ -41,6 +42,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "internalID": "6q8zy7p2k1",
       "index": 0,
       "title": "Main",
+      "annotationCount": 0,
       "pages": [
         {
           "chapterID": "main",
@@ -90,6 +92,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "internalID": "component-main",
       "index": 0,
       "title": "Main",
+      "annotationCount": 0,
       "components": [
         {
           "collectionID": "main",
@@ -171,7 +174,22 @@ window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = {
 
 preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview-locale` / `data-og-preview-dir` は HTML 正本へ残さない。永続値として保存するのは `<html>` 上の `lang` / `dir` fallback と `data-og-lang-*` / `data-og-dir-*` metadata だけである。
 
-`referenceID` は AI が Chapter / Collection / page / component canvas / node を安定指定するためのキーであり、コピーされる文字列は `ogref:<type>:...` 形式である。Chapter は `ogref:chapter:<chapterInternalID>`、Collection は `ogref:collection:<collectionInternalID>`、Pages は `ogref:page:<chapterInternalID>:<pageInternalID>`、Components は `ogref:component:<collectionInternalID>:<componentInternalID>`、Pages 内 node は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、component 内 node は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を使う。
+`referenceID` は AI が Chapter / Collection / page / component canvas / node / annotation を安定指定するためのキーであり、コピーされる文字列は `ogref:<type>:...` 形式である。Chapter は `ogref:chapter:<chapterInternalID>`、Collection は `ogref:collection:<collectionInternalID>`、Pages は `ogref:page:<chapterInternalID>:<pageInternalID>`、Components は `ogref:component:<collectionInternalID>:<componentInternalID>`、Pages 内 node は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、component 内 node は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を使う。Chapter 注釈は `ogref:annotation:pages:<chapterInternalID>:<annotationInternalID>`、Collection 注釈は `ogref:annotation:components:<collectionInternalID>:<annotationInternalID>` を使う。
+
+## Canvas Annotations
+
+付箋と手書きは HTML node graph ではなく、`.ogp` の `chapters[].annotations[]` または `collections[].annotations[]` に属する editor-only metadata である。`project inspect` は各 Chapter / Collection の `annotationCount` を返す。詳細な schema と canonical world 座標は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とする。
+
+```bash
+ogkiln annotation list SampleProject/OpenGraphiteSample.ogp --chapter-id <chapter-id> --json
+ogkiln annotation list SampleProject/OpenGraphiteSample.ogp --collection-id <collection-id> --json
+ogkiln annotation get SampleProject/OpenGraphiteSample.ogp --chapter-id <chapter-id> --id <annotation-internal-id> --json
+ogkiln annotation get SampleProject/OpenGraphiteSample.ogp --id ogref:annotation:pages:<chapter-internal-id>:<annotation-internal-id> --json
+```
+
+`annotation list` は手書き点列を展開せず、付箋本文、frame、色、stroke / point count を返す。`annotation get` は typed annotation reference と完全な stroke / point payload を返す。CLI と MCP の annotation interface は読み取り専用であり、HTML / CSS を変更しない。
+
+`screenshot canvas` は `--chapter-id` / `chapterID` または `--collection-id` / `collectionID` で対象を排他的に選び、省略時は先頭 Chapter を使う。WebKit で描画した対象 Chapter の page card 群または Collection の component card 群へ、App と同じ ink、sticky note の順で `.ogp` 注釈を前面合成し、card と annotation の world frame の union を出力範囲にする。capture 前に全 card が有限座標と正の寸法であることを確認し、出力の一辺 16,384 px、総 33,554,432 pixel、またはcard snapshot累積33,554,432 pixelの安全上限を超える場合は明示エラーを返す。個別 HTML を対象にする `screenshot page` / `screenshot node` には Chapter / Collection 注釈を含めない。
 
 ## Page Graph
 
@@ -254,7 +272,7 @@ ogkiln project component create SampleProject/OpenGraphiteSample.ogp --collectio
 ogkiln project component add SampleProject/OpenGraphiteSample.ogp --collection-id component-main --component-id aux-ui --path _components/aux-ui.html --width 960 --height 900
 ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id <shared-ui-internal-id> --name Desktop --width 1180 --height 1900
 ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id <aux-ui-internal-id>
-ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
+ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --chapter-id main --output screenshots/canvas.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --output screenshots/design-system.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --width 390 --height 900 --full-page --output screenshots/docs-mobile.png
@@ -369,6 +387,8 @@ OpenGraphite MCP server は少なくとも次の tool を公開する。
 - `get_contract`
 - `validate`
 - `build_project`
+- `list_canvas_annotations`
+- `get_canvas_annotation`
 - `add_project_page`
 - `create_project_page`
 - `place_project_page`
@@ -405,4 +425,4 @@ MCP の write tool は OpenGraphite app に直接命令しない。リポジト�
 
 OpenGraphite app は `.ogp` に含まれる全 HTML ファイルの外部変更を検出し、ディスク上の正本 HTML を WebView に反映する。選択中ページは WebView 置換要求として履歴と選択状態を保ち、非選択ページは reload token によりキャンバス上のプレビューを再読み込みする。app 内で未適用の mutation または document replacement がある場合、選択中ページの外部変更を破壊的に上書きせず、ユーザーへ衝突として見える状態にする。
 
-`.ogp` project manifest も外部変更監視の対象にする。`ogkiln project page add`、`ogkiln project page create`、`ogkiln project page place`、`ogkiln project component add`、`ogkiln project component create`、`ogkiln project component place`、`ogkiln project component remove` が entry と canvas 配置を更新した場合、app は project manifest を再読み込みし、既存の選択 Chapter / Collection と選択ページ / component canvas を可能な限り維持したまま Canvas 上の配置を更新する。
+`.ogp` project manifest も外部変更監視の対象にする。`ogkiln project page add`、`ogkiln project page create`、`ogkiln project page place`、`ogkiln project component add`、`ogkiln project component create`、`ogkiln project component place`、`ogkiln project component remove` が entry と canvas 配置を更新した場合、または外部編集で `annotations` が変わった場合、app は project manifest を再読み込みし、既存の選択 Chapter / Collection と選択ページ / component canvas を可能な限り維持したまま Canvas 上の配置と注釈を更新する。

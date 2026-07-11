@@ -17,6 +17,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `Docs/Architecture.md`: design notes
 - `Docs/specs/DesignPhilosophy.md`: design philosophy and decision principles
 - `Docs/specs/SourceOfTruthContract.md`: cross-cutting source-of-truth contract for `data-og-*`, editable CSS declarations, runtime, preview, and resources
+- `Docs/specs/CanvasAnnotations.md`: `.ogp`-only sticky-note, ink, Sidecar input, and agent-access contract
 - `Docs/specs/AgentInterface.md`: CLI, MCP, JSON graph, and external-sync contract
 
 ## Model
@@ -44,6 +45,8 @@ HTML is the canonical structure and reference document. Editable design values l
 ```
 
 OpenGraphite does not use class names as the editable style source of truth. Tag names represent semantic components, `data-og-*` stores structure and reference metadata, companion CSS stores design values, and `OpenGraphite.css` provides the shared rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`. Component canvases can also contain `data-og-role="component-placement"` nodes that reference another component node and display multiple preview states side by side while keeping edits synchronized to the source component. Placement-specific preview mocks live in the `.ogp` canvas `previewContext`, not in the source HTML.
+
+Editor-only sticky notes and ink live in `chapters[].annotations[]` or `collections[].annotations[]` in the `.ogp`. They render in front of the HTML cards, support pen, eraser, and lasso multi-selection tools, can be read through the CLI/MCP interface, and are intentionally excluded from source HTML, CSS, browser runtime, and build output.
 
 ## Build
 
@@ -89,6 +92,8 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project create --root ../MySite --output ../MySite/OpenGraphiteProject.ogp --json
 ./Scripts/ogkiln project inspect SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln project current --json
+./Scripts/ogkiln annotation list SampleProject/OpenGraphiteSample.ogp --chapter-id main --json
+./Scripts/ogkiln annotation get SampleProject/OpenGraphiteSample.ogp --id ogref:annotation:pages:<chapter-internal-id>:<annotation-internal-id> --json
 ./Scripts/ogkiln design-token list SampleProject/OpenGraphiteSample.ogp --json
 ./Scripts/ogkiln design-token set SampleProject/OpenGraphiteSample.ogp --name --color-accent --value '#f5f7f8'
 ./Scripts/ogkiln project page create SampleProject/OpenGraphiteSample.ogp --page-id tutorial --path tutorial.html --title Tutorial --body-file tutorial.body.html --x 2960 --y 0
@@ -97,7 +102,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --collection-id component-main --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
 ./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --name Desktop --width 1180 --height 1900
 ./Scripts/ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id <shared-ui-internal-id> --delete-file
-./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --output screenshots/canvas.png
+./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --chapter-id main --output screenshots/canvas.png
 ./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png
 ./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:2opic2blumreb:fb1954bc9811 --output screenshots/doc-cli.png
 ./Scripts/ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
@@ -116,7 +121,9 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 
 `project create` creates a new `.ogp` at `--output` and uses `--root` as the project root for `public` and `CSS` resources. If `public` does not exist, it seeds `public/index.html`, `public/index.css`, `CSS/OpenGraphite.css`, and a `home` page entry. If `public` already exists, it leaves existing HTML unregistered and creates an empty Chapter manifest while copying `CSS/OpenGraphite.css` when missing.
 
-`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory.
+`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory. The input `.ogp` manifest is editor-only and is not copied; its canvas annotations are not injected into generated HTML or CSS.
+
+`ogkiln screenshot canvas` accepts either `--chapter-id` or `--collection-id` to composite that container's HTML cards and `.ogp` annotations; with neither selector it uses the first Chapter.
 
 The OpenGraphite MCP server exposes the same repository-backed operations over stdio:
 
@@ -206,6 +213,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - Welcome screen with sample and arbitrary `.ogp` open actions
 - Pages/Components sidebar with resizable, collapsible Chapter/Collection selectors and layers inside each HTML card
 - WKWebView canvas using `.ogp` canvas dimensions
+- Front-layer sticky notes and mouse/Sidecar Apple Pencil ink, with eraser and lasso multi-selection tools, stored only in Chapter/Collection `.ogp` annotations
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`
@@ -223,4 +231,5 @@ When launched without that environment variable, Open Sample Project treats the 
 - Swift Testing guidance: `Docs/rules/TestingStandards.md`
 - Design philosophy: `Docs/specs/DesignPhilosophy.md`
 - Source-of-truth contract: `Docs/specs/SourceOfTruthContract.md`
+- Canvas annotation contract: `Docs/specs/CanvasAnnotations.md`
 - Operations TODO governance: `Docs/operations/TODO/GOVERNANCE.md`

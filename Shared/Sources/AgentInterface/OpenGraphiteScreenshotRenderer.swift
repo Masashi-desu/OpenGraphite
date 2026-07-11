@@ -6,7 +6,7 @@ import WebKit
 /// 概要: `ogkiln screenshot` が出力する画像の対象範囲を表します。
 ///
 /// 定義内容:
-/// - `canvas`: `.ogp` の先頭 Chapter に含まれるページ配置を含むキャンバス全体。
+/// - `canvas`: `.ogp` の既定または指定した Chapter / Collection のカード配置と前面注釈を含むキャンバス全体。
 /// - `page`: 単一ページ。
 /// - `node`: `data-og-internal-id` で指定した単一ノード。
 enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
@@ -19,17 +19,261 @@ enum OpenGraphiteScreenshotKind: String, Codable, Equatable {
 /// 概要: キャンバススクリーンショットに含まれたページと配置を JSON 出力向けに表します。
 ///
 /// プロパティ:
-/// - `chapterID`: 所属 Chapter ID。
+/// - `segment`: `pages` または `components`。
+/// - `chapterID`: 所属 Chapter ID。Components では `nil`。
+/// - `collectionID`: 所属 Collection ID。Pages では `nil`。
 /// - `id`: ページ ID。
 /// - `path`: `htmlRoot` から見た HTML path。
 /// - `htmlURL`: 解決済み HTML URL。
 /// - `canvas`: `.ogp` 上のキャンバス配置。
 struct OpenGraphiteScreenshotPage: Codable, Equatable {
-    var chapterID: String
+    var segment: String
+    var chapterID: String?
+    var collectionID: String?
     var id: String
     var path: String
     var htmlURL: String
     var canvas: OpenGraphiteCanvas
+}
+
+/// 論理名（日本語）: キャンバススクリーンショット境界
+/// 概要: page / component 配置と `.ogp` 注釈をすべて含む world 座標の矩形を表します。
+///
+/// プロパティ:
+/// - `minX`: 含有境界の左端。
+/// - `minY`: 含有境界の上端。
+/// - `maxX`: 含有境界の右端。
+/// - `maxY`: 含有境界の下端。
+struct OpenGraphiteCanvasScreenshotBounds: Equatable {
+    var minX: Double
+    var minY: Double
+    var maxX: Double
+    var maxY: Double
+
+    /// 論理名（日本語）: キャンバススクリーンショット境界直接初期化関数
+    /// 処理概要: 検証ロジックが受け取る world 境界を明示的な四辺から構成します。
+    ///
+    /// - Parameters:
+    ///   - minX: 含有境界の左端。
+    ///   - minY: 含有境界の上端。
+    ///   - maxX: 含有境界の右端。
+    ///   - maxY: 含有境界の下端。
+    init(minX: Double, minY: Double, maxX: Double, maxY: Double) {
+        self.minX = minX
+        self.minY = minY
+        self.maxX = maxX
+        self.maxY = maxY
+    }
+
+    /// キャンバス出力幅。
+    var width: CGFloat {
+        CGFloat(max(maxX - minX, 1))
+    }
+
+    /// キャンバス出力高さ。
+    var height: CGFloat {
+        CGFloat(max(maxY - minY, 1))
+    }
+
+    /// 論理名（日本語）: キャンバススクリーンショット境界初期化関数
+    /// 処理概要: 有効な page canvas と annotation frame の union を world 座標で計算します。
+    ///
+    /// - Parameters:
+    ///   - pages: 対象 Chapter / Collection の page または component 一覧。
+    ///   - annotations: 同じキャンバス前面に描画する `.ogp` 注釈。
+    init?(pages: [OpenGraphitePage], annotations: [OpenGraphiteCanvasAnnotation]) {
+        let pageFrames = pages.map { page in
+            (
+                x: page.canvas.x,
+                y: page.canvas.y,
+                width: page.canvas.width,
+                height: page.canvas.height
+            )
+        }
+        let annotationFrames = annotations.map { annotation in
+            (
+                x: annotation.frame.x,
+                y: annotation.frame.y,
+                width: annotation.frame.width,
+                height: annotation.frame.height
+            )
+        }
+        let frames = (pageFrames + annotationFrames).filter { frame in
+            frame.x.isFinite
+                && frame.y.isFinite
+                && frame.width.isFinite
+                && frame.height.isFinite
+                && frame.width > 0
+                && frame.height > 0
+        }
+        guard let first = frames.first else { return nil }
+
+        minX = frames.dropFirst().reduce(first.x) { min($0, $1.x) }
+        minY = frames.dropFirst().reduce(first.y) { min($0, $1.y) }
+        maxX = frames.dropFirst().reduce(first.x + first.width) { max($0, $1.x + $1.width) }
+        maxY = frames.dropFirst().reduce(first.y + first.height) { max($0, $1.y + $1.height) }
+    }
+}
+
+/// 論理名（日本語）: キャンバススクリーンショットピクセル寸法
+/// 概要: bitmap 確保前に検証済みの出力幅、高さ、総 pixel 数を保持します。
+///
+/// プロパティ:
+/// - `width`: 出力 bitmap の pixel 幅。
+/// - `height`: 出力 bitmap の pixel 高さ。
+/// - `pixelCount`: 出力 bitmap の総 pixel 数。
+struct OpenGraphiteCanvasScreenshotPixelSize: Equatable {
+    var width: Int
+    var height: Int
+    var pixelCount: Int
+}
+
+/// 論理名（日本語）: キャンバススクリーンショット安全上限
+/// 概要: CLI / MCP が過大な `.ogp` 座標から巨大 bitmap を確保する前に、一辺と総 pixel 数を制限します。
+enum OpenGraphiteCanvasScreenshotLimits {
+    static let maximumDimension = 16_384
+    static let maximumPixelCount = 33_554_432
+    static let maximumSnapshotPixelCount = maximumPixelCount
+
+    /// 論理名（日本語）: キャンバス出力寸法検証関数
+    /// 処理概要: world bounds を整数 pixel へ切り上げ、一辺と総 pixel 数の上限内であることを bitmap 確保前に確認します。
+    ///
+    /// - Parameter bounds: page / component / annotation を含む world 境界。
+    /// - Returns: 検証済みの整数 pixel 寸法。
+    static func validatedPixelSize(
+        for bounds: OpenGraphiteCanvasScreenshotBounds
+    ) throws -> OpenGraphiteCanvasScreenshotPixelSize {
+        let width = ceil(bounds.maxX - bounds.minX)
+        let height = ceil(bounds.maxY - bounds.minY)
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else {
+            throw OpenGraphiteScreenshotError(
+                message: "canvas screenshot の出力寸法が有限の正数ではありません。"
+            )
+        }
+        guard width <= Double(maximumDimension), height <= Double(maximumDimension) else {
+            throw OpenGraphiteScreenshotError(
+                message: "canvas screenshot の出力寸法 \(width)x\(height)px は一辺の上限 \(maximumDimension)px を超えています。Chapter / Collection を分けるか、配置を近づけてください。"
+            )
+        }
+
+        let pixelWidth = Int(width)
+        let pixelHeight = Int(height)
+        let product = pixelWidth.multipliedReportingOverflow(by: pixelHeight)
+        guard !product.overflow, product.partialValue <= maximumPixelCount else {
+            throw OpenGraphiteScreenshotError(
+                message: "canvas screenshot の総 pixel 数 \(pixelWidth)x\(pixelHeight)=\(product.partialValue) は上限 \(maximumPixelCount) を超えています。Chapter / Collection を分けるか、配置範囲を小さくしてください。"
+            )
+        }
+        return OpenGraphiteCanvasScreenshotPixelSize(
+            width: pixelWidth,
+            height: pixelHeight,
+            pixelCount: product.partialValue
+        )
+    }
+
+    /// 論理名（日本語）: HTMLカードSnapshot総量検証関数
+    /// 処理概要: 全 page / component card の有限な正寸法と累積 pixel 数を、WebKit snapshot を取得する前に検証します。
+    ///
+    /// - Parameter pages: snapshot を取得する page または component card 一覧。
+    /// - Returns: 検証済み card snapshot の累積 pixel 数。
+    static func validatedSnapshotPixelCount(for pages: [OpenGraphitePage]) throws -> Int {
+        var totalPixelCount = 0
+        for page in pages {
+            let canvas = page.canvas
+            guard canvas.x.isFinite,
+                  canvas.y.isFinite,
+                  canvas.width.isFinite,
+                  canvas.height.isFinite,
+                  canvas.width > 0,
+                  canvas.height > 0,
+                  (canvas.x + canvas.width).isFinite,
+                  (canvas.y + canvas.height).isFinite
+            else {
+                throw OpenGraphiteScreenshotError(
+                    message: "canvas screenshot の card \"\(page.id)\" は有限の座標と正の寸法で配置してください。"
+                )
+            }
+
+            let pixelWidthValue = ceil(canvas.width)
+            let pixelHeightValue = ceil(canvas.height)
+            guard pixelWidthValue <= Double(maximumDimension),
+                  pixelHeightValue <= Double(maximumDimension)
+            else {
+                throw OpenGraphiteScreenshotError(
+                    message: "canvas screenshot の card \"\(page.id)\" の寸法 \(pixelWidthValue)x\(pixelHeightValue)px は一辺の上限 \(maximumDimension)px を超えています。"
+                )
+            }
+
+            let pixelWidth = Int(pixelWidthValue)
+            let pixelHeight = Int(pixelHeightValue)
+            let cardProduct = pixelWidth.multipliedReportingOverflow(by: pixelHeight)
+            let nextTotal = totalPixelCount.addingReportingOverflow(cardProduct.partialValue)
+            guard !cardProduct.overflow,
+                  !nextTotal.overflow,
+                  nextTotal.partialValue <= maximumSnapshotPixelCount
+            else {
+                throw OpenGraphiteScreenshotError(
+                    message: "canvas screenshot の HTML card snapshot 総 pixel 数が上限 \(maximumSnapshotPixelCount) を超えています。Chapter / Collection を分けるか、重なった card を減らしてください。"
+                )
+            }
+            totalPixelCount = nextTotal.partialValue
+        }
+        return totalPixelCount
+    }
+}
+
+/// 論理名（日本語）: キャンバス注釈スクリーンショット描画契約
+/// 概要: App と同じく ink を先、sticky note を後に描画し、`inputDevice` を表示可否ではなく入力元 metadata として扱います。
+enum OpenGraphiteCanvasScreenshotDrawingContract {
+    /// 論理名（日本語）: 注釈描画順解決関数
+    /// 処理概要: manifest 内の同種順を保ったまま、ink を sticky note より背面へ並べます。
+    ///
+    /// - Parameter annotations: manifest 順のキャンバス注釈。
+    /// - Returns: App と同じ描画順の注釈。
+    static func orderedAnnotations(
+        _ annotations: [OpenGraphiteCanvasAnnotation]
+    ) -> [OpenGraphiteCanvasAnnotation] {
+        annotations.filter { $0.kind == .ink }
+            + annotations.filter { $0.kind == .stickyNote }
+    }
+
+    /// 論理名（日本語）: 手書きストローク描画解決関数
+    /// 処理概要: `inputDevice` によらず、`.ogp` へ保存された全ストロークを App と同じ表示対象にします。
+    ///
+    /// - Parameter annotation: ストロークを保持する ink 注釈。
+    /// - Returns: 保存順を保った表示対象ストローク。
+    static func drawableStrokes(
+        in annotation: OpenGraphiteCanvasAnnotation
+    ) -> [OpenGraphiteInkStroke] {
+        annotation.strokes
+    }
+}
+
+/// 論理名（日本語）: 手書きスクリーンショット描画幾何
+/// 概要: 保存された筆圧から screenshot 上の決定的な線幅を解決します。
+enum OpenGraphiteInkScreenshotGeometry {
+    /// 論理名（日本語）: 筆圧対応線幅解決関数
+    /// 処理概要: 画面描画と同じ規則で、0...1 へ補正した筆圧を基準線幅の 35...150% へ写像します。
+    ///
+    /// - Parameters:
+    ///   - baseLineWidth: `.ogp` に保存された基準線幅。
+    ///   - pressure: 入力デバイス由来の筆圧。
+    /// - Returns: キャンバス座標上の描画線幅。
+    static func lineWidth(baseLineWidth: Double, pressure: Double) -> CGFloat {
+        let normalizedPressure = pressure.isFinite ? min(max(pressure, 0), 1) : 1
+        let normalizedBase = OpenGraphiteCanvasAnnotationLimits.lineWidth(baseLineWidth)
+        return CGFloat(max(normalizedBase * (0.35 + normalizedPressure * 1.15), 0.5))
+    }
+}
+
+/// 論理名（日本語）: キャンバススクリーンショット対象
+/// 概要: 選択された Chapter / Collection の page 群、注釈、出力メタデータをまとめます。
+private struct OpenGraphiteCanvasScreenshotTarget {
+    var segment: OpenGraphiteCanvasSegment
+    var chapterID: String?
+    var collectionID: String?
+    var pages: [OpenGraphitePage]
+    var annotations: [OpenGraphiteCanvasAnnotation]
 }
 
 /// 論理名（日本語）: スクリーンショット結果
@@ -63,7 +307,7 @@ struct OpenGraphiteScreenshotResult: Codable, Equatable {
 /// 概要: WebKit で HTML をレンダリングし、ページ、ノード、`.ogp` キャンバスを PNG として保存します。
 ///
 /// メソッド:
-/// - `captureCanvas(projectURL:outputURL:)`: `.ogp` の先頭 Chapter に含まれるページを合成して保存します。
+/// - `captureCanvas(projectURL:outputURL:chapterID:collectionID:)`: 指定 Chapter / Collection の page と注釈を合成して保存します。
 /// - `capturePage(targetURL:pageID:outputURL:readAccessURL:width:height:fullPage:)`: 単一ページを保存します。
 /// - `captureNode(htmlURL:nodeID:outputURL:readAccessURL:width:height:padding:)`: 指定ノードを切り抜いて保存します。
 struct OpenGraphiteScreenshotRenderer {
@@ -77,15 +321,27 @@ struct OpenGraphiteScreenshotRenderer {
     )
 
     /// 論理名（日本語）: キャンバススクリーンショット関数
-    /// 処理概要: `.ogp` の先頭 Chapter に含まれるページを各 canvas 座標へ配置し、単一 PNG として保存します。
+    /// 処理概要: 指定 Chapter / Collection の page と `.ogp` 注釈を canvas 座標へ配置し、単一 PNG として保存します。
     ///
     /// - Parameters:
     ///   - projectURL: 対象 `.ogp` URL。
     ///   - outputURL: PNG 出力先 URL。
+    ///   - chapterID: 対象 Chapter の ID / 内部 ID / `ogref:chapter`。未指定時は先頭 Chapter。
+    ///   - collectionID: 対象 Collection の ID / 内部 ID / `ogref:collection`。`chapterID` と同時指定不可。
     /// - Returns: スクリーンショット結果。
-    func captureCanvas(projectURL: URL, outputURL: URL) throws -> OpenGraphiteScreenshotResult {
+    func captureCanvas(
+        projectURL: URL,
+        outputURL: URL,
+        chapterID: String? = nil,
+        collectionID: String? = nil
+    ) throws -> OpenGraphiteScreenshotResult {
         try runWebKitSynchronously {
-            try await captureCanvasOnMain(projectURL: projectURL, outputURL: outputURL)
+            try await captureCanvasOnMain(
+                projectURL: projectURL,
+                outputURL: outputURL,
+                chapterID: chapterID,
+                collectionID: collectionID
+            )
         }
     }
 
@@ -162,23 +418,28 @@ struct OpenGraphiteScreenshotRenderer {
     }
 
     @MainActor
-    private func captureCanvasOnMain(projectURL: URL, outputURL: URL) async throws -> OpenGraphiteScreenshotResult {
+    private func captureCanvasOnMain(
+        projectURL: URL,
+        outputURL: URL,
+        chapterID: String?,
+        collectionID: String?
+    ) async throws -> OpenGraphiteScreenshotResult {
         let loadedProject = try ProjectLoader().loadProject(at: projectURL)
-        guard let chapter = loadedProject.project.chapters.first else {
-            throw OpenGraphiteScreenshotError(message: ".ogp に chapters がありません。")
+        let target = try canvasTarget(
+            in: loadedProject.project,
+            chapterID: chapterID,
+            collectionID: collectionID
+        )
+        _ = try OpenGraphiteCanvasScreenshotLimits.validatedSnapshotPixelCount(for: target.pages)
+        guard let bounds = OpenGraphiteCanvasScreenshotBounds(
+            pages: target.pages,
+            annotations: target.annotations
+        ) else {
+            throw OpenGraphiteScreenshotError(message: "キャンバスに page / component または注釈がありません。")
         }
-        let pages = chapter.pages
-        guard !pages.isEmpty else {
-            throw OpenGraphiteScreenshotError(message: ".ogp の Chapter に pages がありません。")
-        }
+        let pixelSize = try OpenGraphiteCanvasScreenshotLimits.validatedPixelSize(for: bounds)
 
-        let minX = pages.map(\.canvas.x).min() ?? 0
-        let minY = pages.map(\.canvas.y).min() ?? 0
-        let maxX = pages.map { $0.canvas.x + $0.canvas.width }.max() ?? 1
-        let maxY = pages.map { $0.canvas.y + $0.canvas.height }.max() ?? 1
-        let width = CGFloat(max(maxX - minX, 1))
-        let height = CGFloat(max(maxY - minY, 1))
-        let snapshots = try await pages.mapAsync { page in
+        let snapshots = try await target.pages.mapAsync { page in
             let image = try await capturePageImage(
                 htmlURL: loadedProject.htmlURL(for: page),
                 readAccessURL: loadedProject.rootURL,
@@ -190,10 +451,9 @@ struct OpenGraphiteScreenshotRenderer {
         }
         let canvasImage = try compositeCanvas(
             snapshots: snapshots,
-            minX: minX,
-            minY: minY,
-            width: width,
-            height: height
+            annotations: target.annotations,
+            bounds: bounds,
+            pixelSize: pixelSize
         )
 
         let pngSize = try writePNG(canvasImage, to: outputURL)
@@ -206,9 +466,11 @@ struct OpenGraphiteScreenshotRenderer {
             pageID: nil,
             pageURL: nil,
             nodeID: nil,
-            pages: pages.map { page in
+            pages: target.pages.map { page in
                 OpenGraphiteScreenshotPage(
-                    chapterID: chapter.id,
+                    segment: target.segment.rawValue,
+                    chapterID: target.chapterID,
+                    collectionID: target.collectionID,
                     id: page.id,
                     path: page.path,
                     htmlURL: loadedProject.htmlURL(for: page).path,
@@ -329,6 +591,116 @@ struct OpenGraphiteScreenshotRenderer {
         )
     }
 
+    /// 論理名（日本語）: キャンバススクリーンショット対象解決関数
+    /// 処理概要: Chapter / Collection selector を排他的に解決し、未指定時は先頭 Chapter を返します。
+    ///
+    /// - Parameters:
+    ///   - project: 対象 `.ogp` project。
+    ///   - chapterID: Chapter ID / 内部 ID / typed 参照 ID。
+    ///   - collectionID: Collection ID / 内部 ID / typed 参照 ID。
+    /// - Returns: page 群と `.ogp` 注釈を持つキャンバス対象。
+    private func canvasTarget(
+        in project: OpenGraphiteProject,
+        chapterID: String?,
+        collectionID: String?
+    ) throws -> OpenGraphiteCanvasScreenshotTarget {
+        let normalizedChapterID = normalizedSelector(chapterID)
+        let normalizedCollectionID = normalizedSelector(collectionID)
+        guard normalizedChapterID == nil || normalizedCollectionID == nil else {
+            throw OpenGraphiteScreenshotError(message: "chapterID と collectionID は同時に指定できません。")
+        }
+
+        if let normalizedCollectionID {
+            guard let targetCollection = resolvedCollection(in: project, matching: normalizedCollectionID) else {
+                throw OpenGraphiteScreenshotError(message: "Collection \"\(normalizedCollectionID)\" が見つかりません。")
+            }
+            return OpenGraphiteCanvasScreenshotTarget(
+                segment: .components,
+                chapterID: nil,
+                collectionID: targetCollection.id,
+                pages: targetCollection.components,
+                annotations: targetCollection.annotations
+            )
+        }
+
+        let targetChapter: OpenGraphiteChapter
+        if let normalizedChapterID {
+            guard let matchedChapter = resolvedChapter(in: project, matching: normalizedChapterID) else {
+                throw OpenGraphiteScreenshotError(message: "Chapter \"\(normalizedChapterID)\" が見つかりません。")
+            }
+            targetChapter = matchedChapter
+        } else {
+            guard let firstChapter = project.chapters.first else {
+                throw OpenGraphiteScreenshotError(message: ".ogp に chapters がありません。collectionID を指定してください。")
+            }
+            targetChapter = firstChapter
+        }
+
+        return OpenGraphiteCanvasScreenshotTarget(
+            segment: .pages,
+            chapterID: targetChapter.id,
+            collectionID: nil,
+            pages: targetChapter.pages,
+            annotations: targetChapter.annotations
+        )
+    }
+
+    /// 論理名（日本語）: Chapter selector解決関数
+    /// 処理概要: 表示 ID、内部 ID、`ogref:chapter` のいずれかで Chapter を検索します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 project。
+    ///   - reference: Chapter selector。
+    /// - Returns: 一致した Chapter。
+    private func resolvedChapter(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphiteChapter? {
+        let internalID: String?
+        if let typedReference = OpenGraphiteReferenceID(parsing: reference), typedReference.type == .chapter {
+            internalID = typedReference.parts.first
+        } else {
+            internalID = nil
+        }
+        return project.chapters.first { chapter in
+            chapter.id == reference
+                || chapter.internalID == reference
+                || chapter.internalID == internalID
+        }
+    }
+
+    /// 論理名（日本語）: Collection selector解決関数
+    /// 処理概要: 表示 ID、内部 ID、`ogref:collection` のいずれかで Collection を検索します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 project。
+    ///   - reference: Collection selector。
+    /// - Returns: 一致した Collection。
+    private func resolvedCollection(
+        in project: OpenGraphiteProject,
+        matching reference: String
+    ) -> OpenGraphiteComponentCollection? {
+        let internalID: String?
+        if let typedReference = OpenGraphiteReferenceID(parsing: reference), typedReference.type == .collection {
+            internalID = typedReference.parts.first
+        } else {
+            internalID = nil
+        }
+        return project.collections.first { collection in
+            collection.id == reference
+                || collection.internalID == reference
+                || collection.internalID == internalID
+        }
+    }
+
+    /// 論理名（日本語）: キャンバスselector正規化関数
+    /// 処理概要: selector の前後空白を除去し、空文字を未指定として扱います。
+    ///
+    /// - Parameter value: 正規化前 selector。
+    /// - Returns: 非空 selector。
+    private func normalizedSelector(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
     /// 論理名（日本語）: スクリーンショット対象ページ解決関数
     /// 処理概要: 内部 ID または複合参照 ID で `.ogp` 内 page entry を解決します。
     ///
@@ -375,7 +747,7 @@ struct OpenGraphiteScreenshotRenderer {
                 .first { $0.internalID == collectionID }?
                 .components
                 .first { $0.internalID == componentID }
-        case .chapter, .collection:
+        case .chapter, .collection, .annotation:
             return nil
         }
     }
@@ -428,17 +800,16 @@ struct OpenGraphiteScreenshotRenderer {
 
     private func compositeCanvas(
         snapshots: [(page: OpenGraphitePage, image: NSImage)],
-        minX: Double,
-        minY: Double,
-        width: CGFloat,
-        height: CGFloat
+        annotations: [OpenGraphiteCanvasAnnotation],
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        pixelSize: OpenGraphiteCanvasScreenshotPixelSize
     ) throws -> NSImage {
-        let pixelWidth = Int(ceil(width))
-        let pixelHeight = Int(ceil(height))
+        let width = bounds.width
+        let height = bounds.height
         guard let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,
-            pixelsWide: pixelWidth,
-            pixelsHigh: pixelHeight,
+            pixelsWide: pixelSize.width,
+            pixelsHigh: pixelSize.height,
             bitsPerSample: 8,
             samplesPerPixel: 4,
             hasAlpha: true,
@@ -461,18 +832,257 @@ struct OpenGraphiteScreenshotRenderer {
 
         for item in snapshots {
             let targetRect = NSRect(
-                x: item.page.canvas.x - minX,
-                y: Double(height) - (item.page.canvas.y - minY) - item.page.canvas.height,
+                x: item.page.canvas.x - bounds.minX,
+                y: Double(height) - (item.page.canvas.y - bounds.minY) - item.page.canvas.height,
                 width: item.page.canvas.width,
                 height: item.page.canvas.height
             )
             item.image.draw(in: targetRect)
         }
 
+        for annotation in OpenGraphiteCanvasScreenshotDrawingContract.orderedAnnotations(annotations) {
+            drawCanvasAnnotation(annotation, bounds: bounds, canvasHeight: height)
+        }
+
         NSGraphicsContext.restoreGraphicsState()
         let image = NSImage(size: NSSize(width: width, height: height))
         image.addRepresentation(bitmap)
         return image
+    }
+
+    /// 論理名（日本語）: キャンバス注釈描画関数
+    /// 処理概要: `.ogp` 注釈を種別に応じて page / component snapshot の前面へ描画します。
+    ///
+    /// - Parameters:
+    ///   - annotation: 描画する付箋または手書き注釈。
+    ///   - bounds: world 座標から出力座標へ変換する canvas 境界。
+    ///   - canvasHeight: AppKit の左下原点座標へ Y 軸を反転するための出力高さ。
+    private func drawCanvasAnnotation(
+        _ annotation: OpenGraphiteCanvasAnnotation,
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        canvasHeight: CGFloat
+    ) {
+        switch annotation.kind {
+        case .stickyNote:
+            drawStickyNote(annotation, bounds: bounds, canvasHeight: canvasHeight)
+        case .ink:
+            drawInkAnnotation(annotation, bounds: bounds, canvasHeight: canvasHeight)
+        }
+    }
+
+    /// 論理名（日本語）: 付箋注釈描画関数
+    /// 処理概要: 付箋の背景、内側境界、折り返しプレーンテキストを描画します。
+    ///
+    /// - Parameters:
+    ///   - annotation: `stickyNote` 注釈。
+    ///   - bounds: 出力 canvas の world 境界。
+    ///   - canvasHeight: 出力 canvas 高さ。
+    private func drawStickyNote(
+        _ annotation: OpenGraphiteCanvasAnnotation,
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        canvasHeight: CGFloat
+    ) {
+        let rect = annotationRect(annotation.frame, bounds: bounds, canvasHeight: canvasHeight)
+        guard rect.width > 0, rect.height > 0 else { return }
+
+        let backgroundColor = screenshotColor(
+            annotation.backgroundColor,
+            fallback: NSColor(calibratedRed: 1, green: 0.91, blue: 0.54, alpha: 1)
+        )
+        let textColor = screenshotColor(
+            annotation.textColor,
+            fallback: NSColor(calibratedRed: 0.14, green: 0.12, blue: 0.08, alpha: 1)
+        )
+        let radius = min(12, min(rect.width, rect.height) / 2)
+        let notePath = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        backgroundColor.setFill()
+        notePath.fill()
+
+        let borderColor = backgroundColor.blended(withFraction: 0.22, of: .black) ?? backgroundColor
+        borderColor.setStroke()
+        notePath.lineWidth = 1
+        notePath.stroke()
+
+        let textInset = min(12, max(min(rect.width, rect.height) / 5, 2))
+        let textRect = rect.insetBy(dx: textInset, dy: textInset)
+        guard textRect.width > 0, textRect.height > 0, !annotation.text.isEmpty else { return }
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        paragraphStyle.alignment = .natural
+        let attributedText = NSAttributedString(
+            string: annotation.text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: 16, weight: .regular),
+                .foregroundColor: textColor,
+                .paragraphStyle: paragraphStyle
+            ]
+        )
+        attributedText.draw(
+            with: textRect,
+            options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine]
+        )
+    }
+
+    /// 論理名（日本語）: 手書き注釈描画関数
+    /// 処理概要: frame-local のストローク点を world 座標へ戻し、筆圧に応じた丸端線として描画します。
+    ///
+    /// - Parameters:
+    ///   - annotation: `ink` 注釈。
+    ///   - bounds: 出力 canvas の world 境界。
+    ///   - canvasHeight: 出力 canvas 高さ。
+    private func drawInkAnnotation(
+        _ annotation: OpenGraphiteCanvasAnnotation,
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        canvasHeight: CGFloat
+    ) {
+        for stroke in OpenGraphiteCanvasScreenshotDrawingContract.drawableStrokes(in: annotation) {
+            let points = stroke.points.map { point in
+                (
+                    point: inkPoint(
+                        point,
+                        annotationFrame: annotation.frame,
+                        bounds: bounds,
+                        canvasHeight: canvasHeight
+                    ),
+                    pressure: point.pressure,
+                    width: OpenGraphiteInkScreenshotGeometry.lineWidth(
+                        baseLineWidth: stroke.lineWidth,
+                        pressure: point.pressure
+                    )
+                )
+            }
+            guard !points.isEmpty else { continue }
+
+            let color = screenshotColor(
+                stroke.color,
+                fallback: NSColor(calibratedRed: 1, green: 0.30, blue: 0.40, alpha: 1)
+            )
+            if points.count == 1 {
+                drawInkDot(at: points[0].point, lineWidth: points[0].width, color: color)
+                continue
+            }
+
+            for index in 1..<points.count {
+                let start = points[index - 1]
+                let end = points[index]
+                let path = NSBezierPath()
+                path.move(to: start.point)
+                path.line(to: end.point)
+                path.lineWidth = OpenGraphiteInkScreenshotGeometry.lineWidth(
+                    baseLineWidth: stroke.lineWidth,
+                    pressure: (start.pressure + end.pressure) / 2
+                )
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+                color.setStroke()
+                path.stroke()
+            }
+        }
+    }
+
+    /// 論理名（日本語）: 手書き単一点描画関数
+    /// 処理概要: 線分を持たない単一点ストロークを筆圧反映済みの円として表示します。
+    ///
+    /// - Parameters:
+    ///   - point: 出力座標の中心点。
+    ///   - lineWidth: 筆圧適用後の直径。
+    ///   - color: 描画色。
+    private func drawInkDot(at point: CGPoint, lineWidth: CGFloat, color: NSColor) {
+        let diameter = max(lineWidth, 0.5)
+        let rect = CGRect(
+            x: point.x - diameter / 2,
+            y: point.y - diameter / 2,
+            width: diameter,
+            height: diameter
+        )
+        color.setFill()
+        NSBezierPath(ovalIn: rect).fill()
+    }
+
+    /// 論理名（日本語）: 注釈出力矩形変換関数
+    /// 処理概要: 左上原点の world frame を左下原点の AppKit 出力矩形へ変換します。
+    ///
+    /// - Parameters:
+    ///   - frame: `.ogp` の注釈 world frame。
+    ///   - bounds: 出力 canvas の world 境界。
+    ///   - canvasHeight: 出力 canvas 高さ。
+    /// - Returns: AppKit bitmap 座標の矩形。
+    private func annotationRect(
+        _ frame: OpenGraphiteCanvasAnnotationFrame,
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        canvasHeight: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: frame.x - bounds.minX,
+            y: Double(canvasHeight) - (frame.y - bounds.minY) - frame.height,
+            width: frame.width,
+            height: frame.height
+        )
+    }
+
+    /// 論理名（日本語）: 手書き点出力座標変換関数
+    /// 処理概要: frame-local 点を world 座標へ戻し、AppKit bitmap の左下原点座標へ変換します。
+    ///
+    /// - Parameters:
+    ///   - point: frame-local の手書き点。
+    ///   - annotationFrame: 点を保持する注釈 frame。
+    ///   - bounds: 出力 canvas の world 境界。
+    ///   - canvasHeight: 出力 canvas 高さ。
+    /// - Returns: AppKit bitmap 座標の点。
+    private func inkPoint(
+        _ point: OpenGraphiteInkPoint,
+        annotationFrame: OpenGraphiteCanvasAnnotationFrame,
+        bounds: OpenGraphiteCanvasScreenshotBounds,
+        canvasHeight: CGFloat
+    ) -> CGPoint {
+        let worldX = annotationFrame.x + point.x
+        let worldY = annotationFrame.y + point.y
+        return CGPoint(
+            x: worldX - bounds.minX,
+            y: Double(canvasHeight) - (worldY - bounds.minY)
+        )
+    }
+
+    /// 論理名（日本語）: 注釈カラー解決関数
+    /// 処理概要: CSS hex 色を AppKit 色へ変換し、解釈できない場合は指定 fallback を返します。
+    ///
+    /// - Parameters:
+    ///   - value: `#RGB` / `#RGBA` / `#RRGGBB` / `#RRGGBBAA` 形式の色文字列。
+    ///   - fallback: 解釈失敗時の色。
+    /// - Returns: screenshot 描画に使う AppKit 色。
+    private func screenshotColor(_ value: String, fallback: NSColor) -> NSColor {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.hasPrefix("#") else { return fallback }
+        let hex = String(normalized.dropFirst())
+
+        let channels: [UInt64]
+        switch hex.count {
+        case 3, 4:
+            let values = hex.compactMap { UInt64(String($0), radix: 16) }
+            guard values.count == hex.count else { return fallback }
+            channels = values.map { $0 * 17 }
+        case 6, 8:
+            var values: [UInt64] = []
+            var index = hex.startIndex
+            while index < hex.endIndex {
+                let next = hex.index(index, offsetBy: 2)
+                guard let value = UInt64(hex[index..<next], radix: 16) else { return fallback }
+                values.append(value)
+                index = next
+            }
+            channels = values
+        default:
+            return fallback
+        }
+
+        guard channels.count == 3 || channels.count == 4 else { return fallback }
+        return NSColor(
+            calibratedRed: CGFloat(channels[0]) / 255,
+            green: CGFloat(channels[1]) / 255,
+            blue: CGFloat(channels[2]) / 255,
+            alpha: channels.count == 4 ? CGFloat(channels[3]) / 255 : 1
+        )
     }
 
     private func writePNG(_ image: NSImage, to outputURL: URL) throws -> OpenGraphitePNGSize {

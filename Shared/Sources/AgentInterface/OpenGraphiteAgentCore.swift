@@ -230,12 +230,14 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
 /// - `internalID`: `.ogp` 内で一意な Chapter 内部 ID。
 /// - `index`: `.ogp` 内の Chapter index。
 /// - `title`: Chapter 表示名。
+/// - `annotationCount`: Chapter キャンバスに保存された注釈数。
 /// - `pages`: Chapter 内のページ要約一覧。
 struct OpenGraphiteChapterSummary: Codable, Equatable {
     var id: String
     var internalID: String
     var index: Int
     var title: String?
+    var annotationCount: Int
     var pages: [OpenGraphitePageSummary]
 }
 
@@ -247,13 +249,97 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
 /// - `internalID`: `.ogp` 内で一意な Collection 内部 ID。
 /// - `index`: `.ogp` 内の Collection index。
 /// - `title`: Collection 表示名。
+/// - `annotationCount`: Collection キャンバスに保存された注釈数。
 /// - `components`: Collection 内の component canvas 要約一覧。
 struct OpenGraphiteComponentCollectionSummary: Codable, Equatable {
     var id: String
     var internalID: String
     var index: Int
     var title: String?
+    var annotationCount: Int
     var components: [OpenGraphitePageSummary]
+}
+
+/// 論理名（日本語）: キャンバス注釈要約
+/// 概要: `.ogp` 注釈を、手書き点列を展開しない一覧表示向け JSON として表します。
+///
+/// プロパティ:
+/// - `internalID`: `.ogp` 内で注釈を一意に指す内部 ID。
+/// - `referenceID`: segment、Chapter / Collection、注釈を含む typed 参照 ID。
+/// - `kind`: 付箋または手書きの種別。
+/// - `frame`: キャンバス world 座標上の配置矩形。
+/// - `text`: 付箋のプレーンテキスト。手書きでは `nil`。
+/// - `backgroundColor`: 付箋背景色。手書きでは `nil`。
+/// - `textColor`: 付箋文字色。手書きでは `nil`。
+/// - `strokeCount`: 手書きストローク数。
+/// - `pointCount`: 全手書きストロークの点数。
+struct OpenGraphiteCanvasAnnotationSummary: Codable, Equatable {
+    var internalID: String
+    var referenceID: String
+    var kind: OpenGraphiteCanvasAnnotationKind
+    var frame: OpenGraphiteCanvasAnnotationFrame
+    var text: String?
+    var backgroundColor: String?
+    var textColor: String?
+    var strokeCount: Int
+    var pointCount: Int
+}
+
+/// 論理名（日本語）: キャンバス注釈詳細
+/// 概要: typed 参照 ID と、点列を含む `.ogp` 注釈 payload をまとめます。
+///
+/// プロパティ:
+/// - `referenceID`: segment、Chapter / Collection、注釈を含む typed 参照 ID。
+/// - `annotation`: `.ogp` に保存された注釈本体。
+struct OpenGraphiteCanvasAnnotationDetail: Codable, Equatable {
+    var referenceID: String
+    var annotation: OpenGraphiteCanvasAnnotation
+}
+
+/// 論理名（日本語）: キャンバス注釈一覧応答
+/// 概要: Chapter または Collection キャンバスに保存された注釈要約を CLI / MCP 向けに返します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `projectURL`: 読み込んだ `.ogp` URL。
+/// - `segment`: `pages` または `components`。
+/// - `containerID`: Chapter または Collection の表示 ID。
+/// - `containerInternalID`: Chapter または Collection の内部 ID。
+/// - `containerReferenceID`: 対象 Chapter または Collection の typed 参照 ID。
+/// - `annotations`: 点列を展開しない注釈要約一覧。
+/// - `diagnostics`: 読み取り時の診断。
+struct OpenGraphiteCanvasAnnotationListResult: Codable, Equatable {
+    var schemaVersion: String
+    var projectURL: String
+    var segment: String
+    var containerID: String
+    var containerInternalID: String
+    var containerReferenceID: String
+    var annotations: [OpenGraphiteCanvasAnnotationSummary]
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: キャンバス注釈取得応答
+/// 概要: Chapter または Collection キャンバスの単一注釈を、手書き点列を含む完全な JSON として返します。
+///
+/// プロパティ:
+/// - `schemaVersion`: JSON schema バージョン。
+/// - `projectURL`: 読み込んだ `.ogp` URL。
+/// - `segment`: `pages` または `components`。
+/// - `containerID`: Chapter または Collection の表示 ID。
+/// - `containerInternalID`: Chapter または Collection の内部 ID。
+/// - `containerReferenceID`: 対象 Chapter または Collection の typed 参照 ID。
+/// - `annotation`: typed 参照 ID と完全な注釈 payload。
+/// - `diagnostics`: 読み取り時の診断。
+struct OpenGraphiteCanvasAnnotationGetResult: Codable, Equatable {
+    var schemaVersion: String
+    var projectURL: String
+    var segment: String
+    var containerID: String
+    var containerInternalID: String
+    var containerReferenceID: String
+    var annotation: OpenGraphiteCanvasAnnotationDetail
+    var diagnostics: [OpenGraphiteDiagnostic]
 }
 
 /// 論理名（日本語）: ページ要約
@@ -360,6 +446,23 @@ private struct OpenGraphiteProjectPageTarget {
     var collection: OpenGraphiteComponentCollection?
     var page: OpenGraphitePage
     var htmlURL: URL
+}
+
+/// 論理名（日本語）: キャンバス注釈コンテナ内部ターゲット
+/// 概要: 注釈を保持する Chapter / Collection と agent 向け参照情報を core 内部でまとめます。
+///
+/// プロパティ:
+/// - `segment`: Pages / Components の区分。
+/// - `id`: Chapter または Collection の表示 ID。
+/// - `internalID`: Chapter または Collection の内部 ID。
+/// - `referenceID`: Chapter または Collection の typed 参照 ID。
+/// - `annotations`: 対象キャンバスに保存された注釈一覧。
+private struct OpenGraphiteCanvasAnnotationContainerTarget {
+    var segment: OpenGraphiteCanvasSegment
+    var id: String
+    var internalID: String
+    var referenceID: String
+    var annotations: [OpenGraphiteCanvasAnnotation]
 }
 
 /// 論理名（日本語）: プロジェクトページ位置
@@ -608,6 +711,8 @@ enum OpenGraphiteHTMLInsertionPosition: String, Codable, Equatable {
 ///
 /// メソッド:
 /// - `inspectProject(at:)`: `.ogp` を解決して要約する。
+/// - `canvasAnnotations(projectURL:chapterID:collectionID:)`: Chapter / Collection キャンバスの注釈要約一覧を取得する。
+/// - `canvasAnnotation(projectURL:id:chapterID:collectionID:)`: 付箋または手書き注釈の完全 payload を取得する。
 /// - `addProjectPage(projectURL:id:path:canvas:allowDuplicatePath:)`: `.ogp` に page entry を追加する。
 /// - `addProjectComponent(projectURL:collectionID:id:path:canvas:)`: `.ogp` に component entry を追加する。
 /// - `removeProjectComponent(projectURL:id:deleteFile:)`: `.ogp` から component entry を削除する。
@@ -682,6 +787,7 @@ struct OpenGraphiteAgentCore {
                 internalID: chapter.internalID,
                 index: chapterIndex,
                 title: chapter.title,
+                annotationCount: chapter.annotations.count,
                 pages: pages
             )
         }
@@ -704,6 +810,7 @@ struct OpenGraphiteAgentCore {
                 internalID: collection.internalID,
                 index: collectionIndex,
                 title: collection.title,
+                annotationCount: collection.annotations.count,
                 components: components
             )
         }
@@ -721,6 +828,123 @@ struct OpenGraphiteAgentCore {
             pages: pages,
             components: components,
             diagnostics: diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス注釈一覧関数
+    /// 処理概要: Chapter または Collection を一つだけ解決し、手書き点列を展開しない注釈要約を返します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 読み込む `.ogp` URL。
+    ///   - chapterID: Chapter の表示 ID、内部 ID、または `ogref:chapter`。Collection と同時指定できません。
+    ///   - collectionID: Collection の表示 ID、内部 ID、または `ogref:collection`。Chapter と同時指定できません。
+    /// - Returns: 対象キャンバスと注釈要約一覧。
+    func canvasAnnotations(
+        projectURL: URL,
+        chapterID: String?,
+        collectionID: String?
+    ) throws -> OpenGraphiteCanvasAnnotationListResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        let target = try annotationContainerTarget(
+            in: loadedProject.project,
+            chapterID: chapterID,
+            collectionID: collectionID
+        )
+        return OpenGraphiteCanvasAnnotationListResult(
+            schemaVersion: Self.schemaVersion,
+            projectURL: loadedProject.fileURL.path,
+            segment: target.segment.rawValue,
+            containerID: target.id,
+            containerInternalID: target.internalID,
+            containerReferenceID: target.referenceID,
+            annotations: target.annotations.map { annotationSummary($0, target: target) },
+            diagnostics: []
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス注釈取得関数
+    /// 処理概要: raw 注釈 ID と明示コンテナ、または `ogref:annotation` から単一注釈を解決し、点列を含む完全 payload を返します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 読み込む `.ogp` URL。
+    ///   - id: 注釈内部 ID または `ogref:annotation:<segment>:<container>:<annotation>`。
+    ///   - chapterID: raw ID と組み合わせる Chapter selector。typed 注釈参照では省略できます。
+    ///   - collectionID: raw ID と組み合わせる Collection selector。typed 注釈参照では省略できます。
+    /// - Returns: 対象キャンバスと完全な注釈 payload。
+    func canvasAnnotation(
+        projectURL: URL,
+        id: String,
+        chapterID: String?,
+        collectionID: String?
+    ) throws -> OpenGraphiteCanvasAnnotationGetResult {
+        let loadedProject = try ProjectLoader().loadProject(at: projectURL)
+        let normalizedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedID.isEmpty else {
+            throw OpenGraphiteAgentCoreError(message: "annotation id は空にできません。")
+        }
+
+        let target: OpenGraphiteCanvasAnnotationContainerTarget
+        let annotationInternalID: String
+        if let reference = OpenGraphiteReferenceID(parsing: normalizedID) {
+            guard reference.type == .annotation,
+                  let segment = OpenGraphiteCanvasSegment(rawValue: reference.parts[0])
+            else {
+                throw OpenGraphiteAgentCoreError(
+                    message: "annotation get の typed id は ogref:annotation:<pages|components>:<container>:<annotation> で指定してください。"
+                )
+            }
+            let referenceTarget = try annotationContainerTarget(
+                in: loadedProject.project,
+                segment: segment,
+                internalID: reference.parts[1]
+            )
+            if chapterID != nil || collectionID != nil {
+                let explicitTarget = try annotationContainerTarget(
+                    in: loadedProject.project,
+                    chapterID: chapterID,
+                    collectionID: collectionID
+                )
+                guard explicitTarget.segment == referenceTarget.segment,
+                      explicitTarget.internalID == referenceTarget.internalID
+                else {
+                    throw OpenGraphiteAgentCoreError(
+                        message: "annotation id と Chapter / Collection selector が異なるキャンバスを指しています。"
+                    )
+                }
+            }
+            target = referenceTarget
+            annotationInternalID = reference.parts[2]
+        } else {
+            if normalizedID.lowercased().hasPrefix("\(OpenGraphiteReferenceID.scheme):") {
+                throw OpenGraphiteAgentCoreError(
+                    message: "annotation typed id の形式が不正です: \(normalizedID)"
+                )
+            }
+            target = try annotationContainerTarget(
+                in: loadedProject.project,
+                chapterID: chapterID,
+                collectionID: collectionID
+            )
+            annotationInternalID = normalizedID
+        }
+
+        guard let annotation = target.annotations.first(where: { $0.internalID == annotationInternalID }) else {
+            throw OpenGraphiteAgentCoreError(
+                message: "annotation id \"\(annotationInternalID)\" が対象キャンバスに存在しません。"
+            )
+        }
+        return OpenGraphiteCanvasAnnotationGetResult(
+            schemaVersion: Self.schemaVersion,
+            projectURL: loadedProject.fileURL.path,
+            segment: target.segment.rawValue,
+            containerID: target.id,
+            containerInternalID: target.internalID,
+            containerReferenceID: target.referenceID,
+            annotation: OpenGraphiteCanvasAnnotationDetail(
+                referenceID: annotationReferenceID(for: annotation, target: target),
+                annotation: annotation
+            ),
+            diagnostics: []
         )
     }
 
@@ -3680,6 +3904,173 @@ struct OpenGraphiteAgentCore {
         return project.collections.count - 1
     }
 
+    /// 論理名（日本語）: 注釈コンテナSelector解決関数
+    /// 処理概要: Chapter / Collection selector の排他指定を検証し、表示 ID、内部 ID、typed 参照から対象キャンバスを返します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` project。
+    ///   - chapterID: Chapter selector。
+    ///   - collectionID: Collection selector。
+    /// - Returns: 解決済み注釈コンテナ。
+    private func annotationContainerTarget(
+        in project: OpenGraphiteProject,
+        chapterID: String?,
+        collectionID: String?
+    ) throws -> OpenGraphiteCanvasAnnotationContainerTarget {
+        let normalizedChapterID = chapterID?.nonEmptyTrimmed
+        let normalizedCollectionID = collectionID?.nonEmptyTrimmed
+        guard (normalizedChapterID == nil) != (normalizedCollectionID == nil) else {
+            throw OpenGraphiteAgentCoreError(
+                message: "--chapter-id または --collection-id のどちらか一方を指定してください。"
+            )
+        }
+
+        if let normalizedChapterID {
+            let resolvedID = try annotationContainerSelectorInternalID(
+                normalizedChapterID,
+                expectedType: .chapter
+            )
+            guard let chapter = project.chapters.first(where: {
+                $0.id == resolvedID || $0.internalID == resolvedID
+            }) else {
+                throw OpenGraphiteAgentCoreError(message: "chapter id \"\(normalizedChapterID)\" が見つかりません。")
+            }
+            return OpenGraphiteCanvasAnnotationContainerTarget(
+                segment: .pages,
+                id: chapter.id,
+                internalID: chapter.internalID,
+                referenceID: OpenGraphiteReferenceID.chapter(chapter.internalID).stringValue,
+                annotations: chapter.annotations
+            )
+        }
+
+        let requestedCollectionID = normalizedCollectionID ?? ""
+        let resolvedID = try annotationContainerSelectorInternalID(
+            requestedCollectionID,
+            expectedType: .collection
+        )
+        guard let collection = project.collections.first(where: {
+            $0.id == resolvedID || $0.internalID == resolvedID
+        }) else {
+            throw OpenGraphiteAgentCoreError(message: "collection id \"\(requestedCollectionID)\" が見つかりません。")
+        }
+        return OpenGraphiteCanvasAnnotationContainerTarget(
+            segment: .components,
+            id: collection.id,
+            internalID: collection.internalID,
+            referenceID: OpenGraphiteReferenceID.collection(collection.internalID).stringValue,
+            annotations: collection.annotations
+        )
+    }
+
+    /// 論理名（日本語）: 注釈typed参照コンテナ解決関数
+    /// 処理概要: `ogref:annotation` に含まれる segment とコンテナ内部 ID から対象 Chapter / Collection を返します。
+    ///
+    /// - Parameters:
+    ///   - project: 検索対象 `.ogp` project。
+    ///   - segment: Pages / Components segment。
+    ///   - internalID: Chapter または Collection の内部 ID。
+    /// - Returns: 解決済み注釈コンテナ。
+    private func annotationContainerTarget(
+        in project: OpenGraphiteProject,
+        segment: OpenGraphiteCanvasSegment,
+        internalID: String
+    ) throws -> OpenGraphiteCanvasAnnotationContainerTarget {
+        switch segment {
+        case .pages:
+            guard let chapter = project.chapters.first(where: { $0.internalID == internalID }) else {
+                throw OpenGraphiteAgentCoreError(message: "annotation reference の Chapter \"\(internalID)\" が見つかりません。")
+            }
+            return OpenGraphiteCanvasAnnotationContainerTarget(
+                segment: .pages,
+                id: chapter.id,
+                internalID: chapter.internalID,
+                referenceID: OpenGraphiteReferenceID.chapter(chapter.internalID).stringValue,
+                annotations: chapter.annotations
+            )
+        case .components:
+            guard let collection = project.collections.first(where: { $0.internalID == internalID }) else {
+                throw OpenGraphiteAgentCoreError(message: "annotation reference の Collection \"\(internalID)\" が見つかりません。")
+            }
+            return OpenGraphiteCanvasAnnotationContainerTarget(
+                segment: .components,
+                id: collection.id,
+                internalID: collection.internalID,
+                referenceID: OpenGraphiteReferenceID.collection(collection.internalID).stringValue,
+                annotations: collection.annotations
+            )
+        }
+    }
+
+    /// 論理名（日本語）: 注釈コンテナ内部ID抽出関数
+    /// 処理概要: raw selector または期待種別の Chapter / Collection typed 参照から検索用 ID を返します。
+    ///
+    /// - Parameters:
+    ///   - value: selector 文字列。
+    ///   - expectedType: 許可する typed 参照種別。
+    /// - Returns: raw ID または typed 参照内の内部 ID。
+    private func annotationContainerSelectorInternalID(
+        _ value: String,
+        expectedType: OpenGraphiteReferenceType
+    ) throws -> String {
+        if let reference = OpenGraphiteReferenceID(parsing: value) {
+            guard reference.type == expectedType else {
+                throw OpenGraphiteAgentCoreError(
+                    message: "注釈コンテナ selector は ogref:\(expectedType.rawValue):... 形式で指定してください。"
+                )
+            }
+            return reference.parts[0]
+        }
+        if value.lowercased().hasPrefix("\(OpenGraphiteReferenceID.scheme):") {
+            throw OpenGraphiteAgentCoreError(message: "注釈コンテナ selector の typed 参照形式が不正です: \(value)")
+        }
+        return value
+    }
+
+    /// 論理名（日本語）: 注釈要約生成関数
+    /// 処理概要: 付箋本文を保持しつつ、手書きは点列を展開せず stroke / point 数へ要約します。
+    ///
+    /// - Parameters:
+    ///   - annotation: 要約対象注釈。
+    ///   - target: 注釈を含む Chapter / Collection。
+    /// - Returns: CLI / MCP 一覧向け注釈要約。
+    private func annotationSummary(
+        _ annotation: OpenGraphiteCanvasAnnotation,
+        target: OpenGraphiteCanvasAnnotationContainerTarget
+    ) -> OpenGraphiteCanvasAnnotationSummary {
+        let isStickyNote = annotation.kind == .stickyNote
+        let strokes = annotation.kind == .ink ? annotation.strokes : []
+        return OpenGraphiteCanvasAnnotationSummary(
+            internalID: annotation.internalID,
+            referenceID: annotationReferenceID(for: annotation, target: target),
+            kind: annotation.kind,
+            frame: annotation.frame,
+            text: isStickyNote ? annotation.text : nil,
+            backgroundColor: isStickyNote ? annotation.backgroundColor : nil,
+            textColor: isStickyNote ? annotation.textColor : nil,
+            strokeCount: strokes.count,
+            pointCount: strokes.reduce(0) { $0 + $1.points.count }
+        )
+    }
+
+    /// 論理名（日本語）: 注釈参照ID生成関数
+    /// 処理概要: 注釈を含む segment / Chapter / Collection と注釈内部 ID から typed 参照 ID を作ります。
+    ///
+    /// - Parameters:
+    ///   - annotation: 参照対象注釈。
+    ///   - target: 注釈を含む Chapter / Collection。
+    /// - Returns: `ogref:annotation:<pages|components>:<container>:<annotation>`。
+    private func annotationReferenceID(
+        for annotation: OpenGraphiteCanvasAnnotation,
+        target: OpenGraphiteCanvasAnnotationContainerTarget
+    ) -> String {
+        OpenGraphiteReferenceID.annotation(
+            segment: target.segment,
+            containerID: target.internalID,
+            annotationID: annotation.internalID
+        ).stringValue
+    }
+
     /// 論理名（日本語）: ページ位置検索関数
     /// 処理概要: Chapter / Collection 配列を横断し、指定 page ID、内部 ID、または複合参照 ID の位置を返します。
     ///
@@ -3745,7 +4136,7 @@ struct OpenGraphiteAgentCore {
                 return nil
             }
             return OpenGraphiteProjectPageLocation(segment: .components, groupIndex: collectionIndex, pageIndex: pageIndex)
-        case .chapter, .collection:
+        case .chapter, .collection, .annotation:
             return nil
         }
     }

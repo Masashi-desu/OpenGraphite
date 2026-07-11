@@ -25,6 +25,7 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 - `public/` のページ編集は、OpenGraphite が実際の Web deliverable を扱えることの自己検証でもある。ホームページやドキュメントページを例外的な手作業の成果物として扱わない。
 - OpenGraphite.app、CLI、MCP、browser、AI agent は、同じリポジトリ上の source を見て協業するための入口である。どの入口を使っても、最終的な説明は source files に戻るべきである。
 - ページの見た目、構造、文言、preview state、project metadata の責務を混ぜない。便利さのために正本の境界を曖昧にしない。
+- キャンバス前面の付箋と手書きは `.ogp` の collaboration annotation であり、page content ではない。注釈を実装指示として扱う場合も、明示的に source edit を実行するまでは HTML / CSS / build output へ混ぜず、実装結果は通常の Web source として保存する。
 - 既存機能で自然に編集できない場合は、ページを迂回して壊れやすい例外運用を増やすのではなく、OpenGraphite 側の不足として捉える。
 - 不足機能を追加するときは、短期的な作業効率よりも、source-of-truth model、Web 標準としての可読性、リポジトリ上でのレビュー可能性を優先する。
 - class や生成物や editor-only state を、OpenGraphite が信頼する主要な編集正本へ昇格させない。

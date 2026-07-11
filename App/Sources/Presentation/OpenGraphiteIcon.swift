@@ -249,6 +249,14 @@ extension OpenGraphiteIcon {
             return .lucide("frame", fallbackSystemName: "square.dashed")
         case .icon:
             return .lucide("star", fallbackSystemName: "star")
+        case .stickyNote:
+            return .lucide("sticky-note", fallbackSystemName: "note.text")
+        case .pen:
+            return .lucide("pen-tool", fallbackSystemName: "pencil.tip")
+        case .eraser:
+            return .lucide("eraser", fallbackSystemName: "eraser")
+        case .lasso:
+            return .lucide("lasso-select", fallbackSystemName: "lasso")
         case .hand:
             return .lucide("hand", fallbackSystemName: "hand.raised")
         }

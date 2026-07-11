@@ -1,13 +1,13 @@
 import Foundation
 
 /// 論理名（日本語）: ogkiln CLI
-/// 概要: OpenGraphite repository を inspection、validation、node 単位編集するコマンドライン実装です。
+/// 概要: OpenGraphite repository を inspection、キャンバス注釈参照、validation、node 単位編集するコマンドライン実装です。
 ///
 /// メソッド:
 /// - `run(arguments:currentDirectory:stdout:stderr:)`: CLI 引数を解釈してコマンドを実行します。
 struct OgkilnCLI {
     /// 論理名（日本語）: CLI実行関数
-    /// 処理概要: `ogkiln` の引数を解析し、project / page / validate / node コマンドを実行します。
+    /// 処理概要: `ogkiln` の引数を解析し、project / annotation / page / validate / node コマンドを実行します。
     ///
     /// - Parameters:
     ///   - arguments: `CommandLine.arguments.dropFirst()` 相当の引数。
@@ -77,6 +77,37 @@ struct OgkilnCLI {
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let summary = try core.inspectProject(at: projectURL)
             return try OgkilnOutput(object: summary, exitCode: summary.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+
+        case ["annotation", "list"]:
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.canvasAnnotations(
+                projectURL: projectURL,
+                chapterID: try optionalOption("--chapter-id", in: arguments),
+                collectionID: try optionalOption("--collection-id", in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
+
+        case ["annotation", "get"]:
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.canvasAnnotation(
+                projectURL: projectURL,
+                id: try requiredOption("--id", in: arguments),
+                chapterID: try optionalOption("--chapter-id", in: arguments),
+                collectionID: try optionalOption("--collection-id", in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
 
         case ["design-token", "list"]:
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
@@ -305,7 +336,9 @@ struct OgkilnCLI {
             let output = try requiredOption("--output", in: arguments)
             let result = try OpenGraphiteScreenshotRenderer().captureCanvas(
                 projectURL: projectURL,
-                outputURL: url(for: output, currentDirectory: currentDirectory)
+                outputURL: url(for: output, currentDirectory: currentDirectory),
+                chapterID: try optionalOption("--chapter-id", in: arguments),
+                collectionID: try optionalOption("--collection-id", in: arguments)
             )
             return try OgkilnOutput(object: result, exitCode: 0)
         }
@@ -932,6 +965,8 @@ struct OgkilnCLI {
       ogkiln project current --json
       ogkiln project create --root <project-root> --output <project.ogp> [--json]
       ogkiln project inspect <project.ogp|current> --json
+      ogkiln annotation list <project.ogp|current> --chapter-id <chapter-id>|--collection-id <collection-id> --json
+      ogkiln annotation get <project.ogp|current> [--chapter-id <chapter-id>|--collection-id <collection-id>] --id <annotation-id|ogref-annotation-id> --json
       ogkiln design-token list <project.ogp|current> --json
       ogkiln design-token set <project.ogp|current> --name <css-custom-property> --value <css-value>
       ogkiln design-token remove <project.ogp|current> --name <css-custom-property>
@@ -953,7 +988,7 @@ struct OgkilnCLI {
       ogkiln i18n resource set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --locale <locale> --key <i18n-key> --text-file <text-file>
       ogkiln validate <project.ogp|current> [--json]
       ogkiln build <project.ogp|current> --output <dir>
-      ogkiln screenshot canvas <project.ogp|current> --output <png>
+      ogkiln screenshot canvas <project.ogp|current> --output <png> [--chapter-id <chapter-id>|--collection-id <collection-id>]
       ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
       ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
       ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json

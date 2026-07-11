@@ -210,7 +210,7 @@ struct OpenGraphiteComponentBuilder {
     }
 
     /// 論理名（日本語）: HTML root assetコピー判定関数
-    /// 処理概要: build に同梱する public asset かどうかを判定します。
+    /// 処理概要: HTML、runtime、editor-only `.ogp` を除外し、build に同梱する public asset かどうかを判定します。
     private func shouldCopyHTMLRootAsset(
         _ relativePath: String,
         pagePaths: Set<String>,
@@ -223,6 +223,9 @@ struct OpenGraphiteComponentBuilder {
             return false
         }
         if URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "html" {
+            return false
+        }
+        if URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "ogp" {
             return false
         }
         return true

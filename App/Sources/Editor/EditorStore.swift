@@ -45,6 +45,8 @@ struct OpenGraphiteSelectionOverlayFrame: Equatable {
 /// - `selectedCollectionInternalID`: 選択中 Component Collection の内部 ID。
 /// - `selectedComponentPageID`: 選択中 component canvas の ID。
 /// - `selectedComponentPageInternalID`: 選択中 component canvas カードの内部 ID。
+/// - `selectedCanvasAnnotationID`: 選択中の `.ogp` 専用キャンバス注釈の primary ID。
+/// - `selectedCanvasAnnotationIDs`: なげわを含む Canvas 操作で同時選択中の注釈 ID 集合。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
 /// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
@@ -73,6 +75,13 @@ final class EditorStore: ObservableObject {
     @Published var selectedCollectionInternalID: String?
     @Published var selectedComponentPageID: String?
     @Published var selectedComponentPageInternalID: String?
+    @Published var selectedCanvasAnnotationID: String? {
+        didSet {
+            guard !isApplyingCanvasAnnotationMultiSelection else { return }
+            selectedCanvasAnnotationIDs = selectedCanvasAnnotationID.map { Set([$0]) } ?? []
+        }
+    }
+    @Published private(set) var selectedCanvasAnnotationIDs: Set<String> = []
     @Published var selectedProjectResource: OpenGraphiteProjectResourceSelection? {
         didSet {
             guard oldValue != selectedProjectResource else { return }
@@ -90,6 +99,9 @@ final class EditorStore: ObservableObject {
     @Published var selectedNodeID: String? {
         didSet {
             guard oldValue != selectedNodeID else { return }
+            if selectedNodeID != nil {
+                selectedCanvasAnnotationID = nil
+            }
             synchronizeLayerNodeSelectionForPrimarySelection()
             inspectorSectionOpenRequest = nil
             selectionOverlayFrame = nil
@@ -128,10 +140,14 @@ final class EditorStore: ObservableObject {
     private var documentReplacementSequence = 0
     private var inspectorSectionOpenRequestSequence = 0
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
+    private var editorUndoStack: [EditorHistoryEntry] = []
+    private var editorRedoStack: [EditorHistoryEntry] = []
+    @Published private var stagedCanvasAnnotationTextDrafts: [String: StagedCanvasAnnotationTextDraft] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var cssVariableBaselinesByInternalID: [String: [String: String]] = [:]
     private var selectedNodeSelectionAnchorID: String?
     private var isApplyingNodeRangeSelection = false
+    private var isApplyingCanvasAnnotationMultiSelection = false
     private var pageChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
@@ -198,6 +214,36 @@ final class EditorStore: ObservableObject {
         case .components:
             return componentPages
         }
+    }
+
+    var selectedCanvasAnnotations: [OpenGraphiteCanvasAnnotation] {
+        let annotations: [OpenGraphiteCanvasAnnotation]
+        switch selectedCanvasSegment {
+        case .pages:
+            annotations = selectedChapter?.annotations ?? []
+        case .components:
+            annotations = selectedComponentCollection?.annotations ?? []
+        }
+        guard let projectURL = loadedProject?.fileURL else { return annotations }
+        return annotations.map { annotation in
+            let key = canvasAnnotationBaselineKey(
+                projectURL: projectURL,
+                annotationID: annotation.internalID
+            )
+            guard let draft = stagedCanvasAnnotationTextDrafts[key],
+                  annotation.kind == .stickyNote
+            else {
+                return annotation
+            }
+            var overlaidAnnotation = annotation
+            overlaidAnnotation.text = draft.text
+            return overlaidAnnotation
+        }
+    }
+
+    var selectedCanvasAnnotation: OpenGraphiteCanvasAnnotation? {
+        guard let selectedCanvasAnnotationID else { return nil }
+        return selectedCanvasAnnotations.first { $0.internalID == selectedCanvasAnnotationID }
     }
 
     var selectedCanvasTitle: String {
@@ -532,6 +578,14 @@ final class EditorStore: ObservableObject {
     /// - Returns: コピーできた場合は `true`。
     @discardableResult
     func copySelectedReferenceIDToPasteboard() -> Bool {
+        if selectedCanvasAnnotationIDs.count > 1,
+           copySelectedCanvasAnnotationReferenceIDsToPasteboard() {
+            return true
+        }
+        if let selectedCanvasAnnotation,
+           copyCanvasAnnotationReferenceIDToPasteboard(selectedCanvasAnnotation) {
+            return true
+        }
         if let selectedNode, copyNodeReferenceIDToPasteboard(selectedNode) {
             return true
         }
@@ -551,6 +605,63 @@ final class EditorStore: ObservableObject {
         return false
     }
 
+    /// 論理名（日本語）: キャンバス注釈参照ID生成関数
+    /// 処理概要: 現在表示中の Chapter / Collection と注釈内部 ID から agent 向け参照 ID を返します。
+    ///
+    /// - Parameter annotation: 参照するキャンバス注釈。
+    /// - Returns: `ogref:annotation:<segment>:<containerInternalID>:<annotationInternalID>`。現在の Canvas に含まれない場合は `nil`。
+    func canvasAnnotationReferenceID(for annotation: OpenGraphiteCanvasAnnotation) -> String? {
+        guard selectedCanvasAnnotations.contains(where: { $0.internalID == annotation.internalID }),
+              !annotation.internalID.isEmpty
+        else {
+            return nil
+        }
+
+        let containerInternalID: String?
+        switch selectedCanvasSegment {
+        case .pages:
+            containerInternalID = selectedChapter?.internalID
+        case .components:
+            containerInternalID = selectedComponentCollection?.internalID
+        }
+        guard let containerInternalID, !containerInternalID.isEmpty else { return nil }
+        return OpenGraphiteReferenceID.annotation(
+            segment: selectedCanvasSegment,
+            containerID: containerInternalID,
+            annotationID: annotation.internalID
+        ).stringValue
+    }
+
+    /// 論理名（日本語）: キャンバス注釈参照IDコピー関数
+    /// 処理概要: 指定注釈の agent 向け参照 ID を pasteboard へ保存します。
+    ///
+    /// - Parameter annotation: コピー対象のキャンバス注釈。
+    /// - Returns: コピーできた場合は `true`。
+    @discardableResult
+    func copyCanvasAnnotationReferenceIDToPasteboard(_ annotation: OpenGraphiteCanvasAnnotation) -> Bool {
+        copyReferenceIDToPasteboard(
+            canvasAnnotationReferenceID(for: annotation),
+            label: "Canvas annotation"
+        )
+    }
+
+    /// 論理名（日本語）: 複数キャンバス注釈参照IDコピー関数
+    /// 処理概要: なげわなどで同時選択した注釈の typed reference を Canvas 配列順の改行区切りで pasteboard へ保存します。
+    ///
+    /// - Returns: 1件以上の参照 ID をコピーできた場合は `true`。
+    @discardableResult
+    func copySelectedCanvasAnnotationReferenceIDsToPasteboard() -> Bool {
+        let referenceIDs: [String] = selectedCanvasAnnotations.compactMap { annotation -> String? in
+            guard selectedCanvasAnnotationIDs.contains(annotation.internalID) else { return nil }
+            return canvasAnnotationReferenceID(for: annotation)
+        }
+        guard !referenceIDs.isEmpty else { return false }
+        return copyReferenceIDToPasteboard(
+            referenceIDs.joined(separator: "\n"),
+            label: "Canvas annotations (\(referenceIDs.count))"
+        )
+    }
+
     /// 論理名（日本語）: Project資源選択関数
     /// 処理概要: Pages / Components の HTML 選択を維持したまま、Inspector 表示対象を Project 依存性へ切り替えます。
     ///
@@ -558,6 +669,7 @@ final class EditorStore: ObservableObject {
     func selectProjectResource(_ resource: OpenGraphiteProjectResourceSelection?) {
         selectedProjectResource = resource
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if let resource {
             statusMessage = "\(resource.title) を表示しています。"
         } else {
@@ -1123,7 +1235,9 @@ final class EditorStore: ObservableObject {
             let project = try loader.loadProject(at: url)
             let initialCollection = Self.preferredCollection(in: project.project)
             loadedProject = project
-            selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.components.isEmpty ? .components : .pages
+            selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.collections.isEmpty
+                ? .components
+                : .pages
             selectedChapterID = project.project.chapters.first?.id
             selectedChapterInternalID = project.project.chapters.first?.internalID
             selectedPageID = nil
@@ -1132,6 +1246,7 @@ final class EditorStore: ObservableObject {
             selectedCollectionInternalID = initialCollection?.internalID
             selectedComponentPageID = initialCollection?.components.first?.id
             selectedComponentPageInternalID = initialCollection?.components.first?.internalID
+            selectedCanvasAnnotationID = nil
             selectedProjectResource = nil
             selectedNodeID = nil
             nodes = []
@@ -1142,6 +1257,9 @@ final class EditorStore: ObservableObject {
             textMutation = nil
             documentReplacementRequest = nil
             syncHistories = [:]
+            editorUndoStack = []
+            editorRedoStack = []
+            stagedCanvasAnnotationTextDrafts = [:]
             lastKnownPageHTMLByURL = [:]
             pageReloadTokensByURL = [:]
             staticFlowLinksByPageInternalID = [:]
@@ -1199,6 +1317,7 @@ final class EditorStore: ObservableObject {
             selectedComponentPageInternalID = page?.internalID
         }
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
@@ -1245,6 +1364,7 @@ final class EditorStore: ObservableObject {
         selectedPageID = nil
         selectedPageInternalID = nil
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
@@ -1289,6 +1409,7 @@ final class EditorStore: ObservableObject {
         selectedComponentPageID = collection?.components.first?.id
         selectedComponentPageInternalID = collection?.components.first?.internalID
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
@@ -1318,6 +1439,7 @@ final class EditorStore: ObservableObject {
             self.selectedPageInternalID = nil
         }
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
             nodes = []
         }
@@ -1343,6 +1465,7 @@ final class EditorStore: ObservableObject {
             selectedComponentPageInternalID = componentPages.first?.internalID
         }
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
             nodes = []
         }
@@ -1392,6 +1515,7 @@ final class EditorStore: ObservableObject {
         selectedComponentPageID = page?.id
         selectedComponentPageInternalID = page?.internalID
         selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL {
             nodes = []
         }
@@ -1875,6 +1999,799 @@ final class EditorStore: ObservableObject {
         } catch {
             lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
         }
+    }
+
+    /// 論理名（日本語）: 付箋追加関数
+    /// 処理概要: 現在表示中の Chapter / Collection へテキスト編集可能な付箋を追加し、`.ogp` だけを保存します。
+    ///
+    /// - Parameter point: 付箋左上にするキャンバス座標。
+    /// - Returns: 追加した注釈の内部 ID。保存できない場合は `nil`。
+    @discardableResult
+    func addStickyNote(at point: CGPoint) -> String? {
+        guard point.x.isFinite, point.y.isFinite else { return nil }
+        let internalID = UUID().uuidString.lowercased()
+        let annotation = OpenGraphiteCanvasAnnotation(
+            internalID: internalID,
+            kind: .stickyNote,
+            frame: OpenGraphiteCanvasAnnotationFrame(
+                x: Double(point.x),
+                y: Double(point.y),
+                width: 240,
+                height: 160
+            )
+        )
+        guard persistSelectedCanvasAnnotations({ annotations in
+            annotations.append(annotation)
+            return true
+        }, status: "付箋を .ogp に追加しました。") else {
+            return nil
+        }
+        selectCanvasAnnotation(id: internalID)
+        return internalID
+    }
+
+    /// 論理名（日本語）: 手書き注釈追加関数
+    /// 処理概要: 正規化済みフレームとストロークを現在の Chapter / Collection へ追加し、`.ogp` だけを保存します。
+    ///
+    /// - Parameters:
+    ///   - frame: ストロークを包含するキャンバス座標フレーム。
+    ///   - strokes: フレーム左上を原点とする手書きストローク。
+    /// - Returns: 追加した注釈の内部 ID。保存できない場合は `nil`。
+    @discardableResult
+    func addInkAnnotation(
+        frame: OpenGraphiteCanvasAnnotationFrame,
+        strokes: [OpenGraphiteInkStroke]
+    ) -> String? {
+        guard strokes.contains(where: { !$0.points.isEmpty }) else { return nil }
+        let internalID = UUID().uuidString.lowercased()
+        let annotation = OpenGraphiteCanvasAnnotation(
+            internalID: internalID,
+            kind: .ink,
+            frame: frame,
+            strokes: strokes
+        )
+        guard persistSelectedCanvasAnnotations({ annotations in
+            annotations.append(annotation)
+            return true
+        }, status: "手書きメモを .ogp に追加しました。") else {
+            return nil
+        }
+        selectCanvasAnnotation(id: internalID)
+        return internalID
+    }
+
+    /// 論理名（日本語）: 付箋テキスト即時キャッシュ反映関数
+    /// 処理概要: キー入力ごとに app cache の付箋本文を更新し、Canvas の複数 surface へディスク保存を待たず反映します。
+    ///
+    /// - Parameters:
+    ///   - id: 更新対象注釈の内部 ID。
+    ///   - text: cache へ反映する付箋テキスト。
+    func stageCanvasAnnotationText(id: String, text: String) {
+        guard let loadedProject else { return }
+        let baselineKey = canvasAnnotationBaselineKey(projectURL: loadedProject.fileURL, annotationID: id)
+        if var draft = stagedCanvasAnnotationTextDrafts[baselineKey] {
+            guard draft.text != text else { return }
+            draft.text = text
+            stagedCanvasAnnotationTextDrafts[baselineKey] = draft
+            lastError = nil
+            return
+        }
+
+        guard let snapshot = canvasAnnotationSnapshot(containing: id, in: loadedProject.project),
+              let annotation = snapshot.annotations.first(where: { $0.internalID == id }),
+              annotation.kind == .stickyNote,
+              annotation.text != text
+        else {
+            return
+        }
+        stagedCanvasAnnotationTextDrafts[baselineKey] = StagedCanvasAnnotationTextDraft(
+            target: snapshot.target,
+            annotationID: id,
+            baselineText: annotation.text,
+            text: text
+        )
+        lastError = nil
+    }
+
+    /// 論理名（日本語）: 付箋テキスト更新関数
+    /// 処理概要: 即時反映済みの cache を含めて指定付箋のプレーンテキストを、HTML / CSS を変更せず `.ogp` へ確定します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: debounce 開始時の保存対象 `.ogp`。現在別 project を表示していても元 project へ確定します。
+    ///   - id: 更新対象注釈の内部 ID。
+    ///   - text: 保存する付箋テキスト。
+    func updateCanvasAnnotationText(projectURL: URL? = nil, id: String, text: String) {
+        _ = persistCanvasAnnotation(projectURL: projectURL, id: id, mutation: { annotation in
+            guard annotation.kind == .stickyNote, annotation.text != text else { return false }
+            annotation.text = text
+            return true
+        }, status: nil)
+    }
+
+    /// 論理名（日本語）: キャンバス注釈フレーム更新関数
+    /// 処理概要: 付箋または手書き注釈の配置矩形を `.ogp` へ保存します。
+    ///
+    /// - Parameters:
+    ///   - id: 更新対象注釈の内部 ID。
+    ///   - frame: 保存するキャンバス座標フレーム。
+    func updateCanvasAnnotationFrame(id: String, frame: OpenGraphiteCanvasAnnotationFrame) {
+        _ = persistSelectedCanvasAnnotations({ annotations in
+            guard let index = annotations.firstIndex(where: { $0.internalID == id }),
+                  annotations[index].frame != frame
+            else {
+                return false
+            }
+            annotations[index].frame = frame
+            return true
+        }, status: "キャンバス注釈の位置を更新しました。")
+    }
+
+    /// 論理名（日本語）: 手書き部分消去適用関数
+    /// 処理概要: ピクセル消しで分割・再配置した ink と完全に消えた ink を、現在の Chapter / Collection へ一度の atomic write で反映します。
+    ///
+    /// - Parameters:
+    ///   - updatedAnnotations: 同じ内部 ID を保った部分消去後の ink 注釈。
+    ///   - deletedIDs: 手書きが全て消えた ink 注釈の内部 ID。
+    ///   - expectedAnnotations: gesture 開始時の保存先注釈。保存直前のディスク内容が異なる場合は外部更新との競合として中止します。
+    func applyCanvasInkErasure(
+        updatedAnnotations: [OpenGraphiteCanvasAnnotation],
+        deletedIDs: [String],
+        expectedAnnotations: [OpenGraphiteCanvasAnnotation]
+    ) {
+        guard selectedCanvasAnnotations == expectedAnnotations else { return }
+        let currentInkIDs = Set(
+            expectedAnnotations
+                .filter { $0.kind == .ink }
+                .map(\.internalID)
+        )
+        var validDeletedIDs = Set(deletedIDs).intersection(currentInkIDs)
+        var replacementByID: [String: OpenGraphiteCanvasAnnotation] = [:]
+        for var annotation in updatedAnnotations {
+            guard annotation.kind == .ink,
+                  currentInkIDs.contains(annotation.internalID)
+            else {
+                continue
+            }
+            annotation.strokes.removeAll { $0.points.isEmpty }
+            guard !annotation.strokes.isEmpty else {
+                validDeletedIDs.insert(annotation.internalID)
+                replacementByID.removeValue(forKey: annotation.internalID)
+                continue
+            }
+            guard !validDeletedIDs.contains(annotation.internalID) else { continue }
+            replacementByID[annotation.internalID] = annotation
+        }
+        guard !validDeletedIDs.isEmpty || !replacementByID.isEmpty else { return }
+
+        let affectedIDs = validDeletedIDs.union(replacementByID.keys)
+        let expectedAnnotationsByID = Dictionary(
+            uniqueKeysWithValues: expectedAnnotations
+                .filter { affectedIDs.contains($0.internalID) }
+                .map { ($0.internalID, $0) }
+        )
+        guard expectedAnnotationsByID.count == affectedIDs.count else { return }
+
+        let status = replacementByID.isEmpty
+            ? "手書きを消去しました。"
+            : "手書きの一部を消去しました。"
+
+        let didErase = persistSelectedCanvasAnnotations({ annotations in
+            var changed = false
+            annotations = annotations.compactMap { annotation in
+                guard annotation.kind == .ink else { return annotation }
+                if validDeletedIDs.contains(annotation.internalID) {
+                    changed = true
+                    return nil
+                }
+                guard let replacement = replacementByID[annotation.internalID],
+                      replacement != annotation
+                else {
+                    return annotation
+                }
+                changed = true
+                return replacement
+            }
+            return changed
+        }, status: status, expectedDiskAnnotationsByID: expectedAnnotationsByID)
+        guard didErase else { return }
+
+        let survivingSelection = selectedCanvasAnnotationIDs.subtracting(validDeletedIDs)
+        let orderedSurvivingIDs = selectedCanvasAnnotations
+            .map(\.internalID)
+            .filter { survivingSelection.contains($0) }
+        let primaryID = selectedCanvasAnnotationID.flatMap {
+            survivingSelection.contains($0) ? $0 : nil
+        } ?? orderedSurvivingIDs.last
+        applyCanvasAnnotationSelection(ids: Set(orderedSurvivingIDs), primaryID: primaryID)
+    }
+
+    /// 論理名（日本語）: キャンバス注釈削除関数
+    /// 処理概要: 指定注釈を現在の Chapter / Collection から削除して `.ogp` へ保存します。
+    ///
+    /// - Parameter id: 削除対象注釈の内部 ID。
+    func deleteCanvasAnnotation(id: String) {
+        deleteCanvasAnnotations(ids: [id])
+    }
+
+    /// 論理名（日本語）: 複数キャンバス注釈削除関数
+    /// 処理概要: なげわや個別操作で指定した注釈を、現在の Chapter / Collection から一度の `.ogp` 保存で削除します。
+    ///
+    /// - Parameter ids: 削除対象注釈の内部 ID 一覧。
+    func deleteCanvasAnnotations(ids: [String]) {
+        let availableIDs = Set(selectedCanvasAnnotations.map(\.internalID))
+        let deletionIDs = Set(ids).intersection(availableIDs)
+        guard !deletionIDs.isEmpty else { return }
+        let didDelete = persistSelectedCanvasAnnotations({ annotations in
+            let previousCount = annotations.count
+            annotations.removeAll { deletionIDs.contains($0.internalID) }
+            return annotations.count != previousCount
+        }, status: "キャンバス注釈を \(deletionIDs.count) 件削除しました。")
+        guard didDelete else { return }
+
+        let remainingSelection = selectedCanvasAnnotationIDs.subtracting(deletionIDs)
+        let orderedRemainingIDs = selectedCanvasAnnotations
+            .map(\.internalID)
+            .filter { remainingSelection.contains($0) }
+        let primaryID = selectedCanvasAnnotationID.flatMap { remainingSelection.contains($0) ? $0 : nil }
+            ?? orderedRemainingIDs.last
+        applyCanvasAnnotationSelection(ids: Set(orderedRemainingIDs), primaryID: primaryID)
+    }
+
+    /// 論理名（日本語）: 選択キャンバス注釈削除関数
+    /// 処理概要: 同時選択中の注釈をまとめて削除します。未選択時は何もしません。
+    func deleteSelectedCanvasAnnotations() {
+        deleteCanvasAnnotations(ids: Array(selectedCanvasAnnotationIDs))
+    }
+
+    /// 論理名（日本語）: 選択キャンバス注釈移動関数
+    /// 処理概要: ドラッグした注釈が同時選択中なら選択全体を、未選択ならその注釈だけを安全な座標範囲内の共通 world 差分で移動します。
+    ///
+    /// - Parameters:
+    ///   - anchorID: ドラッグ操作を開始した注釈 ID。
+    ///   - translation: zoom 補正済みの Canvas world 移動量。選択全体の相対配置を保つ範囲へ clamp します。
+    func moveSelectedCanvasAnnotations(anchorID: String, translation: CGSize) {
+        guard translation.width.isFinite,
+              translation.height.isFinite,
+              translation != .zero,
+              selectedCanvasAnnotations.contains(where: { $0.internalID == anchorID })
+        else {
+            return
+        }
+
+        if !selectedCanvasAnnotationIDs.contains(anchorID) {
+            selectCanvasAnnotation(id: anchorID)
+        }
+        let movingIDs = selectedCanvasAnnotationIDs
+        let movingAnnotations = selectedCanvasAnnotations.filter { movingIDs.contains($0.internalID) }
+        let maximumCoordinate = OpenGraphiteCanvasAnnotationLimits.maximumCoordinateMagnitude
+        let minimumXTranslation = movingAnnotations.map { -maximumCoordinate - $0.frame.x }.max() ?? 0
+        let maximumXTranslation = movingAnnotations.map { maximumCoordinate - $0.frame.x }.min() ?? 0
+        let minimumYTranslation = movingAnnotations.map { -maximumCoordinate - $0.frame.y }.max() ?? 0
+        let maximumYTranslation = movingAnnotations.map { maximumCoordinate - $0.frame.y }.min() ?? 0
+        let effectiveX = min(max(Double(translation.width), minimumXTranslation), maximumXTranslation)
+        let effectiveY = min(max(Double(translation.height), minimumYTranslation), maximumYTranslation)
+        guard effectiveX != 0 || effectiveY != 0 else { return }
+
+        let didMove = persistSelectedCanvasAnnotations({ annotations in
+            var changed = false
+            for index in annotations.indices where movingIDs.contains(annotations[index].internalID) {
+                let currentFrame = annotations[index].frame
+                let nextFrame = OpenGraphiteCanvasAnnotationFrame(
+                    x: currentFrame.x + effectiveX,
+                    y: currentFrame.y + effectiveY,
+                    width: currentFrame.width,
+                    height: currentFrame.height
+                )
+                guard nextFrame != currentFrame else { continue }
+                annotations[index].frame = nextFrame
+                changed = true
+            }
+            return changed
+        }, status: "キャンバス注釈を \(movingIDs.count) 件移動しました。")
+        if didMove {
+            applyCanvasAnnotationSelection(ids: movingIDs, primaryID: selectedCanvasAnnotationID)
+        }
+    }
+
+    /// 論理名（日本語）: キャンバス注釈選択関数
+    /// 処理概要: 現在の Canvas に含まれる注釈を選択し、HTML page / node 選択を解除します。
+    ///
+    /// - Parameter id: 選択する注釈内部 ID。`nil` または不明な ID の場合は注釈選択を解除します。
+    func selectCanvasAnnotation(id: String?) {
+        selectCanvasAnnotations(ids: id.map { [$0] } ?? [])
+    }
+
+    /// 論理名（日本語）: 複数キャンバス注釈選択関数
+    /// 処理概要: なげわが返した注釈 ID を現在の Canvas 配列順で同時選択し、HTML page / node 選択と排他的にします。
+    ///
+    /// - Parameter ids: 選択候補の注釈内部 ID 一覧。空または不明 ID だけの場合は注釈選択を解除します。
+    func selectCanvasAnnotations(ids: [String]) {
+        let requestedIDs = Set(ids)
+        let orderedIDs = selectedCanvasAnnotations
+            .map(\.internalID)
+            .filter { requestedIDs.contains($0) }
+        guard !orderedIDs.isEmpty else {
+            applyCanvasAnnotationSelection(ids: [], primaryID: nil)
+            statusMessage = "キャンバス注釈の選択を解除しました。"
+            return
+        }
+
+        selectedProjectResource = nil
+        selectedNodeID = nil
+        switch selectedCanvasSegment {
+        case .pages:
+            selectedPageID = nil
+            selectedPageInternalID = nil
+        case .components:
+            selectedComponentPageID = nil
+            selectedComponentPageInternalID = nil
+        }
+        nodes = []
+        applyCanvasAnnotationSelection(ids: Set(orderedIDs), primaryID: orderedIDs.last)
+        statusMessage = orderedIDs.count == 1
+            ? "キャンバス注釈を選択しました。"
+            : "キャンバス注釈を \(orderedIDs.count) 件選択しました。"
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: キャンバス注釈選択状態適用関数
+    /// 処理概要: primary ID の `didSet` による単一選択同期を一時停止し、複数選択集合と primary を原子的に更新します。
+    ///
+    /// - Parameters:
+    ///   - ids: 同時選択 ID 集合。
+    ///   - primaryID: コピーなど単一対象操作で優先する注釈 ID。
+    private func applyCanvasAnnotationSelection(ids: Set<String>, primaryID: String?) {
+        isApplyingCanvasAnnotationMultiSelection = true
+        defer { isApplyingCanvasAnnotationMultiSelection = false }
+        selectedCanvasAnnotationIDs = ids
+        selectedCanvasAnnotationID = primaryID.flatMap { ids.contains($0) ? $0 : nil }
+    }
+
+    /// 論理名（日本語）: キャンバス選択解除関数
+    /// 処理概要: 空のキャンバス操作に応じて page、node、注釈の選択をまとめて解除します。
+    func clearCanvasSelection() {
+        switch selectedCanvasSegment {
+        case .pages:
+            selectedPageID = nil
+            selectedPageInternalID = nil
+        case .components:
+            selectedComponentPageID = nil
+            selectedComponentPageInternalID = nil
+        }
+        selectedNodeID = nil
+        selectedCanvasAnnotationID = nil
+        nodes = []
+        statusMessage = "キャンバス選択を解除しました。"
+        prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: 選択Canvas注釈保存関数
+    /// 処理概要: 現在表示中の Chapter / Collection の注釈配列だけを変更し、project manifest を atomic write します。
+    ///
+    /// - Parameters:
+    ///   - mutation: 注釈配列を変更し、保存が必要な場合に `true` を返す処理。
+    ///   - status: 保存成功時に表示する任意のステータス文言。
+    ///   - expectedDiskAnnotationsByID: 指定時は保存直前に `.ogp` を再読込し、更新対象注釈が一致する場合だけ最新 manifest へ mutation を適用します。
+    /// - Returns: `.ogp` を更新できた場合は `true`。
+    @discardableResult
+    private func persistSelectedCanvasAnnotations(
+        _ mutation: (inout [OpenGraphiteCanvasAnnotation]) -> Bool,
+        status: String?,
+        expectedDiskAnnotationsByID: [String: OpenGraphiteCanvasAnnotation]? = nil
+    ) -> Bool {
+        guard let currentProject = loadedProject,
+              let historyTarget = selectedCanvasAnnotationHistoryTarget(in: currentProject.project)
+        else {
+            return false
+        }
+        var targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: currentProject.fileURL)
+        } catch {
+            lastError = ".ogp の保存前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+
+        let didChange: Bool
+        let previousAnnotations: [OpenGraphiteCanvasAnnotation]
+        switch historyTarget.segment {
+        case .pages:
+            let chapterIndex = targetProject.project.chapters.firstIndex {
+                $0.internalID == historyTarget.containerInternalID
+            }
+            guard let chapterIndex else {
+                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                return false
+            }
+            previousAnnotations = targetProject.project.chapters[chapterIndex].annotations
+            if let expectedDiskAnnotationsByID,
+               !annotationsMatchExpectedValues(
+                    targetProject.project.chapters[chapterIndex].annotations,
+                    expectedByID: expectedDiskAnnotationsByID
+               ) {
+                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                statusMessage = ".ogp の外部変更を検出したため、手書きの消去を中止しました。もう一度操作してください。"
+                return false
+            }
+            didChange = mutation(&targetProject.project.chapters[chapterIndex].annotations)
+        case .components:
+            let collectionIndex = targetProject.project.collections.firstIndex {
+                $0.internalID == historyTarget.containerInternalID
+            }
+            guard let collectionIndex else {
+                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                return false
+            }
+            previousAnnotations = targetProject.project.collections[collectionIndex].annotations
+            if let expectedDiskAnnotationsByID,
+               !annotationsMatchExpectedValues(
+                    targetProject.project.collections[collectionIndex].annotations,
+                    expectedByID: expectedDiskAnnotationsByID
+               ) {
+                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                statusMessage = ".ogp の外部変更を検出したため、手書きの消去を中止しました。もう一度操作してください。"
+                return false
+            }
+            didChange = mutation(&targetProject.project.collections[collectionIndex].annotations)
+        }
+        guard didChange else {
+            if targetProject.project != currentProject.project
+                || targetProject.rootURL != currentProject.rootURL {
+                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+            }
+            return false
+        }
+
+        do {
+            targetProject.project = targetProject.project.normalizedInternalIDs()
+            try writeProjectManifest(targetProject.project, to: targetProject.fileURL)
+            removeMissingStagedCanvasAnnotationTextDrafts(
+                from: targetProject.project,
+                projectURL: targetProject.fileURL
+            )
+            self.loadedProject = targetProject
+            reconcileCanvasAnnotationSelectionAfterManifestChange()
+            let nextAnnotations = canvasAnnotations(for: historyTarget, in: targetProject.project) ?? []
+            recordCanvasAnnotationHistory(
+                projectURL: targetProject.fileURL,
+                target: historyTarget,
+                previousAnnotations: previousAnnotations,
+                nextAnnotations: nextAnnotations
+            )
+            lastError = nil
+            if let status {
+                statusMessage = status
+            }
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: 保存前注釈一致判定関数
+    /// 処理概要: 最新 `.ogp` の対象 container 内で、今回更新する注釈 ID が gesture 開始時の値から変わっていないことを確認します。
+    ///
+    /// - Parameters:
+    ///   - annotations: 保存直前にディスクから読み込んだ注釈配列。
+    ///   - expectedByID: gesture 開始時の更新対象注釈を ID で引く辞書。
+    /// - Returns: 全ての対象 ID が同じ値で存在する場合は `true`。
+    private func annotationsMatchExpectedValues(
+        _ annotations: [OpenGraphiteCanvasAnnotation],
+        expectedByID: [String: OpenGraphiteCanvasAnnotation]
+    ) -> Bool {
+        let currentByID = Dictionary(uniqueKeysWithValues: annotations.map { ($0.internalID, $0) })
+        return expectedByID.allSatisfy { id, expected in
+            currentByID[id] == expected
+        }
+    }
+
+    /// 論理名（日本語）: キャンバス注釈Disk変更同期関数
+    /// 処理概要: 保存直前に読み込んだ最新 manifest を表示へ反映し、削除済み注釈の未確定本文だけを破棄します。
+    ///
+    /// - Parameter project: ディスクから読み込んだ最新 project。
+    private func synchronizeAfterCanvasAnnotationDiskChange(
+        _ project: LoadedOpenGraphiteProject
+    ) {
+        removeMissingStagedCanvasAnnotationTextDrafts(
+            from: project.project,
+            projectURL: project.fileURL
+        )
+        loadedProject = project
+        reconcileCanvasAnnotationSelectionAfterManifestChange()
+        lastError = nil
+        restartExternalProjectMonitoring(force: true)
+    }
+
+    /// 論理名（日本語）: 付箋本文保存競合同期関数
+    /// 処理概要: 入力開始後に同じ付箋本文が外部変更された場合、local draft の上書きを中止して最新 manifest と履歴可否を同期します。
+    ///
+    /// - Parameters:
+    ///   - project: ディスクから読み込んだ最新 project。
+    ///   - baselineKey: 破棄する付箋本文draftのキー。
+    private func synchronizeAfterCanvasAnnotationTextConflict(
+        _ project: LoadedOpenGraphiteProject,
+        baselineKey: String
+    ) {
+        stagedCanvasAnnotationTextDrafts.removeValue(forKey: baselineKey)
+        if loadedProject?.fileURL.standardizedFileURL == project.fileURL.standardizedFileURL {
+            synchronizeAfterCanvasAnnotationHistoryConflict(with: project)
+        }
+        lastError = nil
+        statusMessage = ".ogp で同じ付箋本文が外部変更されたため、入力内容の保存を中止しました。"
+    }
+
+    /// 論理名（日本語）: ID指定キャンバス注釈保存関数
+    /// 処理概要: debounce 中に表示キャンバスが切り替わっても、project 全体で一意な注釈 ID から元の Chapter / Collection を解決して保存します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 保存対象 project URL。未指定時は現在読み込み中の project。
+    ///   - id: 更新対象注釈の project 内部 ID。
+    ///   - mutation: 対象注釈を変更し、保存が必要な場合に `true` を返す処理。
+    ///   - status: 保存成功時に表示する任意のステータス文言。
+    /// - Returns: `.ogp` を更新できた場合は `true`。
+    @discardableResult
+    private func persistCanvasAnnotation(
+        projectURL: URL?,
+        id: String,
+        mutation: (inout OpenGraphiteCanvasAnnotation) -> Bool,
+        status: String?
+    ) -> Bool {
+        guard let targetURL = projectURL?.standardizedFileURL
+            ?? loadedProject?.fileURL.standardizedFileURL
+        else {
+            return false
+        }
+        var targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: targetURL)
+        } catch {
+            lastError = ".ogp の読み込みに失敗しました: \(error.localizedDescription)"
+            return false
+        }
+
+        let baselineKey = canvasAnnotationBaselineKey(projectURL: targetProject.fileURL, annotationID: id)
+        let stagedDraft = stagedCanvasAnnotationTextDrafts[baselineKey]
+        let historySnapshot: CanvasAnnotationHistorySnapshot
+        if let stagedDraft {
+            guard let currentAnnotations = canvasAnnotations(
+                for: stagedDraft.target,
+                in: targetProject.project
+            ),
+            let currentAnnotation = currentAnnotations.first(where: { $0.internalID == id }),
+            currentAnnotation.kind == .stickyNote,
+            currentAnnotation.text == stagedDraft.baselineText
+            else {
+                synchronizeAfterCanvasAnnotationTextConflict(
+                    targetProject,
+                    baselineKey: baselineKey
+                )
+                return false
+            }
+            historySnapshot = CanvasAnnotationHistorySnapshot(
+                target: stagedDraft.target,
+                annotations: currentAnnotations
+            )
+        } else {
+            guard let snapshot = canvasAnnotationSnapshot(containing: id, in: targetProject.project) else {
+                return false
+            }
+            historySnapshot = snapshot
+        }
+
+        let didChange = mutateCanvasAnnotation(
+            in: &targetProject.project,
+            target: historySnapshot.target,
+            id: id,
+            mutation: mutation
+        )
+        let isCurrentProject = loadedProject?.fileURL.standardizedFileURL
+            == targetProject.fileURL.standardizedFileURL
+        guard didChange else {
+            if isCurrentProject {
+                self.loadedProject = targetProject
+                reconcileCanvasAnnotationSelectionAfterManifestChange()
+                restartExternalProjectMonitoring(force: true)
+            }
+            stagedCanvasAnnotationTextDrafts.removeValue(forKey: baselineKey)
+            lastError = nil
+            return false
+        }
+
+        do {
+            targetProject.project = targetProject.project.normalizedInternalIDs()
+            try writeProjectManifest(targetProject.project, to: targetProject.fileURL)
+            if isCurrentProject {
+                self.loadedProject = targetProject
+                reconcileCanvasAnnotationSelectionAfterManifestChange()
+                restartExternalProjectMonitoring(force: true)
+            }
+            stagedCanvasAnnotationTextDrafts.removeValue(forKey: baselineKey)
+            if let nextAnnotations = canvasAnnotations(for: historySnapshot.target, in: targetProject.project),
+               isCurrentProject {
+                recordCanvasAnnotationHistory(
+                    projectURL: targetProject.fileURL,
+                    target: historySnapshot.target,
+                    previousAnnotations: historySnapshot.annotations,
+                    nextAnnotations: nextAnnotations
+                )
+            }
+            lastError = nil
+            if let status {
+                statusMessage = status
+            }
+            return true
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: Project内キャンバス注釈変更関数
+    /// 処理概要: 履歴対象で固定した Chapter / Collection 内の注釈だけへ、指定の変更を一度だけ適用します。
+    ///
+    /// - Parameters:
+    ///   - project: 変更対象 project。
+    ///   - target: 変更対象の Chapter / Collection。
+    ///   - id: 注釈内部 ID。
+    ///   - mutation: 対象注釈へ適用する変更。
+    /// - Returns: 対象が見つかり変更された場合は `true`。
+    private func mutateCanvasAnnotation(
+        in project: inout OpenGraphiteProject,
+        target: CanvasAnnotationHistoryTarget,
+        id: String,
+        mutation: (inout OpenGraphiteCanvasAnnotation) -> Bool
+    ) -> Bool {
+        switch target.segment {
+        case .pages:
+            guard let chapterIndex = project.chapters.firstIndex(where: {
+                $0.internalID == target.containerInternalID
+            }),
+            let annotationIndex = project.chapters[chapterIndex].annotations.firstIndex(where: {
+                $0.internalID == id
+            }) else {
+                return false
+            }
+            return mutation(&project.chapters[chapterIndex].annotations[annotationIndex])
+        case .components:
+            guard let collectionIndex = project.collections.firstIndex(where: {
+                $0.internalID == target.containerInternalID
+            }),
+            let annotationIndex = project.collections[collectionIndex].annotations.firstIndex(where: {
+                $0.internalID == id
+            }) else {
+                return false
+            }
+            return mutation(&project.collections[collectionIndex].annotations[annotationIndex])
+        }
+    }
+
+    /// 論理名（日本語）: 注釈包含コンテナ履歴取得関数
+    /// 処理概要: project 内で指定注釈を含む Chapter / Collection と注釈配列を履歴用に取得します。
+    ///
+    /// - Parameters:
+    ///   - id: 検索する注釈内部 ID。
+    ///   - project: 検索対象 project。
+    /// - Returns: 注釈を含むコンテナのスナップショット。見つからない場合は `nil`。
+    private func canvasAnnotationSnapshot(
+        containing id: String,
+        in project: OpenGraphiteProject
+    ) -> CanvasAnnotationHistorySnapshot? {
+        if let chapter = project.chapters.first(where: { chapter in
+            chapter.annotations.contains { $0.internalID == id }
+        }) {
+            return CanvasAnnotationHistorySnapshot(
+                target: CanvasAnnotationHistoryTarget(
+                    segment: .pages,
+                    containerInternalID: chapter.internalID
+                ),
+                annotations: chapter.annotations
+            )
+        }
+        if let collection = project.collections.first(where: { collection in
+            collection.annotations.contains { $0.internalID == id }
+        }) {
+            return CanvasAnnotationHistorySnapshot(
+                target: CanvasAnnotationHistoryTarget(
+                    segment: .components,
+                    containerInternalID: collection.internalID
+                ),
+                annotations: collection.annotations
+            )
+        }
+        return nil
+    }
+
+    /// 論理名（日本語）: 選択キャンバス注釈履歴対象取得関数
+    /// 処理概要: 現在の segment と選択containerを、最新manifestへrebaseできる固定targetへ変換します。
+    ///
+    /// - Parameter project: 選択解決の基準にする現在の project。
+    /// - Returns: 選択中 Chapter / Collection。対象がなければ`nil`。
+    private func selectedCanvasAnnotationHistoryTarget(
+        in project: OpenGraphiteProject
+    ) -> CanvasAnnotationHistoryTarget? {
+        switch selectedCanvasSegment {
+        case .pages:
+            let containerInternalID = selectedChapterInternalID
+                ?? project.chapters.first?.internalID
+            guard let containerInternalID,
+                  project.chapters.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasAnnotationHistoryTarget(
+                segment: .pages,
+                containerInternalID: containerInternalID
+            )
+        case .components:
+            let containerInternalID = selectedCollectionInternalID
+                ?? project.collections.first?.internalID
+            guard let containerInternalID,
+                  project.collections.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasAnnotationHistoryTarget(
+                segment: .components,
+                containerInternalID: containerInternalID
+            )
+        }
+    }
+
+    /// 論理名（日本語）: コンテナ注釈配列取得関数
+    /// 処理概要: 履歴対象が示す Chapter / Collection の注釈配列を取得します。
+    ///
+    /// - Parameters:
+    ///   - target: 履歴対象コンテナ。
+    ///   - project: 取得対象 project。
+    /// - Returns: 対象コンテナの注釈配列。対象が存在しない場合は `nil`。
+    private func canvasAnnotations(
+        for target: CanvasAnnotationHistoryTarget,
+        in project: OpenGraphiteProject
+    ) -> [OpenGraphiteCanvasAnnotation]? {
+        switch target.segment {
+        case .pages:
+            return project.chapters.first { $0.internalID == target.containerInternalID }?.annotations
+        case .components:
+            return project.collections.first { $0.internalID == target.containerInternalID }?.annotations
+        }
+    }
+
+    /// 論理名（日本語）: 消滅付箋Draft破棄関数
+    /// 処理概要: 最新manifestに存在しない注釈の未確定本文だけを対象projectのoverlayから除外します。
+    ///
+    /// - Parameters:
+    ///   - project: 最新の project 定義。
+    ///   - projectURL: draftを分離する `.ogp` URL。
+    private func removeMissingStagedCanvasAnnotationTextDrafts(
+        from project: OpenGraphiteProject,
+        projectURL: URL
+    ) {
+        let availableAnnotationIDs = Set(
+            project.chapters.flatMap(\.annotations).map(\.internalID)
+                + project.collections.flatMap(\.annotations).map(\.internalID)
+        )
+        let projectKeyPrefix = "\(projectURL.standardizedFileURL.path)\u{0}"
+        let keysToRemove = stagedCanvasAnnotationTextDrafts.compactMap { key, draft in
+            key.hasPrefix(projectKeyPrefix) && !availableAnnotationIDs.contains(draft.annotationID)
+                ? key
+                : nil
+        }
+        for key in keysToRemove {
+            stagedCanvasAnnotationTextDrafts.removeValue(forKey: key)
+        }
+    }
+
+    /// 論理名（日本語）: 注釈入力基準キー生成関数
+    /// 処理概要: debounce 中の付箋本文について project と注釈を一意に結ぶ履歴基準キーを生成します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 保存対象 `.ogp` URL。
+    ///   - annotationID: 注釈内部 ID。
+    /// - Returns: project URL と注釈 ID を連結したキー。
+    private func canvasAnnotationBaselineKey(projectURL: URL, annotationID: String) -> String {
+        "\(projectURL.standardizedFileURL.path)\u{0}\(annotationID)"
     }
 
     /// 論理名（日本語）: 選択ページキャンバス配置更新関数
@@ -3091,9 +4008,13 @@ final class EditorStore: ObservableObject {
         do {
             try html.write(to: target.htmlURL, atomically: true, encoding: .utf8)
             lastKnownPageHTMLByURL[target.htmlURL] = html
-            history.recordSync(html: html)
+            let didRecordHistory = history.recordSync(html: html)
             syncHistories[target.htmlURL] = history
-            updateHistoryAvailability()
+            if didRecordHistory, let projectURL = loadedProject?.fileURL {
+                recordDocumentHistory(projectURL: projectURL, pageURL: target.htmlURL)
+            } else {
+                updateHistoryAvailability()
+            }
             statusMessage = "\(target.htmlURL.lastPathComponent) と同期しました。"
             return true
         } catch {
@@ -3144,13 +4065,13 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ドキュメント変更取り消し関数
-    /// 処理概要: 現在ページの同期履歴を一段戻し、HTML ファイルと WebView へ同じスナップショットを適用します。
+    /// 処理概要: 現在ページの HTML または直前のキャンバス注釈変更を一段戻し、各正本へ適用します。
     func undoDocumentChange() {
         applyHistoryNavigation(direction: .undo)
     }
 
     /// 論理名（日本語）: ドキュメント変更やり直し関数
-    /// 処理概要: 現在ページの redo 履歴を一段進め、HTML ファイルと WebView へ同じスナップショットを適用します。
+    /// 処理概要: 現在ページの HTML またはキャンバス注釈の redo 履歴を一段進め、各正本へ適用します。
     func redoDocumentChange() {
         applyHistoryNavigation(direction: .redo)
     }
@@ -3203,8 +4124,11 @@ final class EditorStore: ObservableObject {
         }
 
         var history = historyForPage(at: pageURL, fallbackHTML: diskHTML)
-        history.recordSync(html: diskHTML)
+        let didRecordHistory = history.recordSync(html: diskHTML)
         syncHistories[pageURL] = history
+        if didRecordHistory, let projectURL = loadedProject?.fileURL {
+            recordDocumentHistory(projectURL: projectURL, pageURL: pageURL)
+        }
         lastKnownPageHTMLByURL[pageURL] = diskHTML
         documentReplacementSequence += 1
         documentReplacementRequest = DocumentReplacementRequest(
@@ -3239,6 +4163,8 @@ final class EditorStore: ObservableObject {
             let previousSelectedChapterInternalID = selectedChapterInternalID
             let previousSelectedCollectionInternalID = selectedCollectionInternalID
             let previousSelectedCanvasSegment = selectedCanvasSegment
+            let previousSelectedCanvasAnnotationID = selectedCanvasAnnotationID
+            let previousSelectedCanvasAnnotationIDs = selectedCanvasAnnotationIDs
             let previousSelectedPageURL = selectedPageURL
             loadedProject = reloadedProject
             seedKnownHTMLForProject(reloadedProject)
@@ -3300,11 +4226,23 @@ final class EditorStore: ObservableObject {
                 selectedComponentPageInternalID = fallbackCollection?.components.first?.internalID
             }
 
-            if previousSelectedCanvasSegment == .components, !reloadedProject.project.components.isEmpty {
+            if previousSelectedCanvasSegment == .components, !reloadedProject.project.collections.isEmpty {
                 selectedCanvasSegment = .components
             } else {
                 selectedCanvasSegment = .pages
             }
+
+            let availableAnnotationIDs = Set(selectedCanvasAnnotations.map(\.internalID))
+            let survivingAnnotationIDs = previousSelectedCanvasAnnotationIDs.intersection(availableAnnotationIDs)
+            let survivingPrimaryID = previousSelectedCanvasAnnotationID.flatMap {
+                survivingAnnotationIDs.contains($0) ? $0 : nil
+            } ?? selectedCanvasAnnotations.last(where: {
+                survivingAnnotationIDs.contains($0.internalID)
+            })?.internalID
+            applyCanvasAnnotationSelection(
+                ids: survivingAnnotationIDs,
+                primaryID: survivingPrimaryID
+            )
 
             if selectedPageURL != previousSelectedPageURL {
                 selectedNodeID = nil
@@ -3349,6 +4287,80 @@ final class EditorStore: ObservableObject {
     private enum HistoryNavigationDirection {
         case undo
         case redo
+    }
+
+    /// 論理名（日本語）: HTML履歴項目
+    /// 概要: 一度の HTML 同期を project と page URL に固定し、統合履歴からページ別同期履歴を進めるために保持します。
+    private struct DocumentHistoryEntry: Equatable {
+        var projectURL: URL
+        var pageURL: URL
+    }
+
+    /// 論理名（日本語）: キャンバス注釈履歴対象
+    /// 概要: `.ogp` 内で undo/redo の注釈配列を差し替える Chapter または Collection を識別します。
+    private struct CanvasAnnotationHistoryTarget: Equatable {
+        var segment: OpenGraphiteCanvasSegment
+        var containerInternalID: String
+    }
+
+    /// 論理名（日本語）: キャンバス注釈履歴スナップショット
+    /// 概要: 対象コンテナと、その時点の注釈配列を一つの履歴状態として保持します。
+    private struct CanvasAnnotationHistorySnapshot: Equatable {
+        var target: CanvasAnnotationHistoryTarget
+        var annotations: [OpenGraphiteCanvasAnnotation]
+    }
+
+    /// 論理名（日本語）: 付箋本文Draft
+    /// 概要: debounce 中の本文をmanifest cacheから分離し、保存開始時の本文だけを競合判定基準として保持します。
+    private struct StagedCanvasAnnotationTextDraft: Equatable {
+        var target: CanvasAnnotationHistoryTarget
+        var annotationID: String
+        var baselineText: String
+        var text: String
+    }
+
+    /// 論理名（日本語）: キャンバス注釈履歴項目
+    /// 概要: 一度の `.ogp` atomic write の変更前後を、⌘Z／やり直しの一操作として保持します。
+    private struct CanvasAnnotationHistoryEntry: Equatable {
+        var projectURL: URL
+        var target: CanvasAnnotationHistoryTarget
+        var previousAnnotations: [OpenGraphiteCanvasAnnotation]
+        var nextAnnotations: [OpenGraphiteCanvasAnnotation]
+    }
+
+    /// 論理名（日本語）: エディター統合履歴項目
+    /// 概要: HTML とキャンバス注釈の保存操作を、domain をまたいだ一つの時系列として保持します。
+    private enum EditorHistoryEntry: Equatable {
+        case document(DocumentHistoryEntry)
+        case canvasAnnotation(CanvasAnnotationHistoryEntry)
+
+        /// 論理名（日本語）: 履歴Project URL
+        /// 処理概要: 操作記録時に固定した `.ogp` URL を返します。
+        var projectURL: URL {
+            switch self {
+            case let .document(entry):
+                return entry.projectURL
+            case let .canvasAnnotation(entry):
+                return entry.projectURL
+            }
+        }
+
+        /// 論理名（日本語）: ページURL移行関数
+        /// 処理概要: Page / Component の rename 後も HTML 履歴を適用できるよう対象 URL を置き換えます。
+        ///
+        /// - Parameters:
+        ///   - currentURL: rename 前の HTML URL。
+        ///   - nextURL: rename 後の HTML URL。
+        /// - Returns: 必要に応じて page URL を更新した履歴項目。
+        func migratingPageURL(from currentURL: URL, to nextURL: URL) -> EditorHistoryEntry {
+            guard case var .document(entry) = self,
+                  entry.pageURL.standardizedFileURL == currentURL.standardizedFileURL
+            else {
+                return self
+            }
+            entry.pageURL = nextURL.standardizedFileURL
+            return .document(entry)
+        }
     }
 
     /// 論理名（日本語）: HTML依存参照復元情報
@@ -3541,9 +4553,13 @@ final class EditorStore: ObservableObject {
             }
             lastKnownPageHTMLByURL[edit.target.htmlURL] = persisted.html
             var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
-            history.recordSync(html: persisted.html)
+            let didRecordHistory = history.recordSync(html: persisted.html)
             syncHistories[edit.target.htmlURL] = history
-            updateHistoryAvailability()
+            if didRecordHistory, let projectURL = loadedProject?.fileURL {
+                recordDocumentHistory(projectURL: projectURL, pageURL: edit.target.htmlURL)
+            } else {
+                updateHistoryAvailability()
+            }
             statusMessage = "\(edit.target.htmlURL.lastPathComponent) と同期しました。"
             return HTMLObjectEditResult(updated: true, requiresReload: edit.operation.requiresWebViewReload)
         } catch {
@@ -4000,9 +5016,13 @@ final class EditorStore: ObservableObject {
             if let html = readHTMLFromDisk(at: edit.target.htmlURL) {
                 lastKnownPageHTMLByURL[edit.target.htmlURL] = html
                 var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
-                history.recordSync(html: html)
+                let didRecordHistory = history.recordSync(html: html)
                 syncHistories[edit.target.htmlURL] = history
-                updateHistoryAvailability()
+                if didRecordHistory, let projectURL = loadedProject?.fileURL {
+                    recordDocumentHistory(projectURL: projectURL, pageURL: edit.target.htmlURL)
+                } else {
+                    updateHistoryAvailability()
+                }
             }
 
             statusMessage = "\(OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL).lastPathComponent) と同期しました。"
@@ -4664,6 +5684,12 @@ final class EditorStore: ObservableObject {
            let history = syncHistories.removeValue(forKey: key) {
             syncHistories[nextURL] = history
         }
+        editorUndoStack = editorUndoStack.map {
+            $0.migratingPageURL(from: currentURL, to: nextURL)
+        }
+        editorRedoStack = editorRedoStack.map {
+            $0.migratingPageURL(from: currentURL, to: nextURL)
+        }
         if let key = matchingURLKey(in: lastKnownPageHTMLByURL, for: currentURL),
            let html = lastKnownPageHTMLByURL.removeValue(forKey: key) {
             lastKnownPageHTMLByURL[nextURL] = html
@@ -4709,28 +5735,129 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 履歴可用性更新関数
-    /// 処理概要: 現在ページの undo/redo 可否をメニュー表示用 Published 値へ反映します。
+    /// 処理概要: 現在開いている project の統合 undo/redo 時系列をメニュー表示用 Published 値へ反映します。
     private func updateHistoryAvailability() {
-        guard let selectedPageURL, let history = syncHistories[selectedPageURL] else {
+        guard let currentProjectURL = loadedProject?.fileURL.standardizedFileURL else {
             canUndo = false
             canRedo = false
             return
         }
+        canUndo = editorUndoStack.last?.projectURL.standardizedFileURL == currentProjectURL
+        canRedo = editorRedoStack.last?.projectURL.standardizedFileURL == currentProjectURL
+    }
 
-        canUndo = history.canUndo
-        canRedo = history.canRedo
+    /// 論理名（日本語）: HTML履歴記録関数
+    /// 処理概要: ページ別同期履歴に追加済みの HTML 保存を、project 全体の統合時系列へ記録します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 操作時に開いていた `.ogp` URL。
+    ///   - pageURL: 同期した HTML URL。
+    private func recordDocumentHistory(projectURL: URL, pageURL: URL) {
+        recordEditorHistory(
+            .document(
+                DocumentHistoryEntry(
+                    projectURL: projectURL.standardizedFileURL,
+                    pageURL: pageURL.standardizedFileURL
+                )
+            )
+        )
+    }
+
+    /// 論理名（日本語）: エディター統合履歴記録関数
+    /// 処理概要: HTML または注釈の一操作を undo 側へ積み、domain を問わず既存 redo 分岐を破棄します。
+    ///
+    /// - Parameter entry: 記録する履歴項目。
+    private func recordEditorHistory(_ entry: EditorHistoryEntry) {
+        guard loadedProject?.fileURL.standardizedFileURL == entry.projectURL.standardizedFileURL else {
+            return
+        }
+        editorUndoStack.append(entry)
+        if editorUndoStack.count > 100 {
+            editorUndoStack.removeFirst(editorUndoStack.count - 100)
+        }
+        editorRedoStack.removeAll()
+        updateHistoryAvailability()
     }
 
     /// 論理名（日本語）: 履歴移動適用関数
-    /// 処理概要: undo/redo スタックから HTML を取り出し、ディスク同期と WebView 置換要求を発行します。
+    /// 処理概要: HTML と注釈を同じ時系列から一項目だけ取り出し、対応する正本へ適用します。
     ///
     /// - Parameter direction: 適用する履歴移動方向。
     private func applyHistoryNavigation(direction: HistoryNavigationDirection) {
-        guard let selectedPageURL,
-              var history = syncHistories[selectedPageURL]
+        let entry: EditorHistoryEntry?
+        switch direction {
+        case .undo:
+            entry = editorUndoStack.last
+        case .redo:
+            entry = editorRedoStack.last
+        }
+        guard let entry,
+              loadedProject?.fileURL.standardizedFileURL == entry.projectURL.standardizedFileURL
         else {
             updateHistoryAvailability()
             return
+        }
+
+        let didApply: Bool
+        switch entry {
+        case let .document(documentEntry):
+            didApply = applyDocumentHistoryNavigation(direction: direction, entry: documentEntry)
+        case let .canvasAnnotation(annotationEntry):
+            didApply = applyCanvasAnnotationHistoryNavigation(direction: direction, entry: annotationEntry)
+        }
+        guard didApply else {
+            updateHistoryAvailability()
+            return
+        }
+
+        switch direction {
+        case .undo:
+            guard editorUndoStack.last == entry else { return }
+            _ = editorUndoStack.popLast()
+            editorRedoStack.append(entry)
+        case .redo:
+            guard editorRedoStack.last == entry else { return }
+            _ = editorRedoStack.popLast()
+            editorUndoStack.append(entry)
+        }
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: HTML履歴移動適用関数
+    /// 処理概要: 履歴項目が固定したページの HTML undo/redo をディスクと WebView へ適用します。
+    ///
+    /// - Parameters:
+    ///   - direction: 適用する履歴移動方向。
+    ///   - entry: project とページを固定した HTML 履歴項目。
+    /// - Returns: HTML を適用できた場合は `true`。
+    private func applyDocumentHistoryNavigation(
+        direction: HistoryNavigationDirection,
+        entry: DocumentHistoryEntry
+    ) -> Bool {
+        guard var history = syncHistories[entry.pageURL] else { return false }
+        let latestProject: LoadedOpenGraphiteProject
+        do {
+            latestProject = try loader.loadProject(at: entry.projectURL)
+        } catch {
+            invalidateDocumentHistoryAfterConflict(
+                entry: entry,
+                diskHTML: nil,
+                errorMessage: "履歴の適用前に .ogp を確認できませんでした: \(error.localizedDescription)"
+            )
+            return false
+        }
+
+        guard isRegisteredDocumentHistoryPage(entry.pageURL, in: latestProject) else {
+            invalidateDocumentHistoryAfterConflict(entry: entry, diskHTML: nil)
+            return false
+        }
+        let diskHTML = readHTMLFromDisk(at: entry.pageURL)
+        guard diskHTML == history.currentHTML else {
+            invalidateDocumentHistoryAfterConflict(
+                entry: entry,
+                diskHTML: diskHTML
+            )
+            return false
         }
 
         let html: String?
@@ -4741,28 +5868,223 @@ final class EditorStore: ObservableObject {
             html = history.redo()
         }
 
-        guard let html else {
-            updateHistoryAvailability()
-            return
-        }
+        guard let html else { return false }
 
         do {
-            try html.write(to: selectedPageURL, atomically: true, encoding: .utf8)
-            lastKnownPageHTMLByURL[selectedPageURL] = html
-            syncHistories[selectedPageURL] = history
+            try html.write(to: entry.pageURL, atomically: true, encoding: .utf8)
+            lastKnownPageHTMLByURL[entry.pageURL] = html
+            syncHistories[entry.pageURL] = history
             documentReplacementSequence += 1
             documentReplacementRequest = DocumentReplacementRequest(
                 sequence: documentReplacementSequence,
-                pageURL: selectedPageURL,
+                pageURL: entry.pageURL,
                 html: html,
-                selectedNodeID: selectedNodeID
+                selectedNodeID: entry.pageURL == selectedPageURL ? selectedNodeID : nil
             )
-            updateHistoryAvailability()
-            statusMessage = historyStatusMessage(for: direction, pageURL: selectedPageURL)
+            lastError = nil
+            statusMessage = historyStatusMessage(for: direction, pageURL: entry.pageURL)
+            return true
         } catch {
             lastError = "履歴の同期に失敗しました: \(error.localizedDescription)"
-            updateHistoryAvailability()
+            return false
         }
+    }
+
+    /// 論理名（日本語）: HTML履歴対象登録判定関数
+    /// 処理概要: 最新 `.ogp` が現在も履歴対象 URL を Page / Component として登録しているかを確認します。
+    ///
+    /// - Parameters:
+    ///   - pageURL: 履歴が固定した HTML URL。
+    ///   - project: ディスクから再読込した最新 project。
+    /// - Returns: 最新 project のいずれかの HTML card が同じ URL を参照している場合は `true`。
+    private func isRegisteredDocumentHistoryPage(
+        _ pageURL: URL,
+        in project: LoadedOpenGraphiteProject
+    ) -> Bool {
+        let standardizedPageURL = pageURL.standardizedFileURL
+        return project.project.allPages.contains { page in
+            project.htmlURL(for: page).standardizedFileURL == standardizedPageURL
+        }
+    }
+
+    /// 論理名（日本語）: HTML履歴競合同期関数
+    /// 処理概要: 外部 HTML 更新または Page 登録削除を検出したとき、古い履歴を書き込まず最新表示へ同期して統合履歴を無効化します。
+    ///
+    /// - Parameters:
+    ///   - entry: 競合した HTML 履歴項目。
+    ///   - diskHTML: 読み取れた最新 HTML。未登録または削除済みの場合は `nil`。
+    ///   - errorMessage: `.ogp` 読み込み失敗など、履歴無効化と併せて表示する任意エラー。
+    private func invalidateDocumentHistoryAfterConflict(
+        entry: DocumentHistoryEntry,
+        diskHTML: String?,
+        errorMessage: String? = nil
+    ) {
+        refreshProjectManifestFromDiskIfChanged()
+        let remainsRegistered = loadedProject.map {
+            isRegisteredDocumentHistoryPage(entry.pageURL, in: $0)
+        } ?? false
+
+        if remainsRegistered, let diskHTML {
+            lastKnownPageHTMLByURL[entry.pageURL] = diskHTML
+            syncHistories[entry.pageURL] = DocumentSyncHistory(initialHTML: diskHTML)
+            if selectedPageURL?.standardizedFileURL == entry.pageURL.standardizedFileURL {
+                documentReplacementSequence += 1
+                documentReplacementRequest = DocumentReplacementRequest(
+                    sequence: documentReplacementSequence,
+                    pageURL: entry.pageURL,
+                    html: diskHTML,
+                    selectedNodeID: selectedNodeID
+                )
+            } else {
+                incrementReloadToken(for: entry.pageURL)
+            }
+        } else {
+            if documentReplacementRequest?.pageURL.standardizedFileURL == entry.pageURL.standardizedFileURL {
+                documentReplacementRequest = nil
+            }
+            if let key = matchingURLKey(in: syncHistories, for: entry.pageURL) {
+                syncHistories.removeValue(forKey: key)
+            }
+            if let key = matchingURLKey(in: lastKnownPageHTMLByURL, for: entry.pageURL) {
+                lastKnownPageHTMLByURL.removeValue(forKey: key)
+            }
+            if let key = matchingURLKey(in: pageReloadTokensByURL, for: entry.pageURL) {
+                pageReloadTokensByURL.removeValue(forKey: key)
+            }
+        }
+
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        lastError = errorMessage
+        statusMessage = "HTML の外部変更を検出したため、履歴適用を中止しました。"
+        restartExternalPageMonitoring(force: true)
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: キャンバス注釈履歴記録関数
+    /// 処理概要: 一度の注釈保存を project 全体の統合時系列へ積み、新しい分岐として redo 履歴を破棄します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 注釈を保存した `.ogp` URL。
+    ///   - target: 変更対象コンテナ。
+    ///   - previousAnnotations: 保存前の注釈配列。
+    ///   - nextAnnotations: 保存後の注釈配列。
+    private func recordCanvasAnnotationHistory(
+        projectURL: URL,
+        target: CanvasAnnotationHistoryTarget,
+        previousAnnotations: [OpenGraphiteCanvasAnnotation],
+        nextAnnotations: [OpenGraphiteCanvasAnnotation]
+    ) {
+        guard previousAnnotations != nextAnnotations else { return }
+        recordEditorHistory(
+            .canvasAnnotation(
+                CanvasAnnotationHistoryEntry(
+                    projectURL: projectURL.standardizedFileURL,
+                    target: target,
+                    previousAnnotations: previousAnnotations,
+                    nextAnnotations: nextAnnotations
+                )
+            )
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス注釈履歴移動適用関数
+    /// 処理概要: 最新 `.ogp` の対象配列が期待値と一致する場合だけ、履歴の注釈配列を差し替えて atomic write します。
+    ///
+    /// - Parameters:
+    ///   - direction: 適用する履歴移動方向。
+    ///   - entry: project、container、変更前後配列を固定した注釈履歴項目。
+    /// - Returns: 注釈履歴を適用できた場合は `true`。
+    private func applyCanvasAnnotationHistoryNavigation(
+        direction: HistoryNavigationDirection,
+        entry: CanvasAnnotationHistoryEntry
+    ) -> Bool {
+        let targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: entry.projectURL)
+        } catch {
+            lastError = "注釈履歴の適用前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+        guard loadedProject?.fileURL.standardizedFileURL == targetProject.fileURL.standardizedFileURL else {
+            return false
+        }
+
+        var updatedProject = targetProject
+        let expectedAnnotations = direction == .undo
+            ? entry.nextAnnotations
+            : entry.previousAnnotations
+        let replacementAnnotations = direction == .undo
+            ? entry.previousAnnotations
+            : entry.nextAnnotations
+        guard canvasAnnotations(for: entry.target, in: updatedProject.project) == expectedAnnotations else {
+            synchronizeAfterCanvasAnnotationHistoryConflict(with: targetProject)
+            return false
+        }
+
+        switch entry.target.segment {
+        case .pages:
+            guard let index = updatedProject.project.chapters.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasAnnotationHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.chapters[index].annotations = replacementAnnotations
+        case .components:
+            guard let index = updatedProject.project.collections.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasAnnotationHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.collections[index].annotations = replacementAnnotations
+        }
+
+        do {
+            try writeProjectManifest(updatedProject.project, to: entry.projectURL)
+            self.loadedProject = updatedProject
+            reconcileCanvasAnnotationSelectionAfterManifestChange()
+            lastError = nil
+            statusMessage = direction == .undo
+                ? "キャンバス注釈の変更を取り消しました。"
+                : "キャンバス注釈の変更をやり直しました。"
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = "注釈履歴の同期に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: 注釈履歴競合同期関数
+    /// 処理概要: 履歴記録後に対象注釈配列が外部変更された場合、上書きを中止して最新 manifest を表示し、無効化された時系列を破棄します。
+    ///
+    /// - Parameter project: ディスクから再読込した最新 project。
+    private func synchronizeAfterCanvasAnnotationHistoryConflict(
+        with project: LoadedOpenGraphiteProject
+    ) {
+        loadedProject = project
+        reconcileCanvasAnnotationSelectionAfterManifestChange()
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        lastError = nil
+        statusMessage = ".ogp の外部変更を検出したため、キャンバス注釈の履歴適用を中止しました。"
+        restartExternalProjectMonitoring(force: true)
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: 注釈履歴後選択整合関数
+    /// 処理概要: manifest 差し替え後も存在する注釈だけを複数選択と primary 選択へ残します。
+    private func reconcileCanvasAnnotationSelectionAfterManifestChange() {
+        let availableIDs = Set(selectedCanvasAnnotations.map(\.internalID))
+        let survivingIDs = selectedCanvasAnnotationIDs.intersection(availableIDs)
+        let primaryID = selectedCanvasAnnotationID.flatMap {
+            survivingIDs.contains($0) ? $0 : nil
+        } ?? selectedCanvasAnnotations.last(where: {
+            survivingIDs.contains($0.internalID)
+        })?.internalID
+        applyCanvasAnnotationSelection(ids: survivingIDs, primaryID: primaryID)
     }
 
     /// 論理名（日本語）: 外部ページ監視再起動関数

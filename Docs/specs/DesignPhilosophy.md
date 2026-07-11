@@ -4,7 +4,7 @@ OpenGraphite は、Web 標準ファイルを編集可能な正本として扱う
 
 ## Core Principle
 
-Web 標準の source files が正本です。通常の page DOM は HTML が担い、共通描画は CSS、参照展開は必要に応じて runtime または build、キャンバス配置や preview state は project metadata が担います。
+Web 標準の source files が公開成果物の正本です。通常の page DOM は HTML が担い、共通描画は CSS、参照展開は必要に応じて runtime または build、キャンバス配置、preview state、公開成果物に含めない協業用注釈は project metadata が担います。
 
 `OpenGraphite.app` が表示している source files と、ブラウザで表示する HTML/CSS/JS は同じリポジトリ内の Web 標準ファイルです。編集結果は独自デザイン IR へ複製せず、開いている source files へ直接反映されます。
 
@@ -34,7 +34,7 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則、proj
 - `data-og-*` は、エディタが安全に解釈する構造、種別、参照を担う。
 - HTML と同名の companion CSS は、編集可能なデザイン値を担う。
 - `OpenGraphite.css` は、app 内描画とブラウザ描画を一致させる共有規則を担う。
-- `.ogp` は、source files の複製ではなく、プロジェクト解決、一覧、キャンバス配置、preview metadata を担う。
+- `.ogp` は、source files の複製ではなく、プロジェクト解決、一覧、キャンバス配置、preview metadata、Chapter / Collection 単位の協業用注釈を担う。
 
 HTML には構造と参照のパラメータだけを残します。`data-og-role` や `data-og-variant` のうち純粋に見た目を選ぶ値は companion CSS の selector で表し、`component-placement` のように editor / runtime が参照として解釈する値だけを HTML に残します。
 
@@ -46,7 +46,9 @@ class 名は OpenGraphite の編集正本にしません。class は Web 実装�
 
 `.ogp` は source files の代替表現ではありません。DOM 構造、本文、主要なデザイン値を `.ogp` に複製しないことを原則とします。
 
-`.ogp` が持つべき情報は、リポジトリ解決、ページや Collection の一覧、キャンバス配置、表示サイズ、zoom 初期値、editor preview 用 metadata の範囲に留めます。公開リポジトリで共有できるように、永続化する path は相対参照を基本とし、ユーザー固有の絶対パスを正本へ固定しません。
+`.ogp` が持つべき情報は、リポジトリ解決、ページや Collection の一覧、キャンバス配置、表示サイズ、zoom 初期値、editor preview 用 metadata、Chapter / Collection の前面に置く付箋・手書き注釈の範囲に留めます。注釈は DOM やデザイン値の複製ではなく、メモ、レビュー資料、AI へのマルチモーダル指示として editor 内だけで使う project metadata です。公開リポジトリで共有できるように、永続化する path は相対参照を基本とし、ユーザー固有の絶対パスを正本へ固定しません。
+
+注釈の保存 schema、座標、Sidecar、agent access、成果物との境界は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とします。
 
 ## Reference Principle
 
@@ -71,9 +73,10 @@ OpenGraphite のエディタは、source files の上に編集体験を重ねる
 - 選択状態を Canvas、Layers、Inspector で同期する。
 - app 内編集は永続化前に cache へ反映し、同じ値を表示するすべての経路へ即時同期する。
 - Inspector の design value 編集を companion CSS へ、構造や参照の編集を HTML へ反映する。
+- Chapter / Collection の協業用注釈は WebView card 群の前面レイヤーへ表示し、`.ogp` だけへ保存する。
 - HTML 内の自然なスクロールやブラウザ挙動をできるだけ尊重する。
 
-OpenGraphite 独自の機能を追加する場合も、最終的に Web 標準ファイルに説明可能な形で落ちることを優先します。
+公開ページの挙動を変える OpenGraphite 機能は、最終的に Web 標準ファイルに説明可能な形で落ちることを優先します。一方、公開成果物に含めない注釈は明示的な editor-only 例外として `.ogp` に隔離し、HTML / CSS / runtime / build 出力を変えません。
 
 ## Design Constraints
 

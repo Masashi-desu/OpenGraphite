@@ -135,7 +135,7 @@ struct OpenGraphiteProject: Codable, Equatable {
     }
 
     /// 論理名（日本語）: 内部ID正規化関数
-    /// 処理概要: Chapter と HTML カードの内部 ID を `.ogp` 内で一意になるよう補完・重複解消します。
+    /// 処理概要: Chapter / Page / Collection / Component を先に確定し、注釈と衝突しても既存の構造 ID が変わらない二段階で補完・重複解消します。
     ///
     /// - Returns: 内部 ID が一意に補完された project 定義。
     func normalizedInternalIDs() -> OpenGraphiteProject {
@@ -211,6 +211,54 @@ struct OpenGraphiteProject: Codable, Equatable {
                 )
                 normalized.collections[collectionIndex].components[componentIndex].internalID = Self.uniqueIdentityID(
                     base: componentBase,
+                    used: &usedManifestIDs
+                )
+            }
+        }
+
+        for chapterIndex in normalized.chapters.indices {
+            for annotationIndex in normalized.chapters[chapterIndex].annotations.indices {
+                let annotation = normalized.chapters[chapterIndex].annotations[annotationIndex]
+                let annotationBase = Self.identityBase(
+                    preferred: annotation.internalID,
+                    semanticPrefix: "annotation",
+                    seed: [
+                        "annotation",
+                        "pages",
+                        "\(chapterIndex)",
+                        "\(annotationIndex)",
+                        annotation.kind.rawValue,
+                        "\(annotation.frame.x)",
+                        "\(annotation.frame.y)",
+                        annotation.text
+                    ].joined(separator: "|")
+                )
+                normalized.chapters[chapterIndex].annotations[annotationIndex].internalID = Self.uniqueIdentityID(
+                    base: annotationBase,
+                    used: &usedManifestIDs
+                )
+            }
+        }
+
+        for collectionIndex in normalized.collections.indices {
+            for annotationIndex in normalized.collections[collectionIndex].annotations.indices {
+                let annotation = normalized.collections[collectionIndex].annotations[annotationIndex]
+                let annotationBase = Self.identityBase(
+                    preferred: annotation.internalID,
+                    semanticPrefix: "annotation",
+                    seed: [
+                        "annotation",
+                        "components",
+                        "\(collectionIndex)",
+                        "\(annotationIndex)",
+                        annotation.kind.rawValue,
+                        "\(annotation.frame.x)",
+                        "\(annotation.frame.y)",
+                        annotation.text
+                    ].joined(separator: "|")
+                )
+                normalized.collections[collectionIndex].annotations[annotationIndex].internalID = Self.uniqueIdentityID(
+                    base: annotationBase,
                     used: &usedManifestIDs
                 )
             }
@@ -339,6 +387,7 @@ struct OpenGraphiteProject: Codable, Equatable {
 /// - `internalID`: `.ogp` 内で Chapter を一意に指す内部識別子。
 /// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
 /// - `pages`: Chapter 内の HTML ページ一覧。
+/// - `annotations`: Chapter キャンバス前面へ表示する `.ogp` 専用注釈。
 struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     static let defaultID = "main"
     static let defaultTitle = "Main"
@@ -347,6 +396,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     var internalID: String
     var title: String?
     var pages: [OpenGraphitePage]
+    var annotations: [OpenGraphiteCanvasAnnotation]
 
     var displayName: String {
         guard let title, !title.isEmpty else { return id }
@@ -358,6 +408,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         case internalID
         case title
         case pages
+        case annotations
     }
 
     /// 論理名（日本語）: Chapter初期化関数
@@ -368,11 +419,18 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
     ///   - title: UI 表示タイトル。
     ///   - pages: Chapter に含まれる page entry 一覧。
-    init(id: String, internalID: String = "", title: String? = nil, pages: [OpenGraphitePage]) {
+    init(
+        id: String,
+        internalID: String = "",
+        title: String? = nil,
+        pages: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation] = []
+    ) {
         self.id = id
         self.internalID = internalID
         self.title = title
         self.pages = pages
+        self.annotations = annotations
     }
 
     /// 論理名（日本語）: Chapterデコード初期化関数
@@ -385,6 +443,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
         title = try container.decodeIfPresent(String.self, forKey: .title)
         pages = try container.decode([OpenGraphitePage].self, forKey: .pages)
+        annotations = try container.decodeIfPresent([OpenGraphiteCanvasAnnotation].self, forKey: .annotations) ?? []
     }
 
     /// 論理名（日本語）: Chapterエンコード関数
@@ -399,6 +458,9 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         }
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(pages, forKey: .pages)
+        if !annotations.isEmpty {
+            try container.encode(annotations, forKey: .annotations)
+        }
     }
 }
 
@@ -410,6 +472,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
 /// - `internalID`: `.ogp` 内で Collection を一意に指す内部識別子。
 /// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
 /// - `components`: Collection 内の component master HTML 一覧。
+/// - `annotations`: Collection キャンバス前面へ表示する `.ogp` 専用注釈。
 struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
     static let defaultID = "main"
     static let defaultTitle = "Main"
@@ -418,6 +481,7 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
     var internalID: String
     var title: String?
     var components: [OpenGraphitePage]
+    var annotations: [OpenGraphiteCanvasAnnotation]
 
     var displayName: String {
         guard let title, !title.isEmpty else { return id }
@@ -429,6 +493,7 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
         case internalID
         case title
         case components
+        case annotations
     }
 
     /// 論理名（日本語）: Component Collection初期化関数
@@ -439,11 +504,18 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
     ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
     ///   - title: UI 表示タイトル。
     ///   - components: Collection に含まれる component entry 一覧。
-    init(id: String, internalID: String = "", title: String? = nil, components: [OpenGraphitePage]) {
+    init(
+        id: String,
+        internalID: String = "",
+        title: String? = nil,
+        components: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation] = []
+    ) {
         self.id = id
         self.internalID = internalID
         self.title = title
         self.components = components
+        self.annotations = annotations
     }
 
     /// 論理名（日本語）: Component Collectionデコード初期化関数
@@ -456,6 +528,7 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
         internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
         title = try container.decodeIfPresent(String.self, forKey: .title)
         components = try container.decode([OpenGraphitePage].self, forKey: .components)
+        annotations = try container.decodeIfPresent([OpenGraphiteCanvasAnnotation].self, forKey: .annotations) ?? []
     }
 
     /// 論理名（日本語）: Component Collectionエンコード関数
@@ -470,6 +543,9 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
         }
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(components, forKey: .components)
+        if !annotations.isEmpty {
+            try container.encode(annotations, forKey: .annotations)
+        }
     }
 }
 

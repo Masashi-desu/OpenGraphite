@@ -4,7 +4,7 @@
 
 ## Contract Scope
 
-OpenGraphite の正本は、リポジトリ上の Web 標準ファイルと、それらを解決するための最小限の project metadata です。通常の page DOM は HTML、共通描画は CSS、text resource は locale JSON などの実装資源、component master は Collection 内の source file、canvas 配置や preview mock は `.ogp` metadata が担います。
+OpenGraphite の正本は、リポジトリ上の Web 標準ファイルと、それらを解決するための最小限の project metadata です。通常の page DOM は HTML、共通描画は CSS、text resource は locale JSON などの実装資源、component master は Collection 内の source file、canvas 配置、preview mock、公開成果物に含めない協業用注釈は `.ogp` metadata が担います。
 
 この契約の目的は、次の境界を曖昧にしないことです。
 
@@ -24,7 +24,7 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則を分�
 | `data-og-*` | エディタが扱う構造、種別、参照 | `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-component` |
 | companion CSS | ページ / component 固有のデザイン値 | `[data-og-internal-id="hero"] { gap: 32px; }` |
 | `OpenGraphite.css` | アプリ内描画とブラウザ描画を一致させる共有規則 | `[data-og-layout="vertical"]` |
-| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置 | `htmlRoot`, `chapters`, `collections`, `canvas` |
+| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置、editor-only 注釈 | `htmlRoot`, `chapters`, `collections`, `canvas`, `annotations` |
 
 class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は HTML の `data-og-*` と同名 companion CSS の node-scoped CSS declaration です。
 
@@ -50,8 +50,19 @@ app 内で編集可能な項目は、種別に関わらずこの規約に従い�
 - component master を置く Collection 内 source file 一覧。
 - キャンバス上の配置、表示サイズ、ズーム初期値など、エディタ固有の情報。
 - editor preview のためだけに注入する Mock State。
+- Chapter / Collection のキャンバス前面へ置く付箋・手書き注釈。
 
 公開リポジトリで共有できるように、`.ogp` 内のパスは相対参照を基本とします。ユーザーのディスク上の絶対パスは、実行時に解決される表示情報として扱い、永続化される IR へ固定しません。
+
+## Canvas Annotation Contract
+
+キャンバス注釈は Pages では `chapters[].annotations[]`、Components では `collections[].annotations[]` を正本とします。個別 page / component の HTML card に属さず、同じ Chapter / Collection 内の card 群より前面へ描画します。
+
+注釈の `frame` は page / component の `canvas` と同じ左上原点の canonical world 座標、ink point は annotation frame 左上を原点とする frame-local 座標です。pan、zoom、page title card の表示オフセットを永続値へ混ぜません。
+
+注釈の追加、本文編集、移動、手書き、消しゴム、なげわ選択後の一括操作は `.ogp` だけを更新します。なげわの複数選択状態自体は editor の一時状態であり、永続化しません。HTML、companion CSS、`OpenGraphite.css`、locale resource、runtime script を変更せず、DOM node、`data-og-*`、CSS rule、build 展開結果として出力しません。`screenshot canvas` はマルチモーダル確認用に WebKit snapshot の前面へ注釈を合成しますが、`screenshot page` / `screenshot node` は個別 HTML の画像として注釈を含めません。
+
+保存 schema、入力デバイス、Sidecar、CLI/MCP、後方互換、実機受入の詳細は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とします。
 
 ## Editable Node Contract
 
@@ -384,7 +395,7 @@ component runtime は `<og-instance>` を表示時に展開するため、次の
 }
 ```
 
-アプリは HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が HTML を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。
+アプリは HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が HTML を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。`.ogp` 専用注釈だけは WebKit の外側にある editor overlay として card 群の前面へ描画し、HTML の描画規則には参加させません。
 
 ## Editor Behavior Contract
 
@@ -395,6 +406,7 @@ OpenGraphite のエディタは、HTML / companion CSS の上に編集体験を�
 - 選択状態をキャンバス、Layers、Inspector で同期する。
 - app 内編集を cache の現在値へ反映し、同じ値を表示する複数 surface へ永続化前に同期する。
 - Inspector の design value 編集を companion CSS へ、構造・参照編集を HTML へ反映する。
+- Chapter / Collection の注釈を WebView card 群の前面へ重ね、`.ogp` だけへ保存する。
 - HTML 内の自然なスクロールやブラウザ挙動をできるだけ尊重する。
 
-OpenGraphite 独自の機能を追加する場合も、最終的に HTML と CSS に説明可能な形で落ちることを優先します。
+公開ページへ影響する OpenGraphite 機能は、最終的に HTML と CSS に説明可能な形で落ちることを優先します。公開成果物へ影響しない注釈は `.ogp` に明示的に隔離し、この境界を越えて HTML / CSS / runtime / build へ漏らしません。

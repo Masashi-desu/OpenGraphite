@@ -460,15 +460,23 @@ private struct CanvasPaneView: View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
-            if let loadedProject = store.loadedProject, !store.selectedCanvasPages.isEmpty {
+            if let loadedProject = store.loadedProject, hasSelectedCanvasContainer {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
                     documentID: canvasDocumentID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
-                    contentRevisionID: canvasContentRevisionID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
-                    contentCanvasOrigin: canvasContentOrigin(for: store.selectedCanvasPages),
+                    contentRevisionID: canvasContentRevisionID(
+                        for: loadedProject,
+                        segment: store.selectedCanvasSegment,
+                        pages: store.selectedCanvasPages,
+                        annotations: store.selectedCanvasAnnotations
+                    ),
+                    contentCanvasOrigin: canvasContentOrigin(
+                        for: store.selectedCanvasPages,
+                        annotations: store.selectedCanvasAnnotations
+                    ),
                     overlayAvoidance: overlayAvoidance,
                     onEmptyCanvasClick: {
-                        store.selectPage(id: nil)
+                        store.clearCanvasSelection()
                     }
                 ) {
                     CanvasProjectView(
@@ -526,6 +534,15 @@ private struct CanvasPaneView: View {
         )
     }
 
+    private var hasSelectedCanvasContainer: Bool {
+        switch store.selectedCanvasSegment {
+        case .pages:
+            return store.selectedChapter != nil
+        case .components:
+            return store.selectedComponentCollection != nil
+        }
+    }
+
     /// 論理名（日本語）: キャンバスドキュメントID生成関数
     /// 処理概要: 選択セグメントのページ構成が変わったときだけスクロール document を作り直す識別子を生成します。
     ///
@@ -550,11 +567,17 @@ private struct CanvasPaneView: View {
     ///   - segment: 表示中の Pages / Components セグメント。
     ///   - pages: 表示対象ページ一覧。
     /// - Returns: キャンバス内容を表す revision ID。
-    private func canvasContentRevisionID(for project: LoadedOpenGraphiteProject, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
+    private func canvasContentRevisionID(
+        for project: LoadedOpenGraphiteProject,
+        segment: OpenGraphiteCanvasSegment,
+        pages: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation]
+    ) -> String {
         CanvasDocumentIdentityResolver.contentRevisionID(
             projectPath: project.fileURL.path,
             segment: segment,
-            pages: pages
+            pages: pages,
+            annotations: annotations
         )
     }
 
@@ -563,8 +586,15 @@ private struct CanvasPaneView: View {
     ///
     /// - Parameter pages: 表示対象ページ一覧。
     /// - Returns: 現在の canvas content 原点。
-    private func canvasContentOrigin(for pages: [OpenGraphitePage]) -> CGPoint {
-        CanvasProjectBounds(pages: pages).origin
+    private func canvasContentOrigin(
+        for pages: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation]
+    ) -> CGPoint {
+        CanvasProjectBounds(
+            pages: pages,
+            annotations: annotations,
+            interactionMargin: CanvasMetrics.annotationInteractionMargin
+        ).origin
     }
 
     /// 論理名（日本語）: ズーム調整関数
@@ -606,7 +636,12 @@ enum CanvasDocumentIdentityResolver {
     ///   - segment: 表示中の Pages / Components セグメント。
     ///   - pages: 表示対象 page 一覧。
     /// - Returns: SwiftUI content の再適用要否を判定する revision ID。
-    static func contentRevisionID(projectPath: String, segment: OpenGraphiteCanvasSegment, pages: [OpenGraphitePage]) -> String {
+    static func contentRevisionID(
+        projectPath: String,
+        segment: OpenGraphiteCanvasSegment,
+        pages: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation] = []
+    ) -> String {
         let pageRevision = pages
             .map { page in
                 [
@@ -621,7 +656,8 @@ enum CanvasDocumentIdentityResolver {
                 ].joined(separator: ":")
             }
             .joined(separator: "|")
-        return "\(viewportID(projectPath: projectPath, segment: segment, pages: pages))#revision#\(pageRevision)"
+        let annotationRevision = annotations.map(annotationSignature(for:)).joined(separator: "|")
+        return "\(viewportID(projectPath: projectPath, segment: segment, pages: pages))#revision#\(pageRevision)#annotations#\(annotationRevision)"
     }
 
     /// 論理名（日本語）: Page Identity Signature生成関数
@@ -672,6 +708,88 @@ enum CanvasDocumentIdentityResolver {
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: ",")
     }
+
+    /// 論理名（日本語）: キャンバス注釈配置署名生成関数
+    /// 処理概要: document size と原点へ影響する注釈 identity・種別・frame だけを Canvas content revision へ反映します。
+    ///
+    /// - Parameter annotation: 署名対象注釈。
+    /// - Returns: stroke 点列や付箋本文を展開しない、順序を維持した軽量配置署名。
+    private static func annotationSignature(for annotation: OpenGraphiteCanvasAnnotation) -> String {
+        return [
+            annotation.internalID,
+            annotation.kind.rawValue,
+            "\(annotation.frame.x),\(annotation.frame.y),\(annotation.frame.width),\(annotation.frame.height)"
+        ].joined(separator: ":")
+    }
+}
+
+/// 論理名（日本語）: 静的フロー表示座標解決器
+/// 概要: page 最小座標を原点とする静的フロー接続を、注釈用余白を含む CanvasProjectBounds の表示座標へ揃えます。
+enum CanvasStaticFlowCoordinateResolver {
+    /// 論理名（日本語）: 静的フロー表示オフセット関数
+    /// 処理概要: flow resolver の page 原点と、実際の Canvas bounds 原点およびページ名カード分の差を返します。
+    ///
+    /// - Parameters:
+    ///   - pages: flow resolver が座標計算に使った page 一覧。
+    ///   - bounds: page / annotation / interaction margin を含む表示境界。
+    ///   - visualYOffset: ページ名カードによる Y 表示オフセット。
+    /// - Returns: flow 接続点へ加える表示座標差。
+    static func visualOffset(
+        pages: [OpenGraphitePage],
+        bounds: CanvasProjectBounds,
+        visualYOffset: CGFloat
+    ) -> CGSize {
+        let flowOriginX = pages.map { CGFloat($0.canvas.x) }.min() ?? 0
+        let flowOriginY = pages.map { CGFloat($0.canvas.y) }.min() ?? 0
+        return CGSize(
+            width: flowOriginX - bounds.minX,
+            height: flowOriginY - bounds.minY + visualYOffset
+        )
+    }
+
+    /// 論理名（日本語）: 静的フロー接続表示変換関数
+    /// 処理概要: source / target 接続点を Canvas 上の page card と同じ表示原点へ移します。
+    ///
+    /// - Parameters:
+    ///   - connection: page 最小座標基準の静的フロー接続。
+    ///   - pages: flow resolver が座標計算に使った page 一覧。
+    ///   - bounds: 現在の Canvas 表示境界。
+    ///   - visualYOffset: ページ名カードによる Y 表示オフセット。
+    /// - Returns: Canvas 表示座標へ変換した接続。
+    static func visualConnection(
+        _ connection: OpenGraphiteStaticFlowConnection,
+        pages: [OpenGraphitePage],
+        bounds: CanvasProjectBounds,
+        visualYOffset: CGFloat
+    ) -> OpenGraphiteStaticFlowConnection {
+        let offset = visualOffset(pages: pages, bounds: bounds, visualYOffset: visualYOffset)
+        var adjusted = connection
+        adjusted.sourcePoint.x += offset.width
+        adjusted.sourcePoint.y += offset.height
+        adjusted.targetPoint.x += offset.width
+        adjusted.targetPoint.y += offset.height
+        return adjusted
+    }
+}
+
+/// 論理名（日本語）: キャンバスプロジェクト重なり順
+/// 概要: HTML card 同士の選択・変形優先度を保ちつつ、`.ogp` 注釈レイヤーを常に全 card より前面へ配置します。
+enum CanvasProjectLayerOrder {
+    static let annotation = 3.0
+
+    /// 論理名（日本語）: HTMLカード重なり順解決関数
+    /// 処理概要: 通常、選択中、ドラッグまたはリサイズ中の順で card の重なり優先度を返します。
+    ///
+    /// - Parameters:
+    ///   - isSelected: HTML card が選択中か。
+    ///   - isBeingTransformed: HTML card がドラッグまたはリサイズ中か。
+    /// - Returns: 注釈レイヤーより低い card 用 z-index。
+    static func page(isSelected: Bool, isBeingTransformed: Bool) -> Double {
+        if isBeingTransformed {
+            return 2
+        }
+        return isSelected ? 1 : 0
+    }
 }
 
 /// 論理名（日本語）: キャンバスプロジェクトビュー
@@ -690,7 +808,12 @@ private struct CanvasProjectView: View {
     @State private var hoveredFlowTargetPageInternalID: String?
 
     var body: some View {
-        let bounds = CanvasProjectBounds(pages: pages)
+        let annotations = store.selectedCanvasAnnotations
+        let bounds = CanvasProjectBounds(
+            pages: pages,
+            annotations: annotations,
+            interactionMargin: CanvasMetrics.annotationInteractionMargin
+        )
         let scale = CGFloat(zoom)
         let visualHeight = bounds.height + CanvasMetrics.pageNameCardOutsideOffset
         let isFlowHoverEnabled = store.previewDisplayMode == .flow && store.selectedCanvasSegment == .pages
@@ -700,7 +823,14 @@ private struct CanvasProjectView: View {
                 loadedProject: loadedProject,
                 linksByPageInternalID: store.staticFlowLinksByPageInternalID,
                 linksByPageURL: store.staticFlowLinksByPageURL
-            ).map(visualFlowConnection)
+            ).map { connection in
+                CanvasStaticFlowCoordinateResolver.visualConnection(
+                    connection,
+                    pages: pages,
+                    bounds: bounds,
+                    visualYOffset: CanvasMetrics.pageNameCardOutsideOffset
+                )
+            }
             : []
 
         ZStack(alignment: .topLeading) {
@@ -740,6 +870,14 @@ private struct CanvasProjectView: View {
                 )
                 .allowsHitTesting(false)
             }
+
+            CanvasAnnotationLayerView(
+                store: store,
+                bounds: bounds,
+                visualYOffset: CanvasMetrics.pageNameCardOutsideOffset,
+                zoom: zoom
+            )
+            .zIndex(CanvasProjectLayerOrder.annotation)
         }
         .frame(width: bounds.width, height: visualHeight, alignment: .topLeading)
         .coordinateSpace(name: CanvasMetrics.projectCoordinateSpaceName)
@@ -764,18 +902,6 @@ private struct CanvasProjectView: View {
                 clearFlowHoverState()
             }
         }
-    }
-
-    /// 論理名（日本語）: 視覚用フロー接続変換関数
-    /// 処理概要: キャプションカード用の上側スペース分だけ、page 本体基準のフロー接続点を表示座標へ移します。
-    ///
-    /// - Parameter connection: page canvas 座標基準で生成された静的フロー接続。
-    /// - Returns: Canvas 上の表示座標へ変換した静的フロー接続。
-    private func visualFlowConnection(_ connection: OpenGraphiteStaticFlowConnection) -> OpenGraphiteStaticFlowConnection {
-        var adjusted = connection
-        adjusted.sourcePoint.y += CanvasMetrics.pageNameCardOutsideOffset
-        adjusted.targetPoint.y += CanvasMetrics.pageNameCardOutsideOffset
-        return adjusted
     }
 
     /// 論理名（日本語）: フローhover座標更新関数
@@ -1029,7 +1155,12 @@ private struct CanvasDocumentView: View {
             x: pageDragTranslation.width + pageResizeTranslation.width,
             y: pageDragTranslation.height + pageResizeTranslation.height
         )
-        .zIndex(pageDragTranslation == .zero && pageResizePreview == nil ? (isSelected ? 1 : 0) : 2)
+        .zIndex(
+            CanvasProjectLayerOrder.page(
+                isSelected: isSelected,
+                isBeingTransformed: pageDragTranslation != .zero || pageResizePreview != nil
+            )
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isSelected else { return }
@@ -2502,7 +2633,7 @@ private struct CanvasPageNameCard: View {
 }
 
 /// 論理名（日本語）: キャンバスプロジェクト境界
-/// 概要: 選択 Chapter 内のページ配置から表示対象ページを含む矩形を計算します。
+/// 概要: 選択 Chapter / Collection 内のページ配置と `.ogp` 注釈を含む world 矩形を計算します。
 ///
 /// プロパティ:
 /// - `minX`: 最小 X 座標。
@@ -2522,32 +2653,47 @@ struct CanvasProjectBounds {
     }
 
     /// 論理名（日本語）: キャンバスプロジェクト境界初期化関数
-    /// 処理概要: ページ一覧の canvas 矩形から包含境界を計算します。
+    /// 処理概要: ページと注釈の world 矩形を union し、Canvas 表示範囲を計算します。
     ///
-    /// - Parameter pages: 境界計算対象のページ一覧。
-    init(pages: [OpenGraphitePage]) {
-        guard !pages.isEmpty else {
-            minX = 0
-            minY = 0
-            width = 1
-            height = 1
+    /// - Parameters:
+    ///   - pages: 境界計算対象のページ一覧。
+    ///   - annotations: 境界計算対象の `.ogp` 注釈一覧。
+    init(
+        pages: [OpenGraphitePage],
+        annotations: [OpenGraphiteCanvasAnnotation] = [],
+        interactionMargin: CGFloat = 0
+    ) {
+        let margin = interactionMargin.isFinite ? max(interactionMargin, 0) : 0
+        guard !pages.isEmpty || !annotations.isEmpty else {
+            minX = -margin
+            minY = -margin
+            width = 1440 + margin * 2
+            height = 1200 + margin * 2
             return
         }
 
-        let minX = min(pages.map { CGFloat($0.canvas.x) }.min() ?? 0, 0)
-        let minY = min(pages.map { CGFloat($0.canvas.y) }.min() ?? 0, 0)
-        let maxX = pages.map { page in
+        let worldMinX = pages.map { CGFloat($0.canvas.x) }
+            + annotations.map { CGFloat($0.frame.x) }
+        let worldMinY = pages.map { CGFloat($0.canvas.y) }
+            + annotations.map { CGFloat($0.frame.y) }
+        let minX = min(worldMinX.min() ?? 0, 0)
+        let minY = min(worldMinY.min() ?? 0, 0)
+        let pageMaxX = pages.map { page in
             CGFloat(page.canvas.x) + CanvasPageVisualLayout.resolve(
                 pageWidth: CGFloat(page.canvas.width),
                 pageHeight: CGFloat(page.canvas.height)
             ).documentSize.width
         }.max() ?? 1
-        let maxY = pages.map { CGFloat($0.canvas.y + $0.canvas.height) }.max() ?? 1
+        let annotationMaxX = annotations.map { CGFloat($0.frame.x + $0.frame.width) }.max() ?? 1
+        let pageMaxY = pages.map { CGFloat($0.canvas.y + $0.canvas.height) }.max() ?? 1
+        let annotationMaxY = annotations.map { CGFloat($0.frame.y + $0.frame.height) }.max() ?? 1
+        let maxX = max(pageMaxX, annotationMaxX)
+        let maxY = max(pageMaxY, annotationMaxY)
 
-        self.minX = minX
-        self.minY = minY
-        self.width = max(maxX - minX, 1)
-        self.height = max(maxY - minY, 1)
+        self.minX = minX - margin
+        self.minY = minY - margin
+        self.width = max(maxX - minX + margin * 2, 1)
+        self.height = max(maxY - minY + margin * 2, 1)
     }
 }
 
@@ -2626,6 +2772,7 @@ private enum CanvasMetrics {
     static let pageNameCardMaxTextWidth: CGFloat = 280
     static let pageNameCardOutsideOffset = pageNameCardHeight + pageNameCardGap
     static let pageDragMinimumDistance: CGFloat = 2
+    static let annotationInteractionMargin: CGFloat = 640
 }
 
 /// 論理名（日本語）: キャンバスページドラッグ解決器
@@ -4633,7 +4780,7 @@ private final class CanvasOverlayScrollView: NSScrollView {
 }
 
 /// 論理名（日本語）: キャンバスツールパレット
-/// 概要: 編集カーソル、テキスト、フレーム、アイコン、ハンドのツールを縦型ツールバーとして表示します。
+/// 概要: HTML 編集ツール、`.ogp` 専用の付箋・ペン・消しゴム・なげわ、ハンドを縦型ツールバーとして表示します。
 ///
 /// プロパティ:
 /// - `activeTool`: 現在選択中のキャンバスツール。

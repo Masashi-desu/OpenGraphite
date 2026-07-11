@@ -238,6 +238,25 @@ function toolsList() {
       inputSchema: objectSchema({}, [])
     },
     {
+      name: "list_canvas_annotations",
+      description: "List sticky-note and ink annotation summaries stored only in one Chapter or Collection canvas of an OpenGraphite .ogp project.",
+      inputSchema: annotationContainerObjectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        chapterID: { type: "string", description: "Chapter ID, internal ID, or ogref:chapter. Mutually exclusive with collectionID." },
+        collectionID: { type: "string", description: "Collection ID, internal ID, or ogref:collection. Mutually exclusive with chapterID." }
+      }, ["projectPath"])
+    },
+    {
+      name: "get_canvas_annotation",
+      description: "Get one complete .ogp canvas annotation, including ink stroke points. A typed ogref:annotation ID can resolve its Chapter or Collection without a separate selector.",
+      inputSchema: objectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        id: { type: "string", description: "Raw annotation internal ID or ogref:annotation:<pages|components>:<containerInternalID>:<annotationInternalID>." },
+        chapterID: { type: "string", description: "Chapter selector required for a raw annotation ID. Mutually exclusive with collectionID." },
+        collectionID: { type: "string", description: "Collection selector required for a raw annotation ID. Mutually exclusive with chapterID." }
+      }, ["projectPath", "id"])
+    },
+    {
       name: "list_design_tokens",
       description: "List project-level design tokens stored as CSS custom properties in the project CSS :root rule.",
       inputSchema: objectSchema({
@@ -411,10 +430,12 @@ function toolsList() {
     },
     {
       name: "screenshot_canvas",
-      description: "Render the default Chapter canvas in an OpenGraphite .ogp project to a PNG file.",
-      inputSchema: objectSchema({
+      description: "Render the default or selected Chapter / Collection canvas in an OpenGraphite .ogp project to a PNG file, including .ogp-only canvas annotations.",
+      inputSchema: optionalAnnotationContainerObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        outputPath: { type: "string" }
+        outputPath: { type: "string" },
+        chapterID: { type: "string", description: "Optional Chapter ID, internal ID, or ogref:chapter. Mutually exclusive with collectionID." },
+        collectionID: { type: "string", description: "Optional Collection ID, internal ID, or ogref:collection. Mutually exclusive with chapterID." }
       }, ["projectPath", "outputPath"])
     },
     {
@@ -619,6 +640,23 @@ function targetObjectSchema(properties, required) {
   };
 }
 
+function annotationContainerObjectSchema(properties, required) {
+  return {
+    ...objectSchema(properties, required),
+    oneOf: [
+      { required: ["chapterID"] },
+      { required: ["collectionID"] }
+    ]
+  };
+}
+
+function optionalAnnotationContainerObjectSchema(properties, required) {
+  return {
+    ...objectSchema(properties, required),
+    not: { required: ["chapterID", "collectionID"] }
+  };
+}
+
 function nodeTargetObjectSchema(properties, required) {
   return objectSchema(properties, required);
 }
@@ -639,6 +677,26 @@ function commandForTool(name, args) {
       return ["validate", requiredArg(args, "projectPath"), "--json"];
     case "get_contract":
       return ["contract", "get", "--json"];
+    case "list_canvas_annotations":
+      return [
+        "annotation",
+        "list",
+        requiredArg(args, "projectPath"),
+        ...optionalFlag(args, "chapterID", "--chapter-id"),
+        ...optionalFlag(args, "collectionID", "--collection-id"),
+        "--json"
+      ];
+    case "get_canvas_annotation":
+      return [
+        "annotation",
+        "get",
+        requiredArg(args, "projectPath"),
+        "--id",
+        requiredArg(args, "id"),
+        ...optionalFlag(args, "chapterID", "--chapter-id"),
+        ...optionalFlag(args, "collectionID", "--collection-id"),
+        "--json"
+      ];
     case "list_design_tokens":
       return ["design-token", "list", requiredArg(args, "projectPath"), "--json"];
     case "set_design_token":
@@ -816,7 +874,9 @@ function commandForTool(name, args) {
         "canvas",
         requiredArg(args, "projectPath"),
         "--output",
-        requiredArg(args, "outputPath")
+        requiredArg(args, "outputPath"),
+        ...optionalFlag(args, "chapterID", "--chapter-id"),
+        ...optionalFlag(args, "collectionID", "--collection-id")
       ];
     case "screenshot_page":
       return [

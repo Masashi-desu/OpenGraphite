@@ -19,6 +19,8 @@ OpenGraphite リポジトリ内の `public/` page や component HTML を編集�
 
 通常は、属性、変数、例から CSS 契約を直接説明する。利用質問に答えるためだけに、実装ファイルやビルドツールを必須にしない。
 
+キャンバス前面の付箋と手書きは `.ogp` にだけ保存する collaboration annotation であり、この HTML / CSS 契約の対象外である。注釈そのものを `data-og-*`、`--og-*`、class、DOM node へ変換しない。注釈から明示的な実装指示を受けた場合だけ、通常の source edit として HTML / CSS を更新する。
+
 ## コアモデル
 
 OpenGraphite document は通常の HTML である。`OpenGraphite.css` は次を読み取って要素を描画する。

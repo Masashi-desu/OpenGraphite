@@ -1364,6 +1364,949 @@ struct EditorStoreTests {
         #expect(persistedComponent.canvas == expectedComponentCanvas)
     }
 
+    /// 論理名（日本語）: キャンバス注釈永続化テスト
+    /// 概要: 付箋の本文・フレームと手書きストロークが `.ogp` だけへ保存され、HTML / companion CSS を変更しないことを検証します。
+    @Test("付箋と手書きをogpだけへ保存する")
+    func testCanvasAnnotationsPersistWithoutChangingHTMLOrCSS() throws {
+        // コンディション：HTML と companion CSS を持つ project を開き、保存前の byte 列を保持する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeCompanionCSS(
+            """
+            body {
+              color: #202020;
+            }
+            """
+        )
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        let originalHTML = try Data(contentsOf: fixture.htmlURL)
+        let originalCSS = try Data(contentsOf: cssURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let expectedStickyFrame = OpenGraphiteCanvasAnnotationFrame(
+            x: 48,
+            y: -24,
+            width: 300,
+            height: 180
+        )
+        let inkFrame = OpenGraphiteCanvasAnnotationFrame(x: 360, y: 80, width: 120, height: 72)
+        let inkStroke = OpenGraphiteInkStroke(
+            points: [
+                OpenGraphiteInkPoint(x: 0, y: 8, pressure: 0.2, tiltX: -0.1, tiltY: 0.3),
+                OpenGraphiteInkPoint(x: 36, y: 20, pressure: 0.75, tiltX: 0.2, tiltY: 0.4)
+            ],
+            color: "#2458FF",
+            lineWidth: 4.5,
+            inputDevice: .pen
+        )
+
+        // 検証内容：付箋を追加して本文・フレームを更新し、手書き注釈も追加する（When）
+        let stickyID = try #require(store.addStickyNote(at: CGPoint(x: 24, y: 12)))
+        store.updateCanvasAnnotationText(id: stickyID, text: "この余白を広げる")
+        store.updateCanvasAnnotationFrame(id: stickyID, frame: expectedStickyFrame)
+        let pageInternalID = try #require(store.loadedProject?.project.chapters.first?.pages.first?.internalID)
+        store.selectPage(internalID: pageInternalID)
+        store.selectNode(id: "selected-before-ink")
+        let inkID = try #require(store.addInkAnnotation(frame: inkFrame, strokes: [inkStroke]))
+        let persistedAfterAdd = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let annotationsAfterAdd = try #require(persistedAfterAdd.project.chapters.first?.annotations)
+        let persistedSticky = try #require(annotationsAfterAdd.first { $0.internalID == stickyID })
+        let persistedInk = try #require(annotationsAfterAdd.first { $0.internalID == inkID })
+
+        // 期待値：付箋と手書きの全 payload が追加順で `.ogp` に保存される（Then）
+        #expect(annotationsAfterAdd.map(\.internalID) == [stickyID, inkID])
+        #expect(persistedSticky.kind == .stickyNote)
+        #expect(persistedSticky.text == "この余白を広げる")
+        #expect(persistedSticky.frame == expectedStickyFrame)
+        #expect(persistedInk.kind == .ink)
+        #expect(persistedInk.frame == inkFrame)
+        #expect(persistedInk.strokes == [inkStroke])
+        #expect(store.selectedCanvasAnnotationID == inkID)
+        #expect(store.selectedPage == nil)
+        #expect(store.selectedNodeID == nil)
+
+        // 検証内容：付箋だけを削除し、永続ファイルを再度読み込む（When）
+        store.deleteCanvasAnnotation(id: stickyID)
+        let persistedAfterDelete = try ProjectLoader().loadProject(at: fixture.projectURL)
+        let annotationsAfterDelete = try #require(persistedAfterDelete.project.chapters.first?.annotations)
+        let finalHTML = try Data(contentsOf: fixture.htmlURL)
+        let finalCSS = try Data(contentsOf: cssURL)
+
+        // 期待値：削除も `.ogp` 内だけへ反映され、HTML と CSS の byte 列は完全に維持される（Then）
+        #expect(annotationsAfterDelete.map(\.internalID) == [inkID])
+        #expect(annotationsAfterDelete.first?.strokes == [inkStroke])
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+    }
+
+    /// 論理名（日本語）: なげわ複数選択操作テスト
+    /// 概要: なげわ相当の複数 ID 選択を配列順へ正規化し、選択全体の移動と削除を一度の `.ogp` 更新へ反映することを検証します。
+    @Test("なげわ選択した注釈をまとめて移動・削除する")
+    func testCanvasAnnotationMultiSelectionMovesAndDeletesAsGroup() throws {
+        // コンディション：2枚の付箋と1件の手書きを持つprojectを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeCompanionCSS("body { color: #202020; }")
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        let originalHTML = try Data(contentsOf: fixture.htmlURL)
+        let originalCSS = try Data(contentsOf: cssURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let firstStickyID = try #require(store.addStickyNote(at: CGPoint(x: 10, y: 20)))
+        let untouchedStickyID = try #require(store.addStickyNote(at: CGPoint(x: 500, y: 40)))
+        let inkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 300, y: 200, width: 80, height: 60),
+                strokes: [
+                    OpenGraphiteInkStroke(
+                        points: [
+                            OpenGraphiteInkPoint(x: 4, y: 4),
+                            OpenGraphiteInkPoint(x: 72, y: 52)
+                        ],
+                        inputDevice: .pen
+                    )
+                ]
+            )
+        )
+        let pageInternalID = try #require(store.loadedProject?.project.chapters.first?.pages.first?.internalID)
+        store.selectPage(internalID: pageInternalID)
+        store.selectNode(id: "node-before-lasso")
+
+        // 検証内容：未知IDを含む逆順候補から2件を選択し、片方をanchorに同じ差分で移動する（When）
+        store.selectCanvasAnnotations(ids: [inkID, "missing", firstStickyID])
+        store.moveSelectedCanvasAnnotations(
+            anchorID: firstStickyID,
+            translation: CGSize(width: 25, height: -10)
+        )
+        let afterMove = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let movedAnnotations = try #require(afterMove.chapters.first?.annotations)
+        let movedSticky = try #require(movedAnnotations.first { $0.internalID == firstStickyID })
+        let untouchedSticky = try #require(movedAnnotations.first { $0.internalID == untouchedStickyID })
+        let movedInk = try #require(movedAnnotations.first { $0.internalID == inkID })
+
+        // 期待値：現在Canvasの配列順でprimaryと集合が決まり、HTML選択を解除して選択2件だけが移動する（Then）
+        #expect(store.selectedCanvasAnnotationIDs == Set([firstStickyID, inkID]))
+        #expect(store.selectedCanvasAnnotationID == inkID)
+        #expect(store.selectedPage == nil)
+        #expect(store.selectedNodeID == nil)
+        #expect(movedSticky.frame == OpenGraphiteCanvasAnnotationFrame(x: 35, y: 10, width: 240, height: 160))
+        #expect(untouchedSticky.frame == OpenGraphiteCanvasAnnotationFrame(x: 500, y: 40, width: 240, height: 160))
+        #expect(movedInk.frame == OpenGraphiteCanvasAnnotationFrame(x: 325, y: 190, width: 80, height: 60))
+
+        // 検証内容：同時選択中の2件をまとめて削除する（When）
+        store.deleteSelectedCanvasAnnotations()
+        let afterDelete = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let remainingAnnotations = try #require(afterDelete.chapters.first?.annotations)
+        let finalHTML = try Data(contentsOf: fixture.htmlURL)
+        let finalCSS = try Data(contentsOf: cssURL)
+
+        // 期待値：未選択付箋だけを残して選択を解除し、HTML byte列には影響しない（Then）
+        #expect(remainingAnnotations.map(\.internalID) == [untouchedStickyID])
+        #expect(store.selectedCanvasAnnotationIDs.isEmpty)
+        #expect(store.selectedCanvasAnnotationID == nil)
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+    }
+
+    /// 論理名（日本語）: 手書き部分消去Atomic保存テスト
+    /// 概要: ピクセル消し後の分割stroke更新と完全消去を一度に `.ogp` へ反映し、HTML / CSS と生存選択を維持することを検証します。
+    @Test("手書きの部分消去と完全消去をogpだけへ一括保存する")
+    func testCanvasInkPartialErasurePersistsReplacementsAndDeletionsAtomically() throws {
+        // コンディション：付箋と2件のinkを作り、HTML/CSS byte列と3件の同時選択を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeCompanionCSS("body { color: #202020; }")
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        let originalHTML = try Data(contentsOf: fixture.htmlURL)
+        let originalCSS = try Data(contentsOf: cssURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let stickyID = try #require(store.addStickyNote(at: CGPoint(x: 10, y: 20)))
+        let originalStroke = OpenGraphiteInkStroke(
+            points: [
+                OpenGraphiteInkPoint(x: 0, y: 10),
+                OpenGraphiteInkPoint(x: 50, y: 10),
+                OpenGraphiteInkPoint(x: 100, y: 10)
+            ],
+            lineWidth: 4,
+            inputDevice: .pen
+        )
+        let updatedInkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 100, y: 100, width: 110, height: 20),
+                strokes: [originalStroke]
+            )
+        )
+        let deletedInkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 300, y: 100, width: 50, height: 40),
+                strokes: [
+                    OpenGraphiteInkStroke(
+                        points: [
+                            OpenGraphiteInkPoint(x: 5, y: 20),
+                            OpenGraphiteInkPoint(x: 45, y: 20)
+                        ],
+                        lineWidth: 4,
+                        inputDevice: .pen
+                    )
+                ]
+            )
+        )
+        store.selectCanvasAnnotations(ids: [stickyID, updatedInkID, deletedInkID])
+        let replacementFrame = OpenGraphiteCanvasAnnotationFrame(
+            x: 98,
+            y: 106,
+            width: 104,
+            height: 8
+        )
+        let expectedLeftFragmentPoints = [
+            OpenGraphiteInkPoint(x: 2, y: 4),
+            OpenGraphiteInkPoint(x: 42, y: 4)
+        ]
+        let expectedRightFragmentPoints = [
+            OpenGraphiteInkPoint(x: 62, y: 4),
+            OpenGraphiteInkPoint(x: 102, y: 4)
+        ]
+        let replacement = OpenGraphiteCanvasAnnotation(
+            internalID: updatedInkID,
+            kind: .ink,
+            frame: replacementFrame,
+            strokes: [
+                OpenGraphiteInkStroke(
+                    points: expectedLeftFragmentPoints,
+                    lineWidth: 4,
+                    inputDevice: .pen
+                ),
+                OpenGraphiteInkStroke(
+                    points: expectedRightFragmentPoints,
+                    lineWidth: 4,
+                    inputDevice: .pen
+                )
+            ]
+        )
+
+        // 検証内容：片方を分割後payloadへ置換し、もう片方を完全消去として同時適用する（When）
+        store.applyCanvasInkErasure(
+            updatedAnnotations: [replacement],
+            deletedIDs: [deletedInkID],
+            expectedAnnotations: store.selectedCanvasAnnotations
+        )
+        let reloaded = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let annotations = try #require(reloaded.chapters.first?.annotations)
+        let persistedInk = try #require(annotations.first { $0.internalID == updatedInkID })
+        let finalHTML = try Data(contentsOf: fixture.htmlURL)
+        let finalCSS = try Data(contentsOf: cssURL)
+
+        // 期待値：同一IDのinkを左右2fragmentと再計算frameへ更新し、完全消去IDだけを除いて生存選択とHTML/CSS byte列を維持する（Then）
+        #expect(annotations.map(\.internalID) == [stickyID, updatedInkID])
+        #expect(persistedInk.internalID == updatedInkID)
+        #expect(persistedInk.frame == replacementFrame)
+        #expect(persistedInk.strokes.count == 2)
+        #expect(persistedInk.strokes.map(\.points) == [
+            expectedLeftFragmentPoints,
+            expectedRightFragmentPoints
+        ])
+        #expect(!annotations.contains { $0.internalID == deletedInkID })
+        #expect(store.selectedCanvasAnnotationIDs == Set([stickyID, updatedInkID]))
+        #expect(store.selectedCanvasAnnotationID == updatedInkID)
+        #expect(!store.selectedCanvasAnnotationIDs.contains(deletedInkID))
+        #expect(store.statusMessage == "手書きの一部を消去しました。")
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+    }
+
+    /// 論理名（日本語）: キャンバス注釈Undo/Redoテスト
+    /// 概要: 付箋の追加、本文編集、移動、削除を⌘Z相当の履歴で順に取り消し、やり直せることを検証します。
+    @Test("付箋操作を取り消してやり直せる")
+    func testCanvasAnnotationOperationsSupportUndoAndRedo() throws {
+        // コンディション：空の注釈Canvasへ付箋を1件追加する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        #expect(store.canUndo)
+
+        // 検証内容：追加を取り消してやり直し、本文編集・移動・削除も順に確定する（When）
+        store.undoDocumentChange()
+        #expect(store.selectedCanvasAnnotations.isEmpty)
+        #expect(store.canRedo)
+        store.redoDocumentChange()
+        #expect(store.selectedCanvasAnnotations.map(\.internalID) == [annotationID])
+        store.selectCanvasAnnotation(id: annotationID)
+
+        store.stageCanvasAnnotationText(id: annotationID, text: "undoable memo")
+        store.updateCanvasAnnotationText(id: annotationID, text: "undoable memo")
+        store.moveSelectedCanvasAnnotations(
+            anchorID: annotationID,
+            translation: CGSize(width: 40, height: 15)
+        )
+        store.deleteCanvasAnnotation(id: annotationID)
+        #expect(store.selectedCanvasAnnotations.isEmpty)
+
+        // 期待値：削除、移動、本文編集を逆順に戻し、同じ順でやり直すと最終的に再度削除される（Then）
+        store.undoDocumentChange()
+        let restoredAfterDelete = try #require(
+            store.selectedCanvasAnnotations.first { $0.internalID == annotationID }
+        )
+        #expect(restoredAfterDelete.text == "undoable memo")
+        #expect(restoredAfterDelete.frame.x == 60)
+        #expect(restoredAfterDelete.frame.y == 45)
+
+        store.undoDocumentChange()
+        let restoredBeforeMove = try #require(
+            store.selectedCanvasAnnotations.first { $0.internalID == annotationID }
+        )
+        #expect(restoredBeforeMove.frame.x == 20)
+        #expect(restoredBeforeMove.frame.y == 30)
+
+        store.undoDocumentChange()
+        let restoredBeforeText = try #require(
+            store.selectedCanvasAnnotations.first { $0.internalID == annotationID }
+        )
+        #expect(restoredBeforeText.text.isEmpty)
+
+        store.redoDocumentChange()
+        store.redoDocumentChange()
+        store.redoDocumentChange()
+        let finalProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        #expect(store.selectedCanvasAnnotations.isEmpty)
+        #expect(store.canRedo == false)
+        #expect(finalProject.chapters.first?.annotations.isEmpty == true)
+    }
+
+    /// 論理名（日本語）: HTML注釈統合履歴順序テスト
+    /// 概要: HTML 同期とキャンバス注釈追加を交互に行っても、⌘Z／やり直しが保存順の単一時系列で進むことを検証します。
+    @Test("HTMLと注釈を保存順に取り消してやり直せる")
+    func testDocumentAndCanvasAnnotationHistoryUsesOneTimeline() throws {
+        // コンディション：HTML を同期した後に同じ project へ付箋を追加する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let initialHTML = "<!doctype html>\n<html><body>initial</body></html>"
+        let editedHTML = "<!doctype html>\n<html><body>edited</body></html>"
+        store.syncCurrentHTML(editedHTML)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+
+        // 検証内容：二回取り消した後、二回やり直す（When）
+        store.undoDocumentChange()
+        let htmlAfterFirstUndo = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let annotationsAfterFirstUndo = try ProjectLoader()
+            .loadProject(at: fixture.projectURL)
+            .project.chapters.first?.annotations
+        store.undoDocumentChange()
+        let htmlAfterSecondUndo = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.redoDocumentChange()
+        store.redoDocumentChange()
+        let finalAnnotations = try ProjectLoader()
+            .loadProject(at: fixture.projectURL)
+            .project.chapters.first?.annotations
+
+        // 期待値：最新の付箋追加、先行するHTML同期の順で戻り、redoでは同じ順序で双方を復元する（Then）
+        #expect(htmlAfterFirstUndo == editedHTML)
+        #expect(annotationsAfterFirstUndo?.isEmpty == true)
+        #expect(htmlAfterSecondUndo == initialHTML)
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == editedHTML)
+        #expect(finalAnnotations?.map(\.internalID) == [annotationID])
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: Domain横断Redo分岐破棄テスト
+    /// 概要: 注釈を取り消した後に HTML を新規保存すると、注釈domainに残っていたredo分岐も破棄されることを検証します。
+    @Test("注釈Undo後のHTML保存でRedo分岐を破棄する")
+    func testDocumentSaveClearsCanvasAnnotationRedoBranch() throws {
+        // コンディション：HTML 同期後に付箋を追加し、その付箋追加だけを取り消す（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+        let firstHTML = "<!doctype html>\n<html><body>first branch</body></html>"
+        let nextHTML = "<!doctype html>\n<html><body>next branch</body></html>"
+        store.syncCurrentHTML(firstHTML)
+        _ = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        store.undoDocumentChange()
+        #expect(store.canRedo)
+
+        // 検証内容：注釈がない状態から別domainのHTMLを新規同期する（When）
+        store.syncHTML(nextHTML, target: target)
+
+        // 期待値：注釈redoを含む旧分岐が消え、次のundoは新しいHTML同期だけを戻す（Then）
+        #expect(store.canRedo == false)
+        store.undoDocumentChange()
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == firstHTML)
+        #expect(store.selectedCanvasAnnotations.isEmpty)
+    }
+
+    /// 論理名（日本語）: 注釈履歴外部競合拒否テスト
+    /// 概要: 履歴記録後に同じ container の annotations が CLI 相当で変わった場合、Undoで外部値を上書きしないことを検証します。
+    @Test("外部更新された注釈配列へ古い履歴を適用しない")
+    func testCanvasAnnotationUndoRejectsExternallyChangedAnnotations() throws {
+        // コンディション：付箋追加を履歴へ記録後、storeへ通知せず本文を外部変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        var externalProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let chapterIndex = try #require(externalProject.chapters.firstIndex(where: {
+            $0.annotations.contains { $0.internalID == annotationID }
+        }))
+        let annotationIndex = try #require(externalProject.chapters[chapterIndex].annotations.firstIndex(where: {
+            $0.internalID == annotationID
+        }))
+        externalProject.chapters[chapterIndex].annotations[annotationIndex].text = "CLI edit"
+        try JSONEncoder().encode(externalProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：staleな付箋追加履歴を取り消そうとする（When）
+        store.undoDocumentChange()
+        let persistedAnnotation = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters[chapterIndex].annotations.first {
+                $0.internalID == annotationID
+            }
+        )
+
+        // 期待値：外部本文を保持して最新manifestへ表示同期し、無効になった履歴を破棄する（Then）
+        #expect(persistedAnnotation.text == "CLI edit")
+        #expect(store.selectedCanvasAnnotations.first { $0.internalID == annotationID }?.text == "CLI edit")
+        #expect(store.statusMessage == ".ogp の外部変更を検出したため、キャンバス注釈の履歴適用を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: 手書き部分消去Undo/Redoテスト
+    /// 概要: 一度の消しゴムgestureによるstroke分割を一履歴単位で取り消し、やり直せることを検証します。
+    @Test("手書きの部分消去を一操作として取り消してやり直せる")
+    func testCanvasInkPartialErasureSupportsUndoAndRedo() throws {
+        // コンディション：一本のstrokeを持つinkと部分消去後の置換値を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let originalFrame = OpenGraphiteCanvasAnnotationFrame(x: 20, y: 30, width: 100, height: 20)
+        let originalStroke = OpenGraphiteInkStroke(
+            points: [
+                OpenGraphiteInkPoint(x: 0, y: 10),
+                OpenGraphiteInkPoint(x: 50, y: 10),
+                OpenGraphiteInkPoint(x: 100, y: 10)
+            ],
+            lineWidth: 4,
+            inputDevice: .pen
+        )
+        let inkID = try #require(store.addInkAnnotation(frame: originalFrame, strokes: [originalStroke]))
+        let gestureSnapshot = store.selectedCanvasAnnotations
+        var replacement = try #require(gestureSnapshot.first { $0.internalID == inkID })
+        replacement.frame = OpenGraphiteCanvasAnnotationFrame(x: 18, y: 36, width: 104, height: 8)
+        replacement.strokes = [
+            OpenGraphiteInkStroke(
+                points: [OpenGraphiteInkPoint(x: 2, y: 4), OpenGraphiteInkPoint(x: 42, y: 4)],
+                lineWidth: 4,
+                inputDevice: .pen
+            ),
+            OpenGraphiteInkStroke(
+                points: [OpenGraphiteInkPoint(x: 62, y: 4), OpenGraphiteInkPoint(x: 102, y: 4)],
+                lineWidth: 4,
+                inputDevice: .pen
+            )
+        ]
+
+        // 検証内容：部分消去を確定後、取り消してからやり直す（When）
+        store.applyCanvasInkErasure(
+            updatedAnnotations: [replacement],
+            deletedIDs: [],
+            expectedAnnotations: gestureSnapshot
+        )
+        store.undoDocumentChange()
+        let undoneInk = try #require(store.selectedCanvasAnnotations.first { $0.internalID == inkID })
+        store.redoDocumentChange()
+        let redoneInk = try #require(store.selectedCanvasAnnotations.first { $0.internalID == inkID })
+
+        // 期待値：undoでは元stroke全体、redoでは分割された2strokeがogpとcacheへ復元される（Then）
+        #expect(undoneInk.frame == originalFrame)
+        #expect(undoneInk.strokes == [originalStroke])
+        #expect(redoneInk == replacement)
+        let persistedInk = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.annotations.first {
+                $0.internalID == inkID
+            }
+        )
+        #expect(persistedInk == replacement)
+    }
+
+    /// 論理名（日本語）: 手書き消去外部競合拒否テスト
+    /// 概要: gesture 開始後に対象 ink が CLI 相当の経路で更新された場合、古い部分消去で外部値を上書きせず最新 `.ogp` を表示へ同期することを検証します。
+    @Test("外部更新されたinkへ古い消しゴム結果を保存しない")
+    func testCanvasInkErasureRejectsExternallyChangedTargetInk() throws {
+        // コンディション：1件のinkとgesture開始時snapshotを用意し、storeへ通知せずdisk上の同じinkを外部変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let inkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 20, y: 30, width: 100, height: 20),
+                strokes: [
+                    OpenGraphiteInkStroke(
+                        points: [
+                            OpenGraphiteInkPoint(x: 0, y: 10),
+                            OpenGraphiteInkPoint(x: 100, y: 10)
+                        ],
+                        lineWidth: 4,
+                        inputDevice: .pen
+                    )
+                ]
+            )
+        )
+        let gestureSnapshot = store.selectedCanvasAnnotations
+        let originalInk = try #require(gestureSnapshot.first { $0.internalID == inkID })
+        var staleReplacement = originalInk
+        staleReplacement.frame.x = 40
+
+        var externallyChangedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let chapterIndex = try #require(
+            externallyChangedProject.chapters.firstIndex { $0.internalID == store.selectedChapterInternalID }
+        )
+        let inkIndex = try #require(
+            externallyChangedProject.chapters[chapterIndex].annotations.firstIndex { $0.internalID == inkID }
+        )
+        externallyChangedProject.chapters[chapterIndex].annotations[inkIndex].frame.y = 88
+        let externalInk = externallyChangedProject.chapters[chapterIndex].annotations[inkIndex]
+        try JSONEncoder().encode(externallyChangedProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：monitorの遅延中に相当するstale storeから部分消去結果を確定する（When）
+        store.applyCanvasInkErasure(
+            updatedAnnotations: [staleReplacement],
+            deletedIDs: [],
+            expectedAnnotations: gestureSnapshot
+        )
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let persistedInk = try #require(
+            persistedProject.chapters[chapterIndex].annotations.first { $0.internalID == inkID }
+        )
+
+        // 期待値：diskとstoreは外部更新値を維持し、古いpreviewは保存されず競合が利用者へ通知される（Then）
+        #expect(persistedInk == externalInk)
+        #expect(store.selectedCanvasAnnotations.first { $0.internalID == inkID } == externalInk)
+        #expect(store.statusMessage == ".ogp の外部変更を検出したため、手書きの消去を中止しました。もう一度操作してください。")
+    }
+
+    /// 論理名（日本語）: 手書き消去最新Manifest統合テスト
+    /// 概要: 対象 ink 以外の外部更新がある場合、最新 `.ogp` を基準に部分消去を適用して双方の変更を保持することを検証します。
+    @Test("対象外のogp外部更新を保ったまま手書きを部分消去する")
+    func testCanvasInkErasureRebasesOntoLatestExternalManifest() throws {
+        // コンディション：1件のinkとgesture開始時snapshotを用意し、diskだけへproject名変更と別付箋追加を行う（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let inkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 20, y: 30, width: 100, height: 20),
+                strokes: [
+                    OpenGraphiteInkStroke(
+                        points: [
+                            OpenGraphiteInkPoint(x: 0, y: 10),
+                            OpenGraphiteInkPoint(x: 100, y: 10)
+                        ],
+                        lineWidth: 4,
+                        inputDevice: .pen
+                    )
+                ]
+            )
+        )
+        let gestureSnapshot = store.selectedCanvasAnnotations
+        var replacement = try #require(gestureSnapshot.first { $0.internalID == inkID })
+        replacement.frame = OpenGraphiteCanvasAnnotationFrame(x: 18, y: 34, width: 84, height: 12)
+        replacement.strokes = [
+            OpenGraphiteInkStroke(
+                points: [
+                    OpenGraphiteInkPoint(x: 2, y: 6),
+                    OpenGraphiteInkPoint(x: 82, y: 6)
+                ],
+                lineWidth: 4,
+                inputDevice: .pen
+            )
+        ]
+
+        var externallyChangedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        externallyChangedProject.name = "Externally Renamed"
+        let chapterIndex = try #require(
+            externallyChangedProject.chapters.firstIndex { $0.internalID == store.selectedChapterInternalID }
+        )
+        let externalSticky = OpenGraphiteCanvasAnnotation(
+            internalID: "external-sticky",
+            kind: .stickyNote,
+            frame: OpenGraphiteCanvasAnnotationFrame(x: 200, y: 60, width: 220, height: 140),
+            text: "CLIから追加"
+        )
+        externallyChangedProject.chapters[chapterIndex].annotations.append(externalSticky)
+        try JSONEncoder().encode(externallyChangedProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：monitorへ外部更新が届く前のstoreから、対象inkの部分消去を確定する（When）
+        store.applyCanvasInkErasure(
+            updatedAnnotations: [replacement],
+            deletedIDs: [],
+            expectedAnnotations: gestureSnapshot
+        )
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let persistedAnnotations = persistedProject.chapters[chapterIndex].annotations
+
+        // 期待値：外部project名と付箋を維持し、同じIDのinkだけを部分消去後payloadへ置き換える（Then）
+        #expect(persistedProject.name == "Externally Renamed")
+        #expect(persistedAnnotations.first { $0.internalID == "external-sticky" } == externalSticky)
+        #expect(persistedAnnotations.first { $0.internalID == inkID } == replacement)
+        #expect(store.loadedProject?.project.name == "Externally Renamed")
+        #expect(store.statusMessage == "手書きの一部を消去しました。")
+    }
+
+    /// 論理名（日本語）: 注釈専用Collection外部同期テスト
+    /// 概要: component HTML がない Collection でも Components segment と生存するなげわ選択を外部 `.ogp` 同期後に維持することを検証します。
+    @Test("注釈だけのCollectionで外部ogp同期後も選択を維持する")
+    func testExternalRefreshPreservesComponentAnnotationSelectionWithoutComponentPages() throws {
+        // コンディション：HTML cardがなく2件の注釈だけを持つCollection projectを開いて両方を選択する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let firstAnnotation = OpenGraphiteCanvasAnnotation(
+            internalID: "collection-note-first",
+            kind: .stickyNote,
+            frame: OpenGraphiteCanvasAnnotationFrame(x: 20, y: 30, width: 240, height: 160),
+            text: "first"
+        )
+        let secondAnnotation = OpenGraphiteCanvasAnnotation(
+            internalID: "collection-note-second",
+            kind: .stickyNote,
+            frame: OpenGraphiteCanvasAnnotationFrame(x: 300, y: 30, width: 240, height: 160),
+            text: "second"
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Annotation-only Collection",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "empty-pages",
+                    internalID: "empty-pages-container",
+                    title: "Empty Pages",
+                    pages: []
+                )
+            ],
+            collections: [
+                OpenGraphiteComponentCollection(
+                    id: "annotation-only",
+                    internalID: "annotation-only-container",
+                    title: "Annotation Only",
+                    components: [],
+                    annotations: [firstAnnotation, secondAnnotation]
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.selectCanvasAnnotations(ids: [firstAnnotation.internalID, secondAnnotation.internalID])
+
+        // 検証内容：外部編集でCollection名を変え、primary注釈だけを削除してmanifestを再読込する（When）
+        var externallyEditedProject = try #require(store.loadedProject?.project)
+        externallyEditedProject.collections[0].title = "Externally Updated"
+        externallyEditedProject.collections[0].annotations.removeAll {
+            $0.internalID == secondAnnotation.internalID
+        }
+        try JSONEncoder().encode(externallyEditedProject).write(to: fixture.projectURL, options: .atomic)
+        store.refreshProjectManifestFromDiskIfChanged()
+
+        // 期待値：Components segmentを保ち、削除済みIDだけを除いて生存注釈をprimaryへ昇格する（Then）
+        #expect(store.selectedCanvasSegment == .components)
+        #expect(store.selectedComponentCollection?.internalID == "annotation-only-container")
+        #expect(store.selectedComponentCollection?.title == "Externally Updated")
+        #expect(store.selectedCanvasAnnotationIDs == Set([firstAnnotation.internalID]))
+        #expect(store.selectedCanvasAnnotationID == firstAnnotation.internalID)
+    }
+
+    /// 論理名（日本語）: 注釈移動座標上限テスト
+    /// 概要: 選択全体が座標上限にある場合、範囲外方向への移動を保存済み扱いにせず `.ogp` を書き換えないことを検証します。
+    @Test("座標上限を越える注釈移動はogpを書き換えない")
+    func testCanvasAnnotationMoveBeyondCoordinateLimitIsNoOp() throws {
+        // コンディション：最大X/Y座標に付箋を追加し、保存直後のmanifestとstatusを保持する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let limit = OpenGraphiteCanvasAnnotationLimits.maximumCoordinateMagnitude
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: limit, y: limit)))
+        let manifestBeforeMove = try Data(contentsOf: fixture.projectURL)
+        let statusBeforeMove = store.statusMessage
+
+        // 検証内容：両軸とも上限を越える方向へ移動を要求する（When）
+        store.moveSelectedCanvasAnnotations(
+            anchorID: annotationID,
+            translation: CGSize(width: 100, height: 100)
+        )
+
+        // 期待値：実効移動量が0となり、frame、manifest byte列、statusを更新しない（Then）
+        #expect(store.selectedCanvasAnnotation?.frame.x == limit)
+        #expect(store.selectedCanvasAnnotation?.frame.y == limit)
+        #expect(try Data(contentsOf: fixture.projectURL) == manifestBeforeMove)
+        #expect(store.statusMessage == statusBeforeMove)
+    }
+
+    /// 論理名（日本語）: 注釈実削除件数テスト
+    /// 概要: 不明 ID を含む削除要求でも、実際に現在 Canvas から削除した件数だけを status へ表示することを検証します。
+    @Test("注釈削除statusには実削除件数を表示する")
+    func testCanvasAnnotationDeleteReportsActualDeletionCount() throws {
+        // コンディション：削除可能な付箋を1件だけ追加する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+
+        // 検証内容：有効IDと不明IDを同じ削除要求へ渡す（When）
+        store.deleteCanvasAnnotations(ids: [annotationID, "missing-annotation"])
+
+        // 期待値：付箋1件だけを削除し、statusも実削除数の1件を示す（Then）
+        #expect(store.selectedCanvasAnnotations.isEmpty)
+        #expect(store.statusMessage == "キャンバス注釈を 1 件削除しました。")
+    }
+
+    /// 論理名（日本語）: 注釈キャンバス分離テスト
+    /// 概要: 付箋と手書きが現在表示中の Chapter / Collection にだけ保存され、別キャンバスへ混入しないことを検証します。
+    @Test("ChapterとCollectionごとにキャンバス注釈を分離する")
+    func testCanvasAnnotationsAreIsolatedByChapterAndCollection() throws {
+        // コンディション：2つの Chapter と1つの Collection を持つ project を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Annotation Isolation Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "first",
+                    internalID: "firstopaque",
+                    title: "First",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            internalID: "homeopaque",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "second",
+                    internalID: "secondopaque",
+                    title: "Second",
+                    pages: []
+                )
+            ],
+            collections: [
+                OpenGraphiteComponentCollection(
+                    id: "main",
+                    internalID: "collectionopaque",
+                    title: "Main",
+                    components: []
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let secondChapterID = try #require(
+            store.loadedProject?.project.chapters.first(where: { $0.id == "second" })?.internalID
+        )
+        let inkStroke = OpenGraphiteInkStroke(
+            points: [OpenGraphiteInkPoint(x: 0, y: 0, pressure: 0.6)],
+            inputDevice: .pen
+        )
+
+        // 検証内容：先頭 Chapter の付箋を作成直後に別 Chapter へ移り、遅延した本文保存と残りの注釈追加を行う（When）
+        let firstStickyID = try #require(store.addStickyNote(at: CGPoint(x: 10, y: 20)))
+        store.stageCanvasAnnotationText(id: firstStickyID, text: "First note")
+        #expect(store.selectedCanvasAnnotation?.text == "First note")
+        store.selectChapter(internalID: secondChapterID)
+        store.updateCanvasAnnotationText(id: firstStickyID, text: "First note")
+        let secondStickyID = try #require(store.addStickyNote(at: CGPoint(x: 30, y: 40)))
+        store.updateCanvasAnnotationText(id: secondStickyID, text: "Second note")
+        store.selectComponentsSegment()
+        let collectionInkID = try #require(
+            store.addInkAnnotation(
+                frame: OpenGraphiteCanvasAnnotationFrame(x: -12, y: 8, width: 32, height: 24),
+                strokes: [inkStroke]
+            )
+        )
+        let reloadedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+
+        // 期待値：遅延本文も元の Chapter を ID から解決し、各注釈が正しい Chapter / Collection だけへ保存される（Then）
+        #expect(reloadedProject.chapters[0].annotations.map(\.internalID) == [firstStickyID])
+        #expect(reloadedProject.chapters[0].annotations.first?.text == "First note")
+        #expect(reloadedProject.chapters[1].annotations.map(\.internalID) == [secondStickyID])
+        #expect(reloadedProject.chapters[1].annotations.first?.text == "Second note")
+        #expect(reloadedProject.collections[0].annotations.map(\.internalID) == [collectionInkID])
+        #expect(reloadedProject.collections[0].annotations.first?.strokes == [inkStroke])
+    }
+
+    /// 論理名（日本語）: Project切替中付箋確定テスト
+    /// 概要: debounce 中に別 project を開いても、付箋本文を入力開始時の `.ogp` へ保存することを検証します。
+    @Test("Project切替後も未確定付箋本文を元のogpへ保存する")
+    func testCanvasAnnotationTextCommitKeepsOriginalProjectTarget() throws {
+        // コンディション：2つの独立projectを用意し、先頭projectの付箋本文をapp cacheへ即時反映する（Given）
+        let firstFixture = try EditorStoreHistoryFixture()
+        let secondFixture = try EditorStoreHistoryFixture()
+        defer {
+            firstFixture.cleanUp()
+            secondFixture.cleanUp()
+        }
+        let store = EditorStore()
+        store.openProject(at: firstFixture.projectURL)
+        let stickyID = try #require(store.addStickyNote(at: CGPoint(x: 12, y: 18)))
+        store.stageCanvasAnnotationText(id: stickyID, text: "元projectへ保存")
+
+        // 検証内容：別projectへ切り替えて付箋を追加後、入力開始時のURLを指定してdebounce相当の確定を行う（When）
+        store.openProject(at: secondFixture.projectURL)
+        _ = try #require(store.addStickyNote(at: CGPoint(x: 30, y: 40)))
+        store.updateCanvasAnnotationText(
+            projectURL: firstFixture.projectURL,
+            id: stickyID,
+            text: "元projectへ保存"
+        )
+        store.undoDocumentChange()
+        let firstReloaded = try ProjectLoader().loadProject(at: firstFixture.projectURL).project
+        let secondReloaded = try ProjectLoader().loadProject(at: secondFixture.projectURL).project
+
+        // 期待値：本文は元projectだけへ保存され、その遅延commitは現在projectの履歴へ混入せず直前の付箋追加をundoできる（Then）
+        #expect(firstReloaded.chapters.first?.annotations.first?.text == "元projectへ保存")
+        #expect(secondReloaded.chapters.first?.annotations.isEmpty == true)
+        #expect(store.loadedProject?.fileURL.standardizedFileURL == secondFixture.projectURL.standardizedFileURL)
+        #expect(store.canRedo)
+    }
+
+    /// 論理名（日本語）: 付箋Stage後操作履歴分離テスト
+    /// 概要: debounce前の付箋本文をmanifestから分離し、先行する移動と本文確定を別々の履歴として連続Undoできることを検証します。
+    @Test("付箋本文Stage後の移動と本文確定を別々に取り消せる")
+    func testStagedCanvasAnnotationTextAndMoveCreateIndependentHistoryEntries() throws {
+        // コンディション：空本文の付箋へ本文をstageするが、まだdebounce保存は確定しない（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        store.stageCanvasAnnotationText(id: annotationID, text: "draft memo")
+        let diskBeforeMove = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        #expect(diskBeforeMove.chapters.first?.annotations.first?.text.isEmpty == true)
+        #expect(store.selectedCanvasAnnotation?.text == "draft memo")
+
+        // 検証内容：本文未確定のまま付箋を移動し、その後にdebounce相当の本文確定を行って二回取り消す（When）
+        store.moveSelectedCanvasAnnotations(
+            anchorID: annotationID,
+            translation: CGSize(width: 40, height: 15)
+        )
+        store.updateCanvasAnnotationText(id: annotationID, text: "draft memo")
+        store.undoDocumentChange()
+        let afterTextUndo = try #require(
+            store.selectedCanvasAnnotations.first { $0.internalID == annotationID }
+        )
+        store.undoDocumentChange()
+        let afterMoveUndo = try #require(
+            store.selectedCanvasAnnotations.first { $0.internalID == annotationID }
+        )
+
+        // 期待値：一回目は本文だけ、二回目は位置だけが戻り、履歴競合として破棄されない（Then）
+        #expect(afterTextUndo.text.isEmpty)
+        #expect(afterTextUndo.frame.x == 60)
+        #expect(afterTextUndo.frame.y == 45)
+        #expect(afterMoveUndo.text.isEmpty)
+        #expect(afterMoveUndo.frame.x == 20)
+        #expect(afterMoveUndo.frame.y == 30)
+        #expect(store.canUndo)
+        #expect(store.canRedo)
+    }
+
+    /// 論理名（日本語）: 注釈保存最新Manifest統合テスト
+    /// 概要: 付箋本文stage中の通常操作と本文確定を最新diskへrebaseし、CLIによるproject属性と別注釈を維持することを検証します。
+    @Test("付箋操作を最新ogpへ統合してCLI変更を維持する")
+    func testCanvasAnnotationOperationsRebaseOntoLatestManifest() throws {
+        // コンディション：付箋本文をstage後、diskだけへproject名変更と別付箋追加を行う（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        store.stageCanvasAnnotationText(id: annotationID, text: "local draft")
+        var externalProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        externalProject.name = "CLI Renamed"
+        let externalAnnotation = OpenGraphiteCanvasAnnotation(
+            internalID: "cli-added-note",
+            kind: .stickyNote,
+            frame: OpenGraphiteCanvasAnnotationFrame(x: 300, y: 80, width: 220, height: 140),
+            text: "CLI note"
+        )
+        externalProject.chapters[0].annotations.append(externalAnnotation)
+        try JSONEncoder().encode(externalProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：monitorへ外部変更が届く前にlocal付箋を移動し、stage済み本文を確定する（When）
+        store.moveSelectedCanvasAnnotations(
+            anchorID: annotationID,
+            translation: CGSize(width: 25, height: 10)
+        )
+        store.updateCanvasAnnotationText(id: annotationID, text: "local draft")
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let persistedLocal = try #require(
+            persistedProject.chapters[0].annotations.first { $0.internalID == annotationID }
+        )
+
+        // 期待値：CLI変更を残したまま対象付箋の位置と本文だけが更新される（Then）
+        #expect(persistedProject.name == "CLI Renamed")
+        #expect(persistedProject.chapters[0].annotations.first {
+            $0.internalID == externalAnnotation.internalID
+        } == externalAnnotation)
+        #expect(persistedLocal.text == "local draft")
+        #expect(persistedLocal.frame.x == 45)
+        #expect(persistedLocal.frame.y == 40)
+        #expect(store.loadedProject?.project.name == "CLI Renamed")
+    }
+
+    /// 論理名（日本語）: 付箋本文外部競合拒否テスト
+    /// 概要: 入力開始後に同じ付箋本文がCLI変更された場合、local draftで上書きせず最新本文へ同期することを検証します。
+    @Test("外部変更された同じ付箋本文へdraftを保存しない")
+    func testCanvasAnnotationTextCommitRejectsExternalTextConflict() throws {
+        // コンディション：空本文の付箋へlocal本文をstage後、disk上の同じ本文だけをCLI相当で変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let annotationID = try #require(store.addStickyNote(at: CGPoint(x: 20, y: 30)))
+        store.stageCanvasAnnotationText(id: annotationID, text: "local draft")
+        var externalProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let annotationIndex = try #require(
+            externalProject.chapters[0].annotations.firstIndex { $0.internalID == annotationID }
+        )
+        externalProject.chapters[0].annotations[annotationIndex].text = "CLI text"
+        try JSONEncoder().encode(externalProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：monitorへ外部変更が届く前にlocal draftのdebounce保存を確定する（When）
+        store.updateCanvasAnnotationText(id: annotationID, text: "local draft")
+        let persistedAnnotation = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters[0].annotations.first {
+                $0.internalID == annotationID
+            }
+        )
+
+        // 期待値：CLI本文を維持し、表示も最新本文へ戻して無効になった履歴を破棄する（Then）
+        #expect(persistedAnnotation.text == "CLI text")
+        #expect(store.selectedCanvasAnnotation?.text == "CLI text")
+        #expect(store.statusMessage == ".ogp で同じ付箋本文が外部変更されたため、入力内容の保存を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
     /// 論理名（日本語）: 不正キャンバス配置拒否テスト
     /// 概要: 解像度が 0 以下の場合に Store と `.ogp` を更新しないことを検証します。
     @Test("不正な解像度ではキャンバス配置を更新しない")
@@ -2707,6 +3650,121 @@ struct EditorStoreTests {
         #expect(redoDiskHTML == "<!doctype html>\n<html><body>second</body></html>")
         #expect(store.documentReplacementRequest?.html == "<!doctype html>\n<html><body>second</body></html>")
         #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: 外部HTML更新後Undo競合拒否テスト
+    /// 概要: 履歴記録後に対象 HTML が外部更新された場合、Undo が最新ディスク値を古いsnapshotで上書きしないことを検証します。
+    @Test("外部更新されたHTMLへ古いUndo履歴を適用しない")
+    func testDocumentUndoRejectsExternallyChangedHTML() throws {
+        // コンディション：HTML同期を履歴へ記録後、storeへ通知せず対象HTMLを外部変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.syncCurrentHTML("<!doctype html>\n<html><body>edited</body></html>")
+        let externalHTML = "<!doctype html>\n<html><body>external before undo</body></html>"
+        try externalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：staleなHTML履歴を取り消そうとする（When）
+        store.undoDocumentChange()
+
+        // 期待値：外部HTMLを保持して表示へ同期し、競合した統合履歴を破棄する（Then）
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == externalHTML)
+        #expect(store.documentReplacementRequest?.html == externalHTML)
+        #expect(store.statusMessage == "HTML の外部変更を検出したため、履歴適用を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: 外部HTML更新後Redo競合拒否テスト
+    /// 概要: Undo後に対象 HTML が外部更新された場合、Redo が外部値を取り消し前snapshotで上書きしないことを検証します。
+    @Test("外部更新されたHTMLへ古いRedo履歴を適用しない")
+    func testDocumentRedoRejectsExternallyChangedHTML() throws {
+        // コンディション：HTML同期を取り消してredo履歴を作り、その後対象HTMLを外部変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.syncCurrentHTML("<!doctype html>\n<html><body>edited</body></html>")
+        store.undoDocumentChange()
+        let undoSequence = try #require(store.documentReplacementRequest?.sequence)
+        store.markDocumentReplacementApplied(sequence: undoSequence)
+        let externalHTML = "<!doctype html>\n<html><body>external before redo</body></html>"
+        try externalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：staleなHTML履歴をやり直そうとする（When）
+        store.redoDocumentChange()
+
+        // 期待値：外部HTMLを保持して表示へ同期し、undo/redo双方の統合履歴を破棄する（Then）
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == externalHTML)
+        #expect(store.documentReplacementRequest?.html == externalHTML)
+        #expect(store.statusMessage == "HTML の外部変更を検出したため、履歴適用を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: Page登録削除後HTML履歴拒否テスト
+    /// 概要: 外部manifest更新で履歴対象 Page が登録解除・削除された場合、Undo が旧 URL を再作成しないことを検証します。
+    @Test("登録削除されたPageのHTML履歴で旧URLを再作成しない")
+    func testDocumentUndoDoesNotRecreateRemovedProjectPage() throws {
+        // コンディション：HTML同期後、外部処理がPage登録と対象HTMLファイルを削除する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.syncCurrentHTML("<!doctype html>\n<html><body>edited</body></html>")
+        try fixture.writeProject(pages: [])
+        try FileManager.default.removeItem(at: fixture.htmlURL)
+
+        // 検証内容：削除済みPageを対象とするstaleなHTML履歴を取り消そうとする（When）
+        store.undoDocumentChange()
+
+        // 期待値：旧HTMLを再生成せず最新manifestを表示へ同期し、無効な履歴を破棄する（Then）
+        #expect(FileManager.default.fileExists(atPath: fixture.htmlURL.path) == false)
+        #expect(store.loadedProject?.project.allPages.isEmpty == true)
+        #expect(store.statusMessage == "HTML の外部変更を検出したため、履歴適用を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: Rename後HTML履歴移行テスト
+    /// 概要: HTML 同期後に Page filename を変更しても、記録済み履歴が新しい URL へ追従して取り消せることを検証します。
+    @Test("Page rename後もHTML履歴を取り消せる")
+    func testDocumentHistoryMigratesPageURLAfterRename() throws {
+        // コンディション：選択ページのHTMLを変更し、undo履歴を作る（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        let initialHTML = "<!doctype html>\n<html><body>initial</body></html>"
+        let firstHTML = "<!doctype html>\n<html><body>first renamed history</body></html>"
+        let secondHTML = "<!doctype html>\n<html><body>second renamed history</body></html>"
+        store.syncCurrentHTML(firstHTML)
+        store.syncCurrentHTML(secondHTML)
+        store.undoDocumentChange()
+        let replacementSequence = try #require(store.documentReplacementRequest?.sequence)
+        store.markDocumentReplacementApplied(sequence: replacementSequence)
+
+        // 検証内容：undo/redo両側に履歴がある状態でPage filenameを変更し、残りをundo後に二回redoする（When）
+        store.updatePageFilename(internalID: page.internalID, segment: .pages, value: "renamed.html")
+        let renamedURL = fixture.publicURL.appendingPathComponent("renamed.html")
+        store.undoDocumentChange()
+        let htmlAfterUndo = try String(contentsOf: renamedURL, encoding: .utf8)
+        store.redoDocumentChange()
+        let htmlAfterFirstRedo = try String(contentsOf: renamedURL, encoding: .utf8)
+        store.redoDocumentChange()
+
+        // 期待値：旧URLを再生成せず、undo/redo両stackがrename後URLへ初期値、第一値、第二値の順で適用される（Then）
+        #expect(FileManager.default.fileExists(atPath: fixture.htmlURL.path) == false)
+        #expect(htmlAfterUndo == initialHTML)
+        #expect(htmlAfterFirstRedo == firstHTML)
+        #expect(try String(contentsOf: renamedURL, encoding: .utf8) == secondHTML)
+        #expect(store.documentReplacementRequest?.pageURL.standardizedFileURL == renamedURL.standardizedFileURL)
+        #expect(store.documentReplacementRequest?.html == secondHTML)
     }
 
     /// 論理名（日本語）: 外部HTML変更同期テスト

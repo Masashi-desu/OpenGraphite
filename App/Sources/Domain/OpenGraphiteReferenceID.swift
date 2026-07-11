@@ -9,6 +9,7 @@ enum OpenGraphiteReferenceType: String, Codable, Equatable {
     case component
     case node
     case componentNode = "component-node"
+    case annotation
 
     /// 論理名（日本語）: 参照部品数
     /// 処理概要: 種別ごとに `ogref:<type>:` 以降へ必要な ID 部品数を返します。
@@ -18,7 +19,7 @@ enum OpenGraphiteReferenceType: String, Codable, Equatable {
             return 1
         case .page, .component:
             return 2
-        case .node, .componentNode:
+        case .node, .componentNode, .annotation:
             return 3
         }
     }
@@ -140,6 +141,25 @@ struct OpenGraphiteReferenceID: Equatable {
         OpenGraphiteReferenceID(type: .componentNode, parts: [collectionID, componentID, nodeID])
     }
 
+    /// 論理名（日本語）: キャンバス注釈参照ID生成関数
+    /// 処理概要: Pages / Components セグメント、Chapter / Collection 内部 ID、注釈内部 ID から `ogref:annotation` を作ります。
+    ///
+    /// - Parameters:
+    ///   - segment: `pages` または `components`。
+    ///   - containerID: Chapter または Collection 内部 ID。
+    ///   - annotationID: 注釈内部 ID。
+    /// - Returns: Canvas annotation 参照 ID。
+    static func annotation(
+        segment: OpenGraphiteCanvasSegment,
+        containerID: String,
+        annotationID: String
+    ) -> OpenGraphiteReferenceID {
+        OpenGraphiteReferenceID(
+            type: .annotation,
+            parts: [segment.rawValue, containerID, annotationID]
+        )
+    }
+
     /// 論理名（日本語）: 含有ページ参照抽出関数
     /// 処理概要: typed 参照 ID が page / component / node を指す場合、対象 HTML を指す page 参照へ変換します。
     ///
@@ -161,7 +181,7 @@ struct OpenGraphiteReferenceID: Equatable {
             return OpenGraphiteReferenceID
                 .component(collectionID: reference.parts[0], componentID: reference.parts[1])
                 .stringValue
-        case .chapter, .collection:
+        case .chapter, .collection, .annotation:
             return nil
         }
     }
@@ -181,7 +201,7 @@ struct OpenGraphiteReferenceID: Equatable {
             return reference.parts[2]
         case .componentNode:
             return reference.parts[2]
-        case .chapter, .collection, .page, .component:
+        case .chapter, .collection, .page, .component, .annotation:
             return nil
         }
     }
@@ -199,7 +219,7 @@ struct OpenGraphiteReferenceID: Equatable {
         switch reference.type {
         case .component, .componentNode:
             return reference.parts[1]
-        case .chapter, .collection, .page, .node:
+        case .chapter, .collection, .page, .node, .annotation:
             return nil
         }
     }
@@ -219,8 +239,20 @@ struct OpenGraphiteReferenceID: Equatable {
             return reference.parts[0]
         case .component, .componentNode:
             return reference.parts[0]
-        case .chapter, .page, .node:
+        case .chapter, .page, .node, .annotation:
             return nil
         }
+    }
+
+    /// 論理名（日本語）: キャンバス注釈内部ID抽出関数
+    /// 処理概要: `ogref:annotation:<segment>:<container>:<annotation>` から注釈内部 ID を取り出します。
+    ///
+    /// - Parameter value: typed annotation 参照 ID。
+    /// - Returns: 注釈内部 ID。annotation 参照ではない場合は `nil`。
+    static func annotationInternalID(from value: String) -> String? {
+        guard let reference = OpenGraphiteReferenceID(parsing: value), reference.type == .annotation else {
+            return nil
+        }
+        return reference.parts[2]
     }
 }

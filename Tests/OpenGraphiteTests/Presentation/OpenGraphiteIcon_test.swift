@@ -65,9 +65,49 @@ struct OpenGraphiteIconTests {
         let toolIDs = tools.map(\.rawValue)
 
         // 期待値：icon ツールが選択肢にあり、Lucide の star で表示される（Then）
-        #expect(toolIDs == ["select", "text", "frame", "icon", "hand"])
+        #expect(toolIDs == ["select", "text", "frame", "icon", "stickyNote", "pen", "eraser", "lasso", "hand"])
         #expect(icon.library == .lucide)
         #expect(icon.name == "star")
+    }
+
+    /// 論理名（日本語）: キャンバス注釈ツールアイコン割り当てテスト
+    /// 概要: `.ogp` 付箋、手書き、消しゴム、なげわツールが意味に合う Lucide icon で表示されることを検証します。
+    @Test("キャンバス注釈ツールを専用アイコンで表示する")
+    func testCanvasAnnotationToolsUseDedicatedIcons() {
+        // コンディション：キャンバス注釈ツールの表示 icon を取得する（Given）
+        let stickyNoteIcon = OpenGraphiteIcon.canvasTool(.stickyNote)
+        let penIcon = OpenGraphiteIcon.canvasTool(.pen)
+        let eraserIcon = OpenGraphiteIcon.canvasTool(.eraser)
+        let lassoIcon = OpenGraphiteIcon.canvasTool(.lasso)
+
+        // 検証内容：Lucide ID と SF Symbols fallback を確認する（When）
+        let names = [stickyNoteIcon.name, penIcon.name, eraserIcon.name, lassoIcon.name]
+        let fallbacks = [
+            stickyNoteIcon.fallbackSystemName,
+            penIcon.fallbackSystemName,
+            eraserIcon.fallbackSystemName,
+            lassoIcon.fallbackSystemName
+        ]
+
+        // 期待値：各注釈ツールがそれぞれ専用 icon を持つ（Then）
+        #expect(names == ["sticky-note", "pen-tool", "eraser", "lasso-select"])
+        #expect(fallbacks == ["note.text", "pencil.tip", "eraser", "lasso"])
+    }
+
+    /// 論理名（日本語）: キャンバス注釈ツール表示情報テスト
+    /// 概要: 消しゴムとなげわツールが日本語 title と SF Symbols fallback を公開することを検証します。
+    @Test("消しゴムとなげわツールの表示情報を公開する")
+    func testEraserAndLassoToolsExposeLocalizedPresentation() {
+        // コンディション：消しゴムとなげわツールを用意する（Given）
+        let tools: [CanvasTool] = [.eraser, .lasso]
+
+        // 検証内容：各ツールの title と system image を取得する（When）
+        let titles = tools.map(\.title)
+        let systemImages = tools.map(\.systemImage)
+
+        // 期待値：日本語 title と意味に合う SF Symbols 名になる（Then）
+        #expect(titles == ["消しゴム", "なげわ"])
+        #expect(systemImages == ["eraser", "lasso"])
     }
 
     /// 論理名（日本語）: パラメータ連動アイコン割り当てテスト

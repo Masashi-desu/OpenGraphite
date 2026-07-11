@@ -1,6 +1,6 @@
 # ogkiln CLI Specification
 
-`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本であり、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` または `collections[].components[]` に明示された HTML と対応 CSS だけに限定する。
+`ogkiln` は OpenGraphite project (`.ogp`) を headless に inspection / validation / edit する CLI である。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本であり、CLI の編集対象は常に `.ogp` の `chapters[].pages[]` または `collections[].components[]` に明示された HTML と対応 CSS だけに限定する。Chapter / Collection の付箋・手書きは `.ogp` 専用 metadata として読み取る。
 
 ## Principles
 
@@ -11,6 +11,7 @@
 - page は `--page-id`、component は `--component-id`、node は `--id` で指定する。コピーされた参照 ID は `ogref:<type>:...` 形式で、`ogref:node` / `ogref:component-node` を `--id` に渡した場合は対象 page / component canvas もそこから解決できる。raw `data-og-internal-id` を使う node edit 系コマンドは `--page-id` と `--component-id` のどちらも受け付けるが、同時指定は invalid である。
 - write operation は書き込み前に candidate HTML / companion CSS を validation し、`error` diagnostic がある場合はファイルを書き換えない。
 - runtime state は正本 HTML から取り除く。対象は `OpenGraphite.contract.json` の `runtimeAttributes` と runtime-only CSS custom properties。
+- `annotation list|get` は `.ogp` 注釈の読み取り専用操作であり、HTML / CSS を更新しない。
 - 出力は JSON を基本とし、MCP server はこの JSON をそのまま tool result として返せる。
 
 ## Project Commands
@@ -26,9 +27,11 @@ ogkiln build <project.ogp|current> --output <dir>
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
 
+`project inspect` の Chapter / Collection summary は、各キャンバスに保存された `.ogp` 注釈数を `annotationCount` として返す。
+
 `project create` は `--root` で指定した project root を HTML/CSS の解決基準とし、`--output` で指定した場所に新規 `.ogp` を作成する。`--output` に `.ogp` 拡張子がない場合は補完する。`.ogp` の配置ディレクトリと project root が異なる場合は、`.ogp` から見た相対 `repositoryRoot` を保存する。project root に `public` がない場合は `public/index.html`、`public/index.css`、`CSS/OpenGraphite.css` と `home` page entry を作る。既存 `public` がある場合は HTML を自動登録せず空 Chapter の manifest を作り、`CSS/OpenGraphite.css` がなければ CLI が解決した seed をコピーする。
 
-`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。
+`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。ただし editor-only の入力 `.ogp` manifest は asset としてコピーしない。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。`chapters[].annotations` / `collections[].annotations` は build 入力として無視し、付箋本文、色、stroke、annotation ID を生成 HTML / CSS へ注入しない。
 
 ## Page Management
 
@@ -59,6 +62,22 @@ ogkiln project component remove <project.ogp|current> --component-id <component-
 
 Components は Collection ごとに component master を置く asset canvas として扱う。`project component add/create` は `.ogp` の `collections[].components[]` を更新し、`--collection-id` で登録先 Collection を指定できる。未指定時は先頭または既定 Collection を使う。node edit 系コマンドは `--component-id` で Components HTML を直接編集できる。`canvas` の省略値は `0,0,960,900` である。`project component place` の `--name` はフロー解決用の canvas 配置名を更新し、省略時は既存値を維持する。空文字または空白だけを指定すると名前なしとして保存する。`--preview-mock key=value` は runtime Mock State を更新する。空文字 override は `--preview-mock key=` と指定する。`--preview-placement-mock placement-id:key=value` は component canvas 内の placement preview 用に `previewContext.placementMocks` を部分更新する。`project component document` は page と同じルールで component HTML 正本の document attribute と metadata を更新する。`remove` は既定では `.ogp` の登録だけを削除し、`--delete-file` を付けた場合のみ HTML file も削除する。
 
+## Annotation Read Commands
+
+```bash
+ogkiln annotation list <project.ogp|current> --chapter-id <chapter-id> --json
+ogkiln annotation list <project.ogp|current> --collection-id <collection-id> --json
+ogkiln annotation get <project.ogp|current> --chapter-id <chapter-id> --id <annotation-id> --json
+ogkiln annotation get <project.ogp|current> --collection-id <collection-id> --id <annotation-id> --json
+ogkiln annotation get <project.ogp|current> --id <ogref-annotation-id> --json
+```
+
+`annotation list` は `--chapter-id` または `--collection-id` のどちらか一方を必須とする。selector は表示 ID、内部 ID、`ogref:chapter` / `ogref:collection` を受け付ける。返す一覧は `internalID`、`referenceID`、`kind`、canonical world `frame`、付箋の text / color、`strokeCount`、`pointCount` を持ち、ink の point 列は展開しない。
+
+`annotation get` は raw annotation internal ID と明示した Chapter / Collection、または `ogref:annotation:<pages|components>:<containerInternalID>:<annotationInternalID>` を受け付ける。typed ID だけでコンテナを解決でき、完全な `strokes[].points[]`、筆圧、傾き、入力デバイスを返す。typed ID と selector を併記する場合は同じコンテナを指す必要がある。
+
+この interface は読み取り専用である。schema、座標、成果物との境界は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とする。
+
 ## Read Commands
 
 ```bash
@@ -78,12 +97,12 @@ ogkiln node get <project.ogp|current> [--page-id <page-id>|--component-id <compo
 ## Screenshot Commands
 
 ```bash
-ogkiln screenshot canvas <project.ogp|current> --output <png>
+ogkiln screenshot canvas <project.ogp|current> --output <png> [--chapter-id <chapter-id>|--collection-id <collection-id>]
 ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
 ogkiln screenshot node <project.ogp|current> [--page-id <page-id>|--component-id <component-id>] --id <node-id|ogref-node-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
 ```
 
-`screenshot canvas` は `.ogp` の先頭 Chapter の `pages[].canvas` 配置に従って各ページを WebKit でレンダリングし、キャンバス全体を 1 枚の PNG に合成する。
+`screenshot canvas` は `--chapter-id` または `--collection-id` のどちらか一方で対象を選べる。selector は表示 ID、内部 ID、`ogref:chapter` / `ogref:collection` を受け付け、両方の同時指定は invalid である。どちらも省略した場合は先頭 Chapter を使う。対象の `pages[].canvas` / `components[].canvas` 配置に従って各 HTML card を WebKit でレンダリングし、同じ Chapter / Collection の `annotations[]` を App と同じ ink、sticky note の順で重ねてキャンバス全体を 1 枚の PNG に合成する。`inputDevice` は入力元 metadata なので `eraser` の保存 stroke も描画対象である。出力範囲は card frame と annotation frame の union であり、注釈だけの Chapter / Collection も出力できる。cardの座標・寸法が不正な場合、出力が一辺16,384 pxまたは総33,554,432 pixelを超える場合、card snapshot累積が33,554,432 pixelを超える場合はWebKit captureやbitmap確保を行わず、配置範囲または重なったcardを減らすよう明示エラーを返す。
 
 `screenshot page` は指定 page entry の `canvas.width` / `canvas.height` を既定 viewport として PNG を生成する。`--width` / `--height` を指定すると viewport を上書きできる。`--full-page` を付けると document 全体の scroll size に合わせて保存する。
 
@@ -151,7 +170,7 @@ ogkiln node copy <project.ogp|current> [--page-id <page-id>|--component-id <comp
 
 ## JSON Result Contracts
 
-Read operation は `schemaVersion`、対象 path / URL、node list、diagnostics を返す。write operation は次の形を返す。
+Read operation は `schemaVersion`、対象 path / URL、payload、diagnostics を返す。`annotation list` は対象 segment / container と注釈要約配列、`annotation get` は typed `referenceID` と完全な注釈 payload を返す。write operation は次の形を返す。
 
 ```json
 {

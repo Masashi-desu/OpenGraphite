@@ -1,6 +1,6 @@
 # OpenGraphite MCP Specification
 
-OpenGraphite MCP server は stdio JSON-RPC server として動作し、AI client に OpenGraphite project (`.ogp`) の resources と tools を公開する。server 名は `OpenGraphite` とする。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本として扱う。
+OpenGraphite MCP server は stdio JSON-RPC server として動作し、AI client に OpenGraphite project (`.ogp`) の resources と tools を公開する。server 名は `OpenGraphite` とする。HTML は構造と参照の正本、同名 companion CSS はデザイン値の正本、Chapter / Collection の付箋・手書きは `.ogp` 専用 metadata として扱う。
 
 ## Runtime
 
@@ -17,6 +17,8 @@ MCP tool の対象 project は常に `projectPath` で指定する。`projectPat
 page / component canvas / node を対象にする tool は、`pageID` または `componentID` のどちらか一方で対象 HTML を指定する。コピーされた値は `ogref:<type>:...` 形式で、`pageID` は `ogref:page:<chapterInternalID>:<pageInternalID>`、`componentID` は `ogref:component:<collectionInternalID>:<componentInternalID>` を指す。node 対象 tool の `id` は `data-og-internal-id` または `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>` / `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を受け取る。typed node 参照を使う場合は `pageID` / `componentID` を省略でき、raw node ID の場合はどちらか一方が必要である。両方を同時に渡す呼び出しは invalid である。
 
 MCP は HTML path を直接書き換える tool を提供しない。`.ogp` にない既存 HTML は `add_project_page` または `add_project_component` で可視リストへ追加し、新規 HTML は `create_project_page` または `create_project_component` で HTML と同名 companion CSS の作成と登録を同時に行う。配布用の静的 HTML が必要な場合は `build_project` で `<og-instance>` を component master から展開した出力を作る。
+
+Canvas annotation tool は読み取り専用である。`list_canvas_annotations` / `get_canvas_annotation` は `.ogp` を読むだけで、HTML / CSS / runtime / build 成果物を更新しない。schema と座標の正本は [CanvasAnnotations.md](CanvasAnnotations.md) とする。
 
 ## Resources
 
@@ -45,6 +47,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `get_contract` | active contract を返す | `contract get` |
 | `validate` | `.ogp` を検証する | `validate <project>` |
 | `build_project` | Pages の `<og-instance>` を component master で静的展開する | `build <project>` |
+| `list_canvas_annotations` | Chapter / Collection の注釈要約を返す | `annotation list` |
+| `get_canvas_annotation` | stroke / point を含む単一注釈を返す | `annotation get` |
 | `list_design_tokens` | Project CSS の `:root` design token を返す | `design-token list` |
 | `set_design_token` | Project CSS の `:root` design token を設定する | `design-token set` |
 | `remove_design_token` | Project CSS の `:root` design token を削除する | `design-token remove` |
@@ -58,7 +62,7 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 | `set_project_component_document_context` | component HTML 正本の `<html>` attribute と binding metadata を更新する | `project component document` |
 | `remove_project_component` | component canvas 登録を削除する | `project component remove` |
 | `list_nodes` | page または component canvas の node graph を返す | `page graph` |
-| `screenshot_canvas` | `.ogp` の先頭 Chapter キャンバスを PNG に保存する | `screenshot canvas` |
+| `screenshot_canvas` | 選択 Chapter / Collection と前面注釈を PNG に保存する | `screenshot canvas` |
 | `screenshot_page` | page または component canvas を PNG に保存する | `screenshot page` |
 | `screenshot_node` | page または component canvas 内の node を切り抜いた PNG に保存する | `screenshot node` |
 | `query_nodes` | id / type / role / tag / text で node を検索する | `node query` |
@@ -80,6 +84,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 
 page / component canvas を対象にする tool は `pageID` または `componentID` のどちらか一方を受け取る。node を対象にする tool は `id` を受け取り、raw node ID の場合は `pageID` / `componentID` も必要である。typed `ogref:node` / `ogref:component-node` の場合は `id` だけで対象 HTML と `data-og-internal-id` へ解決する。
 
+`list_canvas_annotations` は `chapterID` または `collectionID` のどちらか一方を必須とし、手書き point 列を展開しない要約を返す。`get_canvas_annotation.id` は raw annotation internal ID または `ogref:annotation:<pages|components>:<containerInternalID>:<annotationInternalID>` を受け取る。raw ID には `chapterID` / `collectionID` のどちらか一方が必要であり、typed ID は単独でコンテナを解決できる。typed ID と selector を併記する場合は同じ Chapter / Collection を指す必要がある。
+
 `add_project_page.path`、`create_project_page.path`、`add_project_component.path`、`create_project_component.path` は `.ogp` の `htmlRoot` から見た相対 HTML path であり、絶対 path、`..`、HTML 以外の拡張子は invalid である。`add_project_component.collectionID` と `create_project_component.collectionID` は Collection ID / 内部 ID / `ogref:collection` を受け取り、省略時は先頭または既定 Collection を使う。
 
 `create_project_page` は page 登録と初期 canvas 配置を同時に扱える。`create_project_component` は component HTML の作成と Collection 登録を行い、配置変更は `place_project_component` で行う。
@@ -96,9 +102,9 @@ component placement の状態差分は HTML 正本ではなく、`.ogp` canvas m
 
 `remove_project_component.deleteFile` は既定で `false` である。`true` の場合のみ、`.ogp` からの登録削除に加えて component HTML file も削除する。
 
-`build_project.outputPath` は build 出力ディレクトリである。build は Pages HTML を対象にし、component Collection の HTML と runtime script は公開 page としては出力しない。
+`build_project.outputPath` は build 出力ディレクトリである。build は Pages HTML を対象にし、component Collection の HTML、runtime script、editor-only の入力 `.ogp` manifest は公開 asset として出力しない。`.ogp` 注釈は component 展開へ使わず、生成 HTML / CSS へ付箋本文、色、stroke、annotation ID を注入しない。
 
-`screenshot_page` の `width`、`height` は任意であり、省略時は `.ogp` entry の `canvas.width`、`canvas.height` を viewport として使う。`fullPage:true` の場合は document 全体を保存する。
+`screenshot_canvas.chapterID` / `collectionID` は任意かつ相互排他で、表示 ID、内部 ID、`ogref:chapter` / `ogref:collection` を受け取る。両方を省略した場合は先頭 Chapter を使う。対象 Chapter の WebKit page snapshot または Collection の component snapshot と `annotations[]` を canonical world 座標で合成し、App と同じ ink、sticky note の順で注釈を前面へ描画する。全cardは有限座標と正の寸法を必須とし、出力が一辺16,384 pxまたは総33,554,432 pixel、もしくはcard snapshot累積が33,554,432 pixelの安全上限を超える場合はcaptureやbitmap確保を行わず明示エラーを返す。`screenshot_page` の `width`、`height` は任意であり、省略時は `.ogp` entry の `canvas.width`、`canvas.height` を viewport として使う。`fullPage:true` の場合は document 全体を保存する。個別 HTML を対象にする `screenshot_page` / `screenshot_node` は Chapter / Collection 注釈を含めない。
 
 `position` は `before`、`after`、`prepend`、`append` のいずれかである。
 

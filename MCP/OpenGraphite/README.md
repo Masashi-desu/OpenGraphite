@@ -1,6 +1,6 @@
 # OpenGraphite MCP Server
 
-OpenGraphite MCP server exposes `.ogp`-scoped OpenGraphite resources and tools over stdio. Write tools call `Scripts/ogkiln`, so CLI and MCP operations share the same validation and diagnostics path.
+OpenGraphite MCP server exposes `.ogp`-scoped OpenGraphite resources and tools over stdio. Write tools call `Scripts/ogkiln`, so CLI and MCP operations share the same validation and diagnostics path. Canvas annotation tools read `.ogp`-only sticky notes and ink without changing HTML or CSS.
 
 ## Run
 
@@ -23,6 +23,8 @@ node MCP/OpenGraphite/server.mjs
 ## Tools
 
 - `get_contract`
+- `list_canvas_annotations`
+- `get_canvas_annotation`
 - `list_design_tokens`
 - `set_design_token`
 - `remove_design_token`
@@ -47,5 +49,7 @@ node MCP/OpenGraphite/server.mjs
 - `move_node`
 - `copy_node`
 
+`list_canvas_annotations` requires exactly one Chapter or Collection selector. `get_canvas_annotation` accepts a raw annotation ID plus its selector, or a self-contained `ogref:annotation:<pages|components>:<containerInternalID>:<annotationInternalID>`. `screenshot_canvas` accepts mutually exclusive optional `chapterID` / `collectionID` selectors, defaults to the first Chapter, and composites that container's annotations in front of its WebKit card snapshots.
+
 Tool details and argument contracts are documented in
-[`Docs/specs/OpenGraphiteMCP.md`](../../Docs/specs/OpenGraphiteMCP.md).
+[`Docs/specs/OpenGraphiteMCP.md`](../../Docs/specs/OpenGraphiteMCP.md). The annotation schema and Sidecar contract are defined in [`Docs/specs/CanvasAnnotations.md`](../../Docs/specs/CanvasAnnotations.md).

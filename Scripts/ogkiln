@@ -6,6 +6,7 @@ BUILD_DIR="$ROOT_DIR/.build/ogkiln"
 BINARY="$BUILD_DIR/ogkiln"
 
 sources=(
+  "$ROOT_DIR/App/Sources/Domain/OpenGraphiteCanvasAnnotation.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteProject.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteNode.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteReferenceID.swift"

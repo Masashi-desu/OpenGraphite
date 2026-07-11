@@ -2306,7 +2306,7 @@ struct OpenGraphiteAgentCoreTests {
     /// 概要: `ogkiln build` と同じ builder が `<og-instance>` を静的 HTML へ展開できることを確認します。
     @Test("component参照を静的HTMLへbuildできる")
     func testComponentBuilderExpandsInstances() throws {
-        // コンディション：component link、runtime script、og-instance を持つ page と master HTML を用意する
+        // コンディション：component link、runtime script、og-instance と `.ogp` 専用注釈を持つ project を用意する（Given）
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
@@ -2341,13 +2341,36 @@ struct OpenGraphiteAgentCoreTests {
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         try fixture.writeProject(to: projectURL)
+        var annotatedProject = try ProjectLoader().loadProject(at: projectURL).project
+        annotatedProject.chapters[0].annotations = [
+            OpenGraphiteCanvasAnnotation(
+                internalID: "build-note-opaque",
+                kind: .stickyNote,
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 40, y: 60, width: 240, height: 160),
+                text: "ANNOTATION_MUST_NOT_SHIP"
+            ),
+            OpenGraphiteCanvasAnnotation(
+                internalID: "build-ink-opaque",
+                kind: .ink,
+                frame: OpenGraphiteCanvasAnnotationFrame(x: 320, y: 80, width: 80, height: 40),
+                strokes: [
+                    OpenGraphiteInkStroke(
+                        points: [OpenGraphiteInkPoint(x: 0, y: 0, pressure: 0.7)],
+                        color: "#ABCDEF",
+                        inputDevice: .pen
+                    )
+                ]
+            )
+        ]
+        try JSONEncoder().encode(annotatedProject).write(to: projectURL)
 
-        // 検証内容：builder で dist 相当のディレクトリへ出力する
+        // 検証内容：builder で dist 相当のディレクトリへ出力する（When）
         let outputURL = fixture.rootURL.appendingPathComponent("dist")
         let result = try OpenGraphiteComponentBuilder().buildProject(projectURL: projectURL, outputURL: outputURL)
         let builtHTML = try String(contentsOf: outputURL.appendingPathComponent("index.html"), encoding: .utf8)
+        let builtCSS = try String(contentsOf: outputURL.appendingPathComponent("OpenGraphite.css"), encoding: .utf8)
 
-        // 期待値：og-instance と runtime 参照は残らず、component master が instance ID で展開される
+        // 期待値：component は展開される一方、`.ogp` 専用注釈とmanifest自体は公開 build 成果物へ混入しない（Then）
         #expect(result.built == true)
         #expect(result.pages.map(\.id) == ["home"])
         #expect(builtHTML.contains("<FeatureCard"))
@@ -2355,6 +2378,12 @@ struct OpenGraphiteAgentCoreTests {
         #expect(builtHTML.contains("Built Title"))
         #expect(!builtHTML.contains("<og-instance"))
         #expect(!builtHTML.contains("OpenGraphite.runtime.js"))
+        #expect(!builtHTML.contains("ANNOTATION_MUST_NOT_SHIP"))
+        #expect(!builtHTML.contains("#ABCDEF"))
+        #expect(!builtCSS.contains("ANNOTATION_MUST_NOT_SHIP"))
+        #expect(!builtCSS.contains("#ABCDEF"))
+        #expect(!FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("Sample.ogp").path))
+        #expect(!result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("Sample.ogp").path))
         #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("OpenGraphite.css").path))
         #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("assets/preview.svg").path))
         #expect(FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("OpenGraphite.css").path))
