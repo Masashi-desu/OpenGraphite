@@ -1,12 +1,188 @@
 import Foundation
 import Testing
 import WebKit
+@testable import OpenGraphite
 
 /// 論理名（日本語）: runtimeシリアライズテストスイート
 /// 概要: `OpenGraphite.runtime.js` が component 展開後 DOM を source HTML として保存可能な形へ戻すことを確認します。
 @MainActor
 @Suite("runtimeシリアライズテストスイート")
 struct RuntimeSerializationTests {
+    /// 論理名（日本語）: 選択オブジェクト単体表示復元テスト
+    /// 概要: focus isolation が対象 subtree だけを表示し、layout geometry を変えず、解除時に元の表示へ戻すことを検証します。
+    @Test("focus isolationは対象subtreeだけをgeometry不変で表示して解除できる")
+    func testFocusIsolationShowsOnlyTargetSubtreeAndRestoresDocument() async throws {
+        // コンディション：横並びの sibling、対象 frame、対象 child を持つ HTML を WebView に読み込む（Given）
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let pageHTML = """
+        <!doctype html>
+        <html>
+          <head>
+            <style>
+              html, body { margin: 0; min-width: 640px; min-height: 360px; }
+              [data-og-id="page"] { display: flex; align-items: flex-start; gap: 24px; padding: 32px; }
+              [data-og-id="leading-sibling"] { width: 96px; height: 72px; }
+              [data-og-id="focus-target"] { width: 180px; height: 120px; padding: 12px; }
+              [data-og-id="focus-child"] { width: 80px; height: 32px; }
+              [data-og-id="trailing-sibling"] { width: 112px; height: 64px; }
+            </style>
+          </head>
+          <body>
+            <Page data-og-id="page" data-og-type="page">
+              <LeadingSibling data-og-id="leading-sibling" data-og-type="frame">Leading</LeadingSibling>
+              <FocusTarget data-og-id="focus-target" data-og-type="frame">
+                <FocusChild data-og-id="focus-child" data-og-type="text">Focused child</FocusChild>
+              </FocusTarget>
+              <TrailingSibling data-og-id="trailing-sibling" data-og-type="frame">Trailing</TrailingSibling>
+            </Page>
+          </body>
+        </html>
+        """
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(WebCanvasFocusIsolationScript.source)
+        let rootAttributeLiteral = Self.javaScriptLiteral(WebCanvasFocusIsolationScript.rootAttributeName)
+        let visibleAttributeLiteral = Self.javaScriptLiteral(WebCanvasFocusIsolationScript.visibleAttributeName)
+
+        // 検証内容：対象 frame に focus isolation を適用し、表示状態と geometry を取得してから解除する（When）
+        let result = try await webView.evaluateJavaScript(
+            """
+            (() => {
+              const rootAttribute = \(rootAttributeLiteral);
+              const visibleAttribute = \(visibleAttributeLiteral);
+              const target = document.querySelector('[data-og-id="focus-target"]');
+              const child = document.querySelector('[data-og-id="focus-child"]');
+              const leadingSibling = document.querySelector('[data-og-id="leading-sibling"]');
+              const trailingSibling = document.querySelector('[data-og-id="trailing-sibling"]');
+              const rect = (element) => {
+                const value = element.getBoundingClientRect();
+                return [value.x, value.y, value.width, value.height];
+              };
+              const isVisible = (element) => {
+                const style = window.getComputedStyle(element);
+                return style.display !== 'none' &&
+                  style.visibility !== 'hidden' &&
+                  Number.parseFloat(style.opacity || '1') > 0;
+              };
+              const beforeRect = rect(target);
+              const applied = window.OpenGraphiteFocusIsolation.apply([target]);
+              const focusedRect = rect(target);
+              const focusedState = {
+                active: window.OpenGraphiteFocusIsolation.isActive(),
+                targetVisible: isVisible(target),
+                childVisible: isVisible(child),
+                leadingSiblingVisible: isVisible(leadingSibling),
+                trailingSiblingVisible: isVisible(trailingSibling),
+                rootMarkers: document.querySelectorAll('[' + rootAttribute + ']').length,
+                visibleMarkers: document.querySelectorAll('[' + visibleAttribute + ']').length
+              };
+              window.OpenGraphiteFocusIsolation.clear();
+              return {
+                applied: applied,
+                beforeRect: beforeRect,
+                focusedRect: focusedRect,
+                clearedRect: rect(target),
+                focusedState: focusedState,
+                activeAfterClear: window.OpenGraphiteFocusIsolation.isActive(),
+                targetVisibleAfterClear: isVisible(target),
+                childVisibleAfterClear: isVisible(child),
+                leadingSiblingVisibleAfterClear: isVisible(leadingSibling),
+                trailingSiblingVisibleAfterClear: isVisible(trailingSibling),
+                rootMarkersAfterClear: document.querySelectorAll('[' + rootAttribute + ']').length,
+                visibleMarkersAfterClear: document.querySelectorAll('[' + visibleAttribute + ']').length
+              };
+            })();
+            """
+        )
+        let payload = try #require(result as? [String: Any])
+        let focusedState = try #require(payload["focusedState"] as? [String: Any])
+        let beforeRect = try Self.numericArray(from: payload["beforeRect"])
+        let focusedRect = try Self.numericArray(from: payload["focusedRect"])
+        let clearedRect = try Self.numericArray(from: payload["clearedRect"])
+
+        // 期待値：対象 subtree だけが表示され、geometry は不変で、clear 後は marker なしの元表示へ完全に戻る（Then）
+        #expect(payload["applied"] as? Bool == true)
+        #expect(focusedState["active"] as? Bool == true)
+        #expect(focusedState["targetVisible"] as? Bool == true)
+        #expect(focusedState["childVisible"] as? Bool == true)
+        #expect(focusedState["leadingSiblingVisible"] as? Bool == false)
+        #expect(focusedState["trailingSiblingVisible"] as? Bool == false)
+        #expect(((focusedState["rootMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
+        #expect(((focusedState["visibleMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
+        #expect(Self.rectsAreEqual(beforeRect, focusedRect))
+        #expect(Self.rectsAreEqual(beforeRect, clearedRect))
+        #expect(payload["activeAfterClear"] as? Bool == false)
+        #expect(payload["targetVisibleAfterClear"] as? Bool == true)
+        #expect(payload["childVisibleAfterClear"] as? Bool == true)
+        #expect(payload["leadingSiblingVisibleAfterClear"] as? Bool == true)
+        #expect(payload["trailingSiblingVisibleAfterClear"] as? Bool == true)
+        #expect((payload["rootMarkersAfterClear"] as? NSNumber)?.intValue == 0)
+        #expect((payload["visibleMarkersAfterClear"] as? NSNumber)?.intValue == 0)
+    }
+
+    /// 論理名（日本語）: focus一時属性シリアライズ除去テスト
+    /// 概要: focus isolation の実行時属性が runtime の保存用 HTML に混入しないことを検証します。
+    @Test("runtimeはfocus isolation一時属性を保存HTMLから除去する")
+    func testSerializeDocumentRemovesFocusIsolationAttributes() async throws {
+        // コンディション：focus 対象と sibling を持つ HTML に runtime と focus isolation script を読み込む（Given）
+        let webView = WKWebView(frame: .zero)
+        let waiter = WebViewNavigationWaiter()
+        let runtimeSource = try runtimeJavaScriptSource()
+        let pageHTML = """
+        <!doctype html>
+        <html>
+          <body>
+            <Page data-og-id="page" data-og-type="page">
+              <FocusTarget data-og-id="focus-target" data-og-type="frame">
+                <FocusChild data-og-id="focus-child" data-og-type="text">Focused child</FocusChild>
+              </FocusTarget>
+              <Sibling data-og-id="sibling" data-og-type="frame">Sibling</Sibling>
+            </Page>
+          </body>
+        </html>
+        """
+        try await waiter.load(pageHTML, in: webView)
+        _ = try await webView.evaluateJavaScript(runtimeSource)
+        _ = try await webView.evaluateJavaScript(WebCanvasFocusIsolationScript.source)
+        let rootAttributeLiteral = Self.javaScriptLiteral(WebCanvasFocusIsolationScript.rootAttributeName)
+        let visibleAttributeLiteral = Self.javaScriptLiteral(WebCanvasFocusIsolationScript.visibleAttributeName)
+        let focusStyleElementIDLiteral = Self.javaScriptLiteral(WebCanvasFocusIsolationScript.styleElementID)
+
+        // 検証内容：focus 適用中の document を OpenGraphite runtime で保存用 HTML へシリアライズする（When）
+        let result = try await webView.evaluateJavaScript(
+            """
+            (() => {
+              const rootAttribute = \(rootAttributeLiteral);
+              const visibleAttribute = \(visibleAttributeLiteral);
+              const focusStyleElementID = \(focusStyleElementIDLiteral);
+              const target = document.querySelector('[data-og-id="focus-target"]');
+              const applied = window.OpenGraphiteFocusIsolation.apply([target]);
+              return {
+                applied: applied,
+                liveRootMarkers: document.querySelectorAll('[' + rootAttribute + ']').length,
+                liveVisibleMarkers: document.querySelectorAll('[' + visibleAttribute + ']').length,
+                liveFocusStyle: !!document.getElementById(focusStyleElementID),
+                serialized: window.OpenGraphiteRuntime.serializeDocument()
+              };
+            })();
+            """
+        )
+        let payload = try #require(result as? [String: Any])
+        let serialized = try #require(payload["serialized"] as? String)
+
+        // 期待値：live DOM には一時 marker がある一方、保存 HTML は marker を除去して source subtree と sibling を保持する（Then）
+        #expect(payload["applied"] as? Bool == true)
+        #expect(((payload["liveRootMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
+        #expect(((payload["liveVisibleMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
+        #expect(payload["liveFocusStyle"] as? Bool == true)
+        #expect(!serialized.contains(WebCanvasFocusIsolationScript.rootAttributeName))
+        #expect(!serialized.contains(WebCanvasFocusIsolationScript.visibleAttributeName))
+        #expect(!serialized.contains(WebCanvasFocusIsolationScript.styleElementID))
+        #expect(serialized.contains("data-og-id=\"focus-target\""))
+        #expect(serialized.contains("data-og-id=\"focus-child\""))
+        #expect(serialized.contains("data-og-id=\"sibling\""))
+    }
+
     /// 論理名（日本語）: template slot復元テスト
     /// 概要: runtime 展開で書き換えられた slot 内ノード ID と runtime 属性が、保存用 HTML に残らないことを検証します。
     @Test("template slot内のruntime生成属性を保存HTMLから除去する")
@@ -328,6 +504,31 @@ struct RuntimeSerializationTests {
             return "\"\""
         }
         return String(encoded.dropFirst().dropLast())
+    }
+
+    /// 論理名（日本語）: JavaScript数値配列変換関数
+    /// 処理概要: WKWebView が返す JavaScript number 配列を geometry 比較用の Double 配列へ変換します。
+    ///
+    /// - Parameter value: JavaScript evaluation result に含まれる配列。
+    /// - Returns: Double へ変換した配列。
+    private static func numericArray(from value: Any?) throws -> [Double] {
+        let values = try #require(value as? [Any])
+        return try values.map { value in
+            let number = try #require(value as? NSNumber)
+            return number.doubleValue
+        }
+    }
+
+    /// 論理名（日本語）: 矩形数値近似一致判定関数
+    /// 処理概要: WebKit の小数誤差を許容しながら 2 つの geometry 配列が一致するか判定します。
+    ///
+    /// - Parameters:
+    ///   - lhs: 比較元の x、y、width、height。
+    ///   - rhs: 比較先の x、y、width、height。
+    /// - Returns: 各値の差が許容範囲内の場合は `true`。
+    private static func rectsAreEqual(_ lhs: [Double], _ rhs: [Double]) -> Bool {
+        guard lhs.count == 4, rhs.count == 4 else { return false }
+        return zip(lhs, rhs).allSatisfy { abs($0 - $1) < 0.001 }
     }
 }
 

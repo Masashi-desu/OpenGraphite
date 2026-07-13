@@ -110,6 +110,26 @@ struct OpenGraphiteIconTests {
         #expect(systemImages == ["eraser", "lasso"])
     }
 
+    /// 論理名（日本語）: プレビュー表示モードメタデータテスト
+    /// 概要: Normal、Flow が表示順と意味に合う title、system image、help を公開することを検証します。
+    @Test("プレビュー表示モードの表示情報を公開する")
+    func testPreviewDisplayModesExposePresentationMetadata() {
+        // コンディション：プレビュー表示モード一覧を取得する（Given）
+        let modes = OpenGraphitePreviewDisplayMode.allCases
+
+        // 検証内容：各モードの識別子と表示メタデータを取得する（When）
+        let rawValues = modes.map(\.rawValue)
+        let titles = modes.map(\.title)
+        let systemImages = modes.map(\.systemImage)
+        let helpTexts = modes.map(\.help)
+
+        // 期待値：Normal、Flow の順で意味に合う表示情報になる（Then）
+        #expect(rawValues == ["normal", "flow"])
+        #expect(titles == ["Normal", "Flow"])
+        #expect(systemImages == ["eye", "arrow.right"])
+        #expect(helpTexts == ["通常表示", "フロー表示"])
+    }
+
     /// 論理名（日本語）: パラメータ連動アイコン割り当てテスト
     /// 概要: Inspector の連動切替がリンク/解除のアイコンで表現されることを検証します。
     @Test("連動切替アイコンをリンクと解除にする")

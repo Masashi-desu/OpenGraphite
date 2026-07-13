@@ -31,6 +31,26 @@ struct OpenGraphiteSelectionOverlayFrame: Equatable {
     var rect: CGRect
 }
 
+/// 論理名（日本語）: フォーカスプレビュー対象
+/// 概要: 右クリックで単独表示する HTML object または page 全体と、その表示範囲を通常選択から独立して保持するセッション状態です。
+///
+/// プロパティ:
+/// - `segment`: 対象 page が属する Pages / Components セグメント。
+/// - `pageInternalID`: 対象 object を含む page card の内部 ID。
+/// - `nodeID`: 単独表示する node ID。page 全体を表示する場合は `nil`。
+/// - `rect`: page document 座標上の object 実測矩形、または page 全体の矩形。
+struct OpenGraphiteFocusedPreviewTarget: Equatable, Identifiable {
+    var segment: OpenGraphiteCanvasSegment
+    var pageInternalID: String
+    var nodeID: String?
+    var rect: CGRect
+
+    var id: String {
+        let subjectID = nodeID.map { "node:\($0)" } ?? "whole-page"
+        return "\(segment.rawValue):\(pageInternalID):\(subjectID)"
+    }
+}
+
 /// 論理名（日本語）: エディター状態ストア
 /// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
@@ -52,7 +72,8 @@ struct OpenGraphiteSelectionOverlayFrame: Equatable {
 /// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
-/// - `previewDisplayMode`: 中央プレビューの通常/フロー表示モード。
+/// - `previewDisplayMode`: 中央キャンバスの通常/フロー表示モード。
+/// - `focusedPreviewTarget`: 右クリックで単独表示している object のセッション状態。
 /// - `selectionOverlayFrame`: WebView 実測値から作る選択ノード表示枠。
 /// - `nodeDragPreview`: ドラッグ中だけ使う選択ノード矩形 preview。
 /// - `hoveredStaticFlowSource`: HTML プレビュー内でホバー中の静的フロー遷移元リンク。
@@ -114,6 +135,7 @@ final class EditorStore: ObservableObject {
     @Published var lastError: String?
     @Published var activeTool: CanvasTool = .select
     @Published var previewDisplayMode: OpenGraphitePreviewDisplayMode = .normal
+    @Published private(set) var focusedPreviewTarget: OpenGraphiteFocusedPreviewTarget?
     @Published private(set) var selectionOverlayFrame: OpenGraphiteSelectionOverlayFrame?
     @Published private(set) var nodeDragPreview: OpenGraphiteNodeDragPreview?
     @Published private(set) var hoveredStaticFlowSource: OpenGraphiteStaticFlowSourceHover?
@@ -1249,6 +1271,7 @@ final class EditorStore: ObservableObject {
             selectedCanvasAnnotationID = nil
             selectedProjectResource = nil
             selectedNodeID = nil
+            focusedPreviewTarget = nil
             nodes = []
             cssMutation = nil
             cssVariablesMutation = nil
@@ -1538,6 +1561,88 @@ final class EditorStore: ObservableObject {
         selectedNodeSelectionAnchorID = id
         selectedNodeIDs = id.map { Set([$0]) } ?? []
         selectedNodeID = id
+    }
+
+    /// 論理名（日本語）: フォーカスプレビュー開始関数
+    /// 処理概要: 右クリック対象の node と document 座標上の実測矩形を、通常選択とは独立した単独表示対象として保持します。
+    ///
+    /// - Parameters:
+    ///   - nodeID: 単独表示する node ID。
+    ///   - pageInternalID: node を含む page card の内部 ID。
+    ///   - segment: page card が属する Pages / Components セグメント。
+    ///   - rect: page document 座標上の object 実測矩形。
+    /// - Returns: 有効な対象を開始できた場合は `true`。
+    @discardableResult
+    func beginFocusedPreview(
+        nodeID: String,
+        pageInternalID: String,
+        segment: OpenGraphiteCanvasSegment,
+        rect: CGRect
+    ) -> Bool {
+        let normalizedNodeID = nodeID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedPageInternalID = pageInternalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedNodeID.isEmpty,
+              !normalizedPageInternalID.isEmpty,
+              rect.minX.isFinite,
+              rect.minY.isFinite,
+              rect.width.isFinite,
+              rect.height.isFinite,
+              rect.width > 0,
+              rect.height > 0
+        else {
+            return false
+        }
+
+        focusedPreviewTarget = OpenGraphiteFocusedPreviewTarget(
+            segment: segment,
+            pageInternalID: normalizedPageInternalID,
+            nodeID: normalizedNodeID,
+            rect: rect
+        )
+        statusMessage = "\(normalizedNodeID) をフォーカス表示しています。"
+        return true
+    }
+
+    /// 論理名（日本語）: ページ全体フォーカスプレビュー開始関数
+    /// 処理概要: page card の右クリックから、page canvas 全体を通常選択とは独立した単独表示対象として保持します。
+    ///
+    /// - Parameters:
+    ///   - pageInternalID: 単独表示する page card の内部 ID。
+    ///   - segment: page card が属する Pages / Components セグメント。
+    ///   - size: original resolution として使う page canvas 寸法。
+    /// - Returns: 有効な page 対象を開始できた場合は `true`。
+    @discardableResult
+    func beginFocusedPagePreview(
+        pageInternalID: String,
+        segment: OpenGraphiteCanvasSegment,
+        size: CGSize
+    ) -> Bool {
+        let normalizedPageInternalID = pageInternalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPageInternalID.isEmpty,
+              size.width.isFinite,
+              size.height.isFinite,
+              size.width > 0,
+              size.height > 0
+        else {
+            return false
+        }
+
+        focusedPreviewTarget = OpenGraphiteFocusedPreviewTarget(
+            segment: segment,
+            pageInternalID: normalizedPageInternalID,
+            nodeID: nil,
+            rect: CGRect(origin: .zero, size: size)
+        )
+        statusMessage = "page をフォーカス表示しています。"
+        return true
+    }
+
+    /// 論理名（日本語）: フォーカスプレビュー解除関数
+    /// 処理概要: 右クリックで開始した単独表示対象を解除し、Normal / Flow のキャンバス表示へ戻します。
+    func endFocusedPreview() {
+        guard focusedPreviewTarget != nil else { return }
+        focusedPreviewTarget = nil
+        statusMessage = "フォーカス表示を解除しました。"
     }
 
     /// 論理名（日本語）: ノード範囲選択関数

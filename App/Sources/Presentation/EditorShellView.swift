@@ -460,7 +460,17 @@ private struct CanvasPaneView: View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
-            if let loadedProject = store.loadedProject, hasSelectedCanvasContainer {
+            if let loadedProject = store.loadedProject,
+               let focusedTarget = store.focusedPreviewTarget {
+                CanvasFocusedObjectPreviewView(
+                    store: store,
+                    loadedProject: loadedProject,
+                    target: focusedTarget
+                )
+                .padding(.leading, overlayAvoidance.leading)
+                .padding(.trailing, overlayAvoidance.trailing)
+                .padding(.top, overlayAvoidance.top + CanvasFocusedPreviewMetrics.modePickerClearance)
+            } else if let loadedProject = store.loadedProject, hasSelectedCanvasContainer {
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
                     documentID: canvasDocumentID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
@@ -479,12 +489,7 @@ private struct CanvasPaneView: View {
                         store.clearCanvasSelection()
                     }
                 ) {
-                    CanvasProjectView(
-                        store: store,
-                        loadedProject: loadedProject,
-                        pages: store.selectedCanvasPages,
-                        zoom: store.zoom
-                    )
+                    canvasContent(for: loadedProject)
                 }
 
                 CanvasToolPalette(activeTool: $store.activeTool)
@@ -492,22 +497,6 @@ private struct CanvasPaneView: View {
                     .padding(.top, overlayAvoidance.top + 14)
                     .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.leading)
                     .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
-
-                CanvasZoomHUD(
-                    zoom: store.zoom,
-                    canZoomOut: store.zoom > CanvasZoom.range.lowerBound,
-                    canZoomIn: store.zoom < CanvasZoom.range.upperBound,
-                    onZoomOut: {
-                        adjustZoom(by: -CanvasZoom.buttonStep)
-                    },
-                    onZoomIn: {
-                        adjustZoom(by: CanvasZoom.buttonStep)
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, overlayAvoidance.trailing + 16)
-                .padding(.bottom, 14)
-                .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
             } else {
                 ContentUnavailableView(
                     store.selectedCanvasSegment == .components ? "No Components" : "No Page",
@@ -523,6 +512,25 @@ private struct CanvasPaneView: View {
                 .padding(.top, overlayAvoidance.top + 14)
                 .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
                 .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
+
+            if store.loadedProject != nil,
+               store.focusedPreviewTarget != nil || hasSelectedCanvasContainer {
+                CanvasZoomHUD(
+                    zoom: store.zoom,
+                    canZoomOut: store.zoom > CanvasZoom.range.lowerBound,
+                    canZoomIn: store.zoom < CanvasZoom.range.upperBound,
+                    onZoomOut: {
+                        adjustZoom(by: -CanvasZoom.buttonStep)
+                    },
+                    onZoomIn: {
+                        adjustZoom(by: CanvasZoom.buttonStep)
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, overlayAvoidance.trailing + 16)
+                .padding(.bottom, 14)
+                .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
+            }
         }
     }
 
@@ -541,6 +549,20 @@ private struct CanvasPaneView: View {
         case .components:
             return store.selectedComponentCollection != nil
         }
+    }
+
+    /// 論理名（日本語）: キャンバス表示内容生成関数
+    /// 処理概要: Normal / Flow のキャンバス全体を、現在の配置とズーム倍率で表示します。
+    ///
+    /// - Parameter project: 表示中の読み込み済みプロジェクト。
+    /// - Returns: 現在のプレビュモードに対応するキャンバス内容。
+    private func canvasContent(for project: LoadedOpenGraphiteProject) -> some View {
+        CanvasProjectView(
+            store: store,
+            loadedProject: project,
+            pages: store.selectedCanvasPages,
+            zoom: store.zoom
+        )
     }
 
     /// 論理名（日本語）: キャンバスドキュメントID生成関数
@@ -590,7 +612,7 @@ private struct CanvasPaneView: View {
         for pages: [OpenGraphitePage],
         annotations: [OpenGraphiteCanvasAnnotation]
     ) -> CGPoint {
-        CanvasProjectBounds(
+        return CanvasProjectBounds(
             pages: pages,
             annotations: annotations,
             interactionMargin: CanvasMetrics.annotationInteractionMargin
@@ -603,7 +625,7 @@ private struct CanvasPaneView: View {
     /// - Parameter delta: 追加するズーム倍率差分。
     private func adjustZoom(by delta: Double) {
         withAnimation(.easeOut(duration: 0.12)) {
-            store.zoom = CanvasZoom.clamped(store.zoom + delta)
+            store.zoom = CanvasZoom.stepped(store.zoom, by: delta)
         }
     }
 
@@ -789,6 +811,267 @@ enum CanvasProjectLayerOrder {
             return 2
         }
         return isSelected ? 1 : 0
+    }
+}
+
+/// 論理名（日本語）: Focusプレビュ切り抜き矩形解決器
+/// 概要: 右クリック時に実測した object の document 座標矩形を、元page viewport内の安全な切り抜き矩形に変換します。
+///
+/// 定義内容:
+/// - `cropRect(pageSize:targetRect:)`: Focus表示するpage座標矩形を返す。
+enum CanvasFocusCropResolver {
+    /// 論理名（日本語）: Focus切り抜き矩形生成関数
+    /// 処理概要: object実測矩形を検証し、page viewportからはみ出す部分だけを切り落とします。
+    ///
+    /// - Parameters:
+    ///   - pageSize: 元のWebView viewport寸法。
+    ///   - targetRect: 右クリックした object の page document 座標矩形。
+    /// - Returns: Focus表示用のpage座標矩形。無効値の場合は `nil`。
+    static func cropRect(
+        pageSize: CGSize,
+        targetRect: CGRect
+    ) -> CGRect? {
+        guard pageSize.width.isFinite,
+              pageSize.height.isFinite,
+              pageSize.width > 0,
+              pageSize.height > 0,
+              targetRect.minX.isFinite,
+              targetRect.minY.isFinite,
+              targetRect.width.isFinite,
+              targetRect.height.isFinite,
+              targetRect.width > 0,
+              targetRect.height > 0
+        else {
+            return nil
+        }
+
+        let pageRect = CGRect(origin: .zero, size: pageSize)
+        let visibleRect = targetRect.intersection(pageRect)
+        guard !visibleRect.isNull,
+              visibleRect.width.isFinite,
+              visibleRect.height.isFinite,
+              visibleRect.width > 0,
+              visibleRect.height > 0
+        else {
+            return nil
+        }
+        return visibleRect
+    }
+}
+
+/// 論理名（日本語）: フォーカス有限プレビューレイアウト
+/// 概要: Zoom適用後のobjectを中央配置する有限document寸法と、中央から表示する初期scroll位置を保持します。
+///
+/// プロパティ:
+/// - `documentSize`: viewportとobjectを収める有限document寸法。
+/// - `contentFrame`: document内で中央配置したobject frame。
+/// - `initialScrollOrigin`: object中心をviewport中心に合わせる初期scroll原点。
+/// - `scrollRange`: 各軸で必要な最大scroll距離。
+struct CanvasFocusedPreviewLayout: Equatable {
+    var documentSize: CGSize
+    var contentFrame: CGRect
+    var initialScrollOrigin: CGPoint
+    var scrollRange: CGSize
+}
+
+/// 論理名（日本語）: フォーカス有限プレビューレイアウト解決器
+/// 概要: 指定倍率へ拡大縮小済みのobjectを中央へ置き、overflow分だけscroll可能な有限documentを計算します。
+enum CanvasFocusedPreviewLayoutResolver {
+    /// 論理名（日本語）: フォーカス有限レイアウト生成関数
+    /// 処理概要: 小さいobjectはscrollなしで中央配置し、大きいobjectは中央から必要量だけscrollできる値を返します。
+    ///
+    /// - Parameters:
+    ///   - viewportSize: フォーカスプレビューの表示領域寸法。
+    ///   - contentSize: Zoom適用後に表示するobject寸法。
+    ///   - retainedDocumentSize: Zoom連続入力中に縮小を遅延するdocument寸法。省略時は必要寸法へ即時収束する。
+    /// - Returns: 有効寸法の有限レイアウト。不正値では `nil`。
+    static func layout(
+        viewportSize: CGSize,
+        contentSize: CGSize,
+        retainedDocumentSize: CGSize? = nil
+    ) -> CanvasFocusedPreviewLayout? {
+        guard viewportSize.width.isFinite,
+              viewportSize.height.isFinite,
+              contentSize.width.isFinite,
+              contentSize.height.isFinite,
+              viewportSize.width > 0,
+              viewportSize.height > 0,
+              contentSize.width > 0,
+              contentSize.height > 0
+        else {
+            return nil
+        }
+
+        let retainedWidth = retainedDocumentSize?.width ?? 0
+        let retainedHeight = retainedDocumentSize?.height ?? 0
+        let documentSize = CGSize(
+            width: max(max(viewportSize.width, contentSize.width), retainedWidth),
+            height: max(max(viewportSize.height, contentSize.height), retainedHeight)
+        )
+        let contentOrigin = CGPoint(
+            x: (documentSize.width - contentSize.width) / 2,
+            y: (documentSize.height - contentSize.height) / 2
+        )
+        let scrollRange = CGSize(
+            width: max(documentSize.width - viewportSize.width, 0),
+            height: max(documentSize.height - viewportSize.height, 0)
+        )
+        return CanvasFocusedPreviewLayout(
+            documentSize: documentSize,
+            contentFrame: CGRect(origin: contentOrigin, size: contentSize),
+            initialScrollOrigin: CGPoint(x: scrollRange.width / 2, y: scrollRange.height / 2),
+            scrollRange: scrollRange
+        )
+    }
+}
+
+/// 論理名（日本語）: フォーカスプレビュー倍率解決器
+/// 概要: Focus対象の原寸矩形へcanvas Zoomを適用し、有限レイアウトへ渡す表示寸法を計算します。
+enum CanvasFocusedPreviewScaleResolver {
+    /// 論理名（日本語）: フォーカス表示寸法生成関数
+    /// 処理概要: 100%を原寸として、対象の幅と高さへ同一Zoom倍率を適用します。
+    ///
+    /// - Parameters:
+    ///   - originalSize: Focus対象の原寸寸法。
+    ///   - zoom: `1.0`を100%とするcanvas Zoom倍率。
+    /// - Returns: 倍率適用後の有限な正の寸法。不正値では `nil`。
+    static func scaledSize(originalSize: CGSize, zoom: Double) -> CGSize? {
+        guard originalSize.width.isFinite,
+              originalSize.height.isFinite,
+              originalSize.width > 0,
+              originalSize.height > 0,
+              zoom.isFinite,
+              zoom > 0
+        else {
+            return nil
+        }
+
+        let scaledSize = CGSize(
+            width: originalSize.width * CGFloat(zoom),
+            height: originalSize.height * CGFloat(zoom)
+        )
+        guard scaledSize.width.isFinite,
+              scaledSize.height.isFinite,
+              scaledSize.width > 0,
+              scaledSize.height > 0
+        else {
+            return nil
+        }
+        return scaledSize
+    }
+}
+
+/// 論理名（日本語）: フォーカスプレビュー表示メトリクス
+/// 概要: Normal / Flow pickerと専用表示領域が重ならないための固定UI寸法を定義します。
+private enum CanvasFocusedPreviewMetrics {
+    static let modePickerClearance: CGFloat = 58
+    static let zoomSettleDelay: TimeInterval = 0.12
+}
+
+/// 論理名（日本語）: フォーカス対象プレビュー
+/// 概要: 右クリックで固定したobjectまたはpage全体を、通常キャンバスから独立したZoom可能な有限表示領域へ描画します。
+private struct CanvasFocusedObjectPreviewView: View {
+    @ObservedObject var store: EditorStore
+    var loadedProject: LoadedOpenGraphiteProject
+    var target: OpenGraphiteFocusedPreviewTarget
+
+    var body: some View {
+        let zoom = CanvasZoom.clamped(store.zoom)
+        if let page = focusedPage,
+           let cropRect = CanvasFocusCropResolver.cropRect(
+               pageSize: CGSize(width: CGFloat(page.canvas.width), height: CGFloat(page.canvas.height)),
+               targetRect: target.rect
+           ),
+           let scaledContentSize = CanvasFocusedPreviewScaleResolver.scaledSize(
+               originalSize: cropRect.size,
+               zoom: zoom
+           ) {
+            CanvasFocusedPreviewScrollView(
+                zoom: $store.zoom,
+                documentID: target.id,
+                contentSize: scaledContentSize
+            ) {
+                CanvasFocusedObjectDocumentView(
+                    store: store,
+                    page: page,
+                    pageURL: loadedProject.htmlURL(for: page),
+                    cropRect: cropRect,
+                    target: target
+                )
+                .scaleEffect(CGFloat(zoom), anchor: .topLeading)
+                .frame(
+                    width: scaledContentSize.width,
+                    height: scaledContentSize.height,
+                    alignment: .topLeading
+                )
+            }
+        } else {
+            ContentUnavailableView(
+                "Focus Unavailable",
+                systemImage: "viewfinder",
+                description: Text("フォーカス対象のpageまたは表示サイズを解決できません。")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contextMenu {
+                Button("フォーカス表示を解除") {
+                    store.endFocusedPreview()
+                }
+            }
+        }
+    }
+
+    private var focusedPage: OpenGraphitePage? {
+        switch target.segment {
+        case .pages:
+            return loadedProject.project.chapters
+                .flatMap(\.pages)
+                .first { $0.internalID == target.pageInternalID }
+        case .components:
+            return loadedProject.project.collections
+                .flatMap(\.components)
+                .first { $0.internalID == target.pageInternalID }
+        }
+    }
+}
+
+/// 論理名（日本語）: フォーカス対象文書ビュー
+/// 概要: 元page viewportのCSS文脈と原寸矩形を保ち、外側のcanvas Zoomで拡大縮小できるcontentを表示します。
+private struct CanvasFocusedObjectDocumentView: View {
+    @ObservedObject var store: EditorStore
+    var page: OpenGraphitePage
+    var pageURL: URL
+    var cropRect: CGRect
+    var target: OpenGraphiteFocusedPreviewTarget
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color(nsColor: .textBackgroundColor))
+
+            WebCanvasView(
+                store: store,
+                pageURL: pageURL,
+                pageInternalID: page.internalID,
+                syncTarget: store.htmlSyncTarget(for: page, segment: target.segment),
+                isInteractive: false,
+                reloadToken: store.reloadToken(for: pageURL),
+                previewContext: page.canvas.previewContext,
+                allowsComponentPlacements: target.segment == .components,
+                focusedNodeIDs: target.nodeID.map { [$0] } ?? []
+            )
+            .frame(width: CGFloat(page.canvas.width), height: CGFloat(page.canvas.height))
+            .offset(x: -cropRect.minX, y: -cropRect.minY)
+            .allowsHitTesting(false)
+        }
+        .frame(width: cropRect.width, height: cropRect.height, alignment: .topLeading)
+        .clipped()
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("フォーカス表示を解除") {
+                store.endFocusedPreview()
+            }
+        }
+        .accessibilityLabel("フォーカス表示 \(target.nodeID ?? page.id)")
     }
 }
 
@@ -1121,10 +1404,7 @@ private struct CanvasDocumentView: View {
             }
             .highPriorityGesture(pageCaptionDragGesture())
             .contextMenu {
-                Button("参照IDをコピー") {
-                    store.selectPage(internalID: page.internalID)
-                    store.copyPageReferenceIDToPasteboard(page, segment: store.selectedCanvasSegment)
-                }
+                pageContextMenuItems
             }
             .onCopyCommand {
                 guard isSelected, store.selectedNodeID == nil else { return [] }
@@ -1167,10 +1447,7 @@ private struct CanvasDocumentView: View {
             store.selectPage(internalID: page.internalID)
         }
         .contextMenu {
-            Button("参照IDをコピー") {
-                store.selectPage(internalID: page.internalID)
-                store.copyPageReferenceIDToPasteboard(page, segment: store.selectedCanvasSegment)
-            }
+            pageContextMenuItems
         }
         .onCopyCommand {
             guard isSelected, store.selectedNodeID == nil else { return [] }
@@ -1189,6 +1466,35 @@ private struct CanvasDocumentView: View {
         .onChange(of: store.selectedNodeIDs) { _, _ in
             nodeResizePreview = nil
         }
+    }
+
+    /// 論理名（日本語）: ページコンテキストメニュー項目
+    /// 概要: page card 本体とcaptionの右クリックから、page全体のFocus表示と参照IDコピーを提供します。
+    @ViewBuilder
+    private var pageContextMenuItems: some View {
+        Button("フォーカス表示") {
+            beginFocusedPagePreview()
+        }
+
+        Divider()
+
+        Button("参照IDをコピー") {
+            let segment = store.selectedCanvasSegment
+            store.selectPage(internalID: page.internalID)
+            store.copyPageReferenceIDToPasteboard(page, segment: segment)
+        }
+    }
+
+    /// 論理名（日本語）: ページ全体フォーカス開始関数
+    /// 処理概要: 右クリックしたpage cardを選択し、canvas寸法全体をoriginal resolutionのFocus対象として固定します。
+    private func beginFocusedPagePreview() {
+        let segment = store.selectedCanvasSegment
+        store.selectPage(internalID: page.internalID)
+        store.beginFocusedPagePreview(
+            pageInternalID: page.internalID,
+            segment: segment,
+            size: CGSize(width: CGFloat(page.canvas.width), height: CGFloat(page.canvas.height))
+        )
     }
 
     /// 論理名（日本語）: キャプションカードドラッグジェスチャ生成関数
@@ -3031,9 +3337,11 @@ enum CanvasInputRegionPolicy {
 /// 定義内容:
 /// - `range`: 許容ズーム範囲。
 /// - `buttonStep`: HUD ボタンのズーム差分。
-private enum CanvasZoom {
+/// - `originalScale`: Focus対象を原寸表示する100%倍率。
+enum CanvasZoom {
     static let range: ClosedRange<Double> = 0.10...2.0
     static let buttonStep = 0.1
+    static let originalScale = 1.0
 
     /// 論理名（日本語）: ズーム範囲補正関数
     /// 処理概要: 任意の倍率を OpenGraphite が許可する範囲に丸めます。
@@ -3044,6 +3352,25 @@ private enum CanvasZoom {
         min(max(value, range.lowerBound), range.upperBound)
     }
 
+    /// 論理名（日本語）: ズーム段階調整関数
+    /// 処理概要: HUDの増減を許容範囲へ補正し、100%を跨ぐ操作では原寸倍率へ一度スナップします。
+    ///
+    /// - Parameters:
+    ///   - value: 調整前の倍率。
+    ///   - delta: HUD操作で加える倍率差分。
+    /// - Returns: 許容範囲内で、必要に応じて100%へスナップした倍率。
+    static func stepped(_ value: Double, by delta: Double) -> Double {
+        let currentZoom = clamped(value)
+        let nextZoom = clamped(currentZoom + delta)
+        if currentZoom < originalScale, nextZoom > originalScale {
+            return originalScale
+        }
+        if currentZoom > originalScale, nextZoom < originalScale {
+            return originalScale
+        }
+        return nextZoom
+    }
+
     /// 論理名（日本語）: ズームパーセント文字列生成関数
     /// 処理概要: 倍率を UI 表示用の百分率文字列に変換します。
     ///
@@ -3051,6 +3378,112 @@ private enum CanvasZoom {
     /// - Returns: `100%` 形式の文字列。
     static func percent(_ zoom: Double) -> String {
         "\(Int((zoom * 100).rounded()))%"
+    }
+}
+
+/// 論理名（日本語）: キャンバスZoom入力
+/// 概要: Commandスクロールまたはピンチ由来の、表示方式に依存しないZoom入力を表します。
+enum CanvasZoomInput: Equatable {
+    case commandScroll(delta: CGFloat, isPrecise: Bool)
+    case magnification(CGFloat)
+}
+
+/// 論理名（日本語）: キャンバスZoom入力解決器
+/// 概要: 通常canvasとFocus表示で共有する入力イベント判定、差分選択、倍率計算を定義します。
+///
+/// 定義内容:
+/// - `eventMask`: 共通して監視するAppKitイベント種別。
+/// - `input(for:)`: AppKitイベントを共通Zoom入力へ変換する。
+/// - `scrollDelta(...)`: preciseまたはlegacyの有効な垂直差分を返す。
+/// - `scaleFactor(for:isPrecise:)`: scroll差分を現在倍率へ掛ける指数係数へ変換する。
+/// - `targetZoom(currentZoom:input:)`: 入力を現在倍率へ適用し、許容範囲内の倍率を返す。
+enum CanvasZoomInputResolver {
+    /// 通常canvasとFocus表示で共通して監視するAppKitイベントです。
+    static let eventMask: NSEvent.EventTypeMask = [.scrollWheel, .magnify, .gesture]
+
+    /// 論理名（日本語）: AppKitイベントZoom入力変換関数
+    /// 処理概要: Commandスクロール、trackpad pinch、互換gestureを共通Zoom入力へ変換します。
+    ///
+    /// - Parameter event: 変換するAppKitイベント。
+    /// - Returns: Zoom入力として扱える場合は共通入力。通常scrollなどでは`nil`。
+    static func input(for event: NSEvent) -> CanvasZoomInput? {
+        switch event.type {
+        case .scrollWheel:
+            guard event.modifierFlags.contains(.command) else { return nil }
+            let delta = scrollDelta(
+                precise: event.scrollingDeltaY,
+                legacy: event.deltaY,
+                hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+            )
+            guard delta.value != 0 else { return nil }
+            return .commandScroll(delta: delta.value, isPrecise: delta.isPrecise)
+        case .magnify:
+            return .magnification(event.magnification)
+        case .gesture:
+            guard let cgEvent = event.cgEvent,
+                  let subtypeField = CGEventField(rawValue: 110),
+                  let magnificationField = CGEventField(rawValue: 113),
+                  cgEvent.getIntegerValueField(subtypeField) == 8
+            else {
+                return nil
+            }
+            return .magnification(CGFloat(cgEvent.getDoubleValueField(magnificationField)))
+        default:
+            return nil
+        }
+    }
+
+    /// 論理名（日本語）: Commandスクロール差分選択関数
+    /// 処理概要: precise deltaが有効なら優先し、値がなければlegacy deltaへfallbackします。
+    ///
+    /// - Parameters:
+    ///   - precise: trackpadなどのprecise垂直差分。
+    ///   - legacy: mouse wheelなどのlegacy垂直差分。
+    ///   - hasPreciseScrollingDeltas: precise差分を持つイベントか。
+    /// - Returns: 採用した差分値とprecise判定。
+    static func scrollDelta(
+        precise: CGFloat,
+        legacy: CGFloat,
+        hasPreciseScrollingDeltas: Bool
+    ) -> (value: CGFloat, isPrecise: Bool) {
+        if hasPreciseScrollingDeltas, precise != 0 {
+            return (precise, true)
+        }
+        if legacy != 0 {
+            return (legacy, false)
+        }
+        return (precise, hasPreciseScrollingDeltas)
+    }
+
+    /// 論理名（日本語）: CommandスクロールZoom係数生成関数
+    /// 処理概要: scroll差分を指数関数の倍率係数へ変換し、小さなprecise入力も連続的に反映します。
+    ///
+    /// - Parameters:
+    ///   - rawDelta: 採用した垂直scroll差分。
+    ///   - isPrecise: precise delta由来か。
+    /// - Returns: 現在Zoomへ掛ける倍率係数。
+    static func scaleFactor(for rawDelta: CGFloat, isPrecise: Bool) -> Double {
+        exp(Double(rawDelta) * (isPrecise ? 0.002 : 0.08))
+    }
+
+    /// 論理名（日本語）: Zoom入力適用関数
+    /// 処理概要: Commandスクロールとピンチを同じ倍率更新経路へ通し、canvasの許容範囲へ補正します。
+    ///
+    /// - Parameters:
+    ///   - currentZoom: 入力適用前のZoom倍率。
+    ///   - input: 適用する共通Zoom入力。
+    /// - Returns: 入力適用後のZoom倍率。
+    static func targetZoom(currentZoom: Double, input: CanvasZoomInput) -> Double {
+        let currentZoom = CanvasZoom.clamped(currentZoom)
+        let target: Double
+        switch input {
+        case .commandScroll(let delta, let isPrecise):
+            target = currentZoom * scaleFactor(for: delta, isPrecise: isPrecise)
+        case .magnification(let magnification):
+            target = currentZoom * (1 + Double(magnification))
+        }
+        guard target.isFinite else { return currentZoom }
+        return CanvasZoom.clamped(target)
     }
 }
 
@@ -3073,6 +3506,20 @@ struct CanvasZoomAnchorSnapshot: Equatable {
 /// - `documentOrigin(...)`: ズーム後の scroll origin を算出する。
 /// - `clampedDocumentOrigin(...)`: scroll origin を documentView 内へ制限する。
 enum CanvasZoomAnchorResolver {
+    /// 論理名（日本語）: viewport基準点変換関数
+    /// 処理概要: clip view座標の点を、表示中viewport左上からの相対位置へ変換して範囲内へ丸めます。
+    ///
+    /// - Parameters:
+    ///   - point: clip view座標の入力位置。
+    ///   - visibleRect: 現在表示中のclip view bounds。
+    /// - Returns: viewport左上を原点とする範囲内の基準点。
+    static func viewportPoint(_ point: CGPoint, visibleRect: CGRect) -> CGPoint {
+        CGPoint(
+            x: min(max(point.x - visibleRect.minX, 0), visibleRect.width),
+            y: min(max(point.y - visibleRect.minY, 0), visibleRect.height)
+        )
+    }
+
     /// 論理名（日本語）: ズーム基準点保存関数
     /// 処理概要: viewport 上の点を、現在の表示倍率を除いたキャンバス内容座標へ変換します。
     ///
@@ -3245,6 +3692,449 @@ private struct CanvasZoomHUD: View {
         .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Zoom \(CanvasZoom.percent(zoom))")
+    }
+}
+
+/// 論理名（日本語）: フォーカス有限スクロールビュー
+/// 概要: Zoom適用後のFocus対象だけを載せた有限documentをAppKit scroll viewで表示し、初期位置を対象中心へ合わせます。
+///
+/// プロパティ:
+/// - `zoom`: 通常canvasと共有するZoom倍率。
+/// - `documentID`: フォーカス対象を識別し、変更時だけ中央へ戻すID。
+/// - `contentSize`: Zoom適用後のFocus対象寸法。
+/// - `content`: Focus対象単体のSwiftUI content。
+private struct CanvasFocusedPreviewScrollView<Content: View>: NSViewRepresentable {
+    @Binding var zoom: Double
+    var documentID: String
+    var contentSize: CGSize
+    var content: () -> Content
+
+    /// 論理名（日本語）: フォーカス有限スクロールビュー初期化関数
+    /// 処理概要: 対象ID、Zoom適用後の寸法、表示contentを保持します。
+    ///
+    /// - Parameters:
+    ///   - zoom: 通常canvasと共有するZoom倍率binding。
+    ///   - documentID: フォーカス対象ID。
+    ///   - contentSize: Focus対象のZoom適用後寸法。
+    ///   - content: Focus対象単体のSwiftUI content。
+    init(
+        zoom: Binding<Double>,
+        documentID: String,
+        contentSize: CGSize,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        _zoom = zoom
+        self.documentID = documentID
+        self.contentSize = contentSize
+        self.content = content
+    }
+
+    /// 論理名（日本語）: フォーカススクロールコーディネーター生成関数
+    /// 処理概要: SwiftUI contentと有限documentレイアウトを管理するコーディネーターを生成します。
+    ///
+    /// - Returns: フォーカス有限スクロール用コーディネーター。
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            zoom: $zoom,
+            documentID: documentID,
+            contentSize: contentSize,
+            content: content
+        )
+    }
+
+    /// 論理名（日本語）: フォーカス有限NSScrollView生成関数
+    /// 処理概要: elastic overscrollを無効化した有限scroll viewへdocument viewを設定し、Zoom入力は共通monitorで処理します。
+    ///
+    /// - Parameter context: SwiftUI representable context。
+    /// - Returns: object overflow分だけscrollできるNSScrollView。
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = CanvasFinitePreviewScrollView()
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.horizontalScrollElasticity = .none
+        scrollView.verticalScrollElasticity = .none
+        scrollView.allowsMagnification = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.documentView = context.coordinator.documentView
+        context.coordinator.attach(to: scrollView)
+        DispatchQueue.main.async { [weak coordinator = context.coordinator] in
+            coordinator?.refreshLayout(centerContent: true)
+        }
+        return scrollView
+    }
+
+    /// 論理名（日本語）: フォーカス有限NSScrollView更新関数
+    /// 処理概要: 対象またはobject寸法の変更を反映し、対象変更時だけ中央表示へ戻します。
+    ///
+    /// - Parameters:
+    ///   - scrollView: 更新対象scroll view。
+    ///   - context: SwiftUI representable context。
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.zoom = $zoom
+        let shouldCenter = context.coordinator.updateContent(
+            documentID: documentID,
+            contentSize: contentSize,
+            content: content
+        )
+        context.coordinator.refreshLayout(centerContent: shouldCenter)
+    }
+
+    /// 論理名（日本語）: フォーカス有限NSScrollView解体関数
+    /// 処理概要: viewport変更callbackを解除してretainを防ぎます。
+    ///
+    /// - Parameters:
+    ///   - nsView: 解体対象scroll view。
+    ///   - coordinator: 紐づくコーディネーター。
+    static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        (nsView as? CanvasFinitePreviewScrollView)?.viewportSizeDidChange = nil
+        coordinator.dismantle()
+    }
+
+    /// 論理名（日本語）: フォーカス有限スクロールコーディネーター
+    /// 概要: viewportとobject寸法から有限documentを更新し、対象中心へ初期scrollします。
+    final class Coordinator: NSObject {
+        var zoom: Binding<Double>
+        let hostingView: NSHostingView<Content>
+        let documentView: CanvasFocusedPreviewDocumentView<Content>
+
+        private weak var scrollView: NSScrollView?
+        private var monitor: Any?
+        private var renderedDocumentID: String
+        private var renderedContentSize: CGSize
+        private var content: () -> Content
+        private var lastViewportSize = CGSize.zero
+        private var lastZoom: Double
+        private var lastLayout: CanvasFocusedPreviewLayout?
+        private var pendingZoomAnchor: CanvasZoomAnchorSnapshot?
+        private var retainedDocumentSizeDuringZoom: CGSize?
+        private var zoomSettleWorkItem: DispatchWorkItem?
+
+        /// 論理名（日本語）: フォーカス有限スクロールコーディネーター初期化関数
+        /// 処理概要: 初期contentをhosting viewへ設定し、有限document viewを生成します。
+        ///
+        /// - Parameters:
+        ///   - zoom: 通常canvasと共有するZoom倍率binding。
+        ///   - documentID: 初期フォーカス対象ID。
+        ///   - contentSize: 初期object寸法。
+        ///   - content: 初期SwiftUI content。
+        init(
+            zoom: Binding<Double>,
+            documentID: String,
+            contentSize: CGSize,
+            content: @escaping () -> Content
+        ) {
+            self.zoom = zoom
+            self.renderedDocumentID = documentID
+            self.renderedContentSize = contentSize
+            self.content = content
+            self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
+            self.hostingView = NSHostingView(rootView: content())
+            self.hostingView.isFlipped = true
+            self.documentView = CanvasFocusedPreviewDocumentView(hostingView: hostingView)
+        }
+
+        /// 論理名（日本語）: フォーカスscroll view接続関数
+        /// 処理概要: viewport寸法変更を受け取り、有限documentを再計算し、共通のscroll・pinch・gesture入力を監視します。
+        ///
+        /// - Parameter scrollView: 接続対象の有限scroll view。
+        func attach(to scrollView: CanvasFinitePreviewScrollView) {
+            self.scrollView = scrollView
+            scrollView.viewportSizeDidChange = { [weak self] _ in
+                self?.refreshLayout(centerContent: true)
+            }
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: CanvasZoomInputResolver.eventMask) { [weak self] event in
+                guard let self, self.handleZoomInput(event) else {
+                    return event
+                }
+                return nil
+            }
+        }
+
+        /// 論理名（日本語）: フォーカスcontent更新関数
+        /// 処理概要: 対象IDまたはZoom適用後寸法が変わった場合だけhosting rootを更新します。
+        ///
+        /// - Parameters:
+        ///   - documentID: 最新フォーカス対象ID。
+        ///   - contentSize: 最新のZoom適用後寸法。
+        ///   - content: 最新SwiftUI content。
+        /// - Returns: 新しい対象として中央へ戻す必要がある場合は `true`。
+        func updateContent(
+            documentID: String,
+            contentSize: CGSize,
+            content: @escaping () -> Content
+        ) -> Bool {
+            self.content = content
+            let currentZoom = CanvasZoom.clamped(zoom.wrappedValue)
+            let didChangeDocument = renderedDocumentID != documentID
+            let didChangeSize = renderedContentSize != contentSize
+            let didChangeZoom = abs(lastZoom - currentZoom) > 0.0005
+            guard didChangeDocument || didChangeSize || didChangeZoom else { return false }
+            if didChangeDocument {
+                pendingZoomAnchor = nil
+                retainedDocumentSizeDuringZoom = nil
+                cancelZoomSettle()
+            } else if didChangeZoom, pendingZoomAnchor == nil {
+                pendingZoomAnchor = centeredZoomAnchor(renderedZoom: lastZoom)
+            }
+            renderedDocumentID = documentID
+            renderedContentSize = contentSize
+            lastZoom = currentZoom
+            hostingView.rootView = content()
+            return didChangeDocument
+        }
+
+        /// 論理名（日本語）: フォーカス有限レイアウト更新関数
+        /// 処理概要: viewportへ合うdocumentとobject frameを適用し、初回・対象変更・viewport変更時はobject中心へscrollします。
+        ///
+        /// - Parameter centerContent: 更新後にobject中心へscrollするか。
+        func refreshLayout(centerContent: Bool) {
+            guard let scrollView,
+                  let layout = CanvasFocusedPreviewLayoutResolver.layout(
+                      viewportSize: scrollView.contentSize,
+                      contentSize: renderedContentSize,
+                      retainedDocumentSize: retainedDocumentSizeDuringZoom
+                  )
+            else {
+                return
+            }
+
+            let viewportChanged = lastViewportSize != scrollView.contentSize
+            lastViewportSize = scrollView.contentSize
+            documentView.apply(layout: layout)
+            lastLayout = layout
+            if retainedDocumentSizeDuringZoom != nil {
+                retainedDocumentSizeDuringZoom = layout.documentSize
+            }
+            if let zoomAnchor = pendingZoomAnchor {
+                pendingZoomAnchor = nil
+                applyZoomAnchor(zoomAnchor, targetZoom: lastZoom, layout: layout)
+            } else if centerContent || viewportChanged {
+                scrollView.contentView.scroll(to: layout.initialScrollOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            }
+        }
+
+        /// 論理名（日本語）: フォーカスZoom入力処理関数
+        /// 処理概要: Focus表示領域内のCommandスクロールとピンチを通常canvasと同じ解決器でZoomへ変換します。
+        ///
+        /// - Parameter event: 監視対象のscroll、magnify、gestureイベント。
+        /// - Returns: Focus Zoomとして消費した場合は`true`。
+        private func handleZoomInput(_ event: NSEvent) -> Bool {
+            guard let scrollView,
+                  event.window === scrollView.window,
+                  scrollView.bounds.contains(scrollView.convert(event.locationInWindow, from: nil)),
+                  let input = CanvasZoomInputResolver.input(for: event)
+            else {
+                return false
+            }
+
+            let oldZoom = CanvasZoom.clamped(zoom.wrappedValue)
+            let newZoom = CanvasZoomInputResolver.targetZoom(currentZoom: oldZoom, input: input)
+            guard newZoom != oldZoom else { return true }
+
+            retainedDocumentSizeDuringZoom = lastLayout?.documentSize
+            pendingZoomAnchor = pointerZoomAnchor(for: event, renderedZoom: lastZoom)
+            zoom.wrappedValue = newZoom
+            scheduleFiniteDocumentSettle()
+            return true
+        }
+
+        /// 論理名（日本語）: フォーカス有限document収束予約関数
+        /// 処理概要: 連続Zoom中のdocument縮小を遅延し、入力が止まった後に必要なscroll範囲へ一度だけ収束させます。
+        private func scheduleFiniteDocumentSettle() {
+            cancelZoomSettle()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.retainedDocumentSizeDuringZoom != nil else { return }
+                self.zoomSettleWorkItem = nil
+                self.pendingZoomAnchor = self.centeredZoomAnchor(renderedZoom: self.lastZoom)
+                self.retainedDocumentSizeDuringZoom = nil
+                self.refreshLayout(centerContent: false)
+            }
+            zoomSettleWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + CanvasFocusedPreviewMetrics.zoomSettleDelay,
+                execute: workItem
+            )
+        }
+
+        /// 論理名（日本語）: フォーカス有限document収束取消関数
+        /// 処理概要: 対象切替または次のZoom入力前に、予約済みの有限document縮小を取り消します。
+        private func cancelZoomSettle() {
+            zoomSettleWorkItem?.cancel()
+            zoomSettleWorkItem = nil
+        }
+
+        /// 論理名（日本語）: フォーカスポインタZoom基準点生成関数
+        /// 処理概要: Commandスクロール位置をviewport座標へ変換し、Focus対象上の未拡大座標として保存します。
+        ///
+        /// - Parameters:
+        ///   - event: ポインタ位置を持つscroll wheelイベント。
+        ///   - renderedZoom: 現在描画中のZoom倍率。
+        /// - Returns: Zoom後の有限scroll原点復元に使う基準点。
+        private func pointerZoomAnchor(for event: NSEvent, renderedZoom: Double) -> CanvasZoomAnchorSnapshot? {
+            guard let scrollView else { return nil }
+            return zoomAnchor(
+                at: viewportPoint(for: event, in: scrollView),
+                renderedZoom: renderedZoom,
+                in: scrollView
+            )
+        }
+
+        /// 論理名（日本語）: フォーカス中央Zoom基準点生成関数
+        /// 処理概要: HUD操作では現在viewportの中央をFocus Zoom基準点として保存します。
+        ///
+        /// - Parameter renderedZoom: 現在描画中のZoom倍率。
+        /// - Returns: Zoom後の有限scroll原点復元に使う基準点。
+        private func centeredZoomAnchor(renderedZoom: Double) -> CanvasZoomAnchorSnapshot? {
+            guard let scrollView else { return nil }
+            let visibleRect = scrollView.contentView.bounds
+            return zoomAnchor(
+                at: CGPoint(x: visibleRect.width / 2, y: visibleRect.height / 2),
+                renderedZoom: renderedZoom,
+                in: scrollView
+            )
+        }
+
+        /// 論理名（日本語）: フォーカスZoom基準点生成関数
+        /// 処理概要: 有限document内のFocus対象原点を使い、共通Zoom基準点解決器へ座標を渡します。
+        ///
+        /// - Parameters:
+        ///   - viewportPoint: viewport左上から見た基準点。
+        ///   - renderedZoom: 現在描画中のZoom倍率。
+        ///   - scrollView: Focus有限scroll view。
+        /// - Returns: Zoom後のscroll原点計算に使う基準点。
+        private func zoomAnchor(
+            at viewportPoint: CGPoint,
+            renderedZoom: Double,
+            in scrollView: NSScrollView
+        ) -> CanvasZoomAnchorSnapshot? {
+            guard let lastLayout else { return nil }
+            return CanvasZoomAnchorResolver.snapshot(
+                viewportPoint: viewportPoint,
+                visibleOrigin: scrollView.contentView.bounds.origin,
+                hostingOrigin: lastLayout.contentFrame.origin,
+                renderedZoom: renderedZoom,
+                contentPadding: 0
+            )
+        }
+
+        /// 論理名（日本語）: フォーカスイベント座標変換関数
+        /// 処理概要: window座標のイベント位置をFocus viewport左上基準へ変換します。
+        ///
+        /// - Parameters:
+        ///   - event: 変換対象イベント。
+        ///   - scrollView: Focus有限scroll view。
+        /// - Returns: viewport内へ丸めた相対座標。
+        private func viewportPoint(for event: NSEvent, in scrollView: NSScrollView) -> CGPoint {
+            let point = scrollView.contentView.convert(event.locationInWindow, from: nil)
+            return CanvasZoomAnchorResolver.viewportPoint(point, visibleRect: scrollView.contentView.bounds)
+        }
+
+        /// 論理名（日本語）: フォーカスZoom基準点復元関数
+        /// 処理概要: Zoom後の対象frameと有限document寸法から、保存した基準点が同じviewport位置に残るscroll原点を適用します。
+        ///
+        /// - Parameters:
+        ///   - anchor: Zoom前に保存した基準点。
+        ///   - targetZoom: Zoom後の倍率。
+        ///   - layout: Zoom後の有限レイアウト。
+        private func applyZoomAnchor(
+            _ anchor: CanvasZoomAnchorSnapshot,
+            targetZoom: Double,
+            layout: CanvasFocusedPreviewLayout
+        ) {
+            guard let scrollView,
+                  let origin = CanvasZoomAnchorResolver.documentOrigin(
+                    for: anchor,
+                    hostingOrigin: layout.contentFrame.origin,
+                    targetZoom: targetZoom,
+                    contentPadding: 0,
+                    documentSize: layout.documentSize,
+                    viewportSize: scrollView.contentView.bounds.size
+                  )
+            else {
+                return
+            }
+
+            scrollView.contentView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+
+        /// 論理名（日本語）: フォーカス入力監視破棄関数
+        /// 処理概要: 共通Zoom入力用local event monitorを解除します。
+        func dismantle() {
+            cancelZoomSettle()
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+            monitor = nil
+        }
+
+        deinit {
+            dismantle()
+        }
+    }
+}
+
+/// 論理名（日本語）: フォーカス有限ドキュメントビュー
+/// 概要: Zoom適用後のFocus対象hosting viewを有限document内の中央frameへ配置します。
+private final class CanvasFocusedPreviewDocumentView<Content: View>: NSView {
+    let hostingView: NSHostingView<Content>
+    private var contentFrame = CGRect.zero
+
+    override var isFlipped: Bool { true }
+
+    /// 論理名（日本語）: フォーカス有限ドキュメント初期化関数
+    /// 処理概要: object contentのhosting viewをsubviewとして保持します。
+    ///
+    /// - Parameter hostingView: Zoom適用後のFocus対象を表示するhosting view。
+    init(hostingView: NSHostingView<Content>) {
+        self.hostingView = hostingView
+        super.init(frame: .zero)
+        addSubview(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    /// 論理名（日本語）: フォーカス有限ドキュメントレイアウト関数
+    /// 処理概要: document resize後もobject frameを中央位置へ維持します。
+    override func layout() {
+        super.layout()
+        hostingView.frame = contentFrame
+    }
+
+    /// 論理名（日本語）: フォーカス有限レイアウト適用関数
+    /// 処理概要: 有限document寸法とobject中央frameをAppKit viewへ反映します。
+    ///
+    /// - Parameter layout: 適用する有限プレビューレイアウト。
+    func apply(layout: CanvasFocusedPreviewLayout) {
+        contentFrame = layout.contentFrame
+        setFrameSize(layout.documentSize)
+        hostingView.frame = layout.contentFrame
+    }
+}
+
+/// 論理名（日本語）: フォーカス有限AppKitスクロールビュー
+/// 概要: viewport resizeをコーディネーターへ通知し、標準scroll rangeを有限document内に限定します。
+private final class CanvasFinitePreviewScrollView: NSScrollView {
+    var viewportSizeDidChange: ((CGSize) -> Void)?
+    private var lastViewportSize = CGSize.zero
+
+    /// 論理名（日本語）: フォーカス有限scrollレイアウト関数
+    /// 処理概要: clip viewport寸法が変わったときだけdocument再計算を通知します。
+    override func layout() {
+        super.layout()
+        let viewportSize = contentSize
+        guard viewportSize != lastViewportSize else { return }
+        lastViewportSize = viewportSize
+        viewportSizeDidChange?(viewportSize)
     }
 }
 
@@ -3435,8 +4325,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             self.scrollView = scrollView
             guard monitor == nil else { return }
 
-            let eventMask: NSEvent.EventTypeMask = [.scrollWheel, .magnify, .gesture]
-            monitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) { [weak self] event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: CanvasZoomInputResolver.eventMask) { [weak self] event in
                 guard let self, self.handleInputEvent(event) else {
                     return event
                 }
@@ -3586,79 +4475,23 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
                 return false
             }
 
-            if event.type == .magnify {
-                return handleMagnify(event)
-            }
-
-            if event.type == .gesture {
-                return handleGesture(event)
-            }
-
-            if event.modifierFlags.contains(.command) {
-                return handleCommandScroll(event)
+            if CanvasZoomInputResolver.input(for: event) != nil {
+                return handleZoomInput(event)
             }
 
             return routeCanvasScrollIfNeeded(event, in: scrollView)
         }
 
-        /// 論理名（日本語）: Commandスクロール処理関数
-        /// 処理概要: `⌘ + scroll` をキャンバスズームへ変換します。
+        /// 論理名（日本語）: キャンバスZoom入力処理関数
+        /// 処理概要: Commandスクロール、trackpad pinch、互換gestureを共通解決器でZoomへ変換します。
         ///
-        /// - Parameter event: scroll wheel イベント。
+        /// - Parameter event: scroll、magnify、gestureイベント。
         /// - Returns: ズーム操作として消費した場合は `true`。
-        private func handleCommandScroll(_ event: NSEvent) -> Bool {
-            let verticalDelta = verticalScrollDelta(for: event)
-            guard verticalDelta.value != 0 else { return false }
-
+        private func handleZoomInput(_ event: NSEvent) -> Bool {
+            guard let input = CanvasZoomInputResolver.input(for: event) else { return false }
             let oldZoom = CanvasZoom.clamped(zoom.wrappedValue)
-            let scale = scaleFactor(for: verticalDelta.value, isPrecise: verticalDelta.isPrecise)
-            let newZoom = CanvasZoom.clamped(oldZoom * scale)
-            guard newZoom.isFinite, newZoom != oldZoom else { return true }
-
-            pendingZoomAnchor = pointerZoomAnchor(for: event, renderedZoom: lastZoom)
-            zoom.wrappedValue = newZoom
-            return true
-        }
-
-        /// 論理名（日本語）: magnifyイベント処理関数
-        /// 処理概要: トラックパッドなどの magnify 値をキャンバスズームへ反映します。
-        ///
-        /// - Parameter event: magnify イベント。
-        /// - Returns: ズーム操作として消費した場合は `true`。
-        private func handleMagnify(_ event: NSEvent) -> Bool {
-            applyMagnification(event.magnification, event: event)
-        }
-
-        /// 論理名（日本語）: gestureイベント処理関数
-        /// 処理概要: Mac Mouse Fix などが発行する gesture subtype の magnification をズームへ反映します。
-        ///
-        /// - Parameter event: gesture イベント。
-        /// - Returns: 対応する magnification を消費した場合は `true`。
-        private func handleGesture(_ event: NSEvent) -> Bool {
-            guard let cgEvent = event.cgEvent,
-                  let subtypeField = CGEventField(rawValue: 110),
-                  let magnificationField = CGEventField(rawValue: 113),
-                  cgEvent.getIntegerValueField(subtypeField) == 8
-            else {
-                return false
-            }
-
-            return applyMagnification(CGFloat(cgEvent.getDoubleValueField(magnificationField)), event: event)
-        }
-
-        /// 論理名（日本語）: magnification適用関数
-        /// 処理概要: 入力された magnification を倍率へ掛け合わせ、許容範囲内へ補正します。
-        ///
-        /// - Parameters:
-        ///   - magnification: AppKit または CGEvent 由来の拡大率差分。
-        ///   - event: 基準点の算出に使う入力イベント。
-        /// - Returns: OpenGraphite 側で処理した場合は `true`。
-        private func applyMagnification(_ magnification: CGFloat, event: NSEvent) -> Bool {
-            guard magnification != 0 else { return true }
-
-            let oldZoom = CanvasZoom.clamped(zoom.wrappedValue)
-            let newZoom = CanvasZoom.clamped(oldZoom * (1 + Double(magnification)))
-            guard newZoom.isFinite, newZoom != oldZoom else { return true }
+            let newZoom = CanvasZoomInputResolver.targetZoom(currentZoom: oldZoom, input: input)
+            guard newZoom != oldZoom else { return true }
 
             pendingZoomAnchor = pointerZoomAnchor(for: event, renderedZoom: lastZoom)
             zoom.wrappedValue = newZoom
@@ -3729,11 +4562,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         /// - Returns: viewport 左上から見たイベント位置。
         private func viewportPoint(for event: NSEvent, in scrollView: NSScrollView) -> CGPoint {
             let point = scrollView.contentView.convert(event.locationInWindow, from: nil)
-            let visibleRect = scrollView.contentView.bounds
-            return CGPoint(
-                x: min(max(point.x - visibleRect.minX, 0), visibleRect.width),
-                y: min(max(point.y - visibleRect.minY, 0), visibleRect.height)
-            )
+            return CanvasZoomAnchorResolver.viewportPoint(point, visibleRect: scrollView.contentView.bounds)
         }
 
         /// 論理名（日本語）: ズーム基準点復元関数
@@ -3870,54 +4699,6 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             for subview in rootView.subviews {
                 appendContainedWebViews(in: subview, to: &webViews)
             }
-        }
-
-        /// 論理名（日本語）: 垂直スクロール差分取得関数
-        /// 処理概要: ズーム計算に使う垂直方向のスクロール差分と precise 判定を返します。
-        ///
-        /// - Parameter event: scroll wheel イベント。
-        /// - Returns: 差分値と precise delta かどうか。
-        private func verticalScrollDelta(for event: NSEvent) -> (value: CGFloat, isPrecise: Bool) {
-            axisScrollDelta(
-                precise: event.scrollingDeltaY,
-                legacy: event.deltaY,
-                hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
-            )
-        }
-
-        /// 論理名（日本語）: 軸別スクロール差分選択関数
-        /// 処理概要: precise delta が有効なら優先し、なければ legacy delta を使用します。
-        ///
-        /// - Parameters:
-        ///   - precise: precise scrolling delta。
-        ///   - legacy: legacy delta。
-        ///   - hasPreciseScrollingDeltas: precise delta が有効なイベントか。
-        /// - Returns: 採用した差分値と precise 判定。
-        private func axisScrollDelta(
-            precise: CGFloat,
-            legacy: CGFloat,
-            hasPreciseScrollingDeltas: Bool = true
-        ) -> (value: CGFloat, isPrecise: Bool) {
-            if hasPreciseScrollingDeltas, precise != 0 {
-                return (precise, true)
-            }
-
-            if legacy != 0 {
-                return (legacy, false)
-            }
-
-            return (precise, hasPreciseScrollingDeltas)
-        }
-
-        /// 論理名（日本語）: ズーム倍率係数生成関数
-        /// 処理概要: スクロール差分を指数関数の倍率係数へ変換し、小さな入力も捨てずに反映します。
-        ///
-        /// - Parameters:
-        ///   - rawDelta: スクロール差分。
-        ///   - isPrecise: precise delta 由来か。
-        /// - Returns: 現在倍率へ掛ける倍率係数。
-        private func scaleFactor(for rawDelta: CGFloat, isPrecise: Bool) -> Double {
-            exp(Double(rawDelta) * (isPrecise ? 0.002 : 0.08))
         }
 
         deinit {

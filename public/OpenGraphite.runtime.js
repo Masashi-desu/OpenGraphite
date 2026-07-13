@@ -261,6 +261,8 @@ function stripRuntimeAttributes(root) {
     "data-og-source-instance",
     "data-og-slot-origin",
     "data-og-runtime-fallback-html",
+    "data-og-editor-focus-root",
+    "data-og-editor-focus-visible",
     "contenteditable",
     "spellcheck"
   ];
@@ -270,7 +272,8 @@ function stripRuntimeAttributes(root) {
     if (sourceID) {
       element.setAttribute("data-og-id", sourceID);
     }
-    if (element.id === "opengraphite-runtime-style") {
+    if (element.id === "opengraphite-runtime-style" ||
+        element.id === "opengraphite-editor-focus-style") {
       element.remove();
       return;
     }

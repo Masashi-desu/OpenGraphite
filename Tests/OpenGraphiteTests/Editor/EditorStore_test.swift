@@ -405,6 +405,88 @@ struct EditorStoreTests {
         #expect(overlay.nodeRectsByID["title"] == nil)
     }
 
+    /// 論理名（日本語）: Focus対象スナップショットテスト
+    /// 概要: 右クリックで開始したFocus対象がNormal/Flow表示モードや通常selectionから独立して保持・解除されることを検証します。
+    @Test("Focus対象を表示モードと通常selectionから独立して保持する")
+    func testFocusedPreviewTargetIsIndependentFromDisplayModeAndSelection() throws {
+        // コンディション：Flow表示中にhero objectを右クリックした相当の実測値がある（Given）
+        let store = EditorStore()
+        store.previewDisplayMode = .flow
+        store.selectNode(id: "hero")
+        let rect = CGRect(x: 120, y: 240, width: 320, height: 180)
+
+        // 検証内容：heroのFocusを開始してから通常selectionを別nodeへ移し、Focusを解除する（When）
+        let didBegin = store.beginFocusedPreview(
+            nodeID: "hero",
+            pageInternalID: "page-home",
+            segment: .pages,
+            rect: rect
+        )
+        store.selectNode(id: "card")
+        let targetBeforeEnd = try #require(store.focusedPreviewTarget)
+        store.endFocusedPreview()
+
+        // 期待値：Focus対象はheroのsnapshotを保ち、解除後もFlowとcard selectionが維持される（Then）
+        #expect(didBegin)
+        #expect(targetBeforeEnd.nodeID == "hero")
+        #expect(targetBeforeEnd.pageInternalID == "page-home")
+        #expect(targetBeforeEnd.segment == .pages)
+        #expect(targetBeforeEnd.rect == rect)
+        #expect(store.focusedPreviewTarget == nil)
+        #expect(store.previewDisplayMode == .flow)
+        #expect(store.selectedNodeID == "card")
+    }
+
+    /// 論理名（日本語）: ページ全体Focus対象スナップショットテスト
+    /// 概要: page cardの右クリック相当操作がnode隔離を使わず、page全体をoriginal resolutionのFocus対象として保持することを検証します。
+    @Test("ページ全体をnode IDなしのFocus対象として保持する")
+    func testFocusedPagePreviewTargetsWholeCanvas() throws {
+        // コンディション：1440 x 1200のpage cardを右クリックした相当の入力がある（Given）
+        let store = EditorStore()
+        let pageSize = CGSize(width: 1440, height: 1200)
+
+        // 検証内容：page全体のFocus表示を開始する（When）
+        let didBegin = store.beginFocusedPagePreview(
+            pageInternalID: "page-home",
+            segment: .pages,
+            size: pageSize
+        )
+
+        // 期待値：node IDを持たず、page canvas全体の矩形を保持する（Then）
+        let target = try #require(store.focusedPreviewTarget)
+        #expect(didBegin)
+        #expect(target.nodeID == nil)
+        #expect(target.pageInternalID == "page-home")
+        #expect(target.segment == .pages)
+        #expect(target.rect == CGRect(origin: .zero, size: pageSize))
+    }
+
+    /// 論理名（日本語）: 無効Focus対象拒否テスト
+    /// 概要: 空IDや0寸法objectからFocus表示を開始しないことを検証します。
+    @Test("無効なFocus対象を拒否する")
+    func testBeginFocusedPreviewRejectsInvalidTarget() {
+        // コンディション：空node IDと0幅のobject矩形を用意する（Given）
+        let store = EditorStore()
+
+        // 検証内容：無効なobjectとpageのFocus対象で開始を試みる（When）
+        let didBeginObject = store.beginFocusedPreview(
+            nodeID: "",
+            pageInternalID: "page-home",
+            segment: .pages,
+            rect: CGRect(x: 0, y: 0, width: 0, height: 180)
+        )
+        let didBeginPage = store.beginFocusedPagePreview(
+            pageInternalID: "page-home",
+            segment: .pages,
+            size: CGSize(width: 0, height: 1200)
+        )
+
+        // 期待値：どちらもFocus状態を作らずfalseを返す（Then）
+        #expect(!didBeginObject)
+        #expect(!didBeginPage)
+        #expect(store.focusedPreviewTarget == nil)
+    }
+
     /// 論理名（日本語）: Sidebar Layers範囲選択テスト
     /// 概要: Shift クリック相当の範囲選択で、アンカーから終端までの表示中ノードが同時選択されることを検証します。
     @Test("Sidebar Layersでアンカーから表示順範囲を同時選択する")

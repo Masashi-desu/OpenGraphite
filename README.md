@@ -213,6 +213,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - Welcome screen with sample and arbitrary `.ogp` open actions
 - Pages/Components sidebar with resizable, collapsible Chapter/Collection selectors and layers inside each HTML card
 - WKWebView canvas using `.ogp` canvas dimensions
+- Normal / Flow canvas modes, plus a separate right-click Focus preview that shows one HTML object or a whole page card in a centered, finite scrolling region; Focus uses the same canvas zoom input resolver for `Command + scroll`, trackpad pinch, and compatible gesture events, keeps 100% as original size, supports zoom in/out without creating an infinite canvas, and removes editor-only object-focus markers before HTML is saved
 - Front-layer sticky notes and mouse/Sidecar Apple Pencil ink, with eraser and lasso multi-selection tools, stored only in Chapter/Collection `.ogp` annotations
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection

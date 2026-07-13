@@ -148,6 +148,8 @@ CLI / MCP / Project Inspector は、design token の一覧、追加、値変更�
 | `data-og-locked` | 任意 | ノードの編集をロックする永続的な編集状態。`true` のとき選択表示と編集操作がロック状態として扱われる。 | `true` |
 | `data-og-selected` | 一時 | Canvas 上の現在選択を示す実行時属性。保存前の HTML シリアライズで除去する。 | `true` |
 | `data-og-editing` | 一時 | テキスト編集中のノードを示す実行時属性。`contenteditable` と同様に保存前の HTML シリアライズで除去する。 | `true` |
+| `data-og-editor-focus-root` | 一時 | 右クリック Focus object preview が有効な document root を示す。保存前の HTML シリアライズで除去する。 | `true` |
+| `data-og-editor-focus-visible` | 一時 | 固定した Focus 対象とその subtree の可視範囲を示す。保存前の HTML シリアライズで除去する。 | `target`, `true` |
 | `data-og-runtime-fallback-html` | 一時 | 実装 runtime が解決済み text を DOM へ反映する前の fallback HTML を保持するための属性。保存前に除去する。 | `日本語タイトル` |
 
 永続化される `data-og-*` は、ブラウザ単独表示時にも意味が説明できる必要があります。一時属性は OpenGraphite の session 状態であり、正本 HTML へ残してはいけません。
@@ -361,6 +363,13 @@ Preview Mock State は「どの variant を表示するか」を決める editor
 
 - `data-og-selected="true"`: 現在選択中のノードを Canvas 上でハイライトする。
 - `data-og-editing="true"`: テキスト編集セッション中のノードを示す。
+
+Focus preview は Normal / Flow の canvas mode とは独立した、session-only の単独 preview です。Canvas 上の HTML object、または page card 自体を右クリックして開始し、対象を preview 領域の中央へ表示します。通常canvasと同じZoom値・入力解決器を使い、ポインタ基準の`Command + scroll`、trackpad pinch、互換gesture eventを処理し、100%を対象のoriginal CSS pixel sizeとします。HUDの段階操作が100%を跨ぐ場合は一度100%へスナップします。連続Zoom中はscroll originの反復clampを避けるため直前の有限document外形を保持し、入力収束後にoverflow分だけのscroll rangeへ縮小します。無限canvas、page caption、annotation layerは使いません。再度右クリックして解除します。page card の Focus は canvas 全体を直接表示し、object Focus は別の DOM やデザイン正本を作らず、次の一時属性で表示範囲を示します。
+
+- `data-og-editor-focus-root="true"`: Focus preview が有効な document root を示す。
+- `data-og-editor-focus-visible="target" | "true"`: Focus 対象とその subtree で表示を維持する要素を示す。
+
+どちらも editor が DOM にだけ付与し、Focus 用の `opengraphite-editor-focus-style` とともに保存前シリアライズで除去します。
 
 component runtime は `<og-instance>` を表示時に展開するため、次の一時属性を付与できます。
 

@@ -76,7 +76,7 @@ component 参照では、master を component canvas HTML に置き、page 側�
 - `data-og-part`: component 内の安定した part name。runtime ID mapping で instance ID を保持したい場合は master root に `root` を使う。
 - `data-og-hidden="true"`: 要素を非表示にする。
 - `data-og-locked="true"`: 要素を locked として扱い、cursor を変える。
-- `data-og-selected="true"` と `data-og-editing="true"` は UI/session state。runtime expansion は `data-og-expanded`、`data-og-generated`、`data-og-component-error`、`data-og-host-id`、`data-og-instance-source`、`data-og-source-component`、`data-og-source-instance`、`data-og-slot-origin` も追加できる。runtime output を明示的に debug している場合を除き、hand-authored source HTML には runtime 属性を含めない。
+- `data-og-selected="true"` と `data-og-editing="true"` は UI/session state。右クリックで開始する Focus preview は Normal / Flow mode と独立する。page card 全体の Focus は page canvas を直接表示し、HTML object の Focus だけが document root の `data-og-editor-focus-root="true"` と、固定対象 subtree の `data-og-editor-focus-visible="target" | "true"` を一時利用する。これらと `opengraphite-editor-focus-style` は保存前に除去し、source HTML へ残さない。runtime expansion は `data-og-expanded`、`data-og-generated`、`data-og-component-error`、`data-og-host-id`、`data-og-instance-source`、`data-og-source-component`、`data-og-source-instance`、`data-og-slot-origin` も追加できる。runtime output を明示的に debug している場合を除き、hand-authored source HTML には runtime 属性を含めない。
 
 ## 型
 

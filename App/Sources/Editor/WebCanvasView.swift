@@ -579,6 +579,85 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     }
 }
 
+/// 論理名（日本語）: WebキャンバスFocus隔離スクリプト
+/// 概要: Focus表示中に選択DOM subtreeのみを可視化し、元のlayoutとsource identityを保つsession-only controllerを定義します。
+///
+/// 定義内容:
+/// - `rootAttributeName`: Focus表示中のdocument rootに付与する一時属性。
+/// - `visibleAttributeName`: 選択対象とそのsubtreeに付与する一時属性。
+/// - `styleElementID`: Focus隔離用のeditor-only style element ID。
+/// - `source`: `window.OpenGraphiteFocusIsolation` を導入するJavaScript。
+enum WebCanvasFocusIsolationScript {
+    static let rootAttributeName = "data-og-editor-focus-root"
+    static let visibleAttributeName = "data-og-editor-focus-visible"
+    static let styleElementID = "opengraphite-editor-focus-style"
+
+    static var source: String {
+        """
+        (function() {
+          if (window.OpenGraphiteFocusIsolation) {
+            window.OpenGraphiteFocusIsolation.installStyle();
+            return;
+          }
+          const rootAttributeName = '\(rootAttributeName)';
+          const visibleAttributeName = '\(visibleAttributeName)';
+          const styleElementID = '\(styleElementID)';
+
+          function installStyle() {
+            if (document.getElementById(styleElementID)) { return; }
+            const style = document.createElement('style');
+            style.id = styleElementID;
+            style.setAttribute('data-og-editor-artifact', 'true');
+            style.textContent = [
+              'html[' + rootAttributeName + '="true"] body *:not([' + visibleAttributeName + ']){visibility:hidden!important;}',
+              'html[' + rootAttributeName + '="true"] [' + visibleAttributeName + '="target"]{visibility:visible!important;}'
+            ].join('');
+            (document.head || document.documentElement).appendChild(style);
+          }
+
+          function clear() {
+            if (document.documentElement) {
+              document.documentElement.removeAttribute(rootAttributeName);
+            }
+            document.querySelectorAll('[' + visibleAttributeName + ']').forEach((element) => {
+              element.removeAttribute(visibleAttributeName);
+            });
+          }
+
+          function apply(elements) {
+            clear();
+            installStyle();
+            const targets = (Array.isArray(elements) ? elements : []).filter((element) => {
+              return element instanceof Element && element.isConnected;
+            });
+            if (targets.length === 0 || !document.documentElement) { return false; }
+
+            document.documentElement.setAttribute(rootAttributeName, 'true');
+            targets.forEach((target) => {
+              target.setAttribute(visibleAttributeName, 'target');
+              target.querySelectorAll('*').forEach((descendant) => {
+                descendant.setAttribute(visibleAttributeName, 'true');
+              });
+            });
+            return true;
+          }
+
+          function isActive() {
+            return !!document.documentElement && document.documentElement.getAttribute(rootAttributeName) === 'true';
+          }
+
+          window.OpenGraphiteFocusIsolation = Object.freeze({
+            apply: apply,
+            clear: clear,
+            isActive: isActive,
+            installStyle: installStyle
+          });
+          installStyle();
+        })();
+        """
+    }
+}
+
 /// 論理名（日本語）: Webキャンバスビュー
 /// 概要: HTML 正本を WKWebView で表示し、DOM 選択、Inspector 変更、コンテキストメニュー操作を SwiftUI へ接続します。
 ///
@@ -591,6 +670,7 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// - `reloadToken`: 外部変更で同じ URL を再読み込みするためのトークン。
 /// - `previewContext`: エディター内 preview に注入する runtime Mock State。
 /// - `allowsComponentPlacements`: component placement の preview clone 展開を許可するか。
+/// - `focusedNodeIDs`: 通常選択とは独立して単独表示する DOM node ID 一覧。
 struct WebCanvasView: NSViewRepresentable {
     @ObservedObject var store: EditorStore
     var pageURL: URL?
@@ -600,13 +680,19 @@ struct WebCanvasView: NSViewRepresentable {
     var reloadToken = 0
     var previewContext: OpenGraphitePreviewContext = .empty
     var allowsComponentPlacements = false
+    var focusedNodeIDs: [String] = []
 
     /// 論理名（日本語）: コーディネーター生成関数
     /// 処理概要: WKWebView の navigation、script message、context menu を処理するコーディネーターを生成します。
     ///
     /// - Returns: WebCanvasView 用コーディネーター。
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store, isInteractive: isInteractive, pageInternalID: pageInternalID)
+        Coordinator(
+            store: store,
+            isInteractive: isInteractive,
+            pageInternalID: pageInternalID,
+            focusedNodeIDs: focusedNodeIDs
+        )
     }
 
     /// 論理名（日本語）: WKWebView生成関数
@@ -646,6 +732,7 @@ struct WebCanvasView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.lastPreviewContext = previewContext
         context.coordinator.lastAllowsComponentPlacements = allowsComponentPlacements
+        context.coordinator.lastFocusedNodeIDs = nil
         WebScrollStateRegistry.shared.update(.outside, for: webView)
         return webView
     }
@@ -662,6 +749,7 @@ struct WebCanvasView: NSViewRepresentable {
         context.coordinator.isInteractive = isInteractive
         context.coordinator.pageInternalID = pageInternalID
         context.coordinator.syncTarget = syncTarget
+        context.coordinator.focusedNodeIDs = focusedNodeIDs
 
         let previewContextChanged = context.coordinator.lastPreviewContext != previewContext
         let componentPlacementModeChanged = context.coordinator.lastAllowsComponentPlacements != allowsComponentPlacements
@@ -683,7 +771,9 @@ struct WebCanvasView: NSViewRepresentable {
                 context.coordinator.loadedURL = targetPageURL
                 context.coordinator.lastReloadToken = reloadToken
                 context.coordinator.lastSelectedNodeID = nil
+                context.coordinator.lastSelectedNodeIDs = []
                 context.coordinator.lastActiveTool = nil
+                context.coordinator.lastFocusedNodeIDs = nil
                 context.coordinator.hidePreviewUntilStyled()
                 if loadedURLChanged || webView.url == nil {
                     let readAccessURL = store.projectRootURL ?? targetPageURL.deletingLastPathComponent()
@@ -699,6 +789,7 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.lastReloadToken = reloadToken
             context.coordinator.lastSelectedNodeID = nil
             context.coordinator.lastSelectedNodeIDs = []
+            context.coordinator.lastFocusedNodeIDs = nil
         }
 
         guard isInteractive else {
@@ -706,6 +797,10 @@ struct WebCanvasView: NSViewRepresentable {
                 context.coordinator.lastSelectedNodeID = nil
                 context.coordinator.lastSelectedNodeIDs = []
                 context.coordinator.selectNodes([], primaryID: nil)
+            }
+            if context.coordinator.lastFocusedNodeIDs != focusedNodeIDs {
+                context.coordinator.lastFocusedNodeIDs = focusedNodeIDs
+                context.coordinator.setFocusedNodes(focusedNodeIDs)
             }
             return
         }
@@ -723,6 +818,11 @@ struct WebCanvasView: NSViewRepresentable {
             context.coordinator.lastSelectedNodeID = store.selectedNodeID
             context.coordinator.lastSelectedNodeIDs = selectedNodeIDs
             context.coordinator.selectNodes(selectedNodeIDs, primaryID: store.selectedNodeID)
+        }
+
+        if context.coordinator.lastFocusedNodeIDs != focusedNodeIDs {
+            context.coordinator.lastFocusedNodeIDs = focusedNodeIDs
+            context.coordinator.setFocusedNodes(focusedNodeIDs)
         }
 
         if context.coordinator.lastActiveTool != store.activeTool {
@@ -1128,6 +1228,7 @@ struct WebCanvasView: NSViewRepresentable {
         @MainActor var store: EditorStore
         weak var webView: WKWebView?
         var isInteractive: Bool
+        var focusedNodeIDs: [String]
         var pageInternalID: String?
         var syncTarget: HTMLSyncTarget?
         var loadedURL: URL?
@@ -1135,6 +1236,7 @@ struct WebCanvasView: NSViewRepresentable {
         var lastSelectedNodeID: String?
         var lastSelectedNodeIDs: [String] = []
         var lastActiveTool: CanvasTool?
+        var lastFocusedNodeIDs: [String]?
         var lastPreviewContext = OpenGraphitePreviewContext.empty
         var lastAllowsComponentPlacements = false
         var lastAppliedMutationSequence = 0
@@ -1144,6 +1246,8 @@ struct WebCanvasView: NSViewRepresentable {
         var lastAppliedTextMutationSequence = 0
         var lastAppliedDocumentReplacementSequence = 0
         private var previewReadinessGeneration = 0
+        private var contextMenuFocusTarget: (nodeID: String, rect: CGRect)?
+        private var contextMenuFocusSegment: OpenGraphiteCanvasSegment?
         private static let htmlPasteboardType = NSPasteboard.PasteboardType("public.html")
         private static let nodeReferencePasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.node-reference+json")
         private static let cssVariablesPasteboardType = NSPasteboard.PasteboardType("dev.opengraphite.css-variables")
@@ -1202,10 +1306,17 @@ struct WebCanvasView: NSViewRepresentable {
         ///   - store: 連携対象のエディター状態ストア。
         ///   - isInteractive: DOM 収集、選択、編集同期を有効にするか。
         ///   - pageInternalID: WebView が表示する page card の内部 ID。
-        init(store: EditorStore, isInteractive: Bool, pageInternalID: String?) {
+        ///   - focusedNodeIDs: 通常選択とは独立して単独表示する node ID 一覧。
+        init(
+            store: EditorStore,
+            isInteractive: Bool,
+            pageInternalID: String?,
+            focusedNodeIDs: [String]
+        ) {
             self.store = store
             self.isInteractive = isInteractive
             self.pageInternalID = pageInternalID
+            self.focusedNodeIDs = focusedNodeIDs
         }
 
         /// 論理名（日本語）: Navigationエラー抑止判定関数
@@ -1366,11 +1477,15 @@ struct WebCanvasView: NSViewRepresentable {
         private func finishPreviewLoad(in webView: WKWebView) {
             revealPreviewWhenDocumentIsStyled(in: webView)
             collectStaticFlowLinks()
-            guard isInteractive else { return }
-            ensureInternalIDsAndCollectNodes()
+            if isInteractive || !focusedNodeIDs.isEmpty {
+                ensureInternalIDsAndCollectNodes()
+            }
             Task { @MainActor in
-                setActiveTool(store.activeTool)
-                selectNode(store.selectedNodeID)
+                if isInteractive {
+                    setActiveTool(store.activeTool)
+                    selectNodes(store.selectedLayerNodeIDsInNodeOrder, primaryID: store.selectedNodeID)
+                }
+                setFocusedNodes(focusedNodeIDs)
             }
         }
 
@@ -1593,7 +1708,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: WebView複数ノード選択関数
-        /// 処理概要: Swift 側の選択 ID 群を JavaScript bridge 経由で DOM の選択表示へ反映します。
+        /// 処理概要: Swift 側の選択 ID 群を JavaScript bridge 経由で DOM へ反映し、実測矩形を即時に取り込みます。
         ///
         /// - Parameters:
         ///   - ids: 選択する node ID 群。
@@ -1609,16 +1724,40 @@ struct WebCanvasView: NSViewRepresentable {
             let primaryIDLiteral = Self.javaScriptLiteral(primaryID ?? "")
             let script = """
             (function() {
+              let didSelect = false;
               if (window.OpenGraphite && typeof window.OpenGraphite.selectNodes === 'function') {
-                return !!window.OpenGraphite.selectNodes(\(idsLiteral), \(primaryIDLiteral));
+                didSelect = !!window.OpenGraphite.selectNodes(\(idsLiteral), \(primaryIDLiteral));
+              } else if (window.OpenGraphite && typeof window.OpenGraphite.selectNode === 'function') {
+                didSelect = !!window.OpenGraphite.selectNode(\(primaryIDLiteral));
               }
-              if (!window.OpenGraphite || typeof window.OpenGraphite.selectNode !== 'function') {
-                return false;
+              if (!didSelect || typeof window.OpenGraphite.selectionOverlayPayload !== 'function') {
+                return null;
               }
-              return !!window.OpenGraphite.selectNode(\(primaryIDLiteral));
+              return window.OpenGraphite.selectionOverlayPayload();
             })();
             """
-            webView.evaluateJavaScript(script, completionHandler: nil)
+            webView.evaluateJavaScript(script) { [weak self] result, _ in
+                guard let payload = result as? [String: Any] else { return }
+                Task { @MainActor [weak self] in
+                    self?.ingestSelectionOverlayPayload(payload)
+                }
+            }
+        }
+
+        @MainActor
+        /// 論理名（日本語）: WebViewフォーカス対象反映関数
+        /// 処理概要: 通常選択とは独立した node ID を JavaScript bridge へ送り、対象subtree以外のvisibilityをsession上で切り替えます。
+        ///
+        /// - Parameter ids: 単独表示する node ID 一覧。空配列では隔離表示を解除します。
+        func setFocusedNodes(_ ids: [String]) {
+            guard let webView else { return }
+            focusedNodeIDs = ids
+            lastFocusedNodeIDs = ids
+            let idsLiteral = Self.jsonLiteral(ids)
+            webView.evaluateJavaScript(
+                "window.OpenGraphite && window.OpenGraphite.setFocusedNodes(\(idsLiteral));",
+                completionHandler: nil
+            )
         }
 
         @MainActor
@@ -1853,6 +1992,16 @@ struct WebCanvasView: NSViewRepresentable {
                 root.removeAttribute('data-og-preview-locale');
                 root.removeAttribute('data-og-preview-dir');
               }
+              function removeEditorFocusAttributes(root) {
+                if (!root || typeof root.removeAttribute !== 'function') { return; }
+                root.removeAttribute('\(WebCanvasFocusIsolationScript.rootAttributeName)');
+                root.removeAttribute('\(WebCanvasFocusIsolationScript.visibleAttributeName)');
+                if (typeof root.querySelectorAll !== 'function') { return; }
+                root.querySelectorAll('[\(WebCanvasFocusIsolationScript.rootAttributeName)],[\(WebCanvasFocusIsolationScript.visibleAttributeName)]').forEach((element) => {
+                  element.removeAttribute('\(WebCanvasFocusIsolationScript.rootAttributeName)');
+                  element.removeAttribute('\(WebCanvasFocusIsolationScript.visibleAttributeName)');
+                });
+              }
               function removePlacementGeneratedNodes(root) {
                 if (!root || typeof root.querySelectorAll !== 'function') { return; }
                 root.querySelectorAll('[data-og-placement-generated="true"]').forEach((element) => {
@@ -1881,6 +2030,7 @@ struct WebCanvasView: NSViewRepresentable {
                 if (!parsedDocument.documentElement) { return html; }
                 removePlacementGeneratedNodes(parsedDocument);
                 removePreviewContextAttributes(parsedDocument.documentElement);
+                removeEditorFocusAttributes(parsedDocument.documentElement);
                 restorePreviewDocumentAttributes(parsedDocument.documentElement);
                 return '<!doctype html>\\n' + parsedDocument.documentElement.outerHTML;
               }
@@ -1888,6 +2038,7 @@ struct WebCanvasView: NSViewRepresentable {
               removeEditorStyles(clone);
               removePlacementGeneratedNodes(clone);
               removePreviewContextAttributes(clone);
+              removeEditorFocusAttributes(clone);
               restorePreviewDocumentAttributes(clone);
               clone.querySelectorAll('[data-og-selected]').forEach((element) => {
                 element.removeAttribute('data-og-selected');
@@ -1993,8 +2144,24 @@ struct WebCanvasView: NSViewRepresentable {
             let canSetLayout = (selectedNode?.type == "frame" || selectedNode?.type == "page") && !isLocked
             let hasPasteContent = pasteboardPayload() != nil
             let hasCSSVariableContent = cssVariablesPasteboardPayload() != nil
+            let focusFramePayload = payload["focusFrame"] as? [String: Any]
+            let focusRect = focusFramePayload.flatMap { Self.focusedPreviewRect(from: $0) }
+            contextMenuFocusTarget = selectedID.flatMap { id in focusRect.map { (id, $0) } }
+            contextMenuFocusSegment = store.selectedCanvasSegment
             let menu = NSMenu(title: "OpenGraphite")
             menu.autoenablesItems = false
+
+            if store.focusedPreviewTarget != nil {
+                addMenuItem("フォーカス表示を解除", command: "endFocusedPreview", to: menu, enabled: true)
+            } else {
+                addMenuItem(
+                    "フォーカス表示",
+                    command: "focusPreview",
+                    to: menu,
+                    enabled: contextMenuFocusTarget != nil
+                )
+            }
+            menu.addItem(.separator())
 
             addMenuItem("コピー", command: "copy", to: menu, enabled: selectedID != nil, keyEquivalent: "c", modifiers: [.command])
             addMenuItem("ここに貼り付け", command: "pasteHere", to: menu, enabled: selectedID != nil && hasPasteContent)
@@ -2068,6 +2235,28 @@ struct WebCanvasView: NSViewRepresentable {
             }
         }
 
+        /// 論理名（日本語）: フォーカス表示矩形変換関数
+        /// 処理概要: JavaScript context menu payload の document 座標矩形を検証し、有限な正寸法の `CGRect` へ変換します。
+        ///
+        /// - Parameter payload: `x`、`y`、`width`、`height` を含む辞書。
+        /// - Returns: 有効な object 矩形。不正値では `nil`。
+        private static func focusedPreviewRect(from payload: [String: Any]) -> CGRect? {
+            guard let x = payload["x"] as? Double,
+                  let y = payload["y"] as? Double,
+                  let width = payload["width"] as? Double,
+                  let height = payload["height"] as? Double,
+                  x.isFinite,
+                  y.isFinite,
+                  width.isFinite,
+                  height.isFinite,
+                  width > 0,
+                  height > 0
+            else {
+                return nil
+            }
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+
         /// 論理名（日本語）: メニュー項目追加関数
         /// 処理概要: context menu に実行コマンド付きの `NSMenuItem` を追加します。
         ///
@@ -2119,6 +2308,21 @@ struct WebCanvasView: NSViewRepresentable {
             }
 
             switch command {
+            case "focusPreview":
+                guard let target = contextMenuFocusTarget,
+                      let segment = contextMenuFocusSegment,
+                      let pageInternalID
+                else {
+                    return
+                }
+                store.beginFocusedPreview(
+                    nodeID: target.nodeID,
+                    pageInternalID: pageInternalID,
+                    segment: segment,
+                    rect: target.rect
+                )
+            case "endFocusedPreview":
+                store.endFocusedPreview()
             case "copy", "copyHTML":
                 copySelection(includeHTML: true, includeText: command == "copyHTML", includeReferenceID: command == "copy")
             case "copyReferenceID":
@@ -2390,6 +2594,7 @@ struct WebCanvasView: NSViewRepresentable {
     }
 
     private static let bridgeScript = """
+    \(WebCanvasFocusIsolationScript.source)
     (function() {
         if (window.OpenGraphite) {
           if (typeof window.OpenGraphite.installEditorSelectionStyle === 'function') {
@@ -2422,6 +2627,7 @@ struct WebCanvasView: NSViewRepresentable {
         var suppressNextClick = false;
         var clickSequenceStartSelectedID = '';
         var currentSelectedIDs = new Set();
+        var focusedNodeIDs = [];
         let minimumFramePlacementSize = 2;
 
         function installEditorSelectionStyle() {
@@ -2823,6 +3029,18 @@ struct WebCanvasView: NSViewRepresentable {
             y: rect.top,
             width: rect.width,
             height: rect.height
+          };
+        }
+
+        function focusedPreviewFramePayload(element) {
+          const payload = selectedElementFramePayload(element);
+          if (!payload) { return null; }
+          return {
+            id: payload.id,
+            x: payload.x + window.scrollX,
+            y: payload.y + window.scrollY,
+            width: payload.width,
+            height: payload.height
           };
         }
 
@@ -3265,9 +3483,37 @@ struct WebCanvasView: NSViewRepresentable {
             depth: depth(element)
           }));
           window.webkit.messageHandlers.openGraphiteNodes.postMessage(nodes);
+          refreshFocusIsolation();
           scheduleStaticFlowLinkCollection();
           scheduleSelectionOverlayUpdate();
           return nodes;
+        }
+
+        function refreshFocusIsolation() {
+          const controller = window.OpenGraphiteFocusIsolation;
+          if (!controller) { return false; }
+          if (focusedNodeIDs.length === 0) {
+            controller.clear();
+            return false;
+          }
+          const elements = focusedNodeIDs
+            .map((id) => nodeWithID(id))
+            .filter((element) => !!element);
+          return controller.apply(elements);
+        }
+
+        function setFocusedNodes(ids) {
+          const requestedIDs = Array.isArray(ids) ? ids : [];
+          focusedNodeIDs = requestedIDs
+            .map((id) => typeof id === 'string' ? id.trim() : '')
+            .filter((id, index, all) => id.length > 0 && all.indexOf(id) === index);
+          const didApply = refreshFocusIsolation();
+          scheduleSelectionOverlayUpdate();
+          return focusedNodeIDs.length > 0 ? didApply : true;
+        }
+
+        function setFocusMode(isEnabled) {
+          return setFocusedNodes(isEnabled ? Array.from(currentSelectedIDs) : []);
         }
 
         function clearSelection() {
@@ -3309,6 +3555,7 @@ struct WebCanvasView: NSViewRepresentable {
           const primarySelection = selected.find((item) => item.id === primary) || selected[selected.length - 1];
           currentSelectedID = primarySelection.id;
           revealElementForSelection(primarySelection.element);
+          refreshFocusIsolation();
           updateFrameGuideState();
           scheduleSelectionOverlayUpdate();
           return true;
@@ -4972,6 +5219,8 @@ struct WebCanvasView: NSViewRepresentable {
           selectNode: selectNode,
           selectNodes: selectNodes,
           selectionOverlayPayload: selectionOverlayPayload,
+          setFocusedNodes: setFocusedNodes,
+          setFocusMode: setFocusMode,
           setActiveTool: setActiveTool,
           handleFramePlacementNativeEvent: handleFramePlacementNativeEvent,
           setCSSVariable: setCSSVariable,
@@ -5238,10 +5487,12 @@ struct WebCanvasView: NSViewRepresentable {
           selectNode(id);
           notifySelection(id);
           collectNodes();
+          const focusElement = nodeWithID(id) || element;
           window.webkit.messageHandlers.openGraphiteContextMenu.postMessage({
             id: id,
             x: event.clientX,
             y: event.clientY,
+            focusFrame: focusedPreviewFramePayload(focusElement),
             candidates: layerCandidatesFor(element)
           });
         }, true);
