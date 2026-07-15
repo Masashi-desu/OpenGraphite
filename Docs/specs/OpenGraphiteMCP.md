@@ -20,6 +20,8 @@ MCP は HTML path を直接書き換える tool を提供しない。`.ogp` に�
 
 Canvas annotation tool は読み取り専用である。`list_canvas_annotations` / `get_canvas_annotation` は `.ogp` を読むだけで、HTML / CSS / runtime / build 成果物を更新しない。schema と座標の正本は [CanvasAnnotations.md](CanvasAnnotations.md) とする。
 
+project summary resource は Chapter / Collection の `.ogp` Guide 数を `guideCount` として返す。個別 Guide の読み書き tool は提供せず、app が `guides[]` を編集する。schema と screenshot / build 除外契約は [CanvasAids.md](CanvasAids.md) を正本とする。
+
 ## Resources
 
 | URI | MIME | Description |

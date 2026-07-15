@@ -4,7 +4,7 @@
 
 ## Contract Scope
 
-OpenGraphite の正本は、リポジトリ上の Web 標準ファイルと、それらを解決するための最小限の project metadata です。通常の page DOM は HTML、共通描画は CSS、text resource は locale JSON などの実装資源、component master は Collection 内の source file、canvas 配置、preview mock、公開成果物に含めない協業用注釈は `.ogp` metadata が担います。
+OpenGraphite の正本は、リポジトリ上の Web 標準ファイルと、それらを解決するための最小限の project metadata です。通常の page DOM は HTML、共通描画は CSS、text resource は locale JSON などの実装資源、component master は Collection 内の source file、canvas 配置、preview mock、公開成果物に含めない協業用注釈と Guide は `.ogp` metadata が担います。
 
 この契約の目的は、次の境界を曖昧にしないことです。
 
@@ -24,7 +24,7 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則を分�
 | `data-og-*` | エディタが扱う構造、種別、参照 | `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-component` |
 | companion CSS | ページ / component 固有のデザイン値 | `[data-og-internal-id="hero"] { gap: 32px; }` |
 | `OpenGraphite.css` | アプリ内描画とブラウザ描画を一致させる共有規則 | `[data-og-layout="vertical"]` |
-| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置、editor-only 注釈 | `htmlRoot`, `chapters`, `collections`, `canvas`, `annotations` |
+| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置、editor-only 注釈・ガイド | `htmlRoot`, `chapters`, `collections`, `canvas`, `annotations`, `guides` |
 
 class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は HTML の `data-og-*` と同名 companion CSS の node-scoped CSS declaration です。
 
@@ -51,6 +51,7 @@ app 内で編集可能な項目は、種別に関わらずこの規約に従い�
 - キャンバス上の配置、表示サイズ、ズーム初期値など、エディタ固有の情報。
 - editor preview のためだけに注入する Mock State。
 - Chapter / Collection のキャンバス前面へ置く付箋・手書き注釈。
+- Chapter / Collection で共有するキャンバスガイドの方向と world 座標。
 
 公開リポジトリで共有できるように、`.ogp` 内のパスは相対参照を基本とします。ユーザーのディスク上の絶対パスは、実行時に解決される表示情報として扱い、永続化される IR へ固定しません。
 
@@ -63,6 +64,14 @@ app 内で編集可能な項目は、種別に関わらずこの規約に従い�
 注釈の追加、本文編集、移動、手書き、消しゴム、なげわ選択後の一括操作は `.ogp` だけを更新します。なげわの複数選択状態自体は editor の一時状態であり、永続化しません。HTML、companion CSS、`OpenGraphite.css`、locale resource、runtime script を変更せず、DOM node、`data-og-*`、CSS rule、build 展開結果として出力しません。`screenshot canvas` はマルチモーダル確認用に WebKit snapshot の前面へ注釈を合成しますが、`screenshot page` / `screenshot node` は個別 HTML の画像として注釈を含めません。
 
 保存 schema、入力デバイス、Sidecar、CLI/MCP、後方互換、実機受入の詳細は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とします。
+
+## Canvas Aids Contract
+
+Ruler、Guide、Grid は design source ではなく editor preview 補助です。3機能の表示可否は app の `UserDefaults` に保存します。Guide の方向と位置だけは Pages の `chapters[].guides[]`、Components の `collections[].guides[]` を project 正本とし、HTML、companion CSS、`OpenGraphite.css`、runtime、locale resource、build 出力へ書き込みません。
+
+Guide は `internalID`、`orientation`、`position` を持ちます。位置は page / component canvas と同じ world 座標で保持し、project file の移動、共有、外部編集でも `.ogp` と一緒に移送します。CLI / MCP の project summary は Chapter / Collection ごとの `guideCount` を返しますが、canvas / page / node screenshot には Guide を描画しません。
+
+Ruler、Guide、Grid は scroll、無限余白、document padding、Zoom、canvas content origin を共有座標変換へ通します。Grid は WebView card の背面、Guide は前面、Ruler は有効 Canvas 領域の上・左へ固定表示します。詳細は [CanvasAids.md](CanvasAids.md) を正本とします。
 
 ## Editable Node Contract
 

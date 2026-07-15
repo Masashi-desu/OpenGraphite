@@ -235,5 +235,9 @@ struct OpenGraphiteApp: App {
 
             OpenGraphiteUndoRedoCommands(store: store)
         }
+
+        Settings {
+            CanvasSettingsView()
+        }
     }
 }

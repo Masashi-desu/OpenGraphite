@@ -113,13 +113,13 @@ Lasso は付箋を表示矩形、手書きを保存済みの実点・実線分�
 
 ## Undo And Redo
 
-注釈の追加、付箋本文の確定、移動、リサイズ、部分消去、全消去、削除は、既存の「取り消す」`⌘Z` と「やり直す」`⇧⌘Z` の対象です。HTML編集と注釈編集は同じ時系列 operation timeline へ積み、操作種別にかかわらず最後に確定した操作から順に適用します。なげわによる選択そのものは一時的な editor 状態なので履歴へ積まず、選択集合を移動または削除して `.ogp` を atomic write した単位を一操作として記録します。消しゴムは drag 中の各 sample ではなく、pen-up で確定した一回の gesture 全体を一履歴単位とします。
+注釈の追加、付箋本文の確定、移動、リサイズ、部分消去、全消去、削除は、既存の「取り消す」`⌘Z` と「やり直す」`⇧⌘Z` の対象です。HTML編集、注釈編集、Guide編集は同じ時系列 operation timeline へ積み、操作種別にかかわらず最後に確定した操作から順に適用します。なげわによる選択そのものは一時的な editor 状態なので履歴へ積まず、選択集合を移動または削除して `.ogp` を atomic write した単位を一操作として記録します。消しゴムは drag 中の各 sample ではなく、pen-up で確定した一回の gesture 全体を一履歴単位とします。Guide 履歴の詳細は [CanvasAids.md](CanvasAids.md) を正本とします。
 
 履歴はproject URL、対象 Chapter / Collection、変更前後の `annotations` 配列を保持します。undo/redo 直前に対象 `.ogp` の最新manifestを再読込し、対象配列が履歴の期待する現在値と一致する場合だけ、その最新manifestへ履歴値をrebaseしてatomic writeします。外部変更と競合する場合は古いsnapshotで上書きせず、履歴適用を中止して最新manifestを表示へ同期します。HTML、companion CSS、runtime、ほかの Chapter / Collection、project metadata は巻き戻しません。
 
 付箋本文は入力中の app cache ではなく、debounce または編集終了で `.ogp` へ確定した本文を履歴境界にします。ただしTextEditorがfirst responderで未確定入力を持つ間の `⌘Z` / `⇧⌘Z` は、editor全体の履歴より先にnative text undo managerへ渡します。履歴や外部同期によるcanonical本文変更はfocus中でも未確定保存をcancelし、表示中draftへ反映します。
 
-新しいHTMLまたは注釈操作を確定した場合は種別をまたいでredo分岐を破棄し、projectを開き直した場合はそのeditor sessionの履歴を初期化します。非表示projectへ遅延確定した付箋本文を、現在projectの履歴へ混入させてはいけません。履歴適用後は、存在しなくなった注釈IDだけを選択集合から除外します。
+新しいHTML、注釈、Guide操作を確定した場合は種別をまたいでredo分岐を破棄し、projectを開き直した場合はそのeditor sessionの履歴を初期化します。非表示projectへ遅延確定した付箋本文を、現在projectの履歴へ混入させてはいけません。履歴適用後は、存在しなくなった注釈IDだけを選択集合から除外します。
 
 ## Sidecar And Tablet Events
 

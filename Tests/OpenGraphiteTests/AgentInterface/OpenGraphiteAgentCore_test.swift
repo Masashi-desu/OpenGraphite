@@ -2236,6 +2236,37 @@ struct OpenGraphiteAgentCoreTests {
         #expect(graph.nodes.map(\.id) == ["cards"])
     }
 
+    /// 論理名（日本語）: Project要約ガイド件数テスト
+    /// 概要: `.ogp` の Chapter / Collection ガイド件数が project inspect に反映されることを確認します。
+    @Test("project inspectがChapterとCollectionのguideCountを返す")
+    func testInspectProjectIncludesCanvasGuideCounts() throws {
+        // コンディション：ChapterとCollectionに1本ずつguideを保存したprojectを用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeHTML(
+            "<!doctype html><html><body><Cards data-og-id=\"cards\" data-og-type=\"page\"></Cards></body></html>",
+            to: fixture.rootURL.appendingPathComponent("cards.html")
+        )
+        try fixture.writeProjectWithComponents(to: projectURL)
+        var project = try ProjectLoader().loadProject(at: projectURL).project
+        project.chapters[0].guides = [
+            OpenGraphiteCanvasGuide(internalID: "page-guide", orientation: .vertical, position: 320)
+        ]
+        project.collections[0].guides = [
+            OpenGraphiteCanvasGuide(internalID: "component-guide", orientation: .horizontal, position: -48)
+        ]
+        try JSONEncoder().encode(project).write(to: projectURL, options: .atomic)
+
+        // 検証内容：project summaryを取得する（When）
+        let summary = try fixture.core.inspectProject(at: projectURL)
+
+        // 期待値：各containerのguideCountが保存件数と一致する（Then）
+        #expect(summary.chapters.first?.guideCount == 1)
+        #expect(summary.collections.first?.guideCount == 1)
+    }
+
     /// 論理名（日本語）: Componentsセグメント検証テスト
     /// 概要: project validation が Components セグメントの HTML も検証対象に含めることを確認します。
     @Test("project validateはComponents HTMLも検証する")
@@ -2362,6 +2393,13 @@ struct OpenGraphiteAgentCoreTests {
                 ]
             )
         ]
+        annotatedProject.chapters[0].guides = [
+            OpenGraphiteCanvasGuide(
+                internalID: "build-guide-opaque",
+                orientation: .vertical,
+                position: 777
+            )
+        ]
         try JSONEncoder().encode(annotatedProject).write(to: projectURL)
 
         // 検証内容：builder で dist 相当のディレクトリへ出力する（When）
@@ -2370,7 +2408,7 @@ struct OpenGraphiteAgentCoreTests {
         let builtHTML = try String(contentsOf: outputURL.appendingPathComponent("index.html"), encoding: .utf8)
         let builtCSS = try String(contentsOf: outputURL.appendingPathComponent("OpenGraphite.css"), encoding: .utf8)
 
-        // 期待値：component は展開される一方、`.ogp` 専用注釈とmanifest自体は公開 build 成果物へ混入しない（Then）
+        // 期待値：component は展開される一方、`.ogp` 専用注釈・guide・manifestは公開 build 成果物へ混入しない（Then）
         #expect(result.built == true)
         #expect(result.pages.map(\.id) == ["home"])
         #expect(builtHTML.contains("<FeatureCard"))
@@ -2382,6 +2420,8 @@ struct OpenGraphiteAgentCoreTests {
         #expect(!builtHTML.contains("#ABCDEF"))
         #expect(!builtCSS.contains("ANNOTATION_MUST_NOT_SHIP"))
         #expect(!builtCSS.contains("#ABCDEF"))
+        #expect(!builtHTML.contains("build-guide-opaque"))
+        #expect(!builtCSS.contains("build-guide-opaque"))
         #expect(!FileManager.default.fileExists(atPath: outputURL.appendingPathComponent("Sample.ogp").path))
         #expect(!result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("Sample.ogp").path))
         #expect(result.assets.map(\.outputPath).contains(outputURL.appendingPathComponent("OpenGraphite.css").path))

@@ -451,6 +451,13 @@ private struct PathBadgeFullPathTip: View {
 /// - `isInspectorVisible`: 右カラムが表示中か。
 private struct CanvasPaneView: View {
     @EnvironmentObject private var store: EditorStore
+    @AppStorage(CanvasDisplayPreferences.showsRulersKey)
+    private var showsRulers = CanvasDisplayPreferences.showsRulersByDefault
+    @AppStorage(CanvasDisplayPreferences.showsGuidesKey)
+    private var showsGuides = CanvasDisplayPreferences.showsGuidesByDefault
+    @AppStorage(CanvasDisplayPreferences.showsGridKey)
+    private var showsGrid = CanvasDisplayPreferences.showsGridByDefault
+    @State private var canvasViewport = CanvasViewportState()
     var isSidebarVisible: Bool
     var isInspectorVisible: Bool
     var sidebarWidth: CGFloat
@@ -471,8 +478,24 @@ private struct CanvasPaneView: View {
                 .padding(.trailing, overlayAvoidance.trailing)
                 .padding(.top, overlayAvoidance.top + CanvasFocusedPreviewMetrics.modePickerClearance)
             } else if let loadedProject = store.loadedProject, hasSelectedCanvasContainer {
+                let contentOrigin = canvasContentOrigin(
+                    for: store.selectedCanvasPages,
+                    annotations: store.selectedCanvasAnnotations
+                )
+
+                if showsGrid {
+                    CanvasGridOverlay(
+                        viewport: canvasViewport,
+                        canvasOrigin: contentOrigin,
+                        zoom: store.zoom,
+                        overlayAvoidance: overlayAvoidance,
+                        showsRulers: showsRulers
+                    )
+                }
+
                 ZoomableCanvasScrollView(
                     zoom: $store.zoom,
+                    viewport: $canvasViewport,
                     documentID: canvasDocumentID(for: loadedProject, segment: store.selectedCanvasSegment, pages: store.selectedCanvasPages),
                     contentRevisionID: canvasContentRevisionID(
                         for: loadedProject,
@@ -480,10 +503,7 @@ private struct CanvasPaneView: View {
                         pages: store.selectedCanvasPages,
                         annotations: store.selectedCanvasAnnotations
                     ),
-                    contentCanvasOrigin: canvasContentOrigin(
-                        for: store.selectedCanvasPages,
-                        annotations: store.selectedCanvasAnnotations
-                    ),
+                    contentCanvasOrigin: contentOrigin,
                     overlayAvoidance: overlayAvoidance,
                     onEmptyCanvasClick: {
                         store.clearCanvasSelection()
@@ -492,9 +512,28 @@ private struct CanvasPaneView: View {
                     canvasContent(for: loadedProject)
                 }
 
+                CanvasRulerGuideOverlay(
+                    viewport: canvasViewport,
+                    canvasOrigin: contentOrigin,
+                    zoom: store.zoom,
+                    overlayAvoidance: overlayAvoidance,
+                    showsRulers: showsRulers,
+                    showsGuides: showsGuides,
+                    guides: store.selectedCanvasGuides,
+                    onAddGuide: { orientation, position in
+                        store.addCanvasGuide(orientation: orientation, position: position)
+                    },
+                    onUpdateGuide: { id, position in
+                        store.updateCanvasGuide(id: id, position: position)
+                    },
+                    onDeleteGuide: { id in
+                        store.deleteCanvasGuide(id: id)
+                    }
+                )
+
                 CanvasToolPalette(activeTool: $store.activeTool)
-                    .padding(.leading, overlayAvoidance.leading + 14)
-                    .padding(.top, overlayAvoidance.top + 14)
+                    .padding(.leading, overlayAvoidance.leading + rulerContentInset + 14)
+                    .padding(.top, overlayAvoidance.top + rulerContentInset + 14)
                     .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.leading)
                     .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
             } else {
@@ -509,7 +548,7 @@ private struct CanvasPaneView: View {
             CanvasPreviewModePicker(mode: $store.previewDisplayMode)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 .padding(.trailing, overlayAvoidance.trailing + 14)
-                .padding(.top, overlayAvoidance.top + 14)
+                .padding(.top, overlayAvoidance.top + rulerContentInset + 14)
                 .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.trailing)
                 .animation(.easeInOut(duration: 0.16), value: overlayAvoidance.top)
 
@@ -549,6 +588,17 @@ private struct CanvasPaneView: View {
         case .components:
             return store.selectedComponentCollection != nil
         }
+    }
+
+    private var rulerContentInset: CGFloat {
+        guard showsRulers,
+              store.focusedPreviewTarget == nil,
+              store.loadedProject != nil,
+              hasSelectedCanvasContainer
+        else {
+            return 0
+        }
+        return CanvasAidLayout.rulerThickness
     }
 
     /// 論理名（日本語）: キャンバス表示内容生成関数
@@ -3068,7 +3118,7 @@ struct CanvasPageVisualLayout: Equatable {
 /// - `pageNameCardMaxTextWidth`: ページ名カードの最大テキスト幅。
 /// - `pageNameCardOutsideOffset`: ページ名カードをページ枠外へ出す垂直オフセット。
 /// - `pageDragMinimumDistance`: キャプションカードのドラッグ開始距離。
-private enum CanvasMetrics {
+enum CanvasMetrics {
     static let documentPadding: CGFloat = 72
     static let projectCoordinateSpaceName = "OpenGraphiteCanvasProject"
     static let pageNameCardHeight: CGFloat = 44
@@ -4143,6 +4193,7 @@ private final class CanvasFinitePreviewScrollView: NSScrollView {
 ///
 /// プロパティ:
 /// - `zoom`: 双方向バインディングされたキャンバス倍率。
+/// - `viewport`: ルーラー、ガイド、グリッドへ渡す現在の表示領域状態。
 /// - `documentID`: 表示中ドキュメントの識別子。
 /// - `contentRevisionID`: 表示内容の更新要否を表す識別子。
 /// - `contentCanvasOrigin`: canvas content を document 座標へ写すときの原点。
@@ -4150,6 +4201,7 @@ private final class CanvasFinitePreviewScrollView: NSScrollView {
 /// - `content`: スクロールビュー内に表示する SwiftUI content。
 private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     @Binding var zoom: Double
+    @Binding var viewport: CanvasViewportState
     var documentID: String
     var contentRevisionID: String
     var contentCanvasOrigin: CGPoint
@@ -4162,6 +4214,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///
     /// - Parameters:
     ///   - zoom: キャンバス倍率のバインディング。
+    ///   - viewport: 補助表示と同期する viewport 状態のバインディング。
     ///   - documentID: 表示中ドキュメントの識別子。
     ///   - contentRevisionID: 表示内容の更新要否を表す識別子。
     ///   - contentCanvasOrigin: canvas content を document 座標へ写すときの原点。
@@ -4170,6 +4223,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///   - content: スクロールビュー内に表示する SwiftUI content。
     init(
         zoom: Binding<Double>,
+        viewport: Binding<CanvasViewportState>,
         documentID: String,
         contentRevisionID: String,
         contentCanvasOrigin: CGPoint,
@@ -4178,6 +4232,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         @ViewBuilder content: @escaping () -> Content
     ) {
         self._zoom = zoom
+        self._viewport = viewport
         self.documentID = documentID
         self.contentRevisionID = contentRevisionID
         self.contentCanvasOrigin = contentCanvasOrigin
@@ -4193,6 +4248,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             zoom: $zoom,
+            viewport: $viewport,
             documentID: documentID,
             contentRevisionID: contentRevisionID,
             contentCanvasOrigin: contentCanvasOrigin,
@@ -4220,6 +4276,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         context.coordinator.attach(to: scrollView)
         context.coordinator.refreshDocumentSize()
         scrollView.refreshScrollIndicators()
+        context.coordinator.publishViewportState()
 
         return scrollView
     }
@@ -4232,6 +4289,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///   - context: SwiftUI が提供する representable context。
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.zoom = $zoom
+        context.coordinator.viewport = $viewport
         context.coordinator.onEmptyCanvasClick = onEmptyCanvasClick
         context.coordinator.updateContent(
             documentID: documentID,
@@ -4244,6 +4302,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             scrollView.overlayAvoidance = overlayAvoidance
             scrollView.refreshScrollIndicators()
         }
+        context.coordinator.publishViewportState()
     }
 
     /// 論理名（日本語）: NSScrollView解体関数
@@ -4253,6 +4312,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     ///   - nsView: 解体対象の NSScrollView。
     ///   - coordinator: 紐づくコーディネーター。
     static func dismantleNSView(_ nsView: NSScrollView, coordinator: Coordinator) {
+        (nsView as? CanvasOverlayScrollView)?.viewportDidChange = nil
         coordinator.dismantle()
     }
 
@@ -4268,6 +4328,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
     /// - `pendingZoomAnchor`: 次のズーム反映時に使う基準点。
     final class Coordinator: NSObject {
         var zoom: Binding<Double>
+        var viewport: Binding<CanvasViewportState>
         var content: () -> Content
         var onEmptyCanvasClick: () -> Void
         let hostingView: NSHostingView<Content>
@@ -4282,12 +4343,14 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         private var lastZoom: Double
         private var pendingZoomAnchor: CanvasZoomAnchorSnapshot?
         private weak var cachedScrollRoutingWebView: WKWebView?
+        private var isViewportPublishScheduled = false
 
         /// 論理名（日本語）: キャンバススクロールコーディネーター初期化関数
         /// 処理概要: ズームバインディング、ドキュメント ID、初期 content を hosting view に保持します。
         ///
         /// - Parameters:
         ///   - zoom: キャンバス倍率のバインディング。
+        ///   - viewport: 補助表示と同期する viewport 状態のバインディング。
         ///   - documentID: 表示中ドキュメントの識別子。
         ///   - contentRevisionID: 表示内容の更新要否を表す識別子。
         ///   - contentCanvasOrigin: canvas content を document 座標へ写すときの原点。
@@ -4295,6 +4358,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         ///   - content: 初期表示する SwiftUI content。
         init(
             zoom: Binding<Double>,
+            viewport: Binding<CanvasViewportState>,
             documentID: String,
             contentRevisionID: String,
             contentCanvasOrigin: CGPoint,
@@ -4302,6 +4366,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             content: @escaping () -> Content
         ) {
             self.zoom = zoom
+            self.viewport = viewport
             self.content = content
             self.onEmptyCanvasClick = onEmptyCanvasClick
             self.renderedDocumentID = documentID
@@ -4323,6 +4388,9 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         /// - Parameter scrollView: 接続対象の NSScrollView。
         func attach(to scrollView: NSScrollView) {
             self.scrollView = scrollView
+            (scrollView as? CanvasOverlayScrollView)?.viewportDidChange = { [weak self] in
+                self?.publishViewportState()
+            }
             guard monitor == nil else { return }
 
             monitor = NSEvent.addLocalMonitorForEvents(matching: CanvasZoomInputResolver.eventMask) { [weak self] event in
@@ -4400,6 +4468,26 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             refreshDocumentSize(force: true)
         }
 
+        /// 論理名（日本語）: キャンバス表示領域公開関数
+        /// 処理概要: AppKit の clip 原点と hosting view 原点を次の main run loop で SwiftUI 補助表示へ反映します。
+        func publishViewportState() {
+            guard !isViewportPublishScheduled else { return }
+            isViewportPublishScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                isViewportPublishScheduled = false
+                guard let scrollView else { return }
+                let nextState = CanvasViewportState(
+                    visibleOrigin: scrollView.contentView.bounds.origin,
+                    hostingOrigin: documentView.hostingView.frame.origin,
+                    viewportSize: scrollView.contentView.bounds.size
+                )
+                if viewport.wrappedValue != nextState {
+                    viewport.wrappedValue = nextState
+                }
+            }
+        }
+
         /// 論理名（日本語）: ドキュメント表示位置リセット関数
         /// 処理概要: 表示ページが切り替わったときに無限キャンバスの余白とスクロール位置を初期化します。
         private func resetDocumentViewPosition() {
@@ -4460,6 +4548,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             }
             monitor = nil
             cachedScrollRoutingWebView = nil
+            isViewportPublishScheduled = false
         }
 
         /// 論理名（日本語）: 入力イベント処理関数
@@ -5195,6 +5284,8 @@ private final class CanvasOverlayScrollView: NSScrollView {
         }
     }
 
+    var viewportDidChange: (() -> Void)?
+
     private let verticalIndicator = CanvasScrollIndicatorView(axis: .vertical)
     private let horizontalIndicator = CanvasScrollIndicatorView(axis: .horizontal)
     private var scrollActivityGeneration = 0
@@ -5223,6 +5314,7 @@ private final class CanvasOverlayScrollView: NSScrollView {
     override func layout() {
         super.layout()
         refreshScrollIndicators()
+        viewportDidChange?()
     }
 
     /// 論理名（日本語）: クリップビュー反映関数
@@ -5232,6 +5324,7 @@ private final class CanvasOverlayScrollView: NSScrollView {
     override func reflectScrolledClipView(_ clipView: NSClipView) {
         super.reflectScrolledClipView(clipView)
         refreshScrollIndicators()
+        viewportDidChange?()
     }
 
     /// 論理名（日本語）: スクロールホイール処理関数

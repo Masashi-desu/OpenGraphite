@@ -263,6 +263,17 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 選択キャンバスガイド一覧
+    /// 概要: 現在の Pages Chapter または Components Collection に保存された `.ogp` ガイドを返します。
+    var selectedCanvasGuides: [OpenGraphiteCanvasGuide] {
+        switch selectedCanvasSegment {
+        case .pages:
+            return selectedChapter?.guides ?? []
+        case .components:
+            return selectedComponentCollection?.guides ?? []
+        }
+    }
+
     var selectedCanvasAnnotation: OpenGraphiteCanvasAnnotation? {
         guard let selectedCanvasAnnotationID else { return nil }
         return selectedCanvasAnnotations.first { $0.internalID == selectedCanvasAnnotationID }
@@ -2106,6 +2117,65 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: キャンバスガイド追加関数
+    /// 処理概要: 現在表示中の Chapter / Collection へガイドを追加し、`.ogp` だけを保存します。
+    ///
+    /// - Parameters:
+    ///   - orientation: 水平または垂直のガイド方向。
+    ///   - position: 垂直なら X、水平なら Y のキャンバス world 座標。
+    /// - Returns: 追加したガイドの内部 ID。保存できない場合は `nil`。
+    @discardableResult
+    func addCanvasGuide(
+        orientation: OpenGraphiteCanvasGuideOrientation,
+        position: Double
+    ) -> String? {
+        guard let position = OpenGraphiteCanvasGuide.normalizedPosition(position) else { return nil }
+        let internalID = UUID().uuidString.lowercased()
+        let guide = OpenGraphiteCanvasGuide(
+            internalID: internalID,
+            orientation: orientation,
+            position: position
+        )
+        guard persistSelectedCanvasGuides({ guides in
+            guides.append(guide)
+            return true
+        }, status: "ガイドを .ogp に追加しました。") else {
+            return nil
+        }
+        return internalID
+    }
+
+    /// 論理名（日本語）: キャンバスガイド位置更新関数
+    /// 処理概要: 指定ガイドの方向と内部 ID を維持し、world 座標を `.ogp` へ保存します。
+    ///
+    /// - Parameters:
+    ///   - id: 更新対象ガイドの内部 ID。
+    ///   - position: 更新後の X または Y world 座標。
+    func updateCanvasGuide(id: String, position: Double) {
+        guard let position = OpenGraphiteCanvasGuide.normalizedPosition(position) else { return }
+        _ = persistSelectedCanvasGuides({ guides in
+            guard let index = guides.firstIndex(where: { $0.internalID == id }),
+                  guides[index].position != position
+            else {
+                return false
+            }
+            guides[index].position = position
+            return true
+        }, status: "ガイドの位置を .ogp に保存しました。")
+    }
+
+    /// 論理名（日本語）: キャンバスガイド削除関数
+    /// 処理概要: 指定ガイドを現在の Chapter / Collection から削除して `.ogp` へ保存します。
+    ///
+    /// - Parameter id: 削除対象ガイドの内部 ID。
+    func deleteCanvasGuide(id: String) {
+        _ = persistSelectedCanvasGuides({ guides in
+            let previousCount = guides.count
+            guides.removeAll { $0.internalID == id }
+            return guides.count != previousCount
+        }, status: "ガイドを .ogp から削除しました。")
+    }
+
     /// 論理名（日本語）: 付箋追加関数
     /// 処理概要: 現在表示中の Chapter / Collection へテキスト編集可能な付箋を追加し、`.ogp` だけを保存します。
     ///
@@ -2505,7 +2575,7 @@ final class EditorStore: ObservableObject {
                 $0.internalID == historyTarget.containerInternalID
             }
             guard let chapterIndex else {
-                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
                 return false
             }
             previousAnnotations = targetProject.project.chapters[chapterIndex].annotations
@@ -2514,7 +2584,7 @@ final class EditorStore: ObservableObject {
                     targetProject.project.chapters[chapterIndex].annotations,
                     expectedByID: expectedDiskAnnotationsByID
                ) {
-                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
                 statusMessage = ".ogp の外部変更を検出したため、手書きの消去を中止しました。もう一度操作してください。"
                 return false
             }
@@ -2524,7 +2594,7 @@ final class EditorStore: ObservableObject {
                 $0.internalID == historyTarget.containerInternalID
             }
             guard let collectionIndex else {
-                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
                 return false
             }
             previousAnnotations = targetProject.project.collections[collectionIndex].annotations
@@ -2533,7 +2603,7 @@ final class EditorStore: ObservableObject {
                     targetProject.project.collections[collectionIndex].annotations,
                     expectedByID: expectedDiskAnnotationsByID
                ) {
-                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
                 statusMessage = ".ogp の外部変更を検出したため、手書きの消去を中止しました。もう一度操作してください。"
                 return false
             }
@@ -2542,7 +2612,7 @@ final class EditorStore: ObservableObject {
         guard didChange else {
             if targetProject.project != currentProject.project
                 || targetProject.rootURL != currentProject.rootURL {
-                synchronizeAfterCanvasAnnotationDiskChange(targetProject)
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
             }
             return false
         }
@@ -2575,6 +2645,88 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 選択Canvasガイド保存関数
+    /// 処理概要: 最新 `.ogp` を再読込し、現在表示中の Chapter / Collection のガイド配列だけを atomic write して統合履歴へ記録します。
+    ///
+    /// - Parameters:
+    ///   - mutation: ガイド配列を変更し、保存が必要な場合に `true` を返す処理。
+    ///   - status: 保存成功時に表示するステータス文言。
+    /// - Returns: `.ogp` を更新できた場合は `true`。
+    @discardableResult
+    private func persistSelectedCanvasGuides(
+        _ mutation: (inout [OpenGraphiteCanvasGuide]) -> Bool,
+        status: String
+    ) -> Bool {
+        guard let currentProject = loadedProject,
+              let historyTarget = selectedCanvasGuideHistoryTarget(in: currentProject.project)
+        else {
+            return false
+        }
+
+        var targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: currentProject.fileURL)
+        } catch {
+            lastError = ".ogp の保存前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+
+        let didChange: Bool
+        let previousGuides: [OpenGraphiteCanvasGuide]
+        switch historyTarget.segment {
+        case .pages:
+            guard let chapterIndex = targetProject.project.chapters.firstIndex(where: {
+                $0.internalID == historyTarget.containerInternalID
+            }) else {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+                return false
+            }
+            previousGuides = targetProject.project.chapters[chapterIndex].guides
+            didChange = mutation(&targetProject.project.chapters[chapterIndex].guides)
+        case .components:
+            guard let collectionIndex = targetProject.project.collections.firstIndex(where: {
+                $0.internalID == historyTarget.containerInternalID
+            }) else {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+                return false
+            }
+            previousGuides = targetProject.project.collections[collectionIndex].guides
+            didChange = mutation(&targetProject.project.collections[collectionIndex].guides)
+        }
+        guard didChange else {
+            if targetProject.project != currentProject.project
+                || targetProject.rootURL != currentProject.rootURL {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+            }
+            return false
+        }
+
+        do {
+            targetProject.project = targetProject.project.normalizedInternalIDs()
+            try writeProjectManifest(targetProject.project, to: targetProject.fileURL)
+            removeMissingStagedCanvasAnnotationTextDrafts(
+                from: targetProject.project,
+                projectURL: targetProject.fileURL
+            )
+            self.loadedProject = targetProject
+            reconcileCanvasAnnotationSelectionAfterManifestChange()
+            let nextGuides = canvasGuides(for: historyTarget, in: targetProject.project) ?? []
+            recordCanvasGuideHistory(
+                projectURL: targetProject.fileURL,
+                target: historyTarget,
+                previousGuides: previousGuides,
+                nextGuides: nextGuides
+            )
+            lastError = nil
+            statusMessage = status
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
     /// 論理名（日本語）: 保存前注釈一致判定関数
     /// 処理概要: 最新 `.ogp` の対象 container 内で、今回更新する注釈 ID が gesture 開始時の値から変わっていないことを確認します。
     ///
@@ -2592,11 +2744,11 @@ final class EditorStore: ObservableObject {
         }
     }
 
-    /// 論理名（日本語）: キャンバス注釈Disk変更同期関数
-    /// 処理概要: 保存直前に読み込んだ最新 manifest を表示へ反映し、削除済み注釈の未確定本文だけを破棄します。
+    /// 論理名（日本語）: キャンバスManifest変更同期関数
+    /// 処理概要: 注釈またはガイドの保存直前に読み込んだ最新 manifest を表示へ反映し、削除済み注釈の未確定本文だけを破棄します。
     ///
     /// - Parameter project: ディスクから読み込んだ最新 project。
-    private func synchronizeAfterCanvasAnnotationDiskChange(
+    private func synchronizeAfterCanvasManifestDiskChange(
         _ project: LoadedOpenGraphiteProject
     ) {
         removeMissingStagedCanvasAnnotationTextDrafts(
@@ -2860,6 +3012,61 @@ final class EditorStore: ObservableObject {
             return project.chapters.first { $0.internalID == target.containerInternalID }?.annotations
         case .components:
             return project.collections.first { $0.internalID == target.containerInternalID }?.annotations
+        }
+    }
+
+    /// 論理名（日本語）: 選択キャンバスガイド履歴対象取得関数
+    /// 処理概要: 現在の segment と選択 container を、最新 manifest へ rebase できるガイド履歴対象へ変換します。
+    ///
+    /// - Parameter project: 選択解決の基準にする現在の project。
+    /// - Returns: 選択中 Chapter / Collection。対象がなければ `nil`。
+    private func selectedCanvasGuideHistoryTarget(
+        in project: OpenGraphiteProject
+    ) -> CanvasGuideHistoryTarget? {
+        switch selectedCanvasSegment {
+        case .pages:
+            let containerInternalID = selectedChapterInternalID
+                ?? project.chapters.first?.internalID
+            guard let containerInternalID,
+                  project.chapters.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasGuideHistoryTarget(
+                segment: .pages,
+                containerInternalID: containerInternalID
+            )
+        case .components:
+            let containerInternalID = selectedCollectionInternalID
+                ?? project.collections.first?.internalID
+            guard let containerInternalID,
+                  project.collections.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasGuideHistoryTarget(
+                segment: .components,
+                containerInternalID: containerInternalID
+            )
+        }
+    }
+
+    /// 論理名（日本語）: コンテナガイド配列取得関数
+    /// 処理概要: 履歴対象が示す Chapter / Collection のガイド配列を取得します。
+    ///
+    /// - Parameters:
+    ///   - target: ガイド履歴対象コンテナ。
+    ///   - project: 取得対象 project。
+    /// - Returns: 対象コンテナのガイド配列。対象が存在しない場合は `nil`。
+    private func canvasGuides(
+        for target: CanvasGuideHistoryTarget,
+        in project: OpenGraphiteProject
+    ) -> [OpenGraphiteCanvasGuide]? {
+        switch target.segment {
+        case .pages:
+            return project.chapters.first { $0.internalID == target.containerInternalID }?.guides
+        case .components:
+            return project.collections.first { $0.internalID == target.containerInternalID }?.guides
         }
     }
 
@@ -4170,13 +4377,13 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ドキュメント変更取り消し関数
-    /// 処理概要: 現在ページの HTML または直前のキャンバス注釈変更を一段戻し、各正本へ適用します。
+    /// 処理概要: HTML、キャンバス注釈、ガイドの統合履歴を一段戻し、各正本へ適用します。
     func undoDocumentChange() {
         applyHistoryNavigation(direction: .undo)
     }
 
     /// 論理名（日本語）: ドキュメント変更やり直し関数
-    /// 処理概要: 現在ページの HTML またはキャンバス注釈の redo 履歴を一段進め、各正本へ適用します。
+    /// 処理概要: HTML、キャンバス注釈、ガイドの統合 redo 履歴を一段進め、各正本へ適用します。
     func redoDocumentChange() {
         applyHistoryNavigation(direction: .redo)
     }
@@ -4433,11 +4640,28 @@ final class EditorStore: ObservableObject {
         var nextAnnotations: [OpenGraphiteCanvasAnnotation]
     }
 
+    /// 論理名（日本語）: キャンバスガイド履歴対象
+    /// 概要: `.ogp` 内で undo/redo のガイド配列を差し替える Chapter または Collection を識別します。
+    private struct CanvasGuideHistoryTarget: Equatable {
+        var segment: OpenGraphiteCanvasSegment
+        var containerInternalID: String
+    }
+
+    /// 論理名（日本語）: キャンバスガイド履歴項目
+    /// 概要: 一度の `.ogp` atomic write によるガイド変更前後を、⌘Z／やり直しの一操作として保持します。
+    private struct CanvasGuideHistoryEntry: Equatable {
+        var projectURL: URL
+        var target: CanvasGuideHistoryTarget
+        var previousGuides: [OpenGraphiteCanvasGuide]
+        var nextGuides: [OpenGraphiteCanvasGuide]
+    }
+
     /// 論理名（日本語）: エディター統合履歴項目
-    /// 概要: HTML とキャンバス注釈の保存操作を、domain をまたいだ一つの時系列として保持します。
+    /// 概要: HTML、キャンバス注釈、ガイドの保存操作を、domain をまたいだ一つの時系列として保持します。
     private enum EditorHistoryEntry: Equatable {
         case document(DocumentHistoryEntry)
         case canvasAnnotation(CanvasAnnotationHistoryEntry)
+        case canvasGuide(CanvasGuideHistoryEntry)
 
         /// 論理名（日本語）: 履歴Project URL
         /// 処理概要: 操作記録時に固定した `.ogp` URL を返します。
@@ -4446,6 +4670,8 @@ final class EditorStore: ObservableObject {
             case let .document(entry):
                 return entry.projectURL
             case let .canvasAnnotation(entry):
+                return entry.projectURL
+            case let .canvasGuide(entry):
                 return entry.projectURL
             }
         }
@@ -5869,7 +6095,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: エディター統合履歴記録関数
-    /// 処理概要: HTML または注釈の一操作を undo 側へ積み、domain を問わず既存 redo 分岐を破棄します。
+    /// 処理概要: HTML、注釈、ガイドの一操作を undo 側へ積み、domain を問わず既存 redo 分岐を破棄します。
     ///
     /// - Parameter entry: 記録する履歴項目。
     private func recordEditorHistory(_ entry: EditorHistoryEntry) {
@@ -5885,7 +6111,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 履歴移動適用関数
-    /// 処理概要: HTML と注釈を同じ時系列から一項目だけ取り出し、対応する正本へ適用します。
+    /// 処理概要: HTML、注釈、ガイドを同じ時系列から一項目だけ取り出し、対応する正本へ適用します。
     ///
     /// - Parameter direction: 適用する履歴移動方向。
     private func applyHistoryNavigation(direction: HistoryNavigationDirection) {
@@ -5909,6 +6135,8 @@ final class EditorStore: ObservableObject {
             didApply = applyDocumentHistoryNavigation(direction: direction, entry: documentEntry)
         case let .canvasAnnotation(annotationEntry):
             didApply = applyCanvasAnnotationHistoryNavigation(direction: direction, entry: annotationEntry)
+        case let .canvasGuide(guideEntry):
+            didApply = applyCanvasGuideHistoryNavigation(direction: direction, entry: guideEntry)
         }
         guard didApply else {
             updateHistoryAvailability()
@@ -6175,6 +6403,127 @@ final class EditorStore: ObservableObject {
         editorRedoStack.removeAll()
         lastError = nil
         statusMessage = ".ogp の外部変更を検出したため、キャンバス注釈の履歴適用を中止しました。"
+        restartExternalProjectMonitoring(force: true)
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: キャンバスガイド履歴記録関数
+    /// 処理概要: 一度のガイド保存を project 全体の統合時系列へ積み、新しい分岐として redo 履歴を破棄します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: ガイドを保存した `.ogp` URL。
+    ///   - target: 変更対象コンテナ。
+    ///   - previousGuides: 保存前のガイド配列。
+    ///   - nextGuides: 保存後のガイド配列。
+    private func recordCanvasGuideHistory(
+        projectURL: URL,
+        target: CanvasGuideHistoryTarget,
+        previousGuides: [OpenGraphiteCanvasGuide],
+        nextGuides: [OpenGraphiteCanvasGuide]
+    ) {
+        guard previousGuides != nextGuides else { return }
+        recordEditorHistory(
+            .canvasGuide(
+                CanvasGuideHistoryEntry(
+                    projectURL: projectURL.standardizedFileURL,
+                    target: target,
+                    previousGuides: previousGuides,
+                    nextGuides: nextGuides
+                )
+            )
+        )
+    }
+
+    /// 論理名（日本語）: キャンバスガイド履歴移動適用関数
+    /// 処理概要: 最新 `.ogp` の対象配列が期待値と一致する場合だけ、履歴のガイド配列を差し替えて atomic write します。
+    ///
+    /// - Parameters:
+    ///   - direction: 適用する履歴移動方向。
+    ///   - entry: project、container、変更前後配列を固定したガイド履歴項目。
+    /// - Returns: ガイド履歴を適用できた場合は `true`。
+    private func applyCanvasGuideHistoryNavigation(
+        direction: HistoryNavigationDirection,
+        entry: CanvasGuideHistoryEntry
+    ) -> Bool {
+        let targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: entry.projectURL)
+        } catch {
+            lastError = "ガイド履歴の適用前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+        guard loadedProject?.fileURL.standardizedFileURL == targetProject.fileURL.standardizedFileURL else {
+            return false
+        }
+
+        var updatedProject = targetProject
+        let expectedGuides = direction == .undo
+            ? entry.nextGuides
+            : entry.previousGuides
+        let replacementGuides = direction == .undo
+            ? entry.previousGuides
+            : entry.nextGuides
+        guard canvasGuides(for: entry.target, in: updatedProject.project) == expectedGuides else {
+            synchronizeAfterCanvasGuideHistoryConflict(with: targetProject)
+            return false
+        }
+
+        switch entry.target.segment {
+        case .pages:
+            guard let index = updatedProject.project.chapters.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasGuideHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.chapters[index].guides = replacementGuides
+        case .components:
+            guard let index = updatedProject.project.collections.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasGuideHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.collections[index].guides = replacementGuides
+        }
+
+        do {
+            try writeProjectManifest(updatedProject.project, to: entry.projectURL)
+            removeMissingStagedCanvasAnnotationTextDrafts(
+                from: updatedProject.project,
+                projectURL: updatedProject.fileURL
+            )
+            self.loadedProject = updatedProject
+            reconcileCanvasAnnotationSelectionAfterManifestChange()
+            lastError = nil
+            statusMessage = direction == .undo
+                ? "キャンバスガイドの変更を取り消しました。"
+                : "キャンバスガイドの変更をやり直しました。"
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = "ガイド履歴の同期に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: ガイド履歴競合同期関数
+    /// 処理概要: 履歴記録後に対象ガイド配列が外部変更された場合、上書きを中止して最新 manifest を表示し、無効化された時系列を破棄します。
+    ///
+    /// - Parameter project: ディスクから再読込した最新 project。
+    private func synchronizeAfterCanvasGuideHistoryConflict(
+        with project: LoadedOpenGraphiteProject
+    ) {
+        removeMissingStagedCanvasAnnotationTextDrafts(
+            from: project.project,
+            projectURL: project.fileURL
+        )
+        loadedProject = project
+        reconcileCanvasAnnotationSelectionAfterManifestChange()
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        lastError = nil
+        statusMessage = ".ogp の外部変更を検出したため、キャンバスガイドの履歴適用を中止しました。"
         restartExternalProjectMonitoring(force: true)
         updateHistoryAvailability()
     }

@@ -27,7 +27,7 @@ ogkiln build <project.ogp|current> --output <dir>
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
 
-`project inspect` の Chapter / Collection summary は、各キャンバスに保存された `.ogp` 注釈数を `annotationCount` として返す。
+`project inspect` の Chapter / Collection summary は、各キャンバスに保存された `.ogp` 注釈数を `annotationCount`、Guide 数を `guideCount` として返す。
 
 `project create` は `--root` で指定した project root を HTML/CSS の解決基準とし、`--output` で指定した場所に新規 `.ogp` を作成する。`--output` に `.ogp` 拡張子がない場合は補完する。`.ogp` の配置ディレクトリと project root が異なる場合は、`.ogp` から見た相対 `repositoryRoot` を保存する。project root に `public` がない場合は `public/index.html`、`public/index.css`、`CSS/OpenGraphite.css` と `home` page entry を作る。既存 `public` がある場合は HTML を自動登録せず空 Chapter の manifest を作り、`CSS/OpenGraphite.css` がなければ CLI が解決した seed をコピーする。
 

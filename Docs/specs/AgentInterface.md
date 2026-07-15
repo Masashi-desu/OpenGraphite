@@ -23,6 +23,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 - [`OgkilnCLI.md`](OgkilnCLI.md): CLI command、JSON output、編集操作。
 - [`OpenGraphiteMCP.md`](OpenGraphiteMCP.md): MCP resources / tools と `ogkiln` への対応。
 - [`CanvasAnnotations.md`](CanvasAnnotations.md): `.ogp` 注釈の schema、座標、Sidecar、CLI/MCP、screenshot 契約。
+- [`CanvasAids.md`](CanvasAids.md): `.ogp` Guide の schema、座標、表示設定、screenshot / build 除外契約。
 
 ## Project Summary
 
@@ -43,6 +44,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "index": 0,
       "title": "Main",
       "annotationCount": 0,
+      "guideCount": 0,
       "pages": [
         {
           "chapterID": "main",
@@ -93,6 +95,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "index": 0,
       "title": "Main",
       "annotationCount": 0,
+      "guideCount": 0,
       "components": [
         {
           "collectionID": "main",
@@ -130,6 +133,8 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 ```
 
 `internalID` は `.ogp` 内で一意な内部キーである。表示名や `id` を含まない不透明 ID として扱い、保存時には manifest に書き戻す。
+
+Guide は Pages では `chapters[].guides[]`、Components では `collections[].guides[]` に `internalID`、`orientation`、`position` を保存する。project summary は各 container の `guideCount` を返すが、Guide は HTML graph、canvas / page / node screenshot、build 出力には含めない。詳細は [CanvasAids.md](CanvasAids.md) を正本とする。
 
 HTML document context は `.ogp` ではなく HTML 正本の `<html>` attribute と OpenGraphite metadata に保存する。`lang` / `dir` は常に HTML 仕様上の fallback 値であり、変数名を直接入れない。実装側 state に bind する場合は `data-og-lang-source="binding"` / `data-og-lang-field="<fieldName>"`、`data-og-dir-source="binding"` / `data-og-dir-field="<fieldName>"` を使う。`dir` を resolved lang から推定する場合は `data-og-dir-source="auto"` を使う。
 
@@ -425,4 +430,4 @@ MCP の write tool は OpenGraphite app に直接命令しない。リポジト�
 
 OpenGraphite app は `.ogp` に含まれる全 HTML ファイルの外部変更を検出し、ディスク上の正本 HTML を WebView に反映する。選択中ページは WebView 置換要求として履歴と選択状態を保ち、非選択ページは reload token によりキャンバス上のプレビューを再読み込みする。app 内で未適用の mutation または document replacement がある場合、選択中ページの外部変更を破壊的に上書きせず、ユーザーへ衝突として見える状態にする。
 
-`.ogp` project manifest も外部変更監視の対象にする。`ogkiln project page add`、`ogkiln project page create`、`ogkiln project page place`、`ogkiln project component add`、`ogkiln project component create`、`ogkiln project component place`、`ogkiln project component remove` が entry と canvas 配置を更新した場合、または外部編集で `annotations` が変わった場合、app は project manifest を再読み込みし、既存の選択 Chapter / Collection と選択ページ / component canvas を可能な限り維持したまま Canvas 上の配置と注釈を更新する。
+`.ogp` project manifest も外部変更監視の対象にする。`ogkiln project page add`、`ogkiln project page create`、`ogkiln project page place`、`ogkiln project component add`、`ogkiln project component create`、`ogkiln project component place`、`ogkiln project component remove` が entry と canvas 配置を更新した場合、または外部編集で `annotations` / `guides` が変わった場合、app は project manifest を再読み込みし、既存の選択 Chapter / Collection と選択ページ / component canvas を可能な限り維持したまま Canvas 上の配置、注釈、Guide を更新する。

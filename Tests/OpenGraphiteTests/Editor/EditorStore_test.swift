@@ -1446,6 +1446,215 @@ struct EditorStoreTests {
         #expect(persistedComponent.canvas == expectedComponentCanvas)
     }
 
+    /// 論理名（日本語）: キャンバスガイド永続化テスト
+    /// 概要: Pages / Components のガイド追加・移動・削除が `.ogp` だけへ保存されることを検証します。
+    @Test("guideをChapterとCollectionのogpデータへ保存する")
+    func testCanvasGuidesPersistToSelectedProjectContainers() throws {
+        // コンディション：Chapter、Collection、HTML、companion CSSを持つprojectを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        var project = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        project.collections = [
+            OpenGraphiteComponentCollection(
+                id: "components",
+                internalID: "collection-opaque",
+                title: "Components",
+                components: []
+            )
+        ]
+        try JSONEncoder().encode(project).write(to: fixture.projectURL, options: .atomic)
+        try fixture.writeCompanionCSS("body { color: #202020; }")
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        let originalHTML = try Data(contentsOf: fixture.htmlURL)
+        let originalCSS = try Data(contentsOf: cssURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：Chapterでguideを追加・移動し、Collectionでは追加・移動・削除を行う（When）
+        let chapterGuideID = try #require(store.addCanvasGuide(orientation: .vertical, position: 320))
+        store.updateCanvasGuide(id: chapterGuideID, position: 640)
+        #expect(store.addCanvasGuide(orientation: .vertical, position: .infinity) == nil)
+        store.selectCollection(internalID: "collection-opaque")
+        let collectionGuideID = try #require(store.addCanvasGuide(orientation: .horizontal, position: -48))
+        store.updateCanvasGuide(id: collectionGuideID, position: -96)
+        let deletedGuideID = try #require(store.addCanvasGuide(orientation: .vertical, position: 100))
+        store.deleteCanvasGuide(id: deletedGuideID)
+        let reloaded = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let chapterGuide = try #require(reloaded.chapters.first?.guides.first)
+        let collectionGuide = try #require(reloaded.collections.first?.guides.first)
+
+        // 期待値：containerごとのguideだけがogpへ残り、HTMLとCSSはbyte単位で維持される（Then）
+        #expect(chapterGuide.internalID == chapterGuideID)
+        #expect(chapterGuide.orientation == .vertical)
+        #expect(chapterGuide.position == 640)
+        #expect(reloaded.collections.first?.guides.count == 1)
+        #expect(collectionGuide.internalID == collectionGuideID)
+        #expect(collectionGuide.orientation == .horizontal)
+        #expect(collectionGuide.position == -96)
+        #expect(store.selectedCanvasGuides == [collectionGuide])
+        #expect(try Data(contentsOf: fixture.htmlURL) == originalHTML)
+        #expect(try Data(contentsOf: cssURL) == originalCSS)
+    }
+
+    /// 論理名（日本語）: キャンバスガイドUndo/Redoテスト
+    /// 概要: ガイドの追加・移動・削除をそれぞれ一操作として取り消し、やり直せることを検証します。
+    @Test("guideの追加移動削除を取り消してやり直せる")
+    func testCanvasGuideChangesSupportUndoAndRedo() throws {
+        // コンディション：ガイドのないChapterを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：追加・移動・削除の各操作後にUndoとRedoを実行する（When）
+        let guideID = try #require(store.addCanvasGuide(orientation: .vertical, position: 120))
+        store.undoDocumentChange()
+        let guidesAfterAddUndo = try ProjectLoader()
+            .loadProject(at: fixture.projectURL)
+            .project.chapters.first?.guides
+        store.redoDocumentChange()
+        let guideAfterAddRedo = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.guides.first
+        )
+
+        store.updateCanvasGuide(id: guideID, position: 260)
+        store.undoDocumentChange()
+        let guideAfterMoveUndo = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.guides.first
+        )
+        store.redoDocumentChange()
+        let guideAfterMoveRedo = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.guides.first
+        )
+
+        store.deleteCanvasGuide(id: guideID)
+        store.undoDocumentChange()
+        let guideAfterDeleteUndo = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.guides.first
+        )
+        store.redoDocumentChange()
+        let guidesAfterDeleteRedo = try ProjectLoader()
+            .loadProject(at: fixture.projectURL)
+            .project.chapters.first?.guides
+
+        // 期待値：各Undoで直前値、各Redoで確定値がcacheとogpへ復元される（Then）
+        #expect(guidesAfterAddUndo?.isEmpty == true)
+        #expect(guideAfterAddRedo.internalID == guideID)
+        #expect(guideAfterAddRedo.position == 120)
+        #expect(guideAfterMoveUndo.position == 120)
+        #expect(guideAfterMoveRedo.position == 260)
+        #expect(guideAfterDeleteUndo.position == 260)
+        #expect(guidesAfterDeleteRedo?.isEmpty == true)
+        #expect(store.selectedCanvasGuides.isEmpty)
+        #expect(store.statusMessage == "キャンバスガイドの変更をやり直しました。")
+        #expect(store.canUndo)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: ComponentキャンバスガイドUndo/Redoテスト
+    /// 概要: Collectionのガイド履歴がChapterとは独立した対象へ適用されることを検証します。
+    @Test("Component canvasのguideを取り消してやり直せる")
+    func testComponentCanvasGuideSupportsUndoAndRedo() throws {
+        // コンディション：空のCollectionを追加したprojectを開いてComponentsへ切り替える（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        var project = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        project.collections = [
+            OpenGraphiteComponentCollection(
+                id: "components",
+                internalID: "collection-guide-history",
+                components: []
+            )
+        ]
+        try JSONEncoder().encode(project).write(to: fixture.projectURL, options: .atomic)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.selectCollection(internalID: "collection-guide-history")
+
+        // 検証内容：Collectionへ水平ガイドを追加し、Undo後にRedoする（When）
+        let guideID = try #require(store.addCanvasGuide(orientation: .horizontal, position: -96))
+        store.undoDocumentChange()
+        let guidesAfterUndo = try ProjectLoader()
+            .loadProject(at: fixture.projectURL)
+            .project.collections.first?.guides
+        store.redoDocumentChange()
+        let guideAfterRedo = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.collections.first?.guides.first
+        )
+
+        // 期待値：Chapterを変えずCollectionのguidesだけがUndoで消え、Redoで復元される（Then）
+        #expect(guidesAfterUndo?.isEmpty == true)
+        #expect(guideAfterRedo.internalID == guideID)
+        #expect(guideAfterRedo.orientation == .horizontal)
+        #expect(guideAfterRedo.position == -96)
+        #expect(store.loadedProject?.project.chapters.first?.guides.isEmpty == true)
+        #expect(store.selectedCanvasGuides == [guideAfterRedo])
+    }
+
+    /// 論理名（日本語）: ガイド・HTML統合履歴テスト
+    /// 概要: ガイドとHTMLの変更が同じ時系列へ積まれ、確定順にUndo/Redoされることを検証します。
+    @Test("guideとHTMLを同じ履歴時系列で取り消してやり直す")
+    func testCanvasGuideAndHTMLUseUnifiedHistoryTimeline() throws {
+        // コンディション：ガイド追加後に同じprojectのHTMLを同期する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let initialHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let editedHTML = "<!doctype html>\n<html><body>guide timeline</body></html>"
+        let guideID = try #require(store.addCanvasGuide(orientation: .horizontal, position: -48))
+        store.syncCurrentHTML(editedHTML)
+
+        // 検証内容：二回Undoした後に二回Redoする（When）
+        store.undoDocumentChange()
+        let htmlAfterFirstUndo = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let guidesAfterFirstUndo = store.selectedCanvasGuides
+        store.undoDocumentChange()
+        let guidesAfterSecondUndo = store.selectedCanvasGuides
+        store.redoDocumentChange()
+        store.redoDocumentChange()
+
+        // 期待値：HTML、ガイドの逆順で戻り、Redoではガイド、HTMLの順で復元される（Then）
+        #expect(htmlAfterFirstUndo == initialHTML)
+        #expect(guidesAfterFirstUndo.map(\.internalID) == [guideID])
+        #expect(guidesAfterSecondUndo.isEmpty)
+        #expect(store.selectedCanvasGuides.map(\.internalID) == [guideID])
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == editedHTML)
+        #expect(store.canRedo == false)
+    }
+
+    /// 論理名（日本語）: ガイド履歴外部競合拒否テスト
+    /// 概要: 履歴記録後に同じcontainerのguidesが外部変更された場合、Undoで外部値を上書きしないことを検証します。
+    @Test("外部更新されたguide配列へ古い履歴を適用しない")
+    func testCanvasGuideUndoRejectsExternallyChangedGuides() throws {
+        // コンディション：ガイド追加を履歴へ記録後、storeへ通知せず位置を外部変更する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let guideID = try #require(store.addCanvasGuide(orientation: .vertical, position: 120))
+        var externalProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let guideIndex = try #require(externalProject.chapters.first?.guides.firstIndex(where: {
+            $0.internalID == guideID
+        }))
+        externalProject.chapters[0].guides[guideIndex].position = 777
+        try JSONEncoder().encode(externalProject).write(to: fixture.projectURL, options: .atomic)
+
+        // 検証内容：staleなガイド追加履歴を取り消そうとする（When）
+        store.undoDocumentChange()
+        let persistedGuide = try #require(
+            ProjectLoader().loadProject(at: fixture.projectURL).project.chapters.first?.guides.first
+        )
+
+        // 期待値：外部位置を保持して最新manifestへ表示同期し、無効になった統合履歴を破棄する（Then）
+        #expect(persistedGuide.position == 777)
+        #expect(store.selectedCanvasGuides.first?.position == 777)
+        #expect(store.statusMessage == ".ogp の外部変更を検出したため、キャンバスガイドの履歴適用を中止しました。")
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
     /// 論理名（日本語）: キャンバス注釈永続化テスト
     /// 概要: 付箋の本文・フレームと手書きストロークが `.ogp` だけへ保存され、HTML / companion CSS を変更しないことを検証します。
     @Test("付箋と手書きをogpだけへ保存する")

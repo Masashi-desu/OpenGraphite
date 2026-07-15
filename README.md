@@ -18,6 +18,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `Docs/specs/DesignPhilosophy.md`: design philosophy and decision principles
 - `Docs/specs/SourceOfTruthContract.md`: cross-cutting source-of-truth contract for `data-og-*`, editable CSS declarations, runtime, preview, and resources
 - `Docs/specs/CanvasAnnotations.md`: `.ogp`-only sticky-note, ink, Sidecar input, and agent-access contract
+- `Docs/specs/CanvasAids.md`: ruler, `.ogp` guide, grid, coordinate, and persistence contract
 - `Docs/specs/AgentInterface.md`: CLI, MCP, JSON graph, and external-sync contract
 
 ## Model
@@ -47,6 +48,8 @@ HTML is the canonical structure and reference document. Editable design values l
 OpenGraphite does not use class names as the editable style source of truth. Tag names represent semantic components, `data-og-*` stores structure and reference metadata, companion CSS stores design values, and `OpenGraphite.css` provides the shared rendering rules. Composite components can be authored as HTML masters in project `collections[].components[]` and referenced from pages with `<og-instance>`. Component canvases can also contain `data-og-role="component-placement"` nodes that reference another component node and display multiple preview states side by side while keeping edits synchronized to the source component. Placement-specific preview mocks live in the `.ogp` canvas `previewContext`, not in the source HTML.
 
 Editor-only sticky notes and ink live in `chapters[].annotations[]` or `collections[].annotations[]` in the `.ogp`. They render in front of the HTML cards, support pen, eraser, and lasso multi-selection tools, can be read through the CLI/MCP interface, and are intentionally excluded from source HTML, CSS, browser runtime, and build output.
+
+Rulers, guides, and grids are editor preview aids. Visibility remains local in app `UserDefaults`, while guide positions live in the selected Chapter or Collection's `.ogp` `guides[]`; none of these aids modify HTML, CSS, runtime, screenshots, or build output.
 
 ## Build
 
@@ -121,7 +124,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 
 `project create` creates a new `.ogp` at `--output` and uses `--root` as the project root for `public` and `CSS` resources. If `public` does not exist, it seeds `public/index.html`, `public/index.css`, `CSS/OpenGraphite.css`, and a `home` page entry. If `public` already exists, it leaves existing HTML unregistered and creates an empty Chapter manifest while copying `CSS/OpenGraphite.css` when missing.
 
-`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory. The input `.ogp` manifest is editor-only and is not copied; its canvas annotations are not injected into generated HTML or CSS.
+`ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory. The input `.ogp` manifest is editor-only and is not copied; its canvas annotations and guides are not injected into generated HTML or CSS.
 
 `ogkiln screenshot canvas` accepts either `--chapter-id` or `--collection-id` to composite that container's HTML cards and `.ogp` annotations; with neither selector it uses the first Chapter.
 
@@ -215,6 +218,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - WKWebView canvas using `.ogp` canvas dimensions
 - Normal / Flow canvas modes, plus a separate right-click Focus preview that shows one HTML object or a whole page card in a centered, finite scrolling region; Focus uses the same canvas zoom input resolver for `Command + scroll`, trackpad pinch, and compatible gesture events, keeps 100% as original size, supports zoom in/out without creating an infinite canvas, and removes editor-only object-focus markers before HTML is saved
 - Front-layer sticky notes and mouse/Sidecar Apple Pencil ink, with eraser and lasso multi-selection tools, stored only in Chapter/Collection `.ogp` annotations
+- Rulers, undoable `.ogp`-persisted draggable guides, and an adaptive canvas grid, independently visible from Settings without changing HTML or CSS
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`

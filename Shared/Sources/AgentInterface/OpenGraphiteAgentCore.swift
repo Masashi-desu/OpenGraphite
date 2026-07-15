@@ -231,6 +231,7 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
 /// - `index`: `.ogp` 内の Chapter index。
 /// - `title`: Chapter 表示名。
 /// - `annotationCount`: Chapter キャンバスに保存された注釈数。
+/// - `guideCount`: Chapter キャンバスに保存されたガイド数。
 /// - `pages`: Chapter 内のページ要約一覧。
 struct OpenGraphiteChapterSummary: Codable, Equatable {
     var id: String
@@ -238,6 +239,7 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
     var index: Int
     var title: String?
     var annotationCount: Int
+    var guideCount: Int
     var pages: [OpenGraphitePageSummary]
 }
 
@@ -250,6 +252,7 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
 /// - `index`: `.ogp` 内の Collection index。
 /// - `title`: Collection 表示名。
 /// - `annotationCount`: Collection キャンバスに保存された注釈数。
+/// - `guideCount`: Collection キャンバスに保存されたガイド数。
 /// - `components`: Collection 内の component canvas 要約一覧。
 struct OpenGraphiteComponentCollectionSummary: Codable, Equatable {
     var id: String
@@ -257,6 +260,7 @@ struct OpenGraphiteComponentCollectionSummary: Codable, Equatable {
     var index: Int
     var title: String?
     var annotationCount: Int
+    var guideCount: Int
     var components: [OpenGraphitePageSummary]
 }
 
@@ -788,6 +792,7 @@ struct OpenGraphiteAgentCore {
                 index: chapterIndex,
                 title: chapter.title,
                 annotationCount: chapter.annotations.count,
+                guideCount: chapter.guides.count,
                 pages: pages
             )
         }
@@ -811,6 +816,7 @@ struct OpenGraphiteAgentCore {
                 index: collectionIndex,
                 title: collection.title,
                 annotationCount: collection.annotations.count,
+                guideCount: collection.guides.count,
                 components: components
             )
         }

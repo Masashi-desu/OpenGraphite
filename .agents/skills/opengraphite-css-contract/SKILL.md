@@ -21,6 +21,8 @@ OpenGraphite リポジトリ内の `public/` page や component HTML を編集�
 
 キャンバス前面の付箋と手書きは `.ogp` にだけ保存する collaboration annotation であり、この HTML / CSS 契約の対象外である。注釈そのものを `data-og-*`、`--og-*`、class、DOM node へ変換しない。注釈から明示的な実装指示を受けた場合だけ、通常の source edit として HTML / CSS を更新する。
 
+Ruler、Guide、Grid は OpenGraphite.app のプレビュー補助であり、この HTML / CSS 契約の対象外である。表示設定は app 側、Guide の方向と world 座標は `.ogp` の Chapter / Collection `guides[]` に保持する。いずれも HTML、CSS、`data-og-*`、`--og-*`、runtime、build、screenshot へ変換または出力しない。
+
 ## コアモデル
 
 OpenGraphite document は通常の HTML である。`OpenGraphite.css` は次を読み取って要素を描画する。

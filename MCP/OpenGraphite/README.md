@@ -1,6 +1,6 @@
 # OpenGraphite MCP Server
 
-OpenGraphite MCP server exposes `.ogp`-scoped OpenGraphite resources and tools over stdio. Write tools call `Scripts/ogkiln`, so CLI and MCP operations share the same validation and diagnostics path. Canvas annotation tools read `.ogp`-only sticky notes and ink without changing HTML or CSS.
+OpenGraphite MCP server exposes `.ogp`-scoped OpenGraphite resources and tools over stdio. Write tools call `Scripts/ogkiln`, so CLI and MCP operations share the same validation and diagnostics path. Canvas annotation tools read `.ogp`-only sticky notes and ink without changing HTML or CSS. Project summary resources expose Chapter / Collection Guide counts through `guideCount`; individual Guide editing remains app-owned.
 
 ## Run
 
