@@ -8,5 +8,6 @@
 - [CanvasObjectReferences.md](CanvasObjectReferences.md): typed node reference ID による任意階層オブジェクトのキャンバス直下配置、ライブ preview、編集同期、永続化境界の正本仕様。
 - [AgentInterface.md](AgentInterface.md): `ogkiln` CLI、OpenGraphite MCP server、AI 向け JSON graph、外部変更同期の契約。
 - [InspectorDependencyUI.md](InspectorDependencyUI.md): Inspector section 内で標準編集 UI と追加依存性 custom UI を分離・追加するための実装仕様。
+- [InspectorValuePresentation.md](InspectorValuePresentation.md): Inspector の値表示と入力手段、および直接操作をプレビュー側へ寄せる操作面の責務境界。
 - [OgkilnCLI.md](OgkilnCLI.md): `ogkiln` の command、JSON result、編集操作仕様。
 - [OpenGraphiteMCP.md](OpenGraphiteMCP.md): OpenGraphite MCP server の resource / tool 仕様。

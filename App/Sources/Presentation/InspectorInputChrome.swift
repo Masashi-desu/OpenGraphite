@@ -22,18 +22,55 @@ struct InspectorInputIcon: Hashable, Sendable {
     }
 }
 
+/// 論理名（日本語）: インスペクター入力スクラブ設定
+/// 概要: 入力欄のアイコンをドラッグして数値を直接増減させるための接続情報です。
+///
+/// プロパティ:
+/// - `profile`: ドラッグ編集の粒度と単位。
+/// - `currentValue`: ドラッグ開始時に読み取る現在値。
+/// - `onScrub`: ドラッグ中の値を UI 状態へ反映する処理。
+/// - `onCommit`: ドラッグ終了時の確定処理。
+struct InspectorInputScrubConfiguration {
+    var profile: InspectorScrubProfile
+    var currentValue: () -> String
+    var onScrub: (String) -> Void
+    var onCommit: () -> Void
+
+    /// 論理名（日本語）: インスペクター入力スクラブ設定初期化関数
+    /// 処理概要: ドラッグ編集に必要な粒度と値の読み書き処理を保持します。
+    ///
+    /// - Parameters:
+    ///   - profile: ドラッグ編集の粒度と単位。
+    ///   - currentValue: ドラッグ開始時に読み取る現在値。
+    ///   - onScrub: ドラッグ中の値を反映する処理。
+    ///   - onCommit: ドラッグ終了時の確定処理。
+    init(
+        profile: InspectorScrubProfile = .length,
+        currentValue: @escaping () -> String,
+        onScrub: @escaping (String) -> Void,
+        onCommit: @escaping () -> Void = {}
+    ) {
+        self.profile = profile
+        self.currentValue = currentValue
+        self.onScrub = onScrub
+        self.onCommit = onCommit
+    }
+}
+
 /// 論理名（日本語）: インスペクター入力クローム
-/// 概要: Inspector 内のテキスト入力欄へ共通背景、枠線、左側アイコンを付与します。
+/// 概要: Inspector 内のテキスト入力欄へ共通背景、枠線、左側アイコンを付与し、アイコンを値のドラッグ操作面としても使えるようにします。
 ///
 /// プロパティ:
 /// - `icon`: 入力値の意味を示す左側アイコン。
 /// - `iconHelp`: アイコンに付与する tooltip。
 /// - `strokeColor`: 入力欄の枠線色。
+/// - `scrub`: アイコンをドラッグして値を増減させる設定。
 /// - `content`: 背景内に配置する入力要素。
 struct InspectorInputChrome<Content: View>: View {
     var icon: InspectorInputIcon?
     var iconHelp: String
     var strokeColor: Color
+    var scrub: InspectorInputScrubConfiguration?
     var content: Content
 
     /// 論理名（日本語）: インスペクター入力クローム初期化関数
@@ -43,27 +80,26 @@ struct InspectorInputChrome<Content: View>: View {
     ///   - icon: 入力値の意味を示す左側アイコン。
     ///   - iconHelp: アイコンに付与する tooltip。
     ///   - strokeColor: 入力欄の枠線色。
+    ///   - scrub: アイコンをドラッグして値を増減させる設定。
     ///   - content: 背景内に配置する入力要素。
     init(
         icon: InspectorInputIcon? = nil,
         iconHelp: String = "",
         strokeColor: Color = .clear,
+        scrub: InspectorInputScrubConfiguration? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.icon = icon
         self.iconHelp = iconHelp
         self.strokeColor = strokeColor
+        self.scrub = scrub
         self.content = content()
     }
 
     var body: some View {
         HStack(spacing: 6) {
             if let icon {
-                OpenGraphiteIconView(icon: icon.icon, size: 13, weight: .semibold)
-                    .rotationEffect(.degrees(icon.rotationDegrees))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 15, height: 16)
-                    .help(iconHelp)
+                iconView(for: icon)
             }
 
             content
@@ -75,6 +111,37 @@ struct InspectorInputChrome<Content: View>: View {
             RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
                 .stroke(strokeColor, lineWidth: 1)
         )
+    }
+
+    /// 論理名（日本語）: 入力アイコン生成関数
+    /// 処理概要: スクラブ設定がある場合はアイコンをドラッグハンドルとして構成します。
+    ///
+    /// - Parameter icon: 表示するアイコン記述子。
+    /// - Returns: 入力欄左側のアイコン。
+    @ViewBuilder
+    private func iconView(for icon: InspectorInputIcon) -> some View {
+        let iconImage = OpenGraphiteIconView(icon: icon.icon, size: 13, weight: .semibold)
+            .rotationEffect(.degrees(icon.rotationDegrees))
+            .foregroundStyle(scrub == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor.opacity(0.85)))
+            .frame(width: 15, height: 16)
+
+        if let scrub {
+            InspectorScrubHandle(
+                isEnabled: InspectorValueScrubber.isScrubbable(scrub.currentValue()),
+                step: scrub.profile.step,
+                fallbackUnit: scrub.profile.fallbackUnit,
+                allowsNegative: scrub.profile.allowsNegative,
+                currentValue: scrub.currentValue,
+                onScrub: scrub.onScrub,
+                onCommit: scrub.onCommit
+            ) {
+                iconImage
+            }
+            .help(iconHelp.isEmpty ? "左右ドラッグで値を変更" : "\(iconHelp) · 左右ドラッグで値を変更")
+        } else {
+            iconImage
+                .help(iconHelp)
+        }
     }
 }
 
@@ -216,9 +283,9 @@ enum InspectorParameterIcon {
             return InspectorInputIcon(.lucide("move-horizontal", fallbackSystemName: "arrow.left.and.right"))
         case "y":
             return InspectorInputIcon(.lucide("move-vertical", fallbackSystemName: "arrow.up.and.down"))
-        case "width":
+        case "w", "width":
             return InspectorInputIcon(.lucide("ruler", fallbackSystemName: "ruler"))
-        case "height":
+        case "h", "height":
             return InspectorInputIcon(.lucide("ruler", fallbackSystemName: "ruler"))
         default:
             return InspectorInputIcon(.lucide("frame", fallbackSystemName: "square.dashed"))

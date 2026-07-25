@@ -37,7 +37,22 @@ struct CSSBoxVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            HStack(spacing: 6) {
+                CSSControlHeader(key: key, trailingValue: boxValue.isSupported ? boxValue.cssString : "")
+
+                if boxValue.isSupported {
+                    if usesCornerLayout {
+                        InspectorCornerRadiusPreview(
+                            topLeading: boxValue.top,
+                            topTrailing: boxValue.right,
+                            bottomTrailing: boxValue.bottom,
+                            bottomLeading: boxValue.left
+                        )
+                    }
+
+                    linkButton
+                }
+            }
 
             if boxValue.isSupported {
                 InspectorLinkedParameterGroup(isActive: isLinked) {
@@ -70,62 +85,13 @@ struct CSSBoxVariableField: View {
     }
 
     private var boxControlLayout: some View {
-        Group {
-            if usesCornerLayout {
-                cornerControlLayout
-            } else if usesEdgeLayout {
-                edgeControlLayout
-            } else {
-                fallbackControlLayout
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var edgeControlLayout: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            boxTextField(label: topLabel, keyPath: \.top)
-
-            HStack(alignment: .bottom, spacing: 6) {
-                boxTextField(label: leftLabel, keyPath: \.left)
-
-                linkButton
-                    .padding(.bottom, 1)
-
-                boxTextField(label: rightLabel, keyPath: \.right)
-            }
-
-            boxTextField(label: bottomLabel, keyPath: \.bottom)
-        }
-    }
-
-    private var cornerControlLayout: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 6) {
-                boxTextField(label: topLabel, keyPath: \.top)
-                boxTextField(label: rightLabel, keyPath: \.right)
-            }
-
-            HStack(alignment: .top, spacing: 6) {
-                boxTextField(label: leftLabel, keyPath: \.left)
-                boxTextField(label: bottomLabel, keyPath: \.bottom)
-            }
-
-            linkButton
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-
-    private var fallbackControlLayout: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             boxTextField(label: topLabel, keyPath: \.top)
             boxTextField(label: rightLabel, keyPath: \.right)
             boxTextField(label: bottomLabel, keyPath: \.bottom)
             boxTextField(label: leftLabel, keyPath: \.left)
-
-            linkButton
-                .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var linkButton: some View {
@@ -144,10 +110,12 @@ struct CSSBoxVariableField: View {
             text: binding(keyPath),
             icon: InspectorParameterIcon.cssSubfield(label: label, key: key),
             showsRelationship: isLinked,
+            scrubProfile: InspectorScrubProfile.forCSSKey(key),
+            labelPlacement: .hidden,
             onCommit: commitIfChanged
         )
+        .help("\(key) \(label)")
         .frame(minWidth: 0, maxWidth: .infinity)
-        .clipped()
     }
 
     private var topLabel: String {
@@ -164,10 +132,6 @@ struct CSSBoxVariableField: View {
 
     private var leftLabel: String {
         labels[safe: 3] ?? "L"
-    }
-
-    private var usesEdgeLayout: Bool {
-        normalizedLabels == ["T", "R", "B", "L"]
     }
 
     private var usesCornerLayout: Bool {
@@ -239,21 +203,11 @@ struct CSSPairVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(key: key, trailingValue: pairValue.isSupported ? pairValue.cssString : "")
             if pairValue.isSupported {
                 HStack(spacing: 6) {
-                    CSSSmallTextField(
-                        label: firstLabel,
-                        text: $pairValue.first,
-                        icon: InspectorParameterIcon.cssSubfield(label: firstLabel, key: key),
-                        onCommit: commitIfChanged
-                    )
-                    CSSSmallTextField(
-                        label: secondLabel,
-                        text: $pairValue.second,
-                        icon: InspectorParameterIcon.cssSubfield(label: secondLabel, key: key),
-                        onCommit: commitIfChanged
-                    )
+                    pairField(label: firstLabel, text: $pairValue.first)
+                    pairField(label: secondLabel, text: $pairValue.second)
                 }
             } else {
                 CSSUnsupportedValueNotice(value: pairValue.cssString)
@@ -263,6 +217,23 @@ struct CSSPairVariableField: View {
         .onChange(of: value) { _, newValue in
             pairValue = CSSPairValue(cssString: newValue)
         }
+    }
+
+    /// 論理名（日本語）: CSS二軸入力生成関数
+    /// 処理概要: 二軸のうち 1 つ分の入力欄を、軸の意味を示すアイコン付きで生成します。
+    ///
+    /// - Parameters:
+    ///   - label: 入力欄ラベル。
+    ///   - text: 対象軸の値 binding。
+    /// - Returns: 二軸のうち 1 軸分の入力欄。
+    private func pairField(label: String, text: Binding<String>) -> some View {
+        CSSSmallTextField(
+            label: label,
+            text: text,
+            icon: InspectorParameterIcon.cssSubfield(label: label, key: key),
+            scrubProfile: InspectorScrubProfile.forCSSKey(key),
+            onCommit: commitIfChanged
+        )
     }
 
     /// 論理名（日本語）: CSS二軸値変更時適用関数
@@ -293,14 +264,125 @@ struct CSSInsetVariableGroup: View {
     var left: String
     var onCommit: (String, String) -> Void
 
+    @State private var draftTop: String
+    @State private var draftRight: String
+    @State private var draftBottom: String
+    @State private var draftLeft: String
+    @State private var isDetailExpanded = false
+
+    /// 論理名（日本語）: CSS位置オフセット変数グループ初期化関数
+    /// 処理概要: 四辺の現在値を図で編集するための draft state へ展開します。
+    ///
+    /// - Parameters:
+    ///   - idPrefix: 入力欄 identity の接頭辞。
+    ///   - top: `top` の現在値。
+    ///   - right: `right` の現在値。
+    ///   - bottom: `bottom` の現在値。
+    ///   - left: `left` の現在値。
+    ///   - onCommit: CSS property 名と値を反映する処理。
+    init(
+        idPrefix: String,
+        top: String,
+        right: String,
+        bottom: String,
+        left: String,
+        onCommit: @escaping (String, String) -> Void
+    ) {
+        self.idPrefix = idPrefix
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+        self.left = left
+        self.onCommit = onCommit
+        _draftTop = State(initialValue: top)
+        _draftRight = State(initialValue: right)
+        _draftBottom = State(initialValue: bottom)
+        _draftLeft = State(initialValue: left)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            dimensionField(key: "top", value: top)
-            dimensionField(key: "left", value: left)
-            dimensionField(key: "right", value: right)
-            dimensionField(key: "bottom", value: bottom)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                offsetField(key: "top", text: $draftTop)
+                offsetField(key: "right", text: $draftRight)
+            }
+
+            HStack(spacing: 6) {
+                offsetField(key: "bottom", text: $draftBottom)
+                offsetField(key: "left", text: $draftLeft)
+            }
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    isDetailExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: isDetailExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text("keyword / function で指定")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isDetailExpanded {
+                VStack(alignment: .leading, spacing: 8) {
+                    dimensionField(key: "top", value: top)
+                    dimensionField(key: "left", value: left)
+                    dimensionField(key: "right", value: right)
+                    dimensionField(key: "bottom", value: bottom)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: top) { _, newValue in draftTop = newValue }
+        .onChange(of: right) { _, newValue in draftRight = newValue }
+        .onChange(of: bottom) { _, newValue in draftBottom = newValue }
+        .onChange(of: left) { _, newValue in draftLeft = newValue }
+    }
+
+    /// 論理名（日本語）: CSS位置オフセット簡易入力生成関数
+    /// 処理概要: 指定した辺の値を、辺を示すアイコン付きの短い入力欄として生成します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS property 名。
+    ///   - text: 対象の辺の値 binding。
+    /// - Returns: 指定 property の簡易入力欄。
+    private func offsetField(key: String, text: Binding<String>) -> some View {
+        CSSSmallTextField(
+            label: key,
+            text: text,
+            icon: InspectorParameterIcon.cssSubfield(label: key, key: "padding"),
+            scrubProfile: .length,
+            onCommit: commitChangedEdges
+        )
+        .id("\(idPrefix)-\(key)-compact")
+    }
+
+    /// 論理名（日本語）: CSS位置オフセット確定関数
+    /// 処理概要: 簡易入力で変わった辺だけを、対応する CSS property の更新として反映します。
+    private func commitChangedEdges() {
+        commitEdge(key: "top", draft: draftTop, current: top)
+        commitEdge(key: "right", draft: draftRight, current: right)
+        commitEdge(key: "bottom", draft: draftBottom, current: bottom)
+        commitEdge(key: "left", draft: draftLeft, current: left)
+    }
+
+    /// 論理名（日本語）: CSS位置オフセット単辺確定関数
+    /// 処理概要: 1 辺分の値を trim し、変更がある場合だけ反映します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS property 名。
+    ///   - draft: 図の入力欄が保持している値。
+    ///   - current: 反映済みの現在値。
+    private func commitEdge(key: String, draft: String, current: String) {
+        let nextValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard nextValue != current.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(key, nextValue)
     }
 
     /// 論理名（日本語）: CSS位置オフセット入力生成関数
@@ -357,30 +439,27 @@ struct CSSNumericUnitVariableField: View {
         VStack(alignment: .leading, spacing: 6) {
             CSSControlHeader(key: key)
             if isEditable {
-                HStack(spacing: 6) {
-                    InspectorInputChrome(
-                        icon: InspectorParameterIcon.cssVariable(key),
-                        iconHelp: key
-                    ) {
+                InspectorInputChrome(
+                    icon: InspectorParameterIcon.cssVariable(key),
+                    iconHelp: key,
+                    scrub: scrubConfiguration
+                ) {
+                    HStack(spacing: 4) {
                         TextField("", text: numberBinding)
                             .textFieldStyle(.plain)
                             .font(.caption.monospaced())
                             .focused($isNumberFocused)
                             .onSubmit(commitIfChanged)
                             .frame(minWidth: 0, maxWidth: .infinity)
-                    }
-                    .frame(minWidth: 0, maxWidth: .infinity)
 
-                    Picker("", selection: unitBinding) {
-                        ForEach(unitOptions, id: \.self) { unit in
-                            Text(unitLabel(for: unit))
-                                .tag(unit)
-                        }
+                        CSSInlineUnitMenu(
+                            options: unitOptions,
+                            selection: unitBinding,
+                            titleForOption: unitLabel(for:)
+                        )
                     }
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .frame(width: InspectorLayoutMetrics.compactPickerWidth)
                 }
+                .frame(minWidth: 0, maxWidth: .infinity)
             } else {
                 CSSUnsupportedValueNotice(value: numericValue.cssString)
             }
@@ -420,6 +499,30 @@ struct CSSNumericUnitVariableField: View {
 
     private var isEditable: Bool {
         numericValue.isSupported && unitOptions.contains(numericValue.unit)
+    }
+
+    private var scrubConfiguration: InspectorInputScrubConfiguration {
+        var profile = InspectorScrubProfile.forCSSKey(key)
+        profile.fallbackUnit = allowsUnitlessValue ? "" : defaultUnit
+        return InspectorInputScrubConfiguration(
+            profile: profile,
+            currentValue: { numericValue.cssString },
+            onScrub: applyScrubbedValue,
+            onCommit: commitIfChanged
+        )
+    }
+
+    /// 論理名（日本語）: スクラブ値反映関数
+    /// 処理概要: ドラッグで得た CSS 値を数値部と単位部へ分けて UI 状態へ書き戻します。
+    ///
+    /// - Parameter nextValue: ドラッグ後の CSS 値。
+    private func applyScrubbedValue(_ nextValue: String) {
+        let parsedValue = CSSNumericUnitValue(cssString: nextValue)
+        guard parsedValue.isSupported else { return }
+        numericValue.number = parsedValue.number
+        if unitOptions.contains(parsedValue.unit) {
+            numericValue.unit = parsedValue.unit
+        }
     }
 
     private var unitOptions: [String] {
@@ -540,12 +643,21 @@ struct CSSDimensionVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(
+                key: key,
+                trailingValue: dimensionValue.kind == .unsupported ? "" : dimensionValue.cssString
+            )
 
             if dimensionValue.kind == .unsupported {
                 CSSUnsupportedValueNotice(value: dimensionValue.cssString)
             } else {
-                CSSDimensionKindPicker(selection: kindBinding)
+                InspectorSegmentedTextControl(
+                    options: InspectorOptionCatalog.dimensionKind,
+                    selectedValue: dimensionValue.kind.rawValue
+                ) { rawKind in
+                    guard let nextKind = CSSDimensionKind(rawValue: rawKind) else { return }
+                    kindBinding.wrappedValue = nextKind
+                }
 
                 switch dimensionValue.kind {
                 case .empty:
@@ -556,6 +668,7 @@ struct CSSDimensionVariableField: View {
                         text: $dimensionValue.primary,
                         icon: InspectorParameterIcon.cssVariable(key),
                         unit: $dimensionValue.unit,
+                        scrubProfile: InspectorScrubProfile.forCSSKey(key),
                         onCommit: commitIfChanged
                     )
                 case .keyword:
@@ -575,7 +688,7 @@ struct CSSDimensionVariableField: View {
                         }
                         .labelsHidden()
                         .controlSize(.small)
-                        .frame(width: 118)
+                        .frame(minWidth: 88, maxWidth: 132)
 
                         functionArgumentFields
                     }
@@ -721,95 +834,6 @@ struct CSSDimensionVariableField: View {
     }
 }
 
-/// 論理名（日本語）: CSS寸法種別セグメント
-/// 概要: 標準 segmented Picker の intrinsic width に依存せず、Inspector の親幅内で寸法値の種別を切り替えます。
-///
-/// プロパティ:
-/// - `selection`: 現在選択している CSS dimension 種別。
-private struct CSSDimensionKindPicker: View {
-    @Binding var selection: CSSDimensionKind
-
-    private let options: [CSSDimensionKind] = [.empty, .length, .keyword, .function]
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(options.enumerated()), id: \.element) { option in
-                segmentButton(for: option.element)
-
-                if option.offset < options.count - 1 {
-                    divider
-                }
-            }
-        }
-        .padding(1)
-        .frame(maxWidth: .infinity)
-        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-        .overlay {
-            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
-    }
-
-    /// 論理名（日本語）: CSS寸法種別セグメントボタン生成関数
-    /// 処理概要: 指定種別を選択する等幅ボタンを生成します。
-    ///
-    /// - Parameter kind: ボタンが選択する CSS dimension 種別。
-    /// - Returns: 種別切り替えボタン。
-    private func segmentButton(for kind: CSSDimensionKind) -> some View {
-        let isSelected = selection == kind
-        return Button {
-            guard selection != kind else { return }
-            selection = kind
-        } label: {
-            Text(title(for: kind))
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.84))
-                .padding(.horizontal, 2)
-                .frame(maxWidth: .infinity, minHeight: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius - 1)
-                    .fill(Color.accentColor)
-            }
-        }
-        .accessibilityLabel(title(for: kind))
-        .accessibilityValue(isSelected ? "selected" : "")
-    }
-
-    private var divider: some View {
-        Rectangle()
-            .fill(EditorColumnStyle.separatorColor)
-            .frame(width: 1, height: 14)
-            .padding(.horizontal, 1)
-    }
-
-    /// 論理名（日本語）: CSS寸法種別表示名生成関数
-    /// 処理概要: CSS dimension 種別に対応するセグメント表示名を返します。
-    ///
-    /// - Parameter kind: 表示対象の CSS dimension 種別。
-    /// - Returns: セグメントに表示する文字列。
-    private func title(for kind: CSSDimensionKind) -> String {
-        switch kind {
-        case .empty:
-            return "unset"
-        case .length:
-            return "length"
-        case .keyword:
-            return "keyword"
-        case .function:
-            return "function"
-        case .unsupported:
-            return "unsupported"
-        }
-    }
-}
-
 /// 論理名（日本語）: CSS罫線変数フィールド
 /// 概要: border shorthand を width、style、color として編集します。
 ///
@@ -843,14 +867,27 @@ struct CSSBorderVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(key: key, trailingValue: borderValue.isSupported ? borderValue.cssString : "")
 
             if borderValue.isSupported {
+                InspectorBorderStylePreview(
+                    style: borderValue.style.isEmpty ? "solid" : borderValue.style,
+                    width: previewLineWidth,
+                    color: CSSColorValue(cssString: borderValue.color)?.color ?? Color.primary.opacity(0.7)
+                )
+                .padding(.horizontal, 6)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .strokeBorder(EditorColumnStyle.separatorColor, lineWidth: 1)
+                )
+
                 HStack(spacing: 6) {
                     CSSSmallTextField(
                         label: "Width",
                         text: $borderValue.width,
                         icon: InspectorParameterIcon.cssSubfield(label: "Width", key: key),
+                        scrubProfile: .unsignedLength,
                         onCommit: commitIfChanged
                     )
                     Picker("", selection: styleBinding) {
@@ -860,7 +897,7 @@ struct CSSBorderVariableField: View {
                     }
                     .labelsHidden()
                     .controlSize(.small)
-                    .frame(width: 96)
+                    .frame(minWidth: 76, maxWidth: 104)
                 }
                 CSSColorTextField(
                     label: "Color",
@@ -889,6 +926,12 @@ struct CSSBorderVariableField: View {
                 commitIfChanged()
             }
         )
+    }
+
+    private var previewLineWidth: CGFloat {
+        let magnitude = InspectorValuePreviewGeometry.numericMagnitude(borderValue.width)
+        guard magnitude > 0 else { return 1 }
+        return min(6, magnitude)
     }
 
     /// 論理名（日本語）: CSS罫線値変更時適用関数
@@ -932,22 +975,46 @@ struct CSSBackgroundVariableField: View {
         _pickerColor = State(initialValue: CSSColorValue(cssString: parsedValue.color)?.color ?? .white)
     }
 
+    static let kindOptions: [InspectorGlyphOption] = [
+        InspectorGlyphOption(value: CSSBackgroundKind.empty.rawValue, label: "unset") { _ in
+            Image(systemName: "slash.circle")
+                .font(.caption.weight(.semibold))
+        },
+        InspectorGlyphOption(value: CSSBackgroundKind.color.rawValue, label: "単色") { isSelected in
+            Circle()
+                .fill(isSelected ? Color.white : Color.accentColor)
+                .frame(width: 13, height: 13)
+        },
+        InspectorGlyphOption(value: CSSBackgroundKind.linearGradient.rawValue, label: "グラデーション") { isSelected in
+            RoundedRectangle(cornerRadius: 2)
+                .fill(
+                    LinearGradient(
+                        colors: isSelected
+                            ? [Color.white.opacity(0.15), Color.white]
+                            : [Color.accentColor.opacity(0.15), Color.accentColor],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 22, height: 11)
+        }
+    ]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(key: key, trailingValue: backgroundValue.kind == .unsupported ? "" : backgroundValue.cssString)
 
             if backgroundValue.kind == .unsupported {
                 CSSUnsupportedValueNotice(value: backgroundValue.cssString)
             } else {
-                Picker("", selection: kindBinding) {
-                    Text("unset").tag(CSSBackgroundKind.empty)
-                    Text("color").tag(CSSBackgroundKind.color)
-                    Text("gradient").tag(CSSBackgroundKind.linearGradient)
+                InspectorGlyphOptionStrip(
+                    options: Self.kindOptions,
+                    selectedValue: backgroundValue.kind.rawValue,
+                    allowsDeselection: false
+                ) { rawKind in
+                    guard let nextKind = CSSBackgroundKind(rawValue: rawKind) else { return }
+                    kindBinding.wrappedValue = nextKind
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
 
                 switch backgroundValue.kind {
                 case .empty:
@@ -961,13 +1028,17 @@ struct CSSBackgroundVariableField: View {
                         onCommit: commitIfChanged
                     )
                 case .linearGradient:
+                    InspectorGradientPreviewBar(stops: backgroundValue.gradient.stops)
+
                     CSSSmallTextField(
                         label: "Angle",
                         text: $backgroundValue.gradient.angle,
                         icon: InspectorParameterIcon.cssSubfield(label: "Angle", key: key),
                         unitOptions: ["deg", "rad", "turn", "grad"],
+                        scrubProfile: .angle,
                         onCommit: commitIfChanged
                     )
+
                     ForEach(Array(backgroundValue.gradient.stops.indices), id: \.self) { index in
                         CSSGradientStopField(
                             index: index,
@@ -1073,9 +1144,11 @@ struct CSSShadowVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(key: key, trailingValue: shadowValue.isSupported ? shadowValue.cssString : "")
 
             if shadowValue.isSupported {
+                InspectorShadowPreview(shadow: shadowValue)
+
                 HStack(spacing: 6) {
                     CSSSmallTextField(
                         label: "X",
@@ -1095,6 +1168,7 @@ struct CSSShadowVariableField: View {
                         label: "Blur",
                         text: $shadowValue.blur,
                         icon: InspectorParameterIcon.cssSubfield(label: "Blur", key: key),
+                        scrubProfile: .unsignedLength,
                         onCommit: commitIfChanged
                     )
                     CSSSmallTextField(
@@ -1176,19 +1250,21 @@ struct CSSFlexVariableField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CSSControlHeader(key: key)
+            CSSControlHeader(key: key, trailingValue: flexValue.isSupported ? flexValue.cssString : "")
             if flexValue.isSupported {
                 HStack(spacing: 6) {
                     CSSSmallTextField(
                         label: "Grow",
                         text: $flexValue.grow,
                         icon: InspectorParameterIcon.cssSubfield(label: "Grow", key: key),
+                        scrubProfile: InspectorScrubProfile(step: 1, fallbackUnit: "", allowsNegative: false),
                         onCommit: commitIfChanged
                     )
                     CSSSmallTextField(
                         label: "Shrink",
                         text: $flexValue.shrink,
                         icon: InspectorParameterIcon.cssSubfield(label: "Shrink", key: key),
+                        scrubProfile: InspectorScrubProfile(step: 1, fallbackUnit: "", allowsNegative: false),
                         onCommit: commitIfChanged
                     )
                 }
@@ -1196,6 +1272,7 @@ struct CSSFlexVariableField: View {
                     label: "Basis",
                     text: $flexValue.basis,
                     icon: InspectorParameterIcon.cssSubfield(label: "Basis", key: key),
+                    scrubProfile: .unsignedLength,
                     onCommit: commitIfChanged
                 )
             } else {
@@ -1290,6 +1367,93 @@ struct CSSEnumVariableField: View {
     private var isEditable: Bool {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return normalizedValue.isEmpty || options.contains(normalizedValue)
+    }
+}
+
+/// 論理名（日本語）: CSS図示列挙値変数フィールド
+/// 概要: text-align や object-fit のように結果を図で示せる列挙値を、意味の分かるグリフで切り替えます。
+///
+/// プロパティ:
+/// - `key`: CSS 変数名。
+/// - `value`: 現在の CSS 値。
+/// - `options`: 図で示す選択肢。
+/// - `onCommit`: 選択後の CSS 値を反映する処理。
+struct CSSGlyphEnumVariableField: View {
+    var key: String
+    var value: String
+    var options: [InspectorGlyphOption]
+    var onCommit: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            CSSControlHeader(key: key, trailingValue: isEditable ? normalizedValue : "")
+
+            if isEditable {
+                InspectorGlyphOptionStrip(
+                    options: options,
+                    selectedValue: normalizedValue,
+                    onSelect: onCommit
+                )
+            } else {
+                CSSUnsupportedValueNotice(value: value)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var normalizedValue: String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isEditable: Bool {
+        normalizedValue.isEmpty || options.contains { $0.value == normalizedValue }
+    }
+}
+
+/// 論理名（日本語）: CSSセグメント列挙値変数フィールド
+/// 概要: position のように語で区別する列挙値を、Inspector の親幅へ折り返す等幅セグメントで切り替えます。
+///
+/// プロパティ:
+/// - `key`: CSS 変数名。
+/// - `value`: 現在の CSS 値。
+/// - `options`: 選択肢。
+/// - `columnLimit`: 1 行に並べる最大セグメント数。
+/// - `onCommit`: 選択後の CSS 値を反映する処理。
+struct CSSSegmentedEnumVariableField: View {
+    var key: String
+    var value: String
+    var options: [String]
+    var columnLimit: Int = 3
+    var onCommit: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            CSSControlHeader(key: key)
+
+            if isEditable {
+                InspectorSegmentedTextControl(
+                    options: segmentOptions,
+                    selectedValue: normalizedValue,
+                    columnLimit: columnLimit,
+                    onSelect: onCommit
+                )
+            } else {
+                CSSUnsupportedValueNotice(value: value)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var segmentOptions: [(value: String, title: String)] {
+        [(value: "", title: "unset")] + options.map { (value: $0, title: $0) }
+    }
+
+    private var normalizedValue: String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isEditable: Bool {
+        normalizedValue.isEmpty || options.contains(normalizedValue)
     }
 }
 
@@ -1389,6 +1553,7 @@ struct CSSAnimationTimelineVariableField: View {
                 }
                 .labelsHidden()
                 .controlSize(.small)
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1402,6 +1567,7 @@ struct CSSAnimationTimelineVariableField: View {
                 }
                 .labelsHidden()
                 .controlSize(.small)
+                .frame(minWidth: 0, maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1421,6 +1587,7 @@ struct CSSAnimationTimelineVariableField: View {
                     }
                     .labelsHidden()
                     .controlSize(.small)
+                    .frame(minWidth: 0, maxWidth: .infinity)
                 }
                 Spacer(minLength: 0)
             }
@@ -1729,21 +1896,92 @@ struct CSSFontFamilyVariableField: View {
     }
 }
 
+/// 論理名（日本語）: CSS入力欄ラベル配置
+/// 概要: 構造化 CSS コントロール内の入力欄で、ラベルをどこに出すかを表します。
+///
+/// 定義内容:
+/// - `above`: 入力欄の上にラベル文字を出す。
+/// - `hidden`: ラベル文字を出さず、アイコンと tooltip だけで示す。
+enum CSSFieldLabelPlacement {
+    case above
+    case hidden
+}
+
+/// 論理名（日本語）: CSS単位インラインメニュー
+/// 概要: 入力欄の内側に収まる幅で単位を切り替える、文字だけの小型メニューです。
+///
+/// プロパティ:
+/// - `options`: 選択できる単位。
+/// - `selection`: 現在の単位 binding。
+/// - `titleForOption`: メニュー項目に表示する単位名を返す処理。
+private struct CSSInlineUnitMenu: View {
+    var options: [String]
+    var selection: Binding<String>
+    var titleForOption: (String) -> String
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.self) { option in
+                Button(titleForOption(option)) {
+                    selection.wrappedValue = option
+                }
+            }
+        } label: {
+            Text(displayedUnit)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .frame(minWidth: 16, alignment: .trailing)
+        .help("単位を選択")
+        .accessibilityLabel("単位")
+        .accessibilityValue(selection.wrappedValue.isEmpty ? "unitless" : selection.wrappedValue)
+    }
+
+    private var displayedUnit: String {
+        let normalizedUnit = selection.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedUnit.isEmpty ? "–" : normalizedUnit
+    }
+}
+
 /// 論理名（日本語）: CSSコントロールヘッダー
-/// 概要: CSS 変数名を表示します。
+/// 概要: CSS 変数名と、図で編集している現在値の要約を表示します。
 ///
 /// プロパティ:
 /// - `key`: CSS 変数名。
+/// - `trailingValue`: 行末に添える現在値の要約。
 private struct CSSControlHeader: View {
     var key: String
+    var trailingValue: String = ""
 
     var body: some View {
-        Text(key)
-            .font(.caption2.monospaced())
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 6) {
+            Text(key)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Spacer(minLength: 0)
+
+            if !normalizedTrailingValue.isEmpty {
+                Text(normalizedTrailingValue)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var normalizedTrailingValue: String {
+        trailingValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -1755,8 +1993,10 @@ private struct CSSControlHeader: View {
 /// - `text`: 入力値 binding。
 /// - `icon`: 入力値の意味を示す左側アイコン。
 /// - `unit`: 値と単位を別 state で持つ場合の単位 binding。
-/// - `unitOptions`: TextField の外側 Picker に出す単位候補。
+/// - `unitOptions`: 入力欄内のメニューに出す単位候補。
 /// - `showsRelationship`: 他入力欄と連動していることを示す枠線を表示するか。
+/// - `scrubProfile`: アイコンをドラッグして値を増減させるときの粒度と単位。
+/// - `labelPlacement`: ラベルの表示位置。
 /// - `onCommit`: Enter またはフォーカスアウト時の確定処理。
 private struct CSSSmallTextField: View {
     var label: String
@@ -1765,6 +2005,8 @@ private struct CSSSmallTextField: View {
     var unit: Binding<String>?
     var unitOptions: [String]
     var showsRelationship: Bool
+    var scrubProfile: InspectorScrubProfile?
+    var labelPlacement: CSSFieldLabelPlacement
     var onCommit: () -> Void = {}
 
     @FocusState private var isFocused: Bool
@@ -1777,8 +2019,10 @@ private struct CSSSmallTextField: View {
     ///   - text: 入力値 binding。
     ///   - icon: 入力値の意味を示す左側アイコン。
     ///   - unit: 値と単位を別 state で持つ場合の単位 binding。
-    ///   - unitOptions: TextField 外側の単位候補。
+    ///   - unitOptions: 単位候補。
     ///   - showsRelationship: 他入力欄と連動していることを示す枠線を表示するか。
+    ///   - scrubProfile: アイコンをドラッグして値を増減させるときの粒度と単位。
+    ///   - labelPlacement: ラベルの表示位置。
     ///   - onCommit: 確定時の処理。
     init(
         label: String,
@@ -1787,6 +2031,8 @@ private struct CSSSmallTextField: View {
         unit: Binding<String>? = nil,
         unitOptions: [String] = ["px", "%", "rem", "em", "vw", "vh"],
         showsRelationship: Bool = false,
+        scrubProfile: InspectorScrubProfile? = .length,
+        labelPlacement: CSSFieldLabelPlacement = .above,
         onCommit: @escaping () -> Void = {}
     ) {
         self.label = label
@@ -1795,45 +2041,48 @@ private struct CSSSmallTextField: View {
         self.unit = unit
         self.unitOptions = unitOptions
         self.showsRelationship = showsRelationship
+        self.scrubProfile = scrubProfile
+        self.labelPlacement = labelPlacement
         self.onCommit = onCommit
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if labelPlacement == .above {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
 
-            HStack(spacing: 6) {
-                InspectorInputChrome(
-                    icon: icon,
-                    iconHelp: label,
-                    strokeColor: showsRelationship ? Color.accentColor.opacity(0.54) : Color.clear
-                ) {
+            InspectorInputChrome(
+                icon: icon,
+                iconHelp: label,
+                strokeColor: showsRelationship ? Color.accentColor.opacity(0.54) : Color.clear,
+                scrub: scrubConfiguration
+            ) {
+                HStack(spacing: 4) {
                     TextField("", text: fieldTextBinding)
                         .textFieldStyle(.plain)
                         .font(.caption.monospaced())
                         .focused($isFocused)
                         .onSubmit(commitText)
                         .frame(minWidth: 0, maxWidth: .infinity)
-                }
-                .frame(minWidth: 0, maxWidth: .infinity)
 
-                if showsUnitPicker {
-                    Picker("", selection: unitSelectionBinding) {
-                        ForEach(unitPickerOptions, id: \.self) { option in
-                            Text(unitLabel(for: option))
-                                .tag(option)
-                        }
+                    if showsUnitPicker {
+                        CSSInlineUnitMenu(
+                            options: unitPickerOptions,
+                            selection: unitSelectionBinding,
+                            titleForOption: unitLabel(for:)
+                        )
                     }
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .frame(width: 72)
                 }
             }
+            .frame(minWidth: 0, maxWidth: .infinity)
         }
         .frame(minWidth: 0, maxWidth: .infinity)
+        .accessibilityLabel(label)
         .onAppear(perform: ensureSeparatedUnitState)
         .onChange(of: text) { _, _ in
             ensureSeparatedUnitState()
@@ -1850,6 +2099,16 @@ private struct CSSSmallTextField: View {
         guard parsedText.isNumericLike else { return parsedText }
         let resolvedUnit = parsedText.unit.isEmpty ? unit.wrappedValue : parsedText.unit
         return CSSUnitSeparatedValue(fieldValue: parsedText.fieldValue, unit: resolvedUnit, isNumericLike: true)
+    }
+
+    private var scrubConfiguration: InspectorInputScrubConfiguration? {
+        guard let scrubProfile else { return nil }
+        return InspectorInputScrubConfiguration(
+            profile: scrubProfile,
+            currentValue: { currentParts.cssString },
+            onScrub: applyFieldInput,
+            onCommit: commitText
+        )
     }
 
     private var fieldTextBinding: Binding<String> {
@@ -2080,7 +2339,7 @@ private struct CSSGradientStopField: View {
                     icon: InspectorParameterIcon.label("Position"),
                     onCommit: onCommit
                 )
-                    .frame(width: 88)
+                    .frame(minWidth: 64, maxWidth: 92)
             }
         }
         .onChange(of: stop.color) { _, newValue in

@@ -54,33 +54,13 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Alignment", sectionID: .alignment) {
-                            InspectorButtonStrip(
-                                title: "Align",
-                                value: node.cssVariables["align-items"] ?? "",
-                                options: [
-                                    InspectorButtonOption(label: "L", icon: .alignHorizontalStart, value: "flex-start"),
-                                    InspectorButtonOption(label: "C", icon: .alignHorizontalCenter, value: "center"),
-                                    InspectorButtonOption(label: "R", icon: .alignHorizontalEnd, value: "flex-end")
-                                ]
-                            ) { value in
-                                store.updateCSSVariable(key: "align-items", value: value)
-                            }
-
-                            InspectorButtonStrip(
-                                title: "Justify",
-                                value: node.cssVariables["justify-content"] ?? "",
-                                options: [
-                                    InspectorButtonOption(label: "T", icon: .alignVerticalStart, value: "flex-start"),
-                                    InspectorButtonOption(label: "M", icon: .alignVerticalCenter, value: "center"),
-                                    InspectorButtonOption(label: "B", icon: .alignVerticalEnd, value: "flex-end")
-                                ]
-                            ) { value in
-                                store.updateCSSVariable(key: "justify-content", value: value)
+                            NodeAlignmentControls(node: node) { values in
+                                store.updateSelectedNodeCSSVariables(values: values)
                             }
                         }
 
                         InspectorSection(title: "Layout", sectionID: .layout) {
-                            LayoutModePicker(value: node.layout ?? "") { value in
+                            InspectorLayoutModeTiles(value: node.layout ?? "") { value in
                                 store.updateNodeAttribute(name: "data-og-layout", value: value)
                             }
 
@@ -119,7 +99,7 @@ struct InspectorView: View {
                         }
 
                         InspectorSection(title: "Position", sectionID: .position) {
-                            CSSEnumVariableField(
+                            CSSSegmentedEnumVariableField(
                                 key: "position",
                                 value: node.cssVariables["position"] ?? "",
                                 options: ["static", "relative", "absolute", "fixed", "sticky"]
@@ -210,6 +190,17 @@ struct InspectorView: View {
                             TextContentSection(node: node)
 
                             InspectorSection(title: "Typography", sectionID: .typography) {
+                                InspectorTypographyPreview(
+                                    sampleText: fontPreviewText(for: node),
+                                    cssFontFamily: node.cssVariables["font-family"] ?? node.resolvedFontFamily ?? "",
+                                    fontSize: node.cssVariables["font-size"] ?? "",
+                                    fontWeight: node.cssVariables["font-weight"] ?? "",
+                                    lineHeight: node.cssVariables["line-height"] ?? "",
+                                    letterSpacing: node.cssVariables["letter-spacing"] ?? "",
+                                    textAlign: node.cssVariables["text-align"] ?? ""
+                                )
+                                .id("\(node.id)-typography-preview")
+
                                 CSSFontFamilyVariableField(
                                     key: "font-family",
                                     value: node.cssVariables["font-family"] ?? "",
@@ -244,10 +235,10 @@ struct InspectorView: View {
                                     .id("\(node.id)-letter-spacing")
                                 }
 
-                                CSSEnumVariableField(
+                                CSSGlyphEnumVariableField(
                                     key: "text-align",
                                     value: node.cssVariables["text-align"] ?? "",
-                                    options: ["left", "center", "right", "justify", "start", "end"]
+                                    options: InspectorOptionCatalog.textAlign
                                 ) { value in
                                     store.updateCSSVariable(key: "text-align", value: value)
                                 }
@@ -257,10 +248,10 @@ struct InspectorView: View {
 
                         if node.type == "image" {
                             InspectorSection(title: "Media", sectionID: .media) {
-                                CSSEnumVariableField(
+                                CSSGlyphEnumVariableField(
                                     key: "--og-object-fit",
                                     value: node.cssVariables["--og-object-fit"] ?? "",
-                                    options: ["cover", "contain", "fill", "none", "scale-down"]
+                                    options: InspectorOptionCatalog.objectFit
                                 ) { value in
                                     store.updateCSSVariable(key: "--og-object-fit", value: value)
                                 }
@@ -557,9 +548,11 @@ private struct IconAttributeOptionPicker: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-                .frame(minWidth: 86, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(minWidth: 60, idealWidth: 86, maxWidth: 96, alignment: .leading)
 
             HStack(spacing: 4) {
                 ForEach(options, id: \.self) { option in
@@ -3050,7 +3043,13 @@ private struct RequiredCanvasNumberField: View {
             InspectorInputChrome(
                 icon: InspectorParameterIcon.canvasMetric(label),
                 iconHelp: label,
-                strokeColor: fieldStrokeColor
+                strokeColor: fieldStrokeColor,
+                scrub: InspectorInputScrubConfiguration(
+                    profile: InspectorScrubProfile(step: 1, fallbackUnit: "", allowsNegative: true),
+                    currentValue: { text },
+                    onScrub: { nextValue in text = nextValue },
+                    onCommit: onSubmit
+                )
             ) {
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
@@ -3124,9 +3123,11 @@ private struct EditableAttributeField: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(label)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-                .frame(minWidth: 86, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(minWidth: 60, idealWidth: 86, maxWidth: 96, alignment: .leading)
 
             InspectorInputChrome(
                 icon: InspectorParameterIcon.attribute(label),
@@ -3160,51 +3161,62 @@ private struct EditableAttributeField: View {
     }
 }
 
-/// 論理名（日本語）: レイアウトモードピッカー
-/// 概要: `data-og-layout` を vertical、horizontal、absolute から選択するボタン群です。
+/// 論理名（日本語）: ノード整列コントロール
+/// 概要: 選択ノードの並び方向に合わせて、主軸・交差軸のアイコン選択をまとめて提示します。
 ///
 /// プロパティ:
-/// - `value`: 現在の layout 値。
-/// - `onChange`: layout 選択時に呼び出す処理。
-private struct LayoutModePicker: View {
-    var value: String
-    var onChange: (String) -> Void
-
-    private let options = [
-        ("vertical", "arrow.down"),
-        ("horizontal", "arrow.right"),
-        ("absolute", "scope")
-    ]
+/// - `node`: 対象の OpenGraphite ノード。
+/// - `onCommit`: CSS declaration をまとめて反映する処理。
+private struct NodeAlignmentControls: View {
+    var node: OpenGraphiteNode
+    var onCommit: ([String: String]) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(options, id: \.0) { option in
-                Button {
-                    onChange(option.0)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: option.1)
-                        Text(option.0)
-                    }
-                    .font(.caption)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                            .fill(value == option.0 ? EditorColumnStyle.selectedRowFill : Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
-                            .stroke(value == option.0 ? Color.accentColor.opacity(0.45) : EditorColumnStyle.separatorColor, lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 8) {
+            InspectorAlignmentAxisStrip(
+                title: isVerticalLayout ? "justify-content · 主軸 (縦)" : "justify-content · 主軸 (横)",
+                options: InspectorAlignmentAxisOptions.mainAxisOptions(isVerticalLayout: isVerticalLayout),
+                selectedValue: justifyContent,
+                effectiveValue: InspectorAlignmentModel.resolvedJustifyContent(justifyContent)
+            ) { value in
+                onCommit(["justify-content": value])
+            }
+
+            InspectorAlignmentAxisStrip(
+                title: isVerticalLayout ? "align-items · 交差軸 (横)" : "align-items · 交差軸 (縦)",
+                options: InspectorAlignmentAxisOptions.crossAxisOptions(isVerticalLayout: isVerticalLayout),
+                selectedValue: alignItems,
+                effectiveValue: InspectorAlignmentModel.resolvedAlignItems(alignItems, layout: layout)
+            ) { value in
+                onCommit(["align-items": value])
+            }
+
+            if !InspectorAlignmentModel.supportsAlignment(layout) {
+                Text("absolute レイアウトでは flex 整列は描画へ反映されません。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var layout: String {
+        node.layout ?? ""
+    }
+
+    private var isVerticalLayout: Bool {
+        InspectorAlignmentModel.isVerticalLayout(layout)
+    }
+
+    private var alignItems: String {
+        node.cssVariables["align-items"] ?? ""
+    }
+
+    private var justifyContent: String {
+        node.cssVariables["justify-content"] ?? ""
     }
 }
-
 /// 論理名（日本語）: インスペクターフィールドグリッド
 /// 概要: CSS declaration 入力欄を Inspector 幅に応じて一列から複数列へ畳む汎用コンテナです。
 ///
@@ -3441,63 +3453,5 @@ private struct CSSColorSwatch: View {
                 .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
         )
         .help(colorValue?.cssHexString ?? "CSS色として解析できない値")
-    }
-}
-
-/// 論理名（日本語）: インスペクターボタン選択肢
-/// 概要: alignment や justify のアイコンボタンに使う選択肢モデルです。
-///
-/// プロパティ:
-/// - `label`: tooltip 用の短いラベル。
-/// - `icon`: 表示するアイコン。
-/// - `value`: 適用する CSS 値。
-private struct InspectorButtonOption: Identifiable {
-    var label: String
-    var icon: OpenGraphiteIcon
-    var value: String
-
-    var id: String { value }
-}
-
-/// 論理名（日本語）: インスペクターボタンストリップ
-/// 概要: alignment や justify をアイコンボタン群として表示し、選択値を CSS declaration へ反映します。
-///
-/// プロパティ:
-/// - `title`: 行タイトル。
-/// - `value`: 現在選択値。
-/// - `options`: 表示する選択肢。
-/// - `onChange`: 選択時に呼び出す処理。
-private struct InspectorButtonStrip: View {
-    var title: String
-    var value: String
-    var options: [InspectorButtonOption]
-    var onChange: (String) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 54, alignment: .leading)
-
-            HStack(spacing: 4) {
-                ForEach(options) { option in
-                    Button {
-                        onChange(option.value)
-                    } label: {
-                        OpenGraphiteIconView(icon: option.icon, size: 13)
-                            .frame(width: 28, height: 24)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(value == option.value ? EditorColumnStyle.selectedRowFill : Color.clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(option.label)
-                }
-            }
-
-            Spacer()
-        }
     }
 }
