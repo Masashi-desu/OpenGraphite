@@ -23,6 +23,8 @@ OpenGraphite リポジトリ内の `public/` page や component HTML を編集�
 
 Ruler、Guide、Grid は OpenGraphite.app のプレビュー補助であり、この HTML / CSS 契約の対象外である。表示設定は app 側、Guide の方向と world 座標は `.ogp` の Chapter / Collection `guides[]` に保持する。いずれも HTML、CSS、`data-og-*`、`--og-*`、runtime、build、screenshot へ変換または出力しない。
 
+Canvas Object Reference は typed `ogref:node` / `ogref:component-node` が指す任意階層 node を、Chapter / Collection canvas 直下へ置く editor viewport である。配置 metadata は `.ogp` の `references[]` にだけ保存し、参照先 subtree の clone や host node を HTML object 内へ挿入しない。参照 viewport からの編集は元 node の HTML / companion CSS へ保存する。HTML 内で永続的な再利用構造が必要なら component master と `<og-instance>` を使う。
+
 ## コアモデル
 
 OpenGraphite document は通常の HTML である。`OpenGraphite.css` は次を読み取って要素を描画する。

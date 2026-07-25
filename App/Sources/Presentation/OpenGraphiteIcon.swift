@@ -150,6 +150,10 @@ struct OpenGraphiteIconLibraryPicker: View {
 extension OpenGraphiteIcon {
     static let sidebarLeft = OpenGraphiteIcon.lucide("panel-left", fallbackSystemName: "sidebar.left")
     static let sidebarRight = OpenGraphiteIcon.lucide("panel-right", fallbackSystemName: "sidebar.right")
+    static let sidebarObjects = OpenGraphiteIcon.lucide("layers-3", fallbackSystemName: "square.3.layers.3d")
+    static let historyPanel = OpenGraphiteIcon.lucide("history", fallbackSystemName: "clock.arrow.circlepath")
+    static let undoHistory = OpenGraphiteIcon.lucide("undo-2", fallbackSystemName: "arrow.uturn.backward")
+    static let redoHistory = OpenGraphiteIcon.lucide("redo-2", fallbackSystemName: "arrow.uturn.forward")
     static let projectPanel = OpenGraphiteIcon.lucide("folder-tree", fallbackSystemName: "folder")
     static let pagesPanel = OpenGraphiteIcon.lucide("file-stack", fallbackSystemName: "rectangle.stack")
     static let componentsPanel = OpenGraphiteIcon.lucide("component", fallbackSystemName: "shippingbox")

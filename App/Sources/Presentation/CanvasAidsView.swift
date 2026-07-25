@@ -26,8 +26,17 @@ struct CanvasViewportState: Equatable {
 }
 
 /// 論理名（日本語）: キャンバス補助表示座標解決器
-/// 概要: スクロール、無限余白、固定 padding、Zoom を考慮して viewport 座標とキャンバスワールド座標を相互変換します。
+/// 概要: スクロール、無限余白、固定 padding、描画オフセット、Zoom を考慮して viewport 座標とキャンバスワールド座標を相互変換します。
 enum CanvasAidCoordinateResolver {
+    /// 論理名（日本語）: 軸別描画オフセット取得関数
+    /// 処理概要: `.ogp` の page 座標が指す page 本体と、情報カードを含む描画 content の原点差を対象軸へ変換します。
+    ///
+    /// - Parameter orientation: X 軸を使う垂直線または Y 軸を使う水平線。
+    /// - Returns: 未拡大 content 内で world 原点へ到達するために加える描画オフセット。
+    static func contentOffset(for orientation: OpenGraphiteCanvasGuideOrientation) -> CGFloat {
+        orientation == .vertical ? 0 : CanvasMetrics.pageNameCardOutsideOffset
+    }
+
     /// 論理名（日本語）: ワールド座標変換関数
     /// 処理概要: viewport 上の X または Y を未拡大のキャンバスワールド座標へ変換します。
     ///
@@ -38,6 +47,7 @@ enum CanvasAidCoordinateResolver {
     ///   - canvasOrigin: 表示 content が基準にするワールド原点成分。
     ///   - zoom: 現在のキャンバス倍率。
     ///   - contentPadding: hosting view 内の固定余白。
+    ///   - contentOffset: page 本体の world 原点と描画 content 原点の未拡大差分。
     /// - Returns: キャンバスワールド座標。入力が無効な場合は `nil`。
     static func worldPosition(
         viewportPosition: CGFloat,
@@ -45,13 +55,15 @@ enum CanvasAidCoordinateResolver {
         hostingOrigin: CGFloat,
         canvasOrigin: CGFloat,
         zoom: Double,
-        contentPadding: CGFloat
+        contentPadding: CGFloat,
+        contentOffset: CGFloat = 0
     ) -> Double? {
         guard viewportPosition.isFinite,
               visibleOrigin.isFinite,
               hostingOrigin.isFinite,
               canvasOrigin.isFinite,
               contentPadding.isFinite,
+              contentOffset.isFinite,
               zoom.isFinite,
               zoom > 0
         else {
@@ -59,6 +71,7 @@ enum CanvasAidCoordinateResolver {
         }
         return Double(canvasOrigin) + Double(
             (visibleOrigin + viewportPosition - hostingOrigin - contentPadding) / CGFloat(zoom)
+                - contentOffset
         )
     }
 
@@ -72,6 +85,7 @@ enum CanvasAidCoordinateResolver {
     ///   - canvasOrigin: 表示 content が基準にするワールド原点成分。
     ///   - zoom: 現在のキャンバス倍率。
     ///   - contentPadding: hosting view 内の固定余白。
+    ///   - contentOffset: page 本体の world 原点と描画 content 原点の未拡大差分。
     /// - Returns: CanvasPane 左上を基準にした X または Y。入力が無効な場合は `nil`。
     static func viewportPosition(
         worldPosition: Double,
@@ -79,13 +93,15 @@ enum CanvasAidCoordinateResolver {
         hostingOrigin: CGFloat,
         canvasOrigin: CGFloat,
         zoom: Double,
-        contentPadding: CGFloat
+        contentPadding: CGFloat,
+        contentOffset: CGFloat = 0
     ) -> CGFloat? {
         guard worldPosition.isFinite,
               visibleOrigin.isFinite,
               hostingOrigin.isFinite,
               canvasOrigin.isFinite,
               contentPadding.isFinite,
+              contentOffset.isFinite,
               zoom.isFinite,
               zoom > 0
         else {
@@ -93,7 +109,7 @@ enum CanvasAidCoordinateResolver {
         }
         let position = hostingOrigin
             + contentPadding
-            + CGFloat(worldPosition - Double(canvasOrigin)) * CGFloat(zoom)
+            + (CGFloat(worldPosition - Double(canvasOrigin)) + contentOffset) * CGFloat(zoom)
             - visibleOrigin
         return position.isFinite ? position : nil
     }
@@ -409,7 +425,8 @@ struct CanvasGridOverlay: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
     }
 
@@ -430,7 +447,8 @@ struct CanvasGridOverlay: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
     }
 }
@@ -630,7 +648,8 @@ struct CanvasRulerGuideOverlay: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
     }
 
@@ -651,13 +670,21 @@ struct CanvasRulerGuideOverlay: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
     }
 }
 
 /// 論理名（日本語）: キャンバスルーラー目盛りビュー
 /// 概要: 現在 viewport に対応する数値ラベルと大小の目盛りを上または左ルーラーへ描画します。
+///
+/// プロパティ:
+/// - `orientation`: X 軸を表示する上ルーラーまたは Y 軸を表示する左ルーラー。
+/// - `paneOrigin`: ルーラー矩形の CanvasPane 座標原点。
+/// - `viewport`: スクロール中の表示領域状態。
+/// - `canvasOrigin`: 描画 content が基準にする world 原点。
+/// - `zoom`: 現在のキャンバス倍率。
 private struct CanvasRulerTicksView: View {
     var orientation: OpenGraphiteCanvasGuideOrientation
     var paneOrigin: CGPoint
@@ -702,10 +729,14 @@ private struct CanvasRulerTicksView: View {
                     tickPath.move(to: CGPoint(x: localPosition, y: size.height - length))
                     tickPath.addLine(to: CGPoint(x: localPosition, y: size.height))
                     if isMajor {
+                        let labelLayout = CanvasRulerLabelLayout.resolve(
+                            orientation: orientation,
+                            tickPosition: localPosition
+                        )
                         context.draw(
                             rulerLabel(value),
-                            at: CGPoint(x: localPosition + 3, y: 3),
-                            anchor: .topLeading
+                            at: labelLayout.position,
+                            anchor: labelLayout.anchor
                         )
                     }
                 } else {
@@ -713,10 +744,14 @@ private struct CanvasRulerTicksView: View {
                     tickPath.move(to: CGPoint(x: size.width - length, y: localPosition))
                     tickPath.addLine(to: CGPoint(x: size.width, y: localPosition))
                     if isMajor {
+                        let labelLayout = CanvasRulerLabelLayout.resolve(
+                            orientation: orientation,
+                            tickPosition: localPosition
+                        )
                         context.draw(
                             rulerLabel(value),
-                            at: CGPoint(x: 3, y: localPosition + 2),
-                            anchor: .topLeading
+                            at: labelLayout.position,
+                            anchor: labelLayout.anchor
                         )
                     }
                 }
@@ -753,7 +788,8 @@ private struct CanvasRulerTicksView: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
     }
 
@@ -769,7 +805,42 @@ private struct CanvasRulerTicksView: View {
             hostingOrigin: orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
+        )
+    }
+}
+
+/// 論理名（日本語）: ルーラー数値ラベル配置
+/// 概要: 上・左ルーラーの数値中心を対応する主目盛り座標へ揃える描画位置とアンカーを解決します。
+///
+/// プロパティ:
+/// - `position`: ルーラー内でラベルを描画する基準点。
+/// - `anchor`: 基準点へラベルのどの位置を合わせるか。
+struct CanvasRulerLabelLayout: Equatable {
+    var position: CGPoint
+    var anchor: UnitPoint
+
+    /// 論理名（日本語）: ルーラーラベル配置解決関数
+    /// 処理概要: 上ルーラーは数値の水平中心、左ルーラーは数値の垂直中心を主目盛り位置へ一致させます。
+    ///
+    /// - Parameters:
+    ///   - orientation: X 軸を使う上ルーラーまたは Y 軸を使う左ルーラー。
+    ///   - tickPosition: ルーラー内の主目盛り座標。
+    /// - Returns: 数値中心が主目盛りへ一致する描画位置とアンカー。
+    static func resolve(
+        orientation: OpenGraphiteCanvasGuideOrientation,
+        tickPosition: CGFloat
+    ) -> CanvasRulerLabelLayout {
+        if orientation == .vertical {
+            return CanvasRulerLabelLayout(
+                position: CGPoint(x: tickPosition, y: 3),
+                anchor: .top
+            )
+        }
+        return CanvasRulerLabelLayout(
+            position: CGPoint(x: 3, y: tickPosition),
+            anchor: .leading
         )
     }
 }
@@ -868,7 +939,8 @@ private struct CanvasPlacedGuideView: View {
             hostingOrigin: guide.orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: guide.orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: guide.orientation)
         )
     }
 
@@ -884,7 +956,8 @@ private struct CanvasPlacedGuideView: View {
             hostingOrigin: guide.orientation == .vertical ? viewport.hostingOrigin.x : viewport.hostingOrigin.y,
             canvasOrigin: guide.orientation == .vertical ? canvasOrigin.x : canvasOrigin.y,
             zoom: zoom,
-            contentPadding: CanvasMetrics.documentPadding
+            contentPadding: CanvasMetrics.documentPadding,
+            contentOffset: CanvasAidCoordinateResolver.contentOffset(for: guide.orientation)
         )
     }
 }

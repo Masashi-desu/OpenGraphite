@@ -4,7 +4,7 @@ import WebKit
 @testable import OpenGraphite
 
 /// 論理名（日本語）: runtimeシリアライズテストスイート
-/// 概要: `OpenGraphite.runtime.js` が component 展開後 DOM を source HTML として保存可能な形へ戻すことを確認します。
+/// 概要: `OpenGraphite.runtime.js` の保存復元と、focus表示が対象外document scrollを露出させないことを確認します。
 @MainActor
 @Suite("runtimeシリアライズテストスイート")
 struct RuntimeSerializationTests {
@@ -13,18 +13,19 @@ struct RuntimeSerializationTests {
     @Test("focus isolationは対象subtreeだけをgeometry不変で表示して解除できる")
     func testFocusIsolationShowsOnlyTargetSubtreeAndRestoresDocument() async throws {
         // コンディション：横並びの sibling、対象 frame、対象 child を持つ HTML を WebView に読み込む（Given）
-        let webView = WKWebView(frame: .zero)
+        let webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
         let waiter = WebViewNavigationWaiter()
         let pageHTML = """
         <!doctype html>
         <html>
           <head>
             <style>
-              html, body { margin: 0; min-width: 640px; min-height: 360px; }
+              html, body { margin: 0; min-width: 640px; min-height: 1200px; }
               [data-og-id="page"] { display: flex; align-items: flex-start; gap: 24px; padding: 32px; }
               [data-og-id="leading-sibling"] { width: 96px; height: 72px; }
               [data-og-id="focus-target"] { width: 180px; height: 120px; padding: 12px; }
-              [data-og-id="focus-child"] { width: 80px; height: 32px; }
+              [data-og-id="focus-child"] { display: block; width: 80px; height: 32px; overflow: auto; }
+              [data-og-id="focus-child-content"] { display: block; height: 96px; }
               [data-og-id="trailing-sibling"] { width: 112px; height: 64px; }
             </style>
           </head>
@@ -32,7 +33,9 @@ struct RuntimeSerializationTests {
             <Page data-og-id="page" data-og-type="page">
               <LeadingSibling data-og-id="leading-sibling" data-og-type="frame">Leading</LeadingSibling>
               <FocusTarget data-og-id="focus-target" data-og-type="frame">
-                <FocusChild data-og-id="focus-child" data-og-type="text">Focused child</FocusChild>
+                <FocusChild data-og-id="focus-child" data-og-type="text">
+                  <FocusChildContent data-og-id="focus-child-content">Focused child</FocusChildContent>
+                </FocusChild>
               </FocusTarget>
               <TrailingSibling data-og-id="trailing-sibling" data-og-type="frame">Trailing</TrailingSibling>
             </Page>
@@ -65,6 +68,9 @@ struct RuntimeSerializationTests {
                   Number.parseFloat(style.opacity || '1') > 0;
               };
               const beforeRect = rect(target);
+              const documentScroller = document.scrollingElement || document.documentElement;
+              documentScroller.scrollTop = 180;
+              const documentScrollTopBeforeFocus = documentScroller.scrollTop;
               const applied = window.OpenGraphiteFocusIsolation.apply([target]);
               const focusedRect = rect(target);
               const focusedState = {
@@ -73,6 +79,11 @@ struct RuntimeSerializationTests {
                 childVisible: isVisible(child),
                 leadingSiblingVisible: isVisible(leadingSibling),
                 trailingSiblingVisible: isVisible(trailingSibling),
+                documentScrollTop: documentScroller.scrollTop,
+                documentOverflow: window.getComputedStyle(document.documentElement).overflow,
+                bodyOverflow: window.getComputedStyle(document.body).overflow,
+                childOverflow: window.getComputedStyle(child).overflow,
+                childCanScroll: child.scrollHeight > child.clientHeight,
                 rootMarkers: document.querySelectorAll('[' + rootAttribute + ']').length,
                 visibleMarkers: document.querySelectorAll('[' + visibleAttribute + ']').length
               };
@@ -80,6 +91,7 @@ struct RuntimeSerializationTests {
               return {
                 applied: applied,
                 beforeRect: beforeRect,
+                documentScrollTopBeforeFocus: documentScrollTopBeforeFocus,
                 focusedRect: focusedRect,
                 clearedRect: rect(target),
                 focusedState: focusedState,
@@ -88,6 +100,7 @@ struct RuntimeSerializationTests {
                 childVisibleAfterClear: isVisible(child),
                 leadingSiblingVisibleAfterClear: isVisible(leadingSibling),
                 trailingSiblingVisibleAfterClear: isVisible(trailingSibling),
+                documentOverflowAfterClear: window.getComputedStyle(document.documentElement).overflow,
                 rootMarkersAfterClear: document.querySelectorAll('[' + rootAttribute + ']').length,
                 visibleMarkersAfterClear: document.querySelectorAll('[' + visibleAttribute + ']').length
               };
@@ -107,6 +120,12 @@ struct RuntimeSerializationTests {
         #expect(focusedState["childVisible"] as? Bool == true)
         #expect(focusedState["leadingSiblingVisible"] as? Bool == false)
         #expect(focusedState["trailingSiblingVisible"] as? Bool == false)
+        #expect(((payload["documentScrollTopBeforeFocus"] as? NSNumber)?.doubleValue ?? 0) > 0)
+        #expect((focusedState["documentScrollTop"] as? NSNumber)?.doubleValue == 0)
+        #expect(focusedState["documentOverflow"] as? String == "hidden")
+        #expect(focusedState["bodyOverflow"] as? String == "hidden")
+        #expect(focusedState["childOverflow"] as? String == "auto")
+        #expect(focusedState["childCanScroll"] as? Bool == true)
         #expect(((focusedState["rootMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
         #expect(((focusedState["visibleMarkers"] as? NSNumber)?.intValue ?? 0) > 0)
         #expect(Self.rectsAreEqual(beforeRect, focusedRect))
@@ -116,6 +135,7 @@ struct RuntimeSerializationTests {
         #expect(payload["childVisibleAfterClear"] as? Bool == true)
         #expect(payload["leadingSiblingVisibleAfterClear"] as? Bool == true)
         #expect(payload["trailingSiblingVisibleAfterClear"] as? Bool == true)
+        #expect(payload["documentOverflowAfterClear"] as? String != "hidden")
         #expect((payload["rootMarkersAfterClear"] as? NSNumber)?.intValue == 0)
         #expect((payload["visibleMarkersAfterClear"] as? NSNumber)?.intValue == 0)
     }

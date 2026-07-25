@@ -4,9 +4,25 @@ import Testing
 @testable import OpenGraphite
 
 /// 論理名（日本語）: キャンバス注釈座標関連のテストスイート
-/// 概要: `.ogp` world 座標、ページ名カード表示オフセット、page / annotation bounds の整合性を確認します。
+/// 概要: `.ogp` world 座標、ページ名カード表示オフセット、page / annotation / reference boundsとpopover anchorの整合性を確認します。
 @Suite("キャンバス注釈座標関連のテストスイート")
 struct CanvasAnnotationCoordinateResolverTests {
+    /// 論理名（日本語）: 参照入力Popoverアンカーテスト
+    /// 概要: native source rectの中心が右クリックした挿入local座標と一致することを検証します。
+    @Test("参照入力Popoverの矢印アンカーを右クリック位置へ揃える")
+    func testReferencePopoverAnchorCentersOnContextClick() {
+        // コンディション：スクロール・ズーム対象Canvas内の右クリックlocal座標を用意する（Given）
+        let contextPoint = CGPoint(x: 927.25, y: 318.75)
+
+        // 検証内容：NSPopoverへ渡すnative source rectを生成する（When）
+        let sourceRect = CanvasReferencePopoverAnchorResolver.sourceRect(centeredAt: contextPoint)
+
+        // 期待値：source rect中心が右クリック位置と完全に一致する（Then）
+        #expect(sourceRect.midX == contextPoint.x)
+        #expect(sourceRect.midY == contextPoint.y)
+        #expect(sourceRect.size == CGSize(width: 1, height: 1))
+    }
+
     /// 論理名（日本語）: キャンバス注釈座標往復テスト
     /// 概要: 注釈入力と表示が同じ canonical world 座標へ揃うことを検証します。
     @Test("注釈入力と表示は同じworld座標を使う")
@@ -56,6 +72,95 @@ struct CanvasAnnotationCoordinateResolverTests {
         #expect(bounds.origin == .zero)
         #expect(bounds.width == 1040)
         #expect(bounds.height == 480)
+    }
+
+    /// 論理名（日本語）: 参照配置包含Boundsテスト
+    /// 概要: 負座標またはPage外にあるCanvas Object ReferenceもCanvasProjectBoundsに含まれることを検証します。
+    @Test("Page外の参照配置までCanvas boundsを広げる")
+    func testProjectBoundsIncludesCanvasObjectReferences() {
+        // コンディション：Page左上の負座標へ参照viewportを配置する（Given）
+        let page = OpenGraphitePage(
+            id: "home",
+            internalID: "page-home",
+            path: "index.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 640, height: 480)
+        )
+        let reference = OpenGraphiteCanvasReference(
+            internalID: "reference-opaque",
+            referenceID: "ogref:node:chapter-opaque:page-home:node-opaque",
+            x: -420,
+            y: -260,
+            width: 360,
+            height: 240
+        )
+
+        // 検証内容：Pageと参照viewportのunion boundsを計算する（When）
+        let bounds = CanvasProjectBounds(pages: [page], references: [reference])
+
+        // 期待値：参照の左上をworld原点に含み、Page右下までの寸法を確保する（Then）
+        #expect(bounds.origin == CGPoint(x: -420, y: -260))
+        #expect(bounds.width == 1060)
+        #expect(bounds.height == 740)
+    }
+
+    /// 論理名（日本語）: 狭幅参照情報カード包含Boundsテスト
+    /// 概要: 参照viewport本体より広い共通情報カードもCanvasProjectBoundsに含まれることを検証します。
+    @Test("狭い参照viewportの左上情報カードまでCanvas boundsへ含める")
+    func testProjectBoundsIncludesReferenceCaptionWidth() {
+        // コンディション：Page右側へ最小幅の参照viewportを配置する（Given）
+        let page = OpenGraphitePage(
+            id: "home",
+            internalID: "page-home",
+            path: "index.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 640, height: 480)
+        )
+        let reference = OpenGraphiteCanvasReference(
+            internalID: "reference-narrow",
+            referenceID: "ogref:node:chapter-opaque:page-home:node-opaque",
+            x: 700,
+            y: 0,
+            width: 40,
+            height: 40
+        )
+
+        // 検証内容：通常pageと共通の情報カードを含むCanvas boundsを計算する（When）
+        let bounds = CanvasProjectBounds(pages: [page], references: [reference])
+
+        // 期待値：40ptの参照本体ではなく196ptの情報カード右端まで表示範囲を確保する（Then）
+        #expect(bounds.width == 896)
+        #expect(bounds.height == 480)
+    }
+
+    /// 論理名（日本語）: 参照配置Content Revisionテスト
+    /// 概要: 参照IDまたはworld frameの変更がCanvas content revisionへ反映されることを検証します。
+    @Test("参照配置変更をcontent revisionへ反映する")
+    func testContentRevisionTracksCanvasObjectReferences() {
+        // コンディション：同じ配置IDで位置だけが異なる参照viewportを用意する（Given）
+        let original = OpenGraphiteCanvasReference(
+            internalID: "reference-revision",
+            referenceID: "ogref:node:chapter-opaque:page-opaque:node-opaque",
+            x: 40,
+            y: 60
+        )
+        var moved = original
+        moved.x = 80
+
+        // 検証内容：変更前後のcontent revisionを生成する（When）
+        let originalRevision = CanvasDocumentIdentityResolver.contentRevisionID(
+            projectPath: "/project/Sample.ogp",
+            segment: .pages,
+            pages: [],
+            references: [original]
+        )
+        let movedRevision = CanvasDocumentIdentityResolver.contentRevisionID(
+            projectPath: "/project/Sample.ogp",
+            segment: .pages,
+            pages: [],
+            references: [moved]
+        )
+
+        // 期待値：参照viewportの位置変更で描画revisionが変わる（Then）
+        #expect(movedRevision != originalRevision)
     }
 
     /// 論理名（日本語）: 注釈Content Revision軽量化テスト

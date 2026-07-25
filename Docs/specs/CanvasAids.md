@@ -43,8 +43,11 @@ Guide の `position` は page / component の `canvas.x` / `canvas.y` と同じ�
 - SwiftUI content の固定 document padding。
 - 現在の Canvas Zoom。
 - page / annotation 群から解決した canvas content origin。
+- page 情報カードを page 本体の上へ描画するための visual offset。`.ogp` の `canvas.x` / `canvas.y` は情報カードではなく page 本体左上を指す。
+- AppKit scroll view 内の SwiftUI hosting view は window の safe area を再適用しない。hosting view の実座標原点と canvas content 左上を一致させる。
 
 Ruler の数値、Grid、Guide は同じ変換器と world origin を使います。Scroll、Zoom、page / annotation 移動によって content bounds の原点が変わっても、同じ world 座標を表示し続けます。
+上 Ruler の数値は水平中心、左 Ruler の数値は垂直中心を対応する大目盛り座標へ揃え、ラベル用の固定オフセットで座標位置をずらしません。
 
 ## Ruler And Grid Density
 

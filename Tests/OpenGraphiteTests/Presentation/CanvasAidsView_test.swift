@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import OpenGraphite
 
@@ -6,6 +7,24 @@ import Testing
 /// 概要: ルーラー、ガイド、グリッドが共有する座標変換、刻み、表示領域の計算を確認します。
 @Suite("キャンバス補助表示関連のテストスイート")
 struct CanvasAidsViewTests {
+    /// 論理名（日本語）: キャンバスホスティングセーフエリア無効化テスト
+    /// 概要: AppKit scroll view 内の canvas content が window 上端の safe area で下へ移動しないことを検証します。
+    @MainActor
+    @Test("canvas hosting viewのsafe areaを座標原点へ含めない")
+    func testCanvasHostingViewUsesZeroSafeAreaInsets() {
+        // コンディション：SwiftUI canvas content を保持する専用 hosting view を用意する（Given）
+        let hostingView = CanvasZeroSafeAreaHostingView(rootView: EmptyView())
+
+        // 検証内容：hosting view が公開する各辺の safe area inset を取得する（When）
+        let insets = hostingView.safeAreaInsets
+
+        // 期待値：page、方眼、ruler、guideが共有するhosting原点に追加余白がない（Then）
+        #expect(insets.top == 0)
+        #expect(insets.left == 0)
+        #expect(insets.bottom == 0)
+        #expect(insets.right == 0)
+    }
+
     /// 論理名（日本語）: ガイド前面描画順テスト
     /// 概要: ガイド線と三角マーカーがルーラーの Material に隠れない描画順を検証します。
     @Test("guideと三角markerをrulerより前面に描画する")
@@ -53,6 +72,73 @@ struct CanvasAidsViewTests {
         // 期待値：world座標は-58になり、画面位置は元の123へ戻る（Then）
         #expect(abs(worldPosition - (-58)) < 0.000_001)
         #expect(abs(restoredPosition - viewportPosition) < 0.000_001)
+    }
+
+    /// 論理名（日本語）: ページ本体原点整合テスト
+    /// 概要: page 情報カードの描画領域を持つ場合も、`.ogp` の position 0,0 が page 本体左上の方眼とルーラーへ一致することを検証します。
+    @Test("position 0,0をpage本体左上の方眼とrulerへ揃える")
+    func testWorldOriginMatchesRenderedPageBodyOrigin() throws {
+        // コンディション：上側にpage情報cardを描画する72% Zoomのcontentを用意する（Given）
+        let zoom = 0.72
+        let canvasOrigin: CGFloat = -640
+        let pageLayout = CanvasPageVisualLayout.resolve(pageWidth: 1_440, pageHeight: 1_200)
+        let contentOffset = CanvasAidCoordinateResolver.contentOffset(for: .horizontal)
+        let renderedPageBodyPosition = CanvasMetrics.documentPadding
+            + (abs(canvasOrigin) + pageLayout.pageBodyFrame.minY) * CGFloat(zoom)
+
+        // 検証内容：world座標0をviewportへ変換し、page本体上端からworld座標へ戻す（When）
+        let viewportPosition = try #require(
+            CanvasAidCoordinateResolver.viewportPosition(
+                worldPosition: 0,
+                visibleOrigin: 0,
+                hostingOrigin: 0,
+                canvasOrigin: canvasOrigin,
+                zoom: zoom,
+                contentPadding: CanvasMetrics.documentPadding,
+                contentOffset: contentOffset
+            )
+        )
+        let restoredWorldPosition = try #require(
+            CanvasAidCoordinateResolver.worldPosition(
+                viewportPosition: renderedPageBodyPosition,
+                visibleOrigin: 0,
+                hostingOrigin: 0,
+                canvasOrigin: canvasOrigin,
+                zoom: zoom,
+                contentPadding: CanvasMetrics.documentPadding,
+                contentOffset: contentOffset
+            )
+        )
+
+        // 期待値：0目盛りはpage本体上端へ一致し、同じ位置をworld座標0へ戻せる（Then）
+        #expect(contentOffset == pageLayout.pageBodyFrame.minY)
+        #expect(abs(viewportPosition - renderedPageBodyPosition) < 0.000_001)
+        #expect(abs(restoredWorldPosition) < 0.000_001)
+    }
+
+    /// 論理名（日本語）: ルーラー数値中心整合テスト
+    /// 概要: 上・左ルーラーの数値ラベル中心が、対応する主目盛り座標から固定値でずれないことを検証します。
+    @Test("ruler数値の中心を対応する主目盛りへ揃える")
+    func testRulerLabelCentersOnMajorTick() {
+        // コンディション：上ルーラーのX主目盛りと左ルーラーのY主目盛りを用意する（Given）
+        let horizontalRulerTick: CGFloat = 240
+        let verticalRulerTick: CGFloat = 360
+
+        // 検証内容：各主目盛りに対する数値ラベルの位置とanchorを解決する（When）
+        let topLabel = CanvasRulerLabelLayout.resolve(
+            orientation: .vertical,
+            tickPosition: horizontalRulerTick
+        )
+        let leftLabel = CanvasRulerLabelLayout.resolve(
+            orientation: .horizontal,
+            tickPosition: verticalRulerTick
+        )
+
+        // 期待値：上は水平中心、左は垂直中心が主目盛り座標へ一致する（Then）
+        #expect(topLabel.position.x == horizontalRulerTick)
+        #expect(topLabel.anchor == .top)
+        #expect(leftLabel.position.y == verticalRulerTick)
+        #expect(leftLabel.anchor == .leading)
     }
 
     /// 論理名（日本語）: 補助表示レイアウトテスト

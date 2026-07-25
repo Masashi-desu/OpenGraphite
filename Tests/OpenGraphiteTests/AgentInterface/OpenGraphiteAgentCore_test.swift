@@ -2236,11 +2236,11 @@ struct OpenGraphiteAgentCoreTests {
         #expect(graph.nodes.map(\.id) == ["cards"])
     }
 
-    /// 論理名（日本語）: Project要約ガイド件数テスト
-    /// 概要: `.ogp` の Chapter / Collection ガイド件数が project inspect に反映されることを確認します。
-    @Test("project inspectがChapterとCollectionのguideCountを返す")
+    /// 論理名（日本語）: Project要約キャンバスメタデータ件数テスト
+    /// 概要: `.ogp` のChapter / Collectionガイドとオブジェクト参照件数がproject inspectへ反映されることを確認します。
+    @Test("project inspectがguideCountとreferenceCountを返す")
     func testInspectProjectIncludesCanvasGuideCounts() throws {
-        // コンディション：ChapterとCollectionに1本ずつguideを保存したprojectを用意する（Given）
+        // コンディション：ChapterとCollectionにguideと参照配置を1件ずつ保存したprojectを用意する（Given）
         let fixture = try AgentInterfaceFixture()
         defer { fixture.cleanUp() }
         let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
@@ -2257,14 +2257,32 @@ struct OpenGraphiteAgentCoreTests {
         project.collections[0].guides = [
             OpenGraphiteCanvasGuide(internalID: "component-guide", orientation: .horizontal, position: -48)
         ]
+        project.chapters[0].references = [
+            OpenGraphiteCanvasReference(
+                internalID: "page-reference",
+                referenceID: "ogref:node:\(project.chapters[0].internalID):\(project.chapters[0].pages[0].internalID):page-node",
+                x: 120,
+                y: 80
+            )
+        ]
+        project.collections[0].references = [
+            OpenGraphiteCanvasReference(
+                internalID: "component-reference",
+                referenceID: "ogref:component-node:\(project.collections[0].internalID):\(project.collections[0].components[0].internalID):cards-node",
+                x: 320,
+                y: 40
+            )
+        ]
         try JSONEncoder().encode(project).write(to: projectURL, options: .atomic)
 
         // 検証内容：project summaryを取得する（When）
         let summary = try fixture.core.inspectProject(at: projectURL)
 
-        // 期待値：各containerのguideCountが保存件数と一致する（Then）
+        // 期待値：各containerのguideCountとreferenceCountが保存件数と一致する（Then）
         #expect(summary.chapters.first?.guideCount == 1)
         #expect(summary.collections.first?.guideCount == 1)
+        #expect(summary.chapters.first?.referenceCount == 1)
+        #expect(summary.collections.first?.referenceCount == 1)
     }
 
     /// 論理名（日本語）: Componentsセグメント検証テスト

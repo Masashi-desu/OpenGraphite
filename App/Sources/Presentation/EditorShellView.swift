@@ -3,11 +3,52 @@ import QuartzCore
 import SwiftUI
 import WebKit
 
+/// 論理名（日本語）: エディター左カラム表示モード
+/// 概要: 左カラムをオブジェクトナビゲーションまたは統合Undo / Redo履歴へ切り替えるモードを表します。
+///
+/// 定義内容:
+/// - `objects`: Project / Pages / Components とそのオブジェクトを扱うナビゲーション表示。
+/// - `history`: 操作時刻と対象プレビューを含む作業履歴表示。
+enum EditorSidebarMode: String, CaseIterable, Identifiable {
+    case objects
+    case history
+
+    var id: String { rawValue }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .objects:
+            return "オブジェクト"
+        case .history:
+            return "作業履歴"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .objects:
+            return "オブジェクトなどを表示"
+        case .history:
+            return "Undo / Redo 履歴を表示"
+        }
+    }
+
+    var icon: OpenGraphiteIcon {
+        switch self {
+        case .objects:
+            return .sidebarObjects
+        case .history:
+            return .historyPanel
+        }
+    }
+}
+
 /// 論理名（日本語）: エディターシェルビュー
 /// 概要: 全面 Canvas の上に Sidebar と Inspector を重ねる編集画面のルートビューです。
 struct EditorShellView: View {
     @SceneStorage("editorShell.isSidebarVisible") private var isSidebarVisible = true
     @SceneStorage("editorShell.isInspectorVisible") private var isInspectorVisible = true
+    @SceneStorage("editorShell.sidebarMode.v2") private var selectedSidebarMode = EditorSidebarMode.objects.rawValue
 
     var body: some View {
         GeometryReader { geometry in
@@ -38,7 +79,11 @@ struct EditorShellView: View {
                         width: columnLayout.sidebarWidth,
                         edge: .leading
                     ) {
-                        SidebarView()
+                        if resolvedSidebarMode == .history {
+                            SidebarHistoryView()
+                        } else {
+                            SidebarView()
+                        }
                     }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                         .zIndex(10)
@@ -60,6 +105,7 @@ struct EditorShellView: View {
                     isInspectorVisible: isInspectorVisible,
                     sidebarWidth: columnLayout.sidebarWidth,
                     inspectorWidth: columnLayout.inspectorWidth,
+                    selectedSidebarMode: $selectedSidebarMode,
                     onToggleSidebar: {
                         withAnimation(.easeInOut(duration: 0.16)) {
                             isSidebarVisible.toggle()
@@ -75,6 +121,10 @@ struct EditorShellView: View {
             }
             .ignoresSafeArea(.container, edges: .top)
         }
+    }
+
+    private var resolvedSidebarMode: EditorSidebarMode {
+        EditorSidebarMode(rawValue: selectedSidebarMode) ?? .objects
     }
 }
 
@@ -164,6 +214,7 @@ private struct EditorOverlayColumn<Content: View>: View {
 /// プロパティ:
 /// - `isSidebarVisible`: 左カラムが表示中か。
 /// - `isInspectorVisible`: 右カラムが表示中か。
+/// - `selectedSidebarMode`: 左カラムへ表示するオブジェクトナビゲーションまたは作業履歴。
 /// - `onToggleSidebar`: 左カラム表示を切り替える処理。
 /// - `onToggleInspector`: 右カラム表示を切り替える処理。
 private struct EditorTopChromeView: View {
@@ -171,6 +222,7 @@ private struct EditorTopChromeView: View {
     var isInspectorVisible: Bool
     var sidebarWidth: CGFloat
     var inspectorWidth: CGFloat
+    @Binding var selectedSidebarMode: EditorSidebarMode.RawValue
     var onToggleSidebar: () -> Void
     var onToggleInspector: () -> Void
 
@@ -183,6 +235,11 @@ private struct EditorTopChromeView: View {
                     help: isSidebarVisible ? "Hide Sidebar" : "Show Sidebar",
                     action: onToggleSidebar
                 )
+
+                if isSidebarVisible {
+                    EditorSidebarModeSwitcher(selection: $selectedSidebarMode)
+                        .padding(.leading, 6)
+                }
 
                 Spacer(minLength: 0)
             }
@@ -235,6 +292,42 @@ private struct EditorTopChromeView: View {
 
     private var trailingChromeWidth: CGFloat {
         isInspectorVisible ? inspectorWidth : EditorOverlayMetrics.collapsedTrailingChromeWidth
+    }
+}
+
+/// 論理名（日本語）: 左カラム表示モード切替ビュー
+/// 概要: 左カラム表示時に生じる上部クロームの空き領域へ、オブジェクトと作業履歴のアイコンセグメントを並べます。
+///
+/// プロパティ:
+/// - `selection`: 現在選択中の左カラム表示モード。
+private struct EditorSidebarModeSwitcher: View {
+    @Binding var selection: EditorSidebarMode.RawValue
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(EditorSidebarMode.allCases) { mode in
+                Button {
+                    selection = mode.rawValue
+                } label: {
+                    OpenGraphiteIconView(icon: mode.icon, size: 13)
+                        .frame(width: 28, height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selection == mode.rawValue ? EditorColumnStyle.selectedRowFill : Color.clear)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == mode.rawValue ? .primary : .secondary)
+                .help(mode.help)
+                .accessibilityLabel(mode.accessibilityLabel)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                .fill(EditorColumnStyle.rowFill)
+        )
     }
 }
 
@@ -480,7 +573,8 @@ private struct CanvasPaneView: View {
             } else if let loadedProject = store.loadedProject, hasSelectedCanvasContainer {
                 let contentOrigin = canvasContentOrigin(
                     for: store.selectedCanvasPages,
-                    annotations: store.selectedCanvasAnnotations
+                    annotations: store.selectedCanvasAnnotations,
+                    references: store.selectedCanvasReferences
                 )
 
                 if showsGrid {
@@ -501,7 +595,8 @@ private struct CanvasPaneView: View {
                         for: loadedProject,
                         segment: store.selectedCanvasSegment,
                         pages: store.selectedCanvasPages,
-                        annotations: store.selectedCanvasAnnotations
+                        annotations: store.selectedCanvasAnnotations,
+                        references: store.selectedCanvasReferences
                     ),
                     contentCanvasOrigin: contentOrigin,
                     overlayAvoidance: overlayAvoidance,
@@ -643,13 +738,15 @@ private struct CanvasPaneView: View {
         for project: LoadedOpenGraphiteProject,
         segment: OpenGraphiteCanvasSegment,
         pages: [OpenGraphitePage],
-        annotations: [OpenGraphiteCanvasAnnotation]
+        annotations: [OpenGraphiteCanvasAnnotation],
+        references: [OpenGraphiteCanvasReference]
     ) -> String {
         CanvasDocumentIdentityResolver.contentRevisionID(
             projectPath: project.fileURL.path,
             segment: segment,
             pages: pages,
-            annotations: annotations
+            annotations: annotations,
+            references: references
         )
     }
 
@@ -660,11 +757,13 @@ private struct CanvasPaneView: View {
     /// - Returns: 現在の canvas content 原点。
     private func canvasContentOrigin(
         for pages: [OpenGraphitePage],
-        annotations: [OpenGraphiteCanvasAnnotation]
+        annotations: [OpenGraphiteCanvasAnnotation],
+        references: [OpenGraphiteCanvasReference]
     ) -> CGPoint {
         return CanvasProjectBounds(
             pages: pages,
             annotations: annotations,
+            references: references,
             interactionMargin: CanvasMetrics.annotationInteractionMargin
         ).origin
     }
@@ -686,7 +785,7 @@ private struct CanvasPaneView: View {
 ///
 /// 定義内容:
 /// - `viewportID(projectPath:segment:pages:)`: page 構成変更だけで変わる表示領域用 ID を生成します。
-/// - `contentRevisionID(projectPath:segment:pages:)`: page 配置や preview context 変更で変わる描画更新用 ID を生成します。
+/// - `contentRevisionID(projectPath:segment:pages:annotations:references:)`: page、注釈、参照 viewport の表示変更で変わる描画更新用 ID を生成します。
 enum CanvasDocumentIdentityResolver {
     /// 論理名（日本語）: 表示領域ID生成関数
     /// 処理概要: page の canvas 座標やサイズを含めず、表示領域を初期化すべき構成変更だけを ID 化します。
@@ -701,18 +800,21 @@ enum CanvasDocumentIdentityResolver {
     }
 
     /// 論理名（日本語）: 内容Revision ID生成関数
-    /// 処理概要: 表示領域の初期化は避けつつ、page の配置・寸法・preview context 変更を描画更新へ伝える ID を生成します。
+    /// 処理概要: 表示領域の初期化は避けつつ、page、注釈、参照 viewport の描画変更を伝える ID を生成します。
     ///
     /// - Parameters:
     ///   - projectPath: `.ogp` project path。
     ///   - segment: 表示中の Pages / Components セグメント。
     ///   - pages: 表示対象 page 一覧。
+    ///   - annotations: 表示対象の `.ogp` 注釈一覧。
+    ///   - references: 表示対象の Canvas Object Reference 一覧。
     /// - Returns: SwiftUI content の再適用要否を判定する revision ID。
     static func contentRevisionID(
         projectPath: String,
         segment: OpenGraphiteCanvasSegment,
         pages: [OpenGraphitePage],
-        annotations: [OpenGraphiteCanvasAnnotation] = []
+        annotations: [OpenGraphiteCanvasAnnotation] = [],
+        references: [OpenGraphiteCanvasReference] = []
     ) -> String {
         let pageRevision = pages
             .map { page in
@@ -729,7 +831,17 @@ enum CanvasDocumentIdentityResolver {
             }
             .joined(separator: "|")
         let annotationRevision = annotations.map(annotationSignature(for:)).joined(separator: "|")
-        return "\(viewportID(projectPath: projectPath, segment: segment, pages: pages))#revision#\(pageRevision)#annotations#\(annotationRevision)"
+        let referenceRevision = references.map { reference in
+            [
+                reference.internalID,
+                reference.referenceID,
+                String(reference.x),
+                String(reference.y),
+                String(reference.width),
+                String(reference.height)
+            ].joined(separator: ":")
+        }.joined(separator: "|")
+        return "\(viewportID(projectPath: projectPath, segment: segment, pages: pages))#revision#\(pageRevision)#annotations#\(annotationRevision)#references#\(referenceRevision)"
     }
 
     /// 論理名（日本語）: Page Identity Signature生成関数
@@ -845,9 +957,11 @@ enum CanvasStaticFlowCoordinateResolver {
 }
 
 /// 論理名（日本語）: キャンバスプロジェクト重なり順
-/// 概要: HTML card 同士の選択・変形優先度を保ちつつ、`.ogp` 注釈レイヤーを常に全 card より前面へ配置します。
+/// 概要: HTML card と参照 viewport の選択・変形優先度を保ちつつ、`.ogp` 注釈レイヤーを常に前面へ配置します。
 enum CanvasProjectLayerOrder {
     static let annotation = 3.0
+    static let reference = 1.5
+    static let selectedReference = 2.5
 
     /// 論理名（日本語）: HTMLカード重なり順解決関数
     /// 処理概要: 通常、選択中、ドラッグまたはリサイズ中の順で card の重なり優先度を返します。
@@ -1142,9 +1256,11 @@ private struct CanvasProjectView: View {
 
     var body: some View {
         let annotations = store.selectedCanvasAnnotations
+        let references = store.selectedCanvasReferences
         let bounds = CanvasProjectBounds(
             pages: pages,
             annotations: annotations,
+            references: references,
             interactionMargin: CanvasMetrics.annotationInteractionMargin
         )
         let scale = CGFloat(zoom)
@@ -1167,19 +1283,22 @@ private struct CanvasProjectView: View {
             : []
 
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    store.selectPage(id: nil)
+            CanvasBackgroundContextMenuView(
+                store: store,
+                canvasOrigin: bounds.origin,
+                onPrimaryClick: {
+                    store.clearCanvasSelection()
                 }
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             ForEach(pages, id: \.internalID) { page in
                 CanvasDocumentView(
                     store: store,
                     page: page,
                     pageURL: loadedProject.htmlURL(for: page),
-                    isSelected: page.internalID == store.selectedPage?.internalID,
+                    isSelected: store.selectedCanvasReferenceID == nil
+                        && page.internalID == store.selectedPage?.internalID,
                     zoom: zoom,
                     reloadToken: store.reloadToken(for: loadedProject.htmlURL(for: page)),
                     isFlowHoverEnabled: isFlowHoverEnabled,
@@ -1191,15 +1310,46 @@ private struct CanvasProjectView: View {
                 )
             }
 
+            ForEach(references, id: \.internalID) { reference in
+                if let target = try? store.resolveCanvasReferenceID(reference.referenceID) {
+                    CanvasReferenceObjectView(
+                        store: store,
+                        reference: reference,
+                        target: target,
+                        zoom: zoom
+                    )
+                    .offset(
+                        x: CGFloat(reference.x) - bounds.minX,
+                        y: CGFloat(reference.y) - bounds.minY
+                    )
+                    .zIndex(
+                        store.selectedCanvasReferenceID == reference.internalID
+                            ? CanvasProjectLayerOrder.selectedReference
+                            : CanvasProjectLayerOrder.reference
+                    )
+                } else {
+                    CanvasBrokenReferenceView(
+                        store: store,
+                        reference: reference
+                    )
+                    .offset(
+                        x: CGFloat(reference.x) - bounds.minX,
+                        y: CGFloat(reference.y) - bounds.minY
+                    )
+                    .zIndex(CanvasProjectLayerOrder.reference)
+                }
+            }
+
             if store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages {
+                let hasDirectPageSelection = store.selectedCanvasReferenceID == nil
                 CanvasStaticFlowOverlay(
                     connections: flowConnections,
                     hoveredSource: store.hoveredStaticFlowSource,
                     hoveredTargetPageInternalID: hoveredFlowTargetPageInternalID,
-                    selectedSourcePageURL: store.selectedCanvasSegment == .pages ? store.selectedPageURL?.standardizedFileURL : nil,
-                    selectedSourcePageInternalID: store.selectedCanvasSegment == .pages ? store.selectedPage?.internalID : nil,
-                    selectedSourceNodeID: store.selectedCanvasSegment == .pages ? store.selectedNodeID : nil,
-                    selectedTargetPageInternalID: store.selectedCanvasSegment == .pages && store.selectedNodeID == nil ? store.selectedPage?.internalID : nil
+                    selectedSourcePageURL: hasDirectPageSelection ? store.selectedPageURL?.standardizedFileURL : nil,
+                    selectedSourcePageInternalID: hasDirectPageSelection ? store.selectedPage?.internalID : nil,
+                    selectedSourceNodeID: hasDirectPageSelection ? store.selectedNodeID : nil,
+                    selectedTargetPageInternalID: hasDirectPageSelection && store.selectedNodeID == nil ? store.selectedPage?.internalID : nil
                 )
                 .allowsHitTesting(false)
             }
@@ -1211,6 +1361,7 @@ private struct CanvasProjectView: View {
                 zoom: zoom
             )
             .zIndex(CanvasProjectLayerOrder.annotation)
+
         }
         .frame(width: bounds.width, height: visualHeight, alignment: .topLeading)
         .coordinateSpace(name: CanvasMetrics.projectCoordinateSpaceName)
@@ -1338,6 +1489,650 @@ private struct CanvasProjectView: View {
     }
 }
 
+/// 論理名（日本語）: 参照入力Popoverアンカー解決器
+/// 概要: 右クリック点を中心とするnative source rectを生成し、吹き出しの矢印先端を挿入位置へ固定します。
+enum CanvasReferencePopoverAnchorResolver {
+    /// 論理名（日本語）: Popover source矩形生成関数
+    /// 処理概要: AppKitが任意edgeへpopoverを再配置しても右クリック点からずれにくい1pt矩形を返します。
+    ///
+    /// - Parameter point: Canvas背景View内の右クリック座標。
+    /// - Returns: 指定点を中心とする1pt四方のsource矩形。
+    static func sourceRect(centeredAt point: CGPoint) -> CGRect {
+        CGRect(x: point.x - 0.5, y: point.y - 0.5, width: 1, height: 1)
+    }
+}
+
+/// 論理名（日本語）: キャンバス背景コンテキストメニューView
+/// 概要: Canvas背景のnative右クリック点から直接popoverを提示し、矢印位置と参照配置座標を同じ点へ揃えます。
+private struct CanvasBackgroundContextMenuView: NSViewRepresentable {
+    var store: EditorStore
+    var canvasOrigin: CGPoint
+    var onPrimaryClick: () -> Void
+
+    /// 論理名（日本語）: キャンバス背景Coordinator生成関数
+    /// 処理概要: native popoverの表示期間と挿入world座標を管理するCoordinatorを生成します。
+    ///
+    /// - Returns: Canvas背景用Coordinator。
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    /// 論理名（日本語）: キャンバス背景AppKit View生成関数
+    /// 処理概要: 左クリックと右クリックのCanvas座標を通知する透明Viewを生成します。
+    ///
+    /// - Parameter context: SwiftUI representable文脈。
+    /// - Returns: 背景入力を処理するAppKit View。
+    func makeNSView(context: Context) -> CanvasBackgroundContextMenuNSView {
+        let view = CanvasBackgroundContextMenuNSView()
+        view.onPrimaryClick = onPrimaryClick
+        context.coordinator.update(store: store, canvasOrigin: canvasOrigin)
+        view.onAddReference = { [weak view, weak coordinator = context.coordinator] point in
+            guard let view else { return }
+            coordinator?.presentReferencePopover(at: point, from: view)
+        }
+        return view
+    }
+
+    /// 論理名（日本語）: キャンバス背景AppKit View更新関数
+    /// 処理概要: SwiftUI再描画後の最新callbackを既存Viewへ反映します。
+    ///
+    /// - Parameters:
+    ///   - nsView: 更新対象AppKit View。
+    ///   - context: SwiftUI representable文脈。
+    func updateNSView(_ nsView: CanvasBackgroundContextMenuNSView, context: Context) {
+        nsView.onPrimaryClick = onPrimaryClick
+        context.coordinator.update(store: store, canvasOrigin: canvasOrigin)
+        nsView.onAddReference = { [weak nsView, weak coordinator = context.coordinator] point in
+            guard let nsView else { return }
+            coordinator?.presentReferencePopover(at: point, from: nsView)
+        }
+    }
+
+    /// 論理名（日本語）: キャンバス背景AppKit View破棄関数
+    /// 処理概要: Canvas切替やView破棄時に表示中popoverとcallbackを閉じます。
+    ///
+    /// - Parameters:
+    ///   - nsView: 破棄対象AppKit View。
+    ///   - coordinator: popoverを保持するCoordinator。
+    static func dismantleNSView(_ nsView: CanvasBackgroundContextMenuNSView, coordinator: Coordinator) {
+        nsView.onPrimaryClick = nil
+        nsView.onAddReference = nil
+        coordinator.closePopover()
+    }
+
+    /// 論理名（日本語）: キャンバス参照Popover Coordinator
+    /// 概要: 右クリックを受けたnative Viewと同じ座標系でNSPopoverを提示し、確定時だけ`.ogp`へ参照を追加します。
+    @MainActor
+    final class Coordinator: NSObject, NSPopoverDelegate {
+        private weak var store: EditorStore?
+        private var canvasOrigin = CGPoint.zero
+        private var popover: NSPopover?
+
+        /// 論理名（日本語）: Popover文脈更新関数
+        /// 処理概要: SwiftUI再描画後のStoreとcanonical Canvas原点を保持します。
+        ///
+        /// - Parameters:
+        ///   - store: 参照解決と保存を担当するEditorStore。
+        ///   - canvasOrigin: native local座標をworld座標へ戻すCanvas原点。
+        func update(store: EditorStore, canvasOrigin: CGPoint) {
+            self.store = store
+            self.canvasOrigin = canvasOrigin
+        }
+
+        /// 論理名（日本語）: 参照入力Popover表示関数
+        /// 処理概要: 右クリックlocal座標をsource rectとworld挿入位置の両方に使用してnative popoverを表示します。
+        ///
+        /// - Parameters:
+        ///   - point: Canvas背景View内の右クリック座標。
+        ///   - sourceView: 右クリックeventを受けた同一AppKit View。
+        func presentReferencePopover(
+            at point: CGPoint,
+            from sourceView: CanvasBackgroundContextMenuNSView
+        ) {
+            guard let store, sourceView.window != nil else { return }
+            closePopover()
+
+            let insertionPoint = CanvasAnnotationCoordinateResolver.worldPoint(
+                localPoint: point,
+                canvasOrigin: canvasOrigin
+            )
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.animates = true
+            popover.delegate = self
+            let rootView = CanvasReferenceInputPopover(
+                store: store,
+                initialReferenceID: NSPasteboard.general.string(forType: .string) ?? "",
+                onCancel: { [weak popover] in
+                    popover?.close()
+                },
+                onCommit: { [weak popover, weak store] referenceID in
+                    if store?.addCanvasReference(referenceID: referenceID, at: insertionPoint) != nil {
+                        popover?.close()
+                    }
+                }
+            )
+            let hostingController = NSHostingController(rootView: rootView)
+            popover.contentViewController = hostingController
+            hostingController.view.layoutSubtreeIfNeeded()
+            popover.contentSize = hostingController.view.fittingSize
+            self.popover = popover
+            popover.show(
+                relativeTo: CanvasReferencePopoverAnchorResolver.sourceRect(centeredAt: point),
+                of: sourceView,
+                preferredEdge: .maxY
+            )
+        }
+
+        /// 論理名（日本語）: 参照入力Popover終了関数
+        /// 処理概要: 表示中のnative popoverを閉じ、保持を解除します。
+        func closePopover() {
+            popover?.close()
+            popover = nil
+        }
+
+        /// 論理名（日本語）: Popover終了通知関数
+        /// 処理概要: transient closeを含む終了後にCoordinatorの保持を解除します。
+        ///
+        /// - Parameter notification: NSPopover終了通知。
+        func popoverDidClose(_ notification: Notification) {
+            guard let closedPopover = notification.object as? NSPopover,
+                  closedPopover === popover
+            else {
+                return
+            }
+            popover = nil
+        }
+    }
+}
+
+/// 論理名（日本語）: キャンバス背景コンテキストメニューAppKit View
+/// 概要: Canvas面だけをヒット領域にし、右クリック位置から参照追加メニューを開きます。
+private final class CanvasBackgroundContextMenuNSView: NSView {
+    var onPrimaryClick: (() -> Void)?
+    var onAddReference: ((CGPoint) -> Void)?
+    private var contextPoint = CGPoint.zero
+
+    override var isFlipped: Bool { true }
+
+    /// 論理名（日本語）: キャンバス背景左クリック処理関数
+    /// 処理概要: Canvas背景のprimary clickを選択解除として通知します。
+    ///
+    /// - Parameter event: AppKit mouse event。
+    override func mouseDown(with event: NSEvent) {
+        onPrimaryClick?()
+    }
+
+    /// 論理名（日本語）: キャンバス背景右クリック処理関数
+    /// 処理概要: View内座標を保持し、「参照IDから追加」だけを持つcontext menuを表示します。
+    ///
+    /// - Parameter event: AppKit right mouse event。
+    override func rightMouseDown(with event: NSEvent) {
+        contextPoint = convert(event.locationInWindow, from: nil)
+        let menu = NSMenu(title: "OpenGraphite Canvas")
+        let item = NSMenuItem(
+            title: "参照IDから追加",
+            action: #selector(addReferenceFromContextMenu),
+            keyEquivalent: ""
+        )
+        item.target = self
+        menu.addItem(item)
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// 論理名（日本語）: 参照ID追加メニュー実行関数
+    /// 処理概要: context menu表示時に固定したCanvas内座標をSwiftUIへ通知します。
+    @objc private func addReferenceFromContextMenu() {
+        onAddReference?(contextPoint)
+    }
+}
+
+/// 論理名（日本語）: 参照ID入力ポップアップ
+/// 概要: typed参照IDを入力中に随時解決し、対象オブジェクトの切り出しプレビューと確定操作を提供します。
+private struct CanvasReferenceInputPopover: View {
+    @ObservedObject var store: EditorStore
+    @State private var referenceID: String
+    @FocusState private var isReferenceFieldFocused: Bool
+    var onCancel: () -> Void
+    var onCommit: (String) -> Void
+
+    /// 論理名（日本語）: 参照ID入力ポップアップ初期化関数
+    /// 処理概要: clipboardがtyped node参照を含む場合だけ入力初期値として採用します。
+    ///
+    /// - Parameters:
+    ///   - store: 参照解決を担当するEditorStore。
+    ///   - initialReferenceID: clipboard由来の入力候補。
+    ///   - onCancel: 入力取消callback。
+    ///   - onCommit: 解決済み参照IDの確定callback。
+    init(
+        store: EditorStore,
+        initialReferenceID: String,
+        onCancel: @escaping () -> Void,
+        onCommit: @escaping (String) -> Void
+    ) {
+        self.store = store
+        let parsed = OpenGraphiteReferenceID(parsing: initialReferenceID)
+        let acceptedInitialValue = parsed?.type == .node || parsed?.type == .componentNode
+            ? initialReferenceID.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+        _referenceID = State(initialValue: acceptedInitialValue)
+        self.onCancel = onCancel
+        self.onCommit = onCommit
+    }
+
+    var body: some View {
+        let resolution = resolvedReference
+
+        VStack(alignment: .leading, spacing: 12) {
+            Text("参照IDからオブジェクトを追加")
+                .font(.headline)
+
+            TextField("ogref:node:… または ogref:component-node:…", text: $referenceID)
+                .textFieldStyle(.roundedBorder)
+                .focused($isReferenceFieldFocused)
+                .onSubmit {
+                    if let target = resolution.target {
+                        onCommit(target.referenceID)
+                    }
+                }
+
+            Group {
+                if let target = resolution.target {
+                    CanvasResolvedNodePreview(
+                        store: store,
+                        target: target,
+                        viewportSize: CGSize(width: 380, height: 210),
+                        isInteractive: false,
+                        syncTarget: nil
+                    )
+                    .frame(width: 380, height: 210)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    )
+
+                    Text("\(target.page.path) · \(target.node.id)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    ContentUnavailableView(
+                        "プレビュー待機中",
+                        systemImage: "link",
+                        description: Text(resolution.errorMessage ?? "参照IDを入力してください。")
+                    )
+                    .frame(width: 380, height: 210)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("キャンセル", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("追加") {
+                    if let target = resolution.target {
+                        onCommit(target.referenceID)
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(resolution.target == nil)
+            }
+        }
+        .padding(16)
+        .frame(width: 416)
+        .onAppear {
+            isReferenceFieldFocused = true
+        }
+    }
+
+    /// 論理名（日本語）: 入力中参照解決結果
+    /// 概要: SwiftUI描画時点の参照IDを解決し、プレビュー対象または利用者向けエラーを返します。
+    private var resolvedReference: (target: OpenGraphiteResolvedCanvasReference?, errorMessage: String?) {
+        let normalized = referenceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return (nil, nil) }
+        do {
+            return (try store.resolveCanvasReferenceID(normalized), nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照オブジェクトView
+/// 概要: Chapter / Collection直下の参照枠へ元HTML nodeを表示し、選択時は同じ正本への直接編集を有効にします。
+private struct CanvasReferenceObjectView: View {
+    @ObservedObject var store: EditorStore
+    var reference: OpenGraphiteCanvasReference
+    var target: OpenGraphiteResolvedCanvasReference
+    var zoom: Double
+    @State private var dragTranslation = CGSize.zero
+    @State private var renderedContentSize: CGSize?
+
+    var body: some View {
+        let isSelected = store.selectedCanvasReferenceID == reference.internalID
+        let fitBounds = CGSize(
+            width: CGFloat(reference.width),
+            height: CGFloat(reference.height)
+        )
+        let displaySize = renderedContentSize ?? fitBounds
+        let layout = CanvasPageVisualLayout.resolve(
+            pageWidth: displaySize.width,
+            pageHeight: displaySize.height
+        )
+
+        ZStack(alignment: .topLeading) {
+            CanvasDocumentBody(size: displaySize) {
+                CanvasResolvedNodePreview(
+                    store: store,
+                    target: target,
+                    viewportSize: fitBounds,
+                    isInteractive: isSelected,
+                    syncTarget: store.htmlSyncTarget(for: target.page, segment: target.segment),
+                    onRenderedSizeChange: { size in
+                        guard renderedContentSize != size else { return }
+                        renderedContentSize = size
+                    }
+                )
+
+                if !isSelected {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            store.selectCanvasReference(id: reference.internalID)
+                        }
+                }
+            }
+            .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+
+            CanvasPageNameCard(
+                title: target.node.id,
+                placementName: "参照",
+                path: target.page.path,
+                resolution: CanvasReferenceVisualLayoutResolver.resolutionLabel(for: displaySize),
+                isSelected: isSelected,
+                maxTextWidth: layout.captionTextWidth
+            )
+            .onTapGesture {
+                store.selectCanvasReference(id: reference.internalID)
+            }
+            .highPriorityGesture(dragGesture())
+            .contextMenu {
+                referenceContextMenu
+            }
+        }
+        .frame(width: layout.documentSize.width, height: layout.documentSize.height, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            if isSelected {
+                CanvasSelectionChromeView(
+                    rect: CGRect(origin: .zero, size: displaySize),
+                    canvasSize: displaySize,
+                    lineWidth: 3,
+                    zoom: zoom,
+                    showsHandles: false
+                )
+                .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+                .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+                .allowsHitTesting(false)
+            } else {
+                Rectangle()
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    .frame(width: displaySize.width, height: displaySize.height)
+                    .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
+            }
+        }
+        .offset(dragTranslation)
+        .contentShape(
+            CanvasReferenceHitShape(
+                captionFrame: layout.captionHitFrame,
+                bodyFrame: layout.pageBodyFrame
+            )
+        )
+        .onTapGesture {
+            guard !isSelected else { return }
+            store.selectCanvasReference(id: reference.internalID)
+        }
+        .contextMenu {
+            referenceContextMenu
+        }
+        .accessibilityLabel("参照オブジェクト \(target.node.id)")
+        .onChange(of: target.referenceID) { _, _ in
+            renderedContentSize = nil
+        }
+        .onChange(of: fitBounds) { _, _ in
+            renderedContentSize = nil
+        }
+    }
+
+    /// 論理名（日本語）: 参照配置ドラッグGesture生成関数
+    /// 処理概要: 画面移動量をCanvas倍率で戻し、ドラッグ終了時だけworld座標を`.ogp`へ保存します。
+    ///
+    /// - Returns: 参照の左上情報カードへ適用するdrag gesture。
+    private func dragGesture() -> some Gesture {
+        DragGesture(minimumDistance: CanvasMetrics.pageDragMinimumDistance, coordinateSpace: .global)
+            .onChanged { value in
+                if store.selectedCanvasReferenceID != reference.internalID {
+                    store.selectCanvasReference(id: reference.internalID)
+                }
+                dragTranslation = CanvasPageDragResolver.canvasTranslation(
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+            }
+            .onEnded { value in
+                let translation = CanvasPageDragResolver.canvasTranslation(
+                    screenTranslation: value.translation,
+                    zoom: zoom
+                )
+                dragTranslation = .zero
+                store.updateCanvasReferencePosition(
+                    id: reference.internalID,
+                    x: reference.x + Double(translation.width),
+                    y: reference.y + Double(translation.height)
+                )
+            }
+    }
+
+    /// 論理名（日本語）: 参照配置コンテキストメニュー
+    /// 概要: 参照元typed IDのコピーと、配置だけを削除する操作を提供します。
+    @ViewBuilder
+    private var referenceContextMenu: some View {
+        Button("参照IDをコピー") {
+            store.copyReferenceIDToPasteboard(reference.referenceID, label: "Canvas reference")
+        }
+        Divider()
+        Button("参照配置を削除", role: .destructive) {
+            store.deleteCanvasReference(id: reference.internalID)
+        }
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照ヒット領域Shape
+/// 概要: 実表示された参照本体と左上情報カードだけを操作対象にし、最大表示領域の未使用部分をヒット対象から除外します。
+///
+/// プロパティ:
+/// - `captionFrame`: 参照情報カードの操作矩形。
+/// - `bodyFrame`: 縮小後実寸へ一致した参照本体の操作矩形。
+private struct CanvasReferenceHitShape: Shape {
+    var captionFrame: CGRect
+    var bodyFrame: CGRect
+
+    /// 論理名（日本語）: キャンバス参照ヒットPath生成関数
+    /// 処理概要: 情報カードと参照本体の矩形だけを一つのヒット領域Pathへ追加します。
+    ///
+    /// - Parameter rect: SwiftUIから渡される外接frame。各矩形は同じlocal座標で既に解決済みです。
+    /// - Returns: 情報カードと参照本体のunion path。
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRect(captionFrame)
+        path.addRect(bodyFrame)
+        return path
+    }
+}
+
+/// 論理名（日本語）: キャンバス文書本体View
+/// 概要: 通常pageと参照viewportで共通する背景、影、本文表示領域を構成します。
+///
+/// プロパティ:
+/// - `size`: HTML本文を表示するviewport寸法。
+/// - `content`: viewport内へ表示するWebKit描画または補助オーバーレイ。
+private struct CanvasDocumentBody<Content: View>: View {
+    var size: CGSize
+    @ViewBuilder var content: Content
+
+    /// 論理名（日本語）: キャンバス文書本体View初期化関数
+    /// 処理概要: 指定viewport寸法とViewBuilderの本文から共通カード本体を構成します。
+    ///
+    /// - Parameters:
+    ///   - size: HTML本文を表示するviewport寸法。
+    ///   - content: viewport内へ表示する本文ViewBuilder。
+    init(size: CGSize, @ViewBuilder content: () -> Content) {
+        self.size = size
+        self.content = content()
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(Color(nsColor: .textBackgroundColor))
+                .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+                .frame(width: size.width, height: size.height)
+
+            content
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+    }
+}
+
+/// 論理名（日本語）: 解決不能キャンバス参照View
+/// 概要: 外部変更で参照元を失った配置をCanvas上に残し、typed ID確認と配置削除を可能にします。
+private struct CanvasBrokenReferenceView: View {
+    @ObservedObject var store: EditorStore
+    var reference: OpenGraphiteCanvasReference
+
+    var body: some View {
+        ContentUnavailableView(
+            "参照を解決できません",
+            systemImage: "exclamationmark.link",
+            description: Text(reference.referenceID)
+        )
+        .frame(width: CGFloat(reference.width), height: CGFloat(reference.height))
+        .background(Color(nsColor: .textBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.orange, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        )
+        .contextMenu {
+            Button("参照IDをコピー") {
+                store.copyReferenceIDToPasteboard(reference.referenceID, label: "Canvas reference")
+            }
+            Divider()
+            Button("参照配置を削除", role: .destructive) {
+                store.deleteCanvasReference(id: reference.internalID)
+            }
+        }
+    }
+}
+
+/// 論理名（日本語）: 解決済みノード切り出しプレビュー
+/// 概要: 元HTMLカードのWKWebViewを維持したまま対象nodeの実測矩形だけを切り出し、指定枠内へ縮小表示します。
+private struct CanvasResolvedNodePreview: View {
+    @ObservedObject var store: EditorStore
+    var target: OpenGraphiteResolvedCanvasReference
+    var viewportSize: CGSize
+    var isInteractive: Bool
+    var syncTarget: HTMLSyncTarget?
+    var onRenderedSizeChange: ((CGSize) -> Void)? = nil
+    @State private var nodeFrame: CGRect?
+
+    var body: some View {
+        let visualLayout = nodeFrame.flatMap {
+            CanvasReferenceVisualLayoutResolver.layout(
+                sourceSize: $0.size,
+                fitBounds: viewportSize
+            )
+        }
+        let displaySize = visualLayout?.renderedSize ?? viewportSize
+
+        ZStack(alignment: .topLeading) {
+            Color(nsColor: .textBackgroundColor)
+
+            if let nodeFrame, let visualLayout {
+                ZStack(alignment: .topLeading) {
+                    WebCanvasView(
+                        store: store,
+                        pageURL: target.pageURL,
+                        pageInternalID: target.page.internalID,
+                        syncTarget: syncTarget,
+                        isInteractive: isInteractive,
+                        reloadToken: store.reloadToken(for: target.pageURL),
+                        previewContext: target.page.canvas.previewContext,
+                        allowsComponentPlacements: target.segment == .components,
+                        focusedNodeIDs: [target.node.id],
+                        onFocusedNodeFrame: { frame in
+                            if let frame, frame != nodeFrame {
+                                self.nodeFrame = frame
+                            }
+                        }
+                    )
+                    .frame(
+                        width: max(CGFloat(target.page.canvas.width), nodeFrame.maxX),
+                        height: max(CGFloat(target.page.canvas.height), nodeFrame.maxY)
+                    )
+                    .offset(x: -nodeFrame.minX, y: -nodeFrame.minY)
+                }
+                .frame(width: nodeFrame.width, height: nodeFrame.height, alignment: .topLeading)
+                .clipped()
+                .scaleEffect(visualLayout.scale, anchor: .topLeading)
+                .frame(
+                    width: visualLayout.renderedSize.width,
+                    height: visualLayout.renderedSize.height,
+                    alignment: .topLeading
+                )
+            } else {
+                ProgressView()
+                WebCanvasView(
+                    store: store,
+                    pageURL: target.pageURL,
+                    pageInternalID: target.page.internalID,
+                    syncTarget: syncTarget,
+                    isInteractive: isInteractive,
+                    reloadToken: store.reloadToken(for: target.pageURL),
+                    previewContext: target.page.canvas.previewContext,
+                    allowsComponentPlacements: target.segment == .components,
+                    focusedNodeIDs: [target.node.id],
+                    onFocusedNodeFrame: { frame in
+                        nodeFrame = frame
+                    }
+                )
+                .frame(
+                    width: max(CGFloat(target.page.canvas.width), 1),
+                    height: max(CGFloat(target.page.canvas.height), 1)
+                )
+                .opacity(0.001)
+            }
+        }
+        .frame(width: displaySize.width, height: displaySize.height, alignment: .topLeading)
+        .clipped()
+        .allowsHitTesting(isInteractive)
+        .onAppear {
+            if let renderedSize = visualLayout?.renderedSize {
+                onRenderedSizeChange?(renderedSize)
+            }
+        }
+        .onChange(of: visualLayout?.renderedSize) { _, renderedSize in
+            if let renderedSize {
+                onRenderedSizeChange?(renderedSize)
+            }
+        }
+        .onChange(of: target.referenceID) { _, _ in
+            nodeFrame = nil
+        }
+    }
+}
+
 /// 論理名（日本語）: キャンバスドキュメントビュー
 /// 概要: 単一ページのキャンバスサイズを反映し、その上に WKWebView ベースの HTML プレビューを配置します。
 ///
@@ -1383,12 +2178,7 @@ private struct CanvasDocumentView: View {
         let showsSelectedPageOverlay = isSelected && store.selectedNodeID == nil
 
         ZStack(alignment: .topLeading) {
-            ZStack(alignment: .topLeading) {
-                Rectangle()
-                    .fill(Color(nsColor: .textBackgroundColor))
-                    .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-                    .frame(width: width, height: height)
-
+            CanvasDocumentBody(size: pageSize) {
                 WebCanvasView(
                     store: store,
                     pageURL: pageURL,
@@ -1438,7 +2228,6 @@ private struct CanvasDocumentView: View {
                     )
                 }
             }
-            .frame(width: width, height: height, alignment: .topLeading)
             .offset(x: layout.pageBodyFrame.minX, y: layout.pageBodyFrame.minY)
 
             CanvasPageNameCard(
@@ -2981,6 +3770,112 @@ private struct CanvasPageNameCard: View {
     }
 
     private var detailText: String {
+        CanvasPageNameCardDetailResolver.detailText(
+            placementName: placementName,
+            path: path,
+            resolution: resolution
+        )
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照視覚レイアウト
+/// 概要: 参照元nodeの実測border boxを縦横比どおり縮小し、Canvas上で実際に占有する寸法を保持します。
+///
+/// プロパティ:
+/// - `sourceSize`: WebKitが実測した参照元nodeのborder box寸法。
+/// - `fitBounds`: `.ogp`の`width` / `height`が定める最大表示領域。
+/// - `scale`: 参照元を拡大せずfit bounds内へ収める等倍以下の共通倍率。
+/// - `renderedSize`: editor由来の余白を含まない縮小後の表示寸法。
+struct CanvasReferenceVisualLayout: Equatable {
+    var sourceSize: CGSize
+    var fitBounds: CGSize
+    var scale: CGFloat
+    var renderedSize: CGSize
+}
+
+/// 論理名（日本語）: キャンバス参照視覚レイアウト解決器
+/// 概要: 参照元nodeを歪めず、切らず、拡大せずに最大表示領域へ収め、カード本体を対象nodeの縮小後実寸へ一致させます。
+///
+/// 定義内容:
+/// - `layout(sourceSize:fitBounds:)`: 参照元実寸と最大表示領域から共通倍率と縮小後実寸を返す。
+/// - `resolutionLabel(for:)`: 縮小後のカード本体寸法を情報カード用文字列へ変換する。
+enum CanvasReferenceVisualLayoutResolver {
+    /// 論理名（日本語）: キャンバス参照視覚レイアウト生成関数
+    /// 処理概要: width / heightの小さい倍率を両軸へ等しく適用し、未使用軸の余りをカード本体へ含めない寸法を返します。
+    ///
+    /// - Parameters:
+    ///   - sourceSize: WebKitが実測した参照元nodeのborder box寸法。
+    ///   - fitBounds: `.ogp`が定める最大表示幅と高さ。
+    /// - Returns: 有効寸法から解決した視覚レイアウト。不正寸法の場合は`nil`。
+    static func layout(
+        sourceSize: CGSize,
+        fitBounds: CGSize
+    ) -> CanvasReferenceVisualLayout? {
+        guard sourceSize.width.isFinite,
+              sourceSize.height.isFinite,
+              fitBounds.width.isFinite,
+              fitBounds.height.isFinite,
+              sourceSize.width > 0,
+              sourceSize.height > 0,
+              fitBounds.width > 0,
+              fitBounds.height > 0
+        else {
+            return nil
+        }
+
+        let scale = min(
+            1,
+            fitBounds.width / sourceSize.width,
+            fitBounds.height / sourceSize.height
+        )
+        guard scale.isFinite, scale > 0 else { return nil }
+
+        return CanvasReferenceVisualLayout(
+            sourceSize: sourceSize,
+            fitBounds: fitBounds,
+            scale: scale,
+            renderedSize: CGSize(
+                width: min(sourceSize.width * scale, fitBounds.width),
+                height: min(sourceSize.height * scale, fitBounds.height)
+            )
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス参照表示寸法ラベル生成関数
+    /// 処理概要: 実際のカード本体寸法を整数優先、小数1桁までの短い解像度表記へ変換します。
+    ///
+    /// - Parameter size: Canvas上で参照本体が実際に占有する寸法。
+    /// - Returns: `幅 x 高さ`形式の表示文字列。
+    static func resolutionLabel(for size: CGSize) -> String {
+        "\(displayValue(size.width)) x \(displayValue(size.height))"
+    }
+
+    /// 論理名（日本語）: キャンバス参照寸法表示関数
+    /// 処理概要: 寸法値を整数優先、小数1桁までの短いUI文字列へ変換します。
+    ///
+    /// - Parameter value: 表示対象の寸法値。
+    /// - Returns: 整数に近い値は整数、それ以外は小数1桁の文字列。
+    private static func displayValue(_ value: CGFloat) -> String {
+        let roundedValue = value.rounded()
+        if abs(value - roundedValue) < 0.0001 {
+            return String(Int(roundedValue))
+        }
+        return String(format: "%.1f", Double(value))
+    }
+}
+
+/// 論理名（日本語）: キャンバス情報カード詳細解決器
+/// 概要: 通常pageと参照viewportの左上カードに表示する詳細行を同じ順序で構成します。
+enum CanvasPageNameCardDetailResolver {
+    /// 論理名（日本語）: キャンバス情報カード詳細生成関数
+    /// 処理概要: 配置種別または配置名、HTML path、viewport解像度を空値を除いて連結します。
+    ///
+    /// - Parameters:
+    ///   - placementName: 通常pageの配置名または参照viewportを表すラベル。
+    ///   - path: HTML rootから見た参照元path。
+    ///   - resolution: viewportの解像度表示。
+    /// - Returns: 左上情報カードの詳細行。
+    static func detailText(placementName: String?, path: String, resolution: String) -> String {
         ([placementName, path, resolution].compactMap { value in
             guard let value, !value.isEmpty else { return nil }
             return value
@@ -2989,7 +3884,7 @@ private struct CanvasPageNameCard: View {
 }
 
 /// 論理名（日本語）: キャンバスプロジェクト境界
-/// 概要: 選択 Chapter / Collection 内のページ配置と `.ogp` 注釈を含む world 矩形を計算します。
+/// 概要: 選択 Chapter / Collection 内のページ、参照オブジェクト、`.ogp` 注釈を含むworld矩形を計算します。
 ///
 /// プロパティ:
 /// - `minX`: 最小 X 座標。
@@ -3009,18 +3904,21 @@ struct CanvasProjectBounds {
     }
 
     /// 論理名（日本語）: キャンバスプロジェクト境界初期化関数
-    /// 処理概要: ページと注釈の world 矩形を union し、Canvas 表示範囲を計算します。
+    /// 処理概要: ページ、参照 viewport、注釈の world 矩形を union し、Canvas 表示範囲を計算します。
     ///
     /// - Parameters:
     ///   - pages: 境界計算対象のページ一覧。
     ///   - annotations: 境界計算対象の `.ogp` 注釈一覧。
+    ///   - references: 境界計算対象の `.ogp` Canvas Object Reference 一覧。
+    ///   - interactionMargin: 空き領域操作のために world 矩形の外側へ加える余白。
     init(
         pages: [OpenGraphitePage],
         annotations: [OpenGraphiteCanvasAnnotation] = [],
+        references: [OpenGraphiteCanvasReference] = [],
         interactionMargin: CGFloat = 0
     ) {
         let margin = interactionMargin.isFinite ? max(interactionMargin, 0) : 0
-        guard !pages.isEmpty || !annotations.isEmpty else {
+        guard !pages.isEmpty || !annotations.isEmpty || !references.isEmpty else {
             minX = -margin
             minY = -margin
             width = 1440 + margin * 2
@@ -3030,8 +3928,10 @@ struct CanvasProjectBounds {
 
         let worldMinX = pages.map { CGFloat($0.canvas.x) }
             + annotations.map { CGFloat($0.frame.x) }
+            + references.map { CGFloat($0.x) }
         let worldMinY = pages.map { CGFloat($0.canvas.y) }
             + annotations.map { CGFloat($0.frame.y) }
+            + references.map { CGFloat($0.y) }
         let minX = min(worldMinX.min() ?? 0, 0)
         let minY = min(worldMinY.min() ?? 0, 0)
         let pageMaxX = pages.map { page in
@@ -3041,10 +3941,17 @@ struct CanvasProjectBounds {
             ).documentSize.width
         }.max() ?? 1
         let annotationMaxX = annotations.map { CGFloat($0.frame.x + $0.frame.width) }.max() ?? 1
+        let referenceMaxX = references.map { reference in
+            CGFloat(reference.x) + CanvasPageVisualLayout.resolve(
+                pageWidth: CGFloat(reference.width),
+                pageHeight: CGFloat(reference.height)
+            ).documentSize.width
+        }.max() ?? 1
         let pageMaxY = pages.map { CGFloat($0.canvas.y + $0.canvas.height) }.max() ?? 1
         let annotationMaxY = annotations.map { CGFloat($0.frame.y + $0.frame.height) }.max() ?? 1
-        let maxX = max(pageMaxX, annotationMaxX)
-        let maxY = max(pageMaxY, annotationMaxY)
+        let referenceMaxY = references.map { CGFloat($0.y + $0.height) }.max() ?? 1
+        let maxX = max(max(pageMaxX, annotationMaxX), referenceMaxX)
+        let maxY = max(max(pageMaxY, annotationMaxY), referenceMaxY)
 
         self.minX = minX - margin
         self.minY = minY - margin
@@ -3745,6 +4652,17 @@ private struct CanvasZoomHUD: View {
     }
 }
 
+/// 論理名（日本語）: キャンバスゼロセーフエリアホスティングビュー
+/// 概要: AppKit scroll view 内の SwiftUI canvas content が window 上端の safe area を再適用しないようにします。
+///
+/// プロパティ:
+/// - `safeAreaInsets`: canvas content の左上を hosting view の実座標原点へ一致させるゼロ余白。
+final class CanvasZeroSafeAreaHostingView<Content: View>: NSHostingView<Content> {
+    override var safeAreaInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+    }
+}
+
 /// 論理名（日本語）: フォーカス有限スクロールビュー
 /// 概要: Zoom適用後のFocus対象だけを載せた有限documentをAppKit scroll viewで表示し、初期位置を対象中心へ合わせます。
 ///
@@ -3848,7 +4766,7 @@ private struct CanvasFocusedPreviewScrollView<Content: View>: NSViewRepresentabl
     /// 概要: viewportとobject寸法から有限documentを更新し、対象中心へ初期scrollします。
     final class Coordinator: NSObject {
         var zoom: Binding<Double>
-        let hostingView: NSHostingView<Content>
+        let hostingView: CanvasZeroSafeAreaHostingView<Content>
         let documentView: CanvasFocusedPreviewDocumentView<Content>
 
         private weak var scrollView: NSScrollView?
@@ -3882,7 +4800,7 @@ private struct CanvasFocusedPreviewScrollView<Content: View>: NSViewRepresentabl
             self.renderedContentSize = contentSize
             self.content = content
             self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
-            self.hostingView = NSHostingView(rootView: content())
+            self.hostingView = CanvasZeroSafeAreaHostingView(rootView: content())
             self.hostingView.isFlipped = true
             self.documentView = CanvasFocusedPreviewDocumentView(hostingView: hostingView)
         }
@@ -4331,7 +5249,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
         var viewport: Binding<CanvasViewportState>
         var content: () -> Content
         var onEmptyCanvasClick: () -> Void
-        let hostingView: NSHostingView<Content>
+        let hostingView: CanvasZeroSafeAreaHostingView<Content>
         let documentView: CanvasInfiniteDocumentView<Content>
 
         private weak var scrollView: NSScrollView?
@@ -4373,7 +5291,7 @@ private struct ZoomableCanvasScrollView<Content: View>: NSViewRepresentable {
             self.renderedContentRevisionID = contentRevisionID
             self.renderedContentCanvasOrigin = contentCanvasOrigin
             self.lastZoom = CanvasZoom.clamped(zoom.wrappedValue)
-            self.hostingView = NSHostingView(rootView: content())
+            self.hostingView = CanvasZeroSafeAreaHostingView(rootView: content())
             self.hostingView.isFlipped = true
             self.documentView = CanvasInfiniteDocumentView(hostingView: hostingView)
             super.init()

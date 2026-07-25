@@ -38,6 +38,12 @@ app 内で編集可能な項目は、種別に関わらずこの規約に従い�
 
 永続化が未完了、失敗、または外部変更と競合した場合でも、surface ごとに別々の値を持たせません。必要な場合は pending、conflict、error の状態を cache に付随させ、ユーザーへ表示します。永続ファイルが最終的な正本であることと、app session 内の未確定編集を cache で一貫表示することは別の層として扱います。
 
+## Session History Presentation Contract
+
+左カラムは上部 window chrome の Objects / History アイコンセグメントで、Project / Pages / Components とそのオブジェクトを扱うナビゲーション表示と、editor 全体の統合 Undo / Redo 時系列を切り替えます。History は操作の確定時刻、対象オブジェクト名、操作種別、対象種別から生成した簡易プレビューを表示し、Undo 済み項目と現在適用済み項目を区別します。同じ操作が Undo / Redo 間を移動しても、記録時刻と対象情報は同じ履歴項目として維持します。
+
+履歴表示情報と Objects / History の選択は editor session の UI 状態です。HTML、companion CSS、locale JSON、`.ogp`、runtime、build 出力へ操作ログやサムネイルを永続化しません。project を開き直した場合、または外部変更との競合によって統合履歴を無効化した場合は表示一覧も同じ時系列とともに初期化します。簡易プレビューは履歴対象の種別・代表色・表示名から描画する識別用 UI であり、過去の WebKit render や source file の複製を新しい正本として保持しません。
+
 ## Project Metadata Contract
 
 `.ogp` は source files の代替表現ではありません。DOM 構造、本文、主要なデザイン値を `.ogp` に複製しないことを原則とします。
@@ -316,6 +322,12 @@ placement 単位の mock injection は HTML ではなく、`.ogp` の canvas `pr
 
 `previewContext.fieldMocks` は canvas 全体へ注入する mock state です。`previewContext.placementMocks` は指定 placement の clone を表示するときだけ追加で注入する mock state で、同じ component canvas 内に code / preview / loading など複数状態を並べるために使います。placement mock はコンポーネントの性質ではなく、表示確認のための注入値なので HTML へ保存しません。
 
+## Canvas Object Reference Contract
+
+Canvas Object Reference は `ogref:node` / `ogref:component-node` が指す任意階層 node を、Chapter / Collection キャンバス直下へ別 viewport として配置する `.ogp` 専用 metadata です。component placement と異なり、HTML 内に host node や clone を作らず、配置先 segment と参照元 segment が異なっていても構いません。
+
+Pages canvas は `chapters[].references[]`、Components canvas は `collections[].references[]` に、配置 ID、typed node reference ID、canonical world frame だけを保存します。配置 viewport からの編集は参照元 HTML / companion CSS へ反映し、参照表示を page card や HTML object の子へ格納しません。詳細は [CanvasObjectReferences.md](CanvasObjectReferences.md) を正本とします。
+
 ## Text Binding Contract
 
 `data-og-text-source="binding"` は、text node の表示テキストが HTML 本文だけでなく locale resource や runtime state から差し替えられることを示します。`data-i18n-key` はその翻訳単位を識別する標準的な key です。fallback content は HTML 内に残し、JavaScript や build 処理が使えない場合にもページ単体で読める状態を保ちます。
@@ -413,7 +425,7 @@ component runtime は `<og-instance>` を表示時に展開するため、次の
 }
 ```
 
-アプリは HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が HTML を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。`.ogp` 専用注釈だけは WebKit の外側にある editor overlay として card 群の前面へ描画し、HTML の描画規則には参加させません。
+アプリは HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が HTML を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。`.ogp` 専用注釈と Canvas Object Reference viewport は WebKit card の外側にある editor layer として描画し、HTML の描画規則や DOM 親子関係には参加させません。
 
 ## Editor Behavior Contract
 
@@ -425,6 +437,7 @@ OpenGraphite のエディタは、HTML / companion CSS の上に編集体験を�
 - app 内編集を cache の現在値へ反映し、同じ値を表示する複数 surface へ永続化前に同期する。
 - Inspector の design value 編集を companion CSS へ、構造・参照編集を HTML へ反映する。
 - Chapter / Collection の注釈を WebView card 群の前面へ重ね、`.ogp` だけへ保存する。
+- typed node reference を Chapter / Collection canvas 直下の viewport として表示し、配置 frame は `.ogp`、編集内容は参照元 HTML / companion CSS へ保存する。
 - HTML 内の自然なスクロールやブラウザ挙動をできるだけ尊重する。
 
-公開ページへ影響する OpenGraphite 機能は、最終的に HTML と CSS に説明可能な形で落ちることを優先します。公開成果物へ影響しない注釈は `.ogp` に明示的に隔離し、この境界を越えて HTML / CSS / runtime / build へ漏らしません。
+公開ページへ影響する OpenGraphite 機能は、最終的に HTML と CSS に説明可能な形で落ちることを優先します。公開成果物へ影響しない注釈と参照 viewport の配置情報は `.ogp` に明示的に隔離し、この境界を越えて HTML / CSS / runtime / build へ漏らしません。

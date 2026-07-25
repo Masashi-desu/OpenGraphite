@@ -51,6 +51,53 @@ struct OpenGraphiteFocusedPreviewTarget: Equatable, Identifiable {
     }
 }
 
+/// 論理名（日本語）: エディター履歴表示状態
+/// 概要: 作業履歴の各項目が現在適用済みで取り消せるか、取り消し済みでやり直せるかを表します。
+///
+/// 定義内容:
+/// - `undoable`: 現在適用済みで Undo 対象になっている項目。
+/// - `redoable`: Undo 済みで Redo 対象になっている項目。
+enum EditorHistoryItemState: Equatable {
+    case undoable
+    case redoable
+}
+
+/// 論理名（日本語）: エディター履歴簡易プレビュー種別
+/// 概要: 左サイドバーの履歴行で、編集対象を小さな図として識別するための表示情報です。
+///
+/// 定義内容:
+/// - `node`: HTML オブジェクトまたは page と、その `data-og-type`。
+/// - `stickyNote`: 背景色と本文を持つ付箋。
+/// - `ink`: 代表色を持つ手書き。
+/// - `guide`: 水平または垂直ガイド。
+/// - `reference`: HTML オブジェクト参照配置。
+enum EditorHistoryPreviewKind: Equatable {
+    case node(type: String)
+    case stickyNote(backgroundColor: String, text: String)
+    case ink(color: String)
+    case guide(orientation: OpenGraphiteCanvasGuideOrientation)
+    case reference
+}
+
+/// 論理名（日本語）: エディター履歴表示項目
+/// 概要: 統合 Undo / Redo 時系列を、サイドバーへ表示するための時刻・対象名・簡易プレビューへ変換した値です。
+///
+/// プロパティ:
+/// - `id`: 同じ操作が Undo / Redo 間を移動しても維持される識別子。
+/// - `timestamp`: 操作が正本へ確定した時刻。
+/// - `objectName`: 操作対象オブジェクトの表示名。
+/// - `actionName`: 履歴行で補助表示する操作名。
+/// - `previewKind`: 対象の簡易プレビュー種別。
+/// - `state`: Undo 可能または Redo 可能の表示状態。
+struct EditorHistoryListItem: Equatable, Identifiable {
+    var id: UUID
+    var timestamp: Date
+    var objectName: String
+    var actionName: String
+    var previewKind: EditorHistoryPreviewKind
+    var state: EditorHistoryItemState
+}
+
 /// 論理名（日本語）: エディター状態ストア
 /// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
@@ -67,6 +114,8 @@ struct OpenGraphiteFocusedPreviewTarget: Equatable, Identifiable {
 /// - `selectedComponentPageInternalID`: 選択中 component canvas カードの内部 ID。
 /// - `selectedCanvasAnnotationID`: 選択中の `.ogp` 専用キャンバス注釈の primary ID。
 /// - `selectedCanvasAnnotationIDs`: なげわを含む Canvas 操作で同時選択中の注釈 ID 集合。
+/// - `selectedCanvasReferenceID`: 選択中のキャンバス直下オブジェクト参照配置 ID。
+/// - `selectedCanvasReferenceTarget`: 選択中参照が解決したHTMLカードとnode。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
 /// - `selectedNodeID`: 選択中ノード ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
 /// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
@@ -103,6 +152,8 @@ final class EditorStore: ObservableObject {
         }
     }
     @Published private(set) var selectedCanvasAnnotationIDs: Set<String> = []
+    @Published private(set) var selectedCanvasReferenceID: String?
+    @Published private(set) var selectedCanvasReferenceTarget: OpenGraphiteResolvedCanvasReference?
     @Published var selectedProjectResource: OpenGraphiteProjectResourceSelection? {
         didSet {
             guard oldValue != selectedProjectResource else { return }
@@ -148,6 +199,7 @@ final class EditorStore: ObservableObject {
     @Published private(set) var inspectorSectionOpenRequest: InspectorSectionOpenRequest?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
+    @Published private(set) var historyItems: [EditorHistoryListItem] = []
     @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
     @Published private(set) var staticFlowLinksByPageInternalID: [String: [OpenGraphiteStaticFlowLink]] = [:]
     @Published private(set) var staticFlowLinksByPageURL: [URL: [OpenGraphiteStaticFlowLink]] = [:]
@@ -162,8 +214,8 @@ final class EditorStore: ObservableObject {
     private var documentReplacementSequence = 0
     private var inspectorSectionOpenRequestSequence = 0
     private var syncHistories: [URL: DocumentSyncHistory] = [:]
-    private var editorUndoStack: [EditorHistoryEntry] = []
-    private var editorRedoStack: [EditorHistoryEntry] = []
+    private var editorUndoStack: [EditorHistoryRecord] = []
+    private var editorRedoStack: [EditorHistoryRecord] = []
     @Published private var stagedCanvasAnnotationTextDrafts: [String: StagedCanvasAnnotationTextDraft] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var cssVariableBaselinesByInternalID: [String: [String: String]] = [:]
@@ -263,6 +315,17 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 選択キャンバスオブジェクト参照一覧
+    /// 概要: 現在表示中のChapterまたはCollection直下に保存された編集可能なノード参照を返します。
+    var selectedCanvasReferences: [OpenGraphiteCanvasReference] {
+        switch selectedCanvasSegment {
+        case .pages:
+            return selectedChapter?.references ?? []
+        case .components:
+            return selectedComponentCollection?.references ?? []
+        }
+    }
+
     /// 論理名（日本語）: 選択キャンバスガイド一覧
     /// 概要: 現在の Pages Chapter または Components Collection に保存された `.ogp` ガイドを返します。
     var selectedCanvasGuides: [OpenGraphiteCanvasGuide] {
@@ -295,7 +358,7 @@ final class EditorStore: ObservableObject {
         if let selectedNodeID {
             return [
                 "node",
-                selectedCanvasSegment.rawValue,
+                selectedDocumentSegment.rawValue,
                 selectedPage?.internalID ?? "",
                 selectedNodeID
             ].joined(separator: ":")
@@ -303,7 +366,7 @@ final class EditorStore: ObservableObject {
         if let selectedPage {
             return [
                 "page",
-                selectedCanvasSegment.rawValue,
+                selectedDocumentSegment.rawValue,
                 selectedPage.internalID
             ].joined(separator: ":")
         }
@@ -316,6 +379,9 @@ final class EditorStore: ObservableObject {
     }
 
     var selectedPage: OpenGraphitePage? {
+        if let selectedCanvasReferenceTarget {
+            return selectedCanvasReferenceTarget.page
+        }
         switch selectedCanvasSegment {
         case .pages:
             guard selectedPageInternalID != nil else { return nil }
@@ -327,8 +393,17 @@ final class EditorStore: ObservableObject {
     }
 
     var selectedPageURL: URL? {
+        if let selectedCanvasReferenceTarget {
+            return selectedCanvasReferenceTarget.pageURL
+        }
         guard let loadedProject, let selectedPage else { return nil }
         return loadedProject.htmlURL(for: selectedPage)
+    }
+
+    /// 論理名（日本語）: 選択HTML文書セグメント
+    /// 概要: 通常カード選択では現在のCanvasセグメント、参照配置選択では参照元HTMLカードのセグメントを返します。
+    var selectedDocumentSegment: OpenGraphiteCanvasSegment {
+        selectedCanvasReferenceTarget?.segment ?? selectedCanvasSegment
     }
 
     var selectedHTMLDocumentContext: OpenGraphiteHTMLDocumentContext {
@@ -530,7 +605,7 @@ final class EditorStore: ObservableObject {
     /// - Returns: 選択ページの参照 ID。未選択の場合は `nil`。
     func selectedPageReferenceID() -> String? {
         guard let selectedPage else { return nil }
-        return pageReferenceID(for: selectedPage, segment: selectedCanvasSegment)
+        return pageReferenceID(for: selectedPage, segment: selectedDocumentSegment)
     }
 
     /// 論理名（日本語）: Project i18n代表ページ参照ID生成関数
@@ -622,7 +697,7 @@ final class EditorStore: ObservableObject {
         if let selectedNode, copyNodeReferenceIDToPasteboard(selectedNode) {
             return true
         }
-        if let selectedPage, copyPageReferenceIDToPasteboard(selectedPage, segment: selectedCanvasSegment) {
+        if let selectedPage, copyPageReferenceIDToPasteboard(selectedPage, segment: selectedDocumentSegment) {
             return true
         }
         if selectedCanvasSegment == .components,
@@ -701,6 +776,7 @@ final class EditorStore: ObservableObject {
     /// - Parameter resource: 選択する Project 資源。`nil` の場合は Project 資源選択を解除します。
     func selectProjectResource(_ resource: OpenGraphiteProjectResourceSelection?) {
         selectedProjectResource = resource
+        clearCanvasReferenceSelection()
         selectedNodeID = nil
         selectedCanvasAnnotationID = nil
         if let resource {
@@ -1119,16 +1195,25 @@ final class EditorStore: ObservableObject {
             ?? ""
         guard !pageInternalID.isEmpty, !resolvedNodeInternalID.isEmpty else { return nil }
 
-        switch selectedCanvasSegment {
+        let syncTarget = currentHTMLSyncTarget()
+        switch selectedDocumentSegment {
         case .pages:
-            guard let chapter = selectedChapter, !chapter.internalID.isEmpty else { return nil }
+            guard let chapterID = syncTarget?.identity.containerInternalID,
+                  !chapterID.isEmpty
+            else {
+                return nil
+            }
             return OpenGraphiteReferenceID
-                .node(chapterID: chapter.internalID, pageID: pageInternalID, nodeID: resolvedNodeInternalID)
+                .node(chapterID: chapterID, pageID: pageInternalID, nodeID: resolvedNodeInternalID)
                 .stringValue
         case .components:
-            guard let collection = selectedComponentCollection, !collection.internalID.isEmpty else { return nil }
+            guard let collectionID = syncTarget?.identity.containerInternalID,
+                  !collectionID.isEmpty
+            else {
+                return nil
+            }
             return OpenGraphiteReferenceID
-                .componentNode(collectionID: collection.internalID, componentID: pageInternalID, nodeID: resolvedNodeInternalID)
+                .componentNode(collectionID: collectionID, componentID: pageInternalID, nodeID: resolvedNodeInternalID)
                 .stringValue
         }
     }
@@ -1171,7 +1256,7 @@ final class EditorStore: ObservableObject {
             "schemaVersion": "1",
             "kind": "opengraphite-node",
             "referenceID": referenceID,
-            "segment": selectedCanvasSegment.rawValue,
+            "segment": selectedDocumentSegment.rawValue,
             "pageID": page.id,
             "pageInternalID": page.internalID,
             "path": page.path,
@@ -1184,9 +1269,11 @@ final class EditorStore: ObservableObject {
             payload["projectURL"] = projectURL
         }
 
-        switch selectedCanvasSegment {
+        switch selectedDocumentSegment {
         case .pages:
-            if let chapter = selectedChapter {
+            if let chapter = loadedProject?.project.chapters.first(where: {
+                $0.internalID == currentHTMLSyncTarget()?.identity.containerInternalID
+            }) {
                 payload["chapterID"] = chapter.id
                 payload["chapterInternalID"] = chapter.internalID
                 if let chapterIndex = loadedProject?.project.chapters.firstIndex(where: { $0.internalID == chapter.internalID }) {
@@ -1197,7 +1284,9 @@ final class EditorStore: ObservableObject {
                 }
             }
         case .components:
-            if let collection = selectedComponentCollection {
+            if let collection = loadedProject?.project.collections.first(where: {
+                $0.internalID == currentHTMLSyncTarget()?.identity.containerInternalID
+            }) {
                 payload["collectionID"] = collection.id
                 payload["collectionInternalID"] = collection.internalID
                 if let collectionIndex = loadedProject?.project.collections.firstIndex(where: { $0.internalID == collection.internalID }) {
@@ -1280,6 +1369,7 @@ final class EditorStore: ObservableObject {
             selectedComponentPageID = initialCollection?.components.first?.id
             selectedComponentPageInternalID = initialCollection?.components.first?.internalID
             selectedCanvasAnnotationID = nil
+            clearCanvasReferenceSelection()
             selectedProjectResource = nil
             selectedNodeID = nil
             focusedPreviewTarget = nil
@@ -1339,6 +1429,7 @@ final class EditorStore: ObservableObject {
     private func selectPage(matching predicate: (OpenGraphitePage) -> Bool) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         switch selectedCanvasSegment {
         case .pages:
@@ -1391,6 +1482,7 @@ final class EditorStore: ObservableObject {
     private func selectChapter(_ chapter: OpenGraphiteChapter?) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         selectedCanvasSegment = .pages
         selectedChapterID = chapter?.id
@@ -1436,6 +1528,7 @@ final class EditorStore: ObservableObject {
     private func selectCollection(_ collection: OpenGraphiteComponentCollection?) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         selectedCanvasSegment = .components
         selectedCollectionID = collection?.id
@@ -1459,6 +1552,7 @@ final class EditorStore: ObservableObject {
     func selectPagesSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         selectedCanvasSegment = .pages
         if selectedChapterInternalID == nil
@@ -1486,6 +1580,7 @@ final class EditorStore: ObservableObject {
     func selectComponentsSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         selectedCanvasSegment = .components
         if selectedCollectionInternalID == nil
@@ -1531,6 +1626,7 @@ final class EditorStore: ObservableObject {
     private func selectComponentPage(matching predicate: (OpenGraphitePage) -> Bool) {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
+        clearCanvasReferenceSelection()
         selectedProjectResource = nil
         var collection = selectedComponentCollection
         var page = collection?.components.first(where: predicate)
@@ -2468,6 +2564,127 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: 参照ID解決関数
+    /// 処理概要: 入力中または保存済みtyped参照IDを、現在project内のHTMLカードと任意階層ノードへ解決します。
+    ///
+    /// - Parameter referenceID: `ogref:node` または `ogref:component-node`。
+    /// - Returns: プレビューと編集同期に使う解決済み参照元。
+    /// - Throws: project未読込または参照解決に失敗した場合のエラー。
+    func resolveCanvasReferenceID(_ referenceID: String) throws -> OpenGraphiteResolvedCanvasReference {
+        guard let loadedProject else {
+            throw OpenGraphiteCanvasReferenceResolutionError.missingContainer
+        }
+        return try OpenGraphiteCanvasReferenceResolver.resolve(referenceID, in: loadedProject)
+    }
+
+    /// 論理名（日本語）: キャンバスオブジェクト参照追加関数
+    /// 処理概要: 解決可能なnode参照を右クリックworld座標へ作成し、選択Chapter / Collection直下の`.ogp`へ保存します。
+    ///
+    /// - Parameters:
+    ///   - referenceID: 参照元ノードのtyped参照ID。
+    ///   - point: 配置先のキャンバスworld座標。
+    /// - Returns: 追加した参照配置の内部ID。保存できない場合は`nil`。
+    @discardableResult
+    func addCanvasReference(referenceID: String, at point: CGPoint) -> String? {
+        guard point.x.isFinite, point.y.isFinite,
+              let target = try? resolveCanvasReferenceID(referenceID)
+        else {
+            return nil
+        }
+        let internalID = UUID().uuidString.lowercased()
+        let reference = OpenGraphiteCanvasReference(
+            internalID: internalID,
+            referenceID: target.referenceID,
+            x: Double(point.x),
+            y: Double(point.y)
+        )
+        guard persistSelectedCanvasReferences({ references in
+            references.append(reference)
+            return true
+        }, status: "参照オブジェクトをキャンバスへ追加しました。") else {
+            return nil
+        }
+        selectCanvasReference(id: internalID)
+        return internalID
+    }
+
+    /// 論理名（日本語）: キャンバスオブジェクト参照位置更新関数
+    /// 処理概要: ドラッグ終了位置をworld座標へ戻し、選択コンテナの参照配置だけを`.ogp`へ保存します。
+    ///
+    /// - Parameters:
+    ///   - id: 更新対象参照配置の内部ID。
+    ///   - x: 新しいworld X座標。
+    ///   - y: 新しいworld Y座標。
+    func updateCanvasReferencePosition(id: String, x: Double, y: Double) {
+        guard x.isFinite, y.isFinite else { return }
+        _ = persistSelectedCanvasReferences({ references in
+            guard let index = references.firstIndex(where: { $0.internalID == id }) else {
+                return false
+            }
+            let next = OpenGraphiteCanvasReference(
+                internalID: references[index].internalID,
+                referenceID: references[index].referenceID,
+                x: x,
+                y: y,
+                width: references[index].width,
+                height: references[index].height
+            )
+            guard next != references[index] else { return false }
+            references[index] = next
+            return true
+        }, status: "参照オブジェクトの位置を更新しました。")
+    }
+
+    /// 論理名（日本語）: キャンバスオブジェクト参照削除関数
+    /// 処理概要: 指定参照配置をChapter / Collection直下から削除し、参照元HTMLノードは変更しません。
+    ///
+    /// - Parameter id: 削除対象参照配置の内部ID。
+    func deleteCanvasReference(id: String) {
+        let wasSelected = selectedCanvasReferenceID == id
+        let didDelete = persistSelectedCanvasReferences({ references in
+            let previousCount = references.count
+            references.removeAll { $0.internalID == id }
+            return references.count != previousCount
+        }, status: "参照オブジェクトをキャンバスから削除しました。")
+        if didDelete, wasSelected {
+            clearCanvasReferenceSelection()
+            selectedNodeID = nil
+            nodes = []
+            prepareHistoryForSelectedPage()
+        }
+    }
+
+    /// 論理名（日本語）: キャンバスオブジェクト参照選択関数
+    /// 処理概要: 保存済み配置を参照元HTMLノードへ解決し、キャンバスを切り替えずInspectorとWeb編集の対象にします。
+    ///
+    /// - Parameter id: 選択する参照配置の内部ID。`nil`または不明IDでは選択を解除します。
+    func selectCanvasReference(id: String?) {
+        guard let id,
+              let reference = selectedCanvasReferences.first(where: { $0.internalID == id }),
+              let target = try? resolveCanvasReferenceID(reference.referenceID)
+        else {
+            clearCanvasReferenceSelection()
+            return
+        }
+
+        selectedProjectResource = nil
+        selectedCanvasAnnotationID = nil
+        switch selectedCanvasSegment {
+        case .pages:
+            selectedPageID = nil
+            selectedPageInternalID = nil
+        case .components:
+            selectedComponentPageID = nil
+            selectedComponentPageInternalID = nil
+        }
+        selectedCanvasReferenceID = id
+        selectedCanvasReferenceTarget = target
+        nodes = []
+        selectNode(id: target.node.id)
+        statusMessage = "\(target.node.id) の参照オブジェクトを編集しています。"
+        prepareHistoryForSelectedPage()
+    }
+
     /// 論理名（日本語）: キャンバス注釈選択関数
     /// 処理概要: 現在の Canvas に含まれる注釈を選択し、HTML page / node 選択を解除します。
     ///
@@ -2492,6 +2709,7 @@ final class EditorStore: ObservableObject {
         }
 
         selectedProjectResource = nil
+        clearCanvasReferenceSelection()
         selectedNodeID = nil
         switch selectedCanvasSegment {
         case .pages:
@@ -2525,6 +2743,7 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: キャンバス選択解除関数
     /// 処理概要: 空のキャンバス操作に応じて page、node、注釈の選択をまとめて解除します。
     func clearCanvasSelection() {
+        clearCanvasReferenceSelection()
         switch selectedCanvasSegment {
         case .pages:
             selectedPageID = nil
@@ -2538,6 +2757,106 @@ final class EditorStore: ObservableObject {
         nodes = []
         statusMessage = "キャンバス選択を解除しました。"
         prepareHistoryForSelectedPage()
+    }
+
+    /// 論理名（日本語）: キャンバスオブジェクト参照選択解除関数
+    /// 処理概要: 参照配置と解決済み参照元を同時に破棄し、通常カード選択へ戻せる状態にします。
+    private func clearCanvasReferenceSelection() {
+        selectedCanvasReferenceID = nil
+        selectedCanvasReferenceTarget = nil
+    }
+
+    /// 論理名（日本語）: 選択キャンバス参照保存関数
+    /// 処理概要: 最新`.ogp`を再読込し、現在表示中Chapter / Collectionの`references[]`だけへ変更をatomic writeして統合履歴へ記録します。
+    ///
+    /// - Parameters:
+    ///   - mutation: 参照配列を変更し、保存が必要なら`true`を返す処理。
+    ///   - status: 保存成功時の状態メッセージ。
+    /// - Returns: `.ogp`を更新できた場合は`true`。
+    @discardableResult
+    private func persistSelectedCanvasReferences(
+        _ mutation: (inout [OpenGraphiteCanvasReference]) -> Bool,
+        status: String
+    ) -> Bool {
+        guard let currentProject = loadedProject,
+              let historyTarget = selectedCanvasReferenceHistoryTarget(in: currentProject.project)
+        else {
+            return false
+        }
+
+        var targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: currentProject.fileURL)
+        } catch {
+            lastError = ".ogp の保存前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+
+        let didChange: Bool
+        let previousReferences: [OpenGraphiteCanvasReference]
+        switch historyTarget.segment {
+        case .pages:
+            guard let index = targetProject.project.chapters.firstIndex(where: {
+                $0.internalID == historyTarget.containerInternalID
+            }) else {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+                return false
+            }
+            previousReferences = targetProject.project.chapters[index].references
+            didChange = mutation(&targetProject.project.chapters[index].references)
+        case .components:
+            guard let index = targetProject.project.collections.firstIndex(where: {
+                $0.internalID == historyTarget.containerInternalID
+            }) else {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+                return false
+            }
+            previousReferences = targetProject.project.collections[index].references
+            didChange = mutation(&targetProject.project.collections[index].references)
+        }
+        guard didChange else {
+            if targetProject.project != currentProject.project
+                || targetProject.rootURL != currentProject.rootURL {
+                synchronizeAfterCanvasManifestDiskChange(targetProject)
+            }
+            return false
+        }
+
+        do {
+            targetProject.project = targetProject.project.normalizedInternalIDs()
+            try writeProjectManifest(targetProject.project, to: targetProject.fileURL)
+            loadedProject = targetProject
+            reconcileCanvasReferenceSelectionAfterManifestChange()
+            let nextReferences = canvasReferences(for: historyTarget, in: targetProject.project) ?? []
+            recordCanvasReferenceHistory(
+                projectURL: targetProject.fileURL,
+                target: historyTarget,
+                previousReferences: previousReferences,
+                nextReferences: nextReferences
+            )
+            lastError = nil
+            statusMessage = status
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: Manifest変更後参照選択整合関数
+    /// 処理概要: 選択配置が最新manifestにも存在し参照元を解決できる場合だけ、編集対象を新しいprojectへ接続し直します。
+    private func reconcileCanvasReferenceSelectionAfterManifestChange() {
+        guard let selectedCanvasReferenceID,
+              let reference = selectedCanvasReferences.first(where: {
+                  $0.internalID == selectedCanvasReferenceID
+              }),
+              let target = try? resolveCanvasReferenceID(reference.referenceID)
+        else {
+            clearCanvasReferenceSelection()
+            return
+        }
+        selectedCanvasReferenceTarget = target
     }
 
     /// 論理名（日本語）: 選択Canvas注釈保存関数
@@ -2757,6 +3076,7 @@ final class EditorStore: ObservableObject {
         )
         loadedProject = project
         reconcileCanvasAnnotationSelectionAfterManifestChange()
+        reconcileCanvasReferenceSelectionAfterManifestChange()
         lastError = nil
         restartExternalProjectMonitoring(force: true)
     }
@@ -3067,6 +3387,61 @@ final class EditorStore: ObservableObject {
             return project.chapters.first { $0.internalID == target.containerInternalID }?.guides
         case .components:
             return project.collections.first { $0.internalID == target.containerInternalID }?.guides
+        }
+    }
+
+    /// 論理名（日本語）: 選択キャンバス参照履歴対象取得関数
+    /// 処理概要: 現在のsegmentと選択containerを、最新manifestへrebaseできる参照配置履歴対象へ変換します。
+    ///
+    /// - Parameter project: 選択解決の基準にする現在のproject。
+    /// - Returns: 選択中Chapter / Collection。対象がなければ`nil`。
+    private func selectedCanvasReferenceHistoryTarget(
+        in project: OpenGraphiteProject
+    ) -> CanvasReferenceHistoryTarget? {
+        switch selectedCanvasSegment {
+        case .pages:
+            let containerInternalID = selectedChapterInternalID
+                ?? project.chapters.first?.internalID
+            guard let containerInternalID,
+                  project.chapters.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasReferenceHistoryTarget(
+                segment: .pages,
+                containerInternalID: containerInternalID
+            )
+        case .components:
+            let containerInternalID = selectedCollectionInternalID
+                ?? project.collections.first?.internalID
+            guard let containerInternalID,
+                  project.collections.contains(where: { $0.internalID == containerInternalID })
+            else {
+                return nil
+            }
+            return CanvasReferenceHistoryTarget(
+                segment: .components,
+                containerInternalID: containerInternalID
+            )
+        }
+    }
+
+    /// 論理名（日本語）: コンテナ参照配置配列取得関数
+    /// 処理概要: 履歴対象が示すChapter / Collectionの参照配置配列を取得します。
+    ///
+    /// - Parameters:
+    ///   - target: 参照配置履歴対象container。
+    ///   - project: 取得対象project。
+    /// - Returns: 対象containerの参照配置配列。対象が存在しない場合は`nil`。
+    private func canvasReferences(
+        for target: CanvasReferenceHistoryTarget,
+        in project: OpenGraphiteProject
+    ) -> [OpenGraphiteCanvasReference]? {
+        switch target.segment {
+        case .pages:
+            return project.chapters.first { $0.internalID == target.containerInternalID }?.references
+        case .components:
+            return project.collections.first { $0.internalID == target.containerInternalID }?.references
         }
     }
 
@@ -4377,13 +4752,13 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ドキュメント変更取り消し関数
-    /// 処理概要: HTML、キャンバス注釈、ガイドの統合履歴を一段戻し、各正本へ適用します。
+    /// 処理概要: HTML、companion CSS、キャンバス注釈、ガイド、参照配置の統合履歴を一段戻し、各正本へ適用します。
     func undoDocumentChange() {
         applyHistoryNavigation(direction: .undo)
     }
 
     /// 論理名（日本語）: ドキュメント変更やり直し関数
-    /// 処理概要: HTML、キャンバス注釈、ガイドの統合 redo 履歴を一段進め、各正本へ適用します。
+    /// 処理概要: HTML、companion CSS、キャンバス注釈、ガイド、参照配置の統合redo履歴を一段進め、各正本へ適用します。
     func redoDocumentChange() {
         applyHistoryNavigation(direction: .redo)
     }
@@ -4555,6 +4930,7 @@ final class EditorStore: ObservableObject {
                 ids: survivingAnnotationIDs,
                 primaryID: survivingPrimaryID
             )
+            reconcileCanvasReferenceSelectionAfterManifestChange()
 
             if selectedPageURL != previousSelectedPageURL {
                 selectedNodeID = nil
@@ -4601,11 +4977,20 @@ final class EditorStore: ObservableObject {
         case redo
     }
 
+    /// 論理名（日本語）: Companion CSS履歴変更
+    /// 概要: 一度の文書編集に含まれるcompanion CSSファイルの変更前後を、ファイル未作成状態も含めて保持します。
+    private struct CompanionCSSHistoryChange: Equatable {
+        var previousCSS: String?
+        var nextCSS: String?
+    }
+
     /// 論理名（日本語）: HTML履歴項目
-    /// 概要: 一度の HTML 同期を project と page URL に固定し、統合履歴からページ別同期履歴を進めるために保持します。
+    /// 概要: 一度のHTMLまたはcompanion CSS同期をprojectとpage URLに固定し、統合履歴から正本を復元するために保持します。
     private struct DocumentHistoryEntry: Equatable {
         var projectURL: URL
         var pageURL: URL
+        var advancesHTMLHistory: Bool
+        var companionCSSChange: CompanionCSSHistoryChange?
     }
 
     /// 論理名（日本語）: キャンバス注釈履歴対象
@@ -4656,12 +5041,29 @@ final class EditorStore: ObservableObject {
         var nextGuides: [OpenGraphiteCanvasGuide]
     }
 
+    /// 論理名（日本語）: キャンバス参照履歴対象
+    /// 概要: `.ogp`内でundo/redoの参照配置配列を差し替えるChapterまたはCollectionを識別します。
+    private struct CanvasReferenceHistoryTarget: Equatable {
+        var segment: OpenGraphiteCanvasSegment
+        var containerInternalID: String
+    }
+
+    /// 論理名（日本語）: キャンバス参照履歴項目
+    /// 概要: 一度の`.ogp` atomic writeによる参照配置変更前後を、⌘Z／やり直しの一操作として保持します。
+    private struct CanvasReferenceHistoryEntry: Equatable {
+        var projectURL: URL
+        var target: CanvasReferenceHistoryTarget
+        var previousReferences: [OpenGraphiteCanvasReference]
+        var nextReferences: [OpenGraphiteCanvasReference]
+    }
+
     /// 論理名（日本語）: エディター統合履歴項目
-    /// 概要: HTML、キャンバス注釈、ガイドの保存操作を、domain をまたいだ一つの時系列として保持します。
+    /// 概要: HTML、companion CSS、キャンバス注釈、ガイド、参照配置の保存操作を、domainをまたいだ一つの時系列として保持します。
     private enum EditorHistoryEntry: Equatable {
         case document(DocumentHistoryEntry)
         case canvasAnnotation(CanvasAnnotationHistoryEntry)
         case canvasGuide(CanvasGuideHistoryEntry)
+        case canvasReference(CanvasReferenceHistoryEntry)
 
         /// 論理名（日本語）: 履歴Project URL
         /// 処理概要: 操作記録時に固定した `.ogp` URL を返します。
@@ -4672,6 +5074,8 @@ final class EditorStore: ObservableObject {
             case let .canvasAnnotation(entry):
                 return entry.projectURL
             case let .canvasGuide(entry):
+                return entry.projectURL
+            case let .canvasReference(entry):
                 return entry.projectURL
             }
         }
@@ -4691,6 +5095,67 @@ final class EditorStore: ObservableObject {
             }
             entry.pageURL = nextURL.standardizedFileURL
             return .document(entry)
+        }
+    }
+
+    /// 論理名（日本語）: エディター履歴表示情報
+    /// 概要: 正本復元用の履歴項目とは分離して、利用者へ見せる対象名・操作名・簡易プレビューを保持します。
+    ///
+    /// プロパティ:
+    /// - `objectName`: 操作対象オブジェクトの表示名。
+    /// - `actionName`: 操作内容を表す短い表示名。
+    /// - `previewKind`: 対象オブジェクトの簡易プレビュー種別。
+    private struct EditorHistoryPresentation: Equatable {
+        var objectName: String
+        var actionName: String
+        var previewKind: EditorHistoryPreviewKind
+    }
+
+    /// 論理名（日本語）: エディター履歴記録
+    /// 概要: 正本復元用の統合履歴項目へ、記録時刻とサイドバー表示情報を結び付けます。
+    ///
+    /// プロパティ:
+    /// - `id`: Undo / Redo 間の移動でも維持する操作識別子。
+    /// - `timestamp`: 操作が正本へ確定した時刻。
+    /// - `presentation`: サイドバーへ表示する対象情報。
+    /// - `entry`: Undo / Redo で正本へ適用する履歴項目。
+    private struct EditorHistoryRecord: Equatable {
+        var id: UUID
+        var timestamp: Date
+        var presentation: EditorHistoryPresentation
+        var entry: EditorHistoryEntry
+
+        var projectURL: URL {
+            entry.projectURL
+        }
+
+        /// 論理名（日本語）: 履歴記録ページURL移行関数
+        /// 処理概要: 表示情報と時刻を維持したまま、内部のHTML履歴だけをrename後URLへ移します。
+        ///
+        /// - Parameters:
+        ///   - currentURL: rename 前の HTML URL。
+        ///   - nextURL: rename 後の HTML URL。
+        /// - Returns: 必要に応じて page URL を更新した履歴記録。
+        func migratingPageURL(from currentURL: URL, to nextURL: URL) -> EditorHistoryRecord {
+            var migratedRecord = self
+            migratedRecord.entry = entry.migratingPageURL(from: currentURL, to: nextURL)
+            return migratedRecord
+        }
+
+        /// 論理名（日本語）: 履歴リスト項目生成関数
+        /// 処理概要: 記録済み時刻と表示情報へ現在のUndo / Redo状態を加えて公開用の値を返します。
+        ///
+        /// - Parameter state: 現在の履歴表示状態。
+        /// - Returns: 左サイドバー向けの履歴表示項目。
+        func listItem(state: EditorHistoryItemState) -> EditorHistoryListItem {
+            EditorHistoryListItem(
+                id: id,
+                timestamp: timestamp,
+                objectName: presentation.objectName,
+                actionName: presentation.actionName,
+                previewKind: presentation.previewKind,
+                state: state
+            )
         }
     }
 
@@ -4743,7 +5208,7 @@ final class EditorStore: ObservableObject {
     /// 処理概要: 現在選択中の HTML カードを object edit 用同期対象に変換します。
     private func currentHTMLSyncTarget() -> HTMLSyncTarget? {
         guard let selectedPage else { return nil }
-        return htmlSyncTarget(for: selectedPage, segment: selectedCanvasSegment)
+        return htmlSyncTarget(for: selectedPage, segment: selectedDocumentSegment)
     }
 
     /// 論理名（日本語）: CSS編集対象HTML同期先取得関数
@@ -4871,9 +5336,10 @@ final class EditorStore: ObservableObject {
                 mutationHTML: mutation.html,
                 contract: contract
             )
-            let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL)
-            let previousCompanionCSS = (try? String(contentsOf: companionCSSURL, encoding: .utf8)) ?? ""
-            let companionCSSChanged = persisted.companionCSS.map { $0.css != previousCompanionCSS } ?? false
+            let previousCompanionCSS = companionCSSHistorySnapshot(for: edit.target.htmlURL)
+            let companionCSSChanged = persisted.companionCSS.map {
+                $0.css != (previousCompanionCSS ?? "")
+            } ?? false
             if persisted.html == diskHTML && !companionCSSChanged {
                 return .noChange
             }
@@ -4886,8 +5352,20 @@ final class EditorStore: ObservableObject {
             var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
             let didRecordHistory = history.recordSync(html: persisted.html)
             syncHistories[edit.target.htmlURL] = history
-            if didRecordHistory, let projectURL = loadedProject?.fileURL {
-                recordDocumentHistory(projectURL: projectURL, pageURL: edit.target.htmlURL)
+            let companionCSSChange = companionCSSChanged
+                ? CompanionCSSHistoryChange(
+                    previousCSS: previousCompanionCSS,
+                    nextCSS: companionCSSHistorySnapshot(for: edit.target.htmlURL)
+                )
+                : nil
+            if (didRecordHistory || companionCSSChange != nil),
+               let projectURL = loadedProject?.fileURL {
+                recordDocumentHistory(
+                    projectURL: projectURL,
+                    pageURL: edit.target.htmlURL,
+                    advancesHTMLHistory: didRecordHistory,
+                    companionCSSChange: companionCSSChange
+                )
             } else {
                 updateHistoryAvailability()
             }
@@ -5309,6 +5787,7 @@ final class EditorStore: ObservableObject {
     ) -> HTMLObjectEditResult? {
         do {
             let core = OpenGraphiteAgentCore(contract: contract)
+            let previousCompanionCSS = companionCSSHistorySnapshot(for: edit.target.htmlURL)
             var lastResult: OpenGraphiteEditResult?
             switch edit.operation {
             case let .setCSSVariable(nodeInternalID, key, value, _):
@@ -5344,13 +5823,27 @@ final class EditorStore: ObservableObject {
                 return .failed
             }
 
-            if let html = readHTMLFromDisk(at: edit.target.htmlURL) {
-                lastKnownPageHTMLByURL[edit.target.htmlURL] = html
+            let nextHTML = readHTMLFromDisk(at: edit.target.htmlURL)
+            let nextCompanionCSS = companionCSSHistorySnapshot(for: edit.target.htmlURL)
+            if let nextHTML {
+                lastKnownPageHTMLByURL[edit.target.htmlURL] = nextHTML
                 var history = historyForPage(at: edit.target.htmlURL, fallbackHTML: diskHTML)
-                let didRecordHistory = history.recordSync(html: html)
+                let didRecordHistory = history.recordSync(html: nextHTML)
                 syncHistories[edit.target.htmlURL] = history
-                if didRecordHistory, let projectURL = loadedProject?.fileURL {
-                    recordDocumentHistory(projectURL: projectURL, pageURL: edit.target.htmlURL)
+                let companionCSSChange = previousCompanionCSS != nextCompanionCSS
+                    ? CompanionCSSHistoryChange(
+                        previousCSS: previousCompanionCSS,
+                        nextCSS: nextCompanionCSS
+                    )
+                    : nil
+                if (didRecordHistory || companionCSSChange != nil),
+                   let projectURL = loadedProject?.fileURL {
+                    recordDocumentHistory(
+                        projectURL: projectURL,
+                        pageURL: edit.target.htmlURL,
+                        advancesHTMLHistory: didRecordHistory,
+                        companionCSSChange: companionCSSChange
+                    )
                 } else {
                     updateHistoryAvailability()
                 }
@@ -5358,7 +5851,9 @@ final class EditorStore: ObservableObject {
 
             statusMessage = "\(OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: edit.target.htmlURL).lastPathComponent) と同期しました。"
             let result = HTMLObjectEditResult(
-                updated: lastResult?.updated ?? false,
+                updated: (lastResult?.updated ?? false)
+                    || previousCompanionCSS != nextCompanionCSS
+                    || diskHTML != nextHTML,
                 requiresReload: edit.operation.requiresWebViewReload
             )
             if result.updated {
@@ -5547,6 +6042,31 @@ final class EditorStore: ObservableObject {
     /// - Returns: 読み込めた HTML。失敗時は `nil`。
     private func readHTMLFromDisk(at pageURL: URL) -> String? {
         try? String(contentsOf: pageURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: Companion CSS履歴スナップショット取得関数
+    /// 処理概要: 指定HTMLと同名のcompanion CSSをUTF-8文字列として読み込み、ファイル未作成状態は`nil`で保持します。
+    ///
+    /// - Parameter pageURL: companion CSSの基準になるHTML URL。
+    /// - Returns: 読み込めたCSS。ファイルが存在しない、または読み込めない場合は`nil`。
+    private func companionCSSHistorySnapshot(for pageURL: URL) -> String? {
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: pageURL)
+        return try? String(contentsOf: cssURL, encoding: .utf8)
+    }
+
+    /// 論理名（日本語）: Companion CSS履歴スナップショット書き込み関数
+    /// 処理概要: 履歴スナップショットが文字列ならatomic writeし、`nil`なら編集前の未作成状態へ戻します。
+    ///
+    /// - Parameters:
+    ///   - css: 復元するCSS。`nil`はcompanion CSSファイルを存在させない状態。
+    ///   - pageURL: companion CSSの基準になるHTML URL。
+    private func writeCompanionCSSHistorySnapshot(_ css: String?, for pageURL: URL) throws {
+        let cssURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: pageURL)
+        if let css {
+            try css.write(to: cssURL, atomically: true, encoding: .utf8)
+        } else if FileManager.default.fileExists(atPath: cssURL.path) {
+            try FileManager.default.removeItem(at: cssURL)
+        }
     }
 
     /// 論理名（日本語）: ディスクHTML置換要求発行関数
@@ -6071,38 +6591,349 @@ final class EditorStore: ObservableObject {
         guard let currentProjectURL = loadedProject?.fileURL.standardizedFileURL else {
             canUndo = false
             canRedo = false
+            historyItems = []
             return
         }
         canUndo = editorUndoStack.last?.projectURL.standardizedFileURL == currentProjectURL
         canRedo = editorRedoStack.last?.projectURL.standardizedFileURL == currentProjectURL
+        let undoItems = editorUndoStack
+            .filter { $0.projectURL.standardizedFileURL == currentProjectURL }
+            .reversed()
+            .map { $0.listItem(state: .undoable) }
+        let redoItems = editorRedoStack
+            .filter { $0.projectURL.standardizedFileURL == currentProjectURL }
+            .reversed()
+            .map { $0.listItem(state: .redoable) }
+        historyItems = undoItems + redoItems
     }
 
     /// 論理名（日本語）: HTML履歴記録関数
-    /// 処理概要: ページ別同期履歴に追加済みの HTML 保存を、project 全体の統合時系列へ記録します。
+    /// 処理概要: ページ別同期履歴へ追加したHTML保存、またはcompanion CSSだけの保存をproject全体の統合時系列へ記録します。
     ///
     /// - Parameters:
     ///   - projectURL: 操作時に開いていた `.ogp` URL。
     ///   - pageURL: 同期した HTML URL。
-    private func recordDocumentHistory(projectURL: URL, pageURL: URL) {
+    ///   - advancesHTMLHistory: ページ別HTML履歴も一段進めた操作か。
+    ///   - companionCSSChange: 同じ操作に含まれるcompanion CSS変更前後。`nil`はCSSを履歴対象にしないことを表します。
+    private func recordDocumentHistory(
+        projectURL: URL,
+        pageURL: URL,
+        advancesHTMLHistory: Bool = true,
+        companionCSSChange: CompanionCSSHistoryChange? = nil
+    ) {
+        let didChangeCompanionCSS = companionCSSChange.map {
+            $0.previousCSS != $0.nextCSS
+        } ?? false
+        guard advancesHTMLHistory || didChangeCompanionCSS else {
+            return
+        }
         recordEditorHistory(
             .document(
                 DocumentHistoryEntry(
                     projectURL: projectURL.standardizedFileURL,
-                    pageURL: pageURL.standardizedFileURL
+                    pageURL: pageURL.standardizedFileURL,
+                    advancesHTMLHistory: advancesHTMLHistory,
+                    companionCSSChange: companionCSSChange
                 )
             )
         )
     }
 
+    /// 論理名（日本語）: 履歴表示情報生成関数
+    /// 処理概要: 統合履歴の正本復元情報から、対象名、操作名、種類別簡易プレビューを記録時点で確定します。
+    ///
+    /// - Parameter entry: 表示情報を生成する統合履歴項目。
+    /// - Returns: 左サイドバーへ表示する履歴情報。
+    private func historyPresentation(for entry: EditorHistoryEntry) -> EditorHistoryPresentation {
+        switch entry {
+        case let .document(documentEntry):
+            return documentHistoryPresentation(for: documentEntry)
+        case let .canvasAnnotation(annotationEntry):
+            return canvasAnnotationHistoryPresentation(for: annotationEntry)
+        case let .canvasGuide(guideEntry):
+            return canvasGuideHistoryPresentation(for: guideEntry)
+        case let .canvasReference(referenceEntry):
+            return canvasReferenceHistoryPresentation(for: referenceEntry)
+        }
+    }
+
+    /// 論理名（日本語）: HTML履歴表示情報生成関数
+    /// 処理概要: 選択中オブジェクトまたは対象pageを、HTML / companion CSS履歴の表示対象として解決します。
+    ///
+    /// - Parameter entry: HTML履歴項目。
+    /// - Returns: HTMLオブジェクトまたはpageの履歴表示情報。
+    private func documentHistoryPresentation(for entry: DocumentHistoryEntry) -> EditorHistoryPresentation {
+        let selectedURL = selectedPageURL?.standardizedFileURL
+        if selectedURL == entry.pageURL.standardizedFileURL, let selectedNode {
+            return EditorHistoryPresentation(
+                objectName: selectedNode.displayID,
+                actionName: documentHistoryActionName(for: entry),
+                previewKind: .node(type: selectedNode.type)
+            )
+        }
+
+        let page = loadedProject?.project.allPages.first { page in
+            loadedProject?.htmlURL(for: page).standardizedFileURL == entry.pageURL.standardizedFileURL
+        }
+        return EditorHistoryPresentation(
+            objectName: page?.displayName ?? entry.pageURL.lastPathComponent,
+            actionName: documentHistoryActionName(for: entry),
+            previewKind: .node(type: "page")
+        )
+    }
+
+    /// 論理名（日本語）: 文書履歴操作名生成関数
+    /// 処理概要: HTMLとcompanion CSSのどちらが一操作で変化したかを短い履歴ラベルへ変換します。
+    ///
+    /// - Parameter entry: HTML履歴項目。
+    /// - Returns: 文書履歴の操作名。
+    private func documentHistoryActionName(for entry: DocumentHistoryEntry) -> String {
+        switch (entry.advancesHTMLHistory, entry.companionCSSChange != nil) {
+        case (true, true):
+            return "HTML / スタイルを編集"
+        case (false, true):
+            return "スタイルを編集"
+        default:
+            return "HTMLを編集"
+        }
+    }
+
+    /// 論理名（日本語）: 注釈履歴表示情報生成関数
+    /// 処理概要: 変更前後の注釈配列から対象付箋または手書きと追加・削除・編集の種別を特定します。
+    ///
+    /// - Parameter entry: キャンバス注釈履歴項目。
+    /// - Returns: 注釈履歴の表示情報。
+    private func canvasAnnotationHistoryPresentation(
+        for entry: CanvasAnnotationHistoryEntry
+    ) -> EditorHistoryPresentation {
+        let changes = Self.changedHistoryValues(
+            previous: entry.previousAnnotations,
+            next: entry.nextAnnotations,
+            id: \OpenGraphiteCanvasAnnotation.internalID
+        )
+        guard let change = changes.first,
+              let annotation = change.next ?? change.previous
+        else {
+            return EditorHistoryPresentation(
+                objectName: "キャンバス注釈",
+                actionName: "注釈を編集",
+                previewKind: .stickyNote(backgroundColor: "#FFE88A", text: "")
+            )
+        }
+
+        let previewKind: EditorHistoryPreviewKind
+        let baseName: String
+        switch annotation.kind {
+        case .stickyNote:
+            previewKind = .stickyNote(
+                backgroundColor: annotation.backgroundColor,
+                text: annotation.text
+            )
+            baseName = Self.stickyNoteHistoryName(text: annotation.text)
+        case .ink:
+            previewKind = .ink(color: annotation.strokes.first?.color ?? "#FF4D67")
+            baseName = "手書き"
+        }
+
+        if changes.count > 1 {
+            return EditorHistoryPresentation(
+                objectName: "\(changes.count)個のキャンバス注釈",
+                actionName: "注釈を一括編集",
+                previewKind: previewKind
+            )
+        }
+
+        return EditorHistoryPresentation(
+            objectName: baseName,
+            actionName: Self.historyChangeActionName(
+                baseName: annotation.kind == .stickyNote ? "付箋" : "手書き",
+                previous: change.previous,
+                next: change.next
+            ),
+            previewKind: previewKind
+        )
+    }
+
+    /// 論理名（日本語）: ガイド履歴表示情報生成関数
+    /// 処理概要: 変更前後のガイド配列から方向、座標、追加・削除・移動の表示情報を生成します。
+    ///
+    /// - Parameter entry: キャンバスガイド履歴項目。
+    /// - Returns: ガイド履歴の表示情報。
+    private func canvasGuideHistoryPresentation(
+        for entry: CanvasGuideHistoryEntry
+    ) -> EditorHistoryPresentation {
+        let changes = Self.changedHistoryValues(
+            previous: entry.previousGuides,
+            next: entry.nextGuides,
+            id: \OpenGraphiteCanvasGuide.internalID
+        )
+        guard let change = changes.first,
+              let guide = change.next ?? change.previous
+        else {
+            return EditorHistoryPresentation(
+                objectName: "キャンバスガイド",
+                actionName: "ガイドを編集",
+                previewKind: .guide(orientation: .vertical)
+            )
+        }
+        let orientationName = guide.orientation == .vertical ? "垂直ガイド" : "水平ガイド"
+        let objectName = changes.count > 1
+            ? "\(changes.count)本のキャンバスガイド"
+            : "\(orientationName) \(Self.historyCoordinateLabel(guide.position))"
+        let actionName = changes.count > 1
+            ? "ガイドを一括編集"
+            : Self.historyChangeActionName(
+                baseName: "ガイド",
+                previous: change.previous,
+                next: change.next,
+                updateVerb: "移動"
+            )
+        return EditorHistoryPresentation(
+            objectName: objectName,
+            actionName: actionName,
+            previewKind: .guide(orientation: guide.orientation)
+        )
+    }
+
+    /// 論理名（日本語）: 参照配置履歴表示情報生成関数
+    /// 処理概要: 変更前後の参照配置配列から参照元オブジェクト名と追加・削除・移動の表示情報を生成します。
+    ///
+    /// - Parameter entry: キャンバス参照履歴項目。
+    /// - Returns: 参照配置履歴の表示情報。
+    private func canvasReferenceHistoryPresentation(
+        for entry: CanvasReferenceHistoryEntry
+    ) -> EditorHistoryPresentation {
+        let changes = Self.changedHistoryValues(
+            previous: entry.previousReferences,
+            next: entry.nextReferences,
+            id: \OpenGraphiteCanvasReference.internalID
+        )
+        guard let change = changes.first,
+              let reference = change.next ?? change.previous
+        else {
+            return EditorHistoryPresentation(
+                objectName: "参照オブジェクト",
+                actionName: "参照配置を編集",
+                previewKind: .reference
+            )
+        }
+        let resolvedName = (try? resolveCanvasReferenceID(reference.referenceID))?.node.id
+        let fallbackName = reference.referenceID.split(separator: ":").last.map(String.init)
+            ?? "参照オブジェクト"
+        let objectName = changes.count > 1
+            ? "\(changes.count)個の参照オブジェクト"
+            : (resolvedName ?? fallbackName)
+        let actionName = changes.count > 1
+            ? "参照配置を一括編集"
+            : Self.historyChangeActionName(
+                baseName: "参照配置",
+                previous: change.previous,
+                next: change.next,
+                updateVerb: "移動"
+            )
+        return EditorHistoryPresentation(
+            objectName: objectName,
+            actionName: actionName,
+            previewKind: .reference
+        )
+    }
+
+    /// 論理名（日本語）: 履歴変更値抽出関数
+    /// 処理概要: 安定IDを持つ変更前後の配列から、追加・削除・更新された値だけをID順で抽出します。
+    ///
+    /// - Parameters:
+    ///   - previous: 操作前の値一覧。
+    ///   - next: 操作後の値一覧。
+    ///   - id: 値から安定IDを返す処理。
+    /// - Returns: 値が異なるIDごとの変更前後。
+    private static func changedHistoryValues<Value: Equatable>(
+        previous: [Value],
+        next: [Value],
+        id: (Value) -> String
+    ) -> [(previous: Value?, next: Value?)] {
+        let previousByID = previous.reduce(into: [String: Value]()) { result, value in
+            result[id(value)] = value
+        }
+        let nextByID = next.reduce(into: [String: Value]()) { result, value in
+            result[id(value)] = value
+        }
+        return Set(previousByID.keys).union(nextByID.keys).sorted().compactMap { key in
+            let previousValue = previousByID[key]
+            let nextValue = nextByID[key]
+            guard previousValue != nextValue else { return nil }
+            return (previousValue, nextValue)
+        }
+    }
+
+    /// 論理名（日本語）: 履歴変更操作名生成関数
+    /// 処理概要: 値の有無から追加・削除・更新を判定し、対象種別と動詞を組み合わせます。
+    ///
+    /// - Parameters:
+    ///   - baseName: 操作対象の短い種別名。
+    ///   - previous: 操作前の値。
+    ///   - next: 操作後の値。
+    ///   - updateVerb: 両方の値がある場合に使う動詞。
+    /// - Returns: 履歴行へ表示する操作名。
+    private static func historyChangeActionName<Value>(
+        baseName: String,
+        previous: Value?,
+        next: Value?,
+        updateVerb: String = "編集"
+    ) -> String {
+        if previous == nil {
+            return "\(baseName)を追加"
+        }
+        if next == nil {
+            return "\(baseName)を削除"
+        }
+        return "\(baseName)を\(updateVerb)"
+    }
+
+    /// 論理名（日本語）: 付箋履歴名生成関数
+    /// 処理概要: 付箋本文の先頭行を短く整え、空本文でも識別できる対象名を返します。
+    ///
+    /// - Parameter text: 付箋本文。
+    /// - Returns: 履歴行向けの付箋名。
+    private static func stickyNoteHistoryName(text: String) -> String {
+        let firstLine = text
+            .split(whereSeparator: \Character.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !firstLine.isEmpty else { return "付箋" }
+        let summary = String(firstLine.prefix(24))
+        return "付箋「\(summary)\(firstLine.count > summary.count ? "…" : "")」"
+    }
+
+    /// 論理名（日本語）: 履歴座標ラベル生成関数
+    /// 処理概要: ガイド座標を整数優先、小数1桁までの短い表示へ変換します。
+    ///
+    /// - Parameter value: 表示するworld座標。
+    /// - Returns: 履歴行向けの座標文字列。
+    private static func historyCoordinateLabel(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(value - rounded) < 0.0001 {
+            return String(Int(rounded))
+        }
+        return String(format: "%.1f", value)
+    }
+
     /// 論理名（日本語）: エディター統合履歴記録関数
-    /// 処理概要: HTML、注釈、ガイドの一操作を undo 側へ積み、domain を問わず既存 redo 分岐を破棄します。
+    /// 処理概要: HTML、companion CSS、注釈、ガイド、参照配置の一操作をundo側へ積み、domainを問わず既存redo分岐を破棄します。
     ///
     /// - Parameter entry: 記録する履歴項目。
     private func recordEditorHistory(_ entry: EditorHistoryEntry) {
         guard loadedProject?.fileURL.standardizedFileURL == entry.projectURL.standardizedFileURL else {
             return
         }
-        editorUndoStack.append(entry)
+        editorUndoStack.append(
+            EditorHistoryRecord(
+                id: UUID(),
+                timestamp: Date(),
+                presentation: historyPresentation(for: entry),
+                entry: entry
+            )
+        )
         if editorUndoStack.count > 100 {
             editorUndoStack.removeFirst(editorUndoStack.count - 100)
         }
@@ -6111,32 +6942,34 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: 履歴移動適用関数
-    /// 処理概要: HTML、注釈、ガイドを同じ時系列から一項目だけ取り出し、対応する正本へ適用します。
+    /// 処理概要: HTML、companion CSS、注釈、ガイド、参照配置を同じ時系列から一項目だけ取り出し、対応する正本へ適用します。
     ///
     /// - Parameter direction: 適用する履歴移動方向。
     private func applyHistoryNavigation(direction: HistoryNavigationDirection) {
-        let entry: EditorHistoryEntry?
+        let record: EditorHistoryRecord?
         switch direction {
         case .undo:
-            entry = editorUndoStack.last
+            record = editorUndoStack.last
         case .redo:
-            entry = editorRedoStack.last
+            record = editorRedoStack.last
         }
-        guard let entry,
-              loadedProject?.fileURL.standardizedFileURL == entry.projectURL.standardizedFileURL
+        guard let record,
+              loadedProject?.fileURL.standardizedFileURL == record.projectURL.standardizedFileURL
         else {
             updateHistoryAvailability()
             return
         }
 
         let didApply: Bool
-        switch entry {
+        switch record.entry {
         case let .document(documentEntry):
             didApply = applyDocumentHistoryNavigation(direction: direction, entry: documentEntry)
         case let .canvasAnnotation(annotationEntry):
             didApply = applyCanvasAnnotationHistoryNavigation(direction: direction, entry: annotationEntry)
         case let .canvasGuide(guideEntry):
             didApply = applyCanvasGuideHistoryNavigation(direction: direction, entry: guideEntry)
+        case let .canvasReference(referenceEntry):
+            didApply = applyCanvasReferenceHistoryNavigation(direction: direction, entry: referenceEntry)
         }
         guard didApply else {
             updateHistoryAvailability()
@@ -6145,13 +6978,13 @@ final class EditorStore: ObservableObject {
 
         switch direction {
         case .undo:
-            guard editorUndoStack.last == entry else { return }
+            guard editorUndoStack.last == record else { return }
             _ = editorUndoStack.popLast()
-            editorRedoStack.append(entry)
+            editorRedoStack.append(record)
         case .redo:
-            guard editorRedoStack.last == entry else { return }
+            guard editorRedoStack.last == record else { return }
             _ = editorRedoStack.popLast()
-            editorUndoStack.append(entry)
+            editorUndoStack.append(record)
         }
         updateHistoryAvailability()
     }
@@ -6193,20 +7026,48 @@ final class EditorStore: ObservableObject {
             return false
         }
 
+        let diskCompanionCSS = companionCSSHistorySnapshot(for: entry.pageURL)
+        if let companionCSSChange = entry.companionCSSChange {
+            let expectedCompanionCSS = direction == .undo
+                ? companionCSSChange.nextCSS
+                : companionCSSChange.previousCSS
+            guard diskCompanionCSS == expectedCompanionCSS else {
+                invalidateDocumentHistoryAfterConflict(
+                    entry: entry,
+                    diskHTML: diskHTML,
+                    statusMessageOverride: "HTML / companion CSS の外部変更を検出したため、履歴適用を中止しました。"
+                )
+                return false
+            }
+        }
+
         let html: String?
-        switch direction {
-        case .undo:
-            html = history.undo()
-        case .redo:
-            html = history.redo()
+        if entry.advancesHTMLHistory {
+            switch direction {
+            case .undo:
+                html = history.undo()
+            case .redo:
+                html = history.redo()
+            }
+        } else {
+            html = diskHTML
         }
 
         guard let html else { return false }
 
         do {
-            try html.write(to: entry.pageURL, atomically: true, encoding: .utf8)
+            if html != diskHTML {
+                try html.write(to: entry.pageURL, atomically: true, encoding: .utf8)
+            }
+            if let companionCSSChange = entry.companionCSSChange {
+                let replacementCompanionCSS = direction == .undo
+                    ? companionCSSChange.previousCSS
+                    : companionCSSChange.nextCSS
+                try writeCompanionCSSHistorySnapshot(replacementCompanionCSS, for: entry.pageURL)
+            }
             lastKnownPageHTMLByURL[entry.pageURL] = html
             syncHistories[entry.pageURL] = history
+            cssVariableBaselinesByInternalID = [:]
             documentReplacementSequence += 1
             documentReplacementRequest = DocumentReplacementRequest(
                 sequence: documentReplacementSequence,
@@ -6218,6 +7079,12 @@ final class EditorStore: ObservableObject {
             statusMessage = historyStatusMessage(for: direction, pageURL: entry.pageURL)
             return true
         } catch {
+            if let diskHTML {
+                try? diskHTML.write(to: entry.pageURL, atomically: true, encoding: .utf8)
+            }
+            if entry.companionCSSChange != nil {
+                try? writeCompanionCSSHistorySnapshot(diskCompanionCSS, for: entry.pageURL)
+            }
             lastError = "履歴の同期に失敗しました: \(error.localizedDescription)"
             return false
         }
@@ -6250,7 +7117,8 @@ final class EditorStore: ObservableObject {
     private func invalidateDocumentHistoryAfterConflict(
         entry: DocumentHistoryEntry,
         diskHTML: String?,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        statusMessageOverride: String? = nil
     ) {
         refreshProjectManifestFromDiskIfChanged()
         let remainsRegistered = loadedProject.map {
@@ -6288,8 +7156,10 @@ final class EditorStore: ObservableObject {
 
         editorUndoStack.removeAll()
         editorRedoStack.removeAll()
+        cssVariableBaselinesByInternalID = [:]
         lastError = errorMessage
-        statusMessage = "HTML の外部変更を検出したため、履歴適用を中止しました。"
+        statusMessage = statusMessageOverride
+            ?? "HTML の外部変更を検出したため、履歴適用を中止しました。"
         restartExternalPageMonitoring(force: true)
         updateHistoryAvailability()
     }
@@ -6524,6 +7394,119 @@ final class EditorStore: ObservableObject {
         editorRedoStack.removeAll()
         lastError = nil
         statusMessage = ".ogp の外部変更を検出したため、キャンバスガイドの履歴適用を中止しました。"
+        restartExternalProjectMonitoring(force: true)
+        updateHistoryAvailability()
+    }
+
+    /// 論理名（日本語）: キャンバス参照履歴記録関数
+    /// 処理概要: 一度の参照配置保存をproject全体の統合時系列へ積み、新しい分岐としてredo履歴を破棄します。
+    ///
+    /// - Parameters:
+    ///   - projectURL: 参照配置を保存した`.ogp` URL。
+    ///   - target: 変更対象container。
+    ///   - previousReferences: 保存前の参照配置配列。
+    ///   - nextReferences: 保存後の参照配置配列。
+    private func recordCanvasReferenceHistory(
+        projectURL: URL,
+        target: CanvasReferenceHistoryTarget,
+        previousReferences: [OpenGraphiteCanvasReference],
+        nextReferences: [OpenGraphiteCanvasReference]
+    ) {
+        guard previousReferences != nextReferences else { return }
+        recordEditorHistory(
+            .canvasReference(
+                CanvasReferenceHistoryEntry(
+                    projectURL: projectURL.standardizedFileURL,
+                    target: target,
+                    previousReferences: previousReferences,
+                    nextReferences: nextReferences
+                )
+            )
+        )
+    }
+
+    /// 論理名（日本語）: キャンバス参照履歴移動適用関数
+    /// 処理概要: 最新`.ogp`の対象配列が期待値と一致する場合だけ、履歴の参照配置配列を差し替えてatomic writeします。
+    ///
+    /// - Parameters:
+    ///   - direction: 適用する履歴移動方向。
+    ///   - entry: project、container、変更前後配列を固定した参照配置履歴項目。
+    /// - Returns: 参照配置履歴を適用できた場合は`true`。
+    private func applyCanvasReferenceHistoryNavigation(
+        direction: HistoryNavigationDirection,
+        entry: CanvasReferenceHistoryEntry
+    ) -> Bool {
+        let targetProject: LoadedOpenGraphiteProject
+        do {
+            targetProject = try loader.loadProject(at: entry.projectURL)
+        } catch {
+            lastError = "参照配置履歴の適用前確認に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+        guard loadedProject?.fileURL.standardizedFileURL == targetProject.fileURL.standardizedFileURL else {
+            return false
+        }
+
+        var updatedProject = targetProject
+        let expectedReferences = direction == .undo
+            ? entry.nextReferences
+            : entry.previousReferences
+        let replacementReferences = direction == .undo
+            ? entry.previousReferences
+            : entry.nextReferences
+        guard canvasReferences(for: entry.target, in: updatedProject.project) == expectedReferences else {
+            synchronizeAfterCanvasReferenceHistoryConflict(with: targetProject)
+            return false
+        }
+
+        switch entry.target.segment {
+        case .pages:
+            guard let index = updatedProject.project.chapters.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasReferenceHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.chapters[index].references = replacementReferences
+        case .components:
+            guard let index = updatedProject.project.collections.firstIndex(where: {
+                $0.internalID == entry.target.containerInternalID
+            }) else {
+                synchronizeAfterCanvasReferenceHistoryConflict(with: targetProject)
+                return false
+            }
+            updatedProject.project.collections[index].references = replacementReferences
+        }
+
+        do {
+            try writeProjectManifest(updatedProject.project, to: entry.projectURL)
+            self.loadedProject = updatedProject
+            reconcileCanvasReferenceSelectionAfterManifestChange()
+            lastError = nil
+            statusMessage = direction == .undo
+                ? "参照配置の変更を取り消しました。"
+                : "参照配置の変更をやり直しました。"
+            restartExternalProjectMonitoring(force: true)
+            return true
+        } catch {
+            lastError = "参照配置履歴の同期に失敗しました: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// 論理名（日本語）: 参照配置履歴競合同期関数
+    /// 処理概要: 履歴記録後に対象参照配置配列が外部変更された場合、上書きを中止して最新manifestを表示し、無効化された時系列を破棄します。
+    ///
+    /// - Parameter project: ディスクから再読込した最新project。
+    private func synchronizeAfterCanvasReferenceHistoryConflict(
+        with project: LoadedOpenGraphiteProject
+    ) {
+        loadedProject = project
+        reconcileCanvasReferenceSelectionAfterManifestChange()
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        lastError = nil
+        statusMessage = ".ogp の外部変更を検出したため、参照配置の履歴適用を中止しました。"
         restartExternalProjectMonitoring(force: true)
         updateHistoryAvailability()
     }

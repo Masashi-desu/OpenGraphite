@@ -27,11 +27,11 @@ ogkiln build <project.ogp|current> --output <dir>
 
 `project current` は OpenGraphite.app が最後に開いた `.ogp` の summary を返す。アプリを介さず CLI だけで作業する場合は明示的な `.ogp` path を指定する。
 
-`project inspect` の Chapter / Collection summary は、各キャンバスに保存された `.ogp` 注釈数を `annotationCount`、Guide 数を `guideCount` として返す。
+`project inspect` の Chapter / Collection summary は、各キャンバスに保存された `.ogp` 注釈数を `annotationCount`、Guide 数を `guideCount`、Canvas Object Reference 配置数を `referenceCount` として返す。参照配置の write command は提供しない。
 
 `project create` は `--root` で指定した project root を HTML/CSS の解決基準とし、`--output` で指定した場所に新規 `.ogp` を作成する。`--output` に `.ogp` 拡張子がない場合は補完する。`.ogp` の配置ディレクトリと project root が異なる場合は、`.ogp` から見た相対 `repositoryRoot` を保存する。project root に `public` がない場合は `public/index.html`、`public/index.css`、`CSS/OpenGraphite.css` と `home` page entry を作る。既存 `public` がある場合は HTML を自動登録せず空 Chapter の manifest を作り、`CSS/OpenGraphite.css` がなければ CLI が解決した seed をコピーする。
 
-`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。ただし editor-only の入力 `.ogp` manifest は asset としてコピーしない。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。`chapters[].annotations` / `collections[].annotations` は build 入力として無視し、付箋本文、色、stroke、annotation ID を生成 HTML / CSS へ注入しない。
+`build` は Pages HTML 内の `<og-instance data-og-component>` を Collection 内 component HTML の `data-og-component-kind="master"` subtree で展開し、指定出力ディレクトリへ静的 HTML を生成する。component Collection の HTML と runtime script は公開 page として出力せず、OpenGraphite.css、companion CSS、`htmlRoot` 配下の非HTML静的 asset は出力先へコピーする。ただし editor-only の入力 `.ogp` manifest は asset としてコピーしない。Pages HTML の OpenGraphite.css 参照は、出力先内の CSS を指す相対 path へ書き換える。`chapters[].annotations` / `collections[].annotations` は build 入力として無視し、付箋本文、色、stroke、annotation ID を生成 HTML / CSS へ注入しない。`references[]` も参照 clone、typed ID、frame を生成物へ注入しない。
 
 ## Page Management
 

@@ -24,6 +24,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 - [`OpenGraphiteMCP.md`](OpenGraphiteMCP.md): MCP resources / tools と `ogkiln` への対応。
 - [`CanvasAnnotations.md`](CanvasAnnotations.md): `.ogp` 注釈の schema、座標、Sidecar、CLI/MCP、screenshot 契約。
 - [`CanvasAids.md`](CanvasAids.md): `.ogp` Guide の schema、座標、表示設定、screenshot / build 除外契約。
+- [`CanvasObjectReferences.md`](CanvasObjectReferences.md): `.ogp` 参照配置の schema、typed node 解決、トップレベル配置、編集同期契約。
 
 ## Project Summary
 
@@ -45,6 +46,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "title": "Main",
       "annotationCount": 0,
       "guideCount": 0,
+      "referenceCount": 0,
       "pages": [
         {
           "chapterID": "main",
@@ -96,6 +98,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "title": "Main",
       "annotationCount": 0,
       "guideCount": 0,
+      "referenceCount": 0,
       "components": [
         {
           "collectionID": "main",
@@ -135,6 +138,8 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 `internalID` は `.ogp` 内で一意な内部キーである。表示名や `id` を含まない不透明 ID として扱い、保存時には manifest に書き戻す。
 
 Guide は Pages では `chapters[].guides[]`、Components では `collections[].guides[]` に `internalID`、`orientation`、`position` を保存する。project summary は各 container の `guideCount` を返すが、Guide は HTML graph、canvas / page / node screenshot、build 出力には含めない。詳細は [CanvasAids.md](CanvasAids.md) を正本とする。
+
+Canvas Object Reference は Pages では `chapters[].references[]`、Components では `collections[].references[]` に保存する。各配置は typed node `referenceID` と world frame だけを持ち、参照元 subtree は複製しない。project summary は各 container の `referenceCount` を返す。配置は App のキャンバス直下にだけ表示し、HTML graph、browser runtime、build、CLI/MCP screenshot には含めない。詳細は [CanvasObjectReferences.md](CanvasObjectReferences.md) を正本とする。
 
 HTML document context は `.ogp` ではなく HTML 正本の `<html>` attribute と OpenGraphite metadata に保存する。`lang` / `dir` は常に HTML 仕様上の fallback 値であり、変数名を直接入れない。実装側 state に bind する場合は `data-og-lang-source="binding"` / `data-og-lang-field="<fieldName>"`、`data-og-dir-source="binding"` / `data-og-dir-field="<fieldName>"` を使う。`dir` を resolved lang から推定する場合は `data-og-dir-source="auto"` を使う。
 
@@ -181,6 +186,8 @@ preview で解決した一時的な `lang` / `dir` の変更や `data-og-preview
 
 `referenceID` は AI が Chapter / Collection / page / component canvas / node / annotation を安定指定するためのキーであり、コピーされる文字列は `ogref:<type>:...` 形式である。Chapter は `ogref:chapter:<chapterInternalID>`、Collection は `ogref:collection:<collectionInternalID>`、Pages は `ogref:page:<chapterInternalID>:<pageInternalID>`、Components は `ogref:component:<collectionInternalID>:<componentInternalID>`、Pages 内 node は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、component 内 node は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>` を使う。Chapter 注釈は `ogref:annotation:pages:<chapterInternalID>:<annotationInternalID>`、Collection 注釈は `ogref:annotation:components:<collectionInternalID>:<annotationInternalID>` を使う。
 
+App の `参照IDから追加` は typed node reference だけを受け取り、任意階層の node を現在の Chapter / Collection キャンバス直下へ配置する。配置先と参照元の segment は一致しなくてよい。配置 viewport 上の編集は typed ID が指す元 HTML / companion CSS に保存され、配置を HTML object の子へ挿入しない。
+
 ## Canvas Annotations
 
 付箋と手書きは HTML node graph ではなく、`.ogp` の `chapters[].annotations[]` または `collections[].annotations[]` に属する editor-only metadata である。`project inspect` は各 Chapter / Collection の `annotationCount` を返す。詳細な schema と canonical world 座標は [CanvasAnnotations.md](CanvasAnnotations.md) を正本とする。
@@ -194,7 +201,7 @@ ogkiln annotation get SampleProject/OpenGraphiteSample.ogp --id ogref:annotation
 
 `annotation list` は手書き点列を展開せず、付箋本文、frame、色、stroke / point count を返す。`annotation get` は typed annotation reference と完全な stroke / point payload を返す。CLI と MCP の annotation interface は読み取り専用であり、HTML / CSS を変更しない。
 
-`screenshot canvas` は `--chapter-id` / `chapterID` または `--collection-id` / `collectionID` で対象を排他的に選び、省略時は先頭 Chapter を使う。WebKit で描画した対象 Chapter の page card 群または Collection の component card 群へ、App と同じ ink、sticky note の順で `.ogp` 注釈を前面合成し、card と annotation の world frame の union を出力範囲にする。capture 前に全 card が有限座標と正の寸法であることを確認し、出力の一辺 16,384 px、総 33,554,432 pixel、またはcard snapshot累積33,554,432 pixelの安全上限を超える場合は明示エラーを返す。個別 HTML を対象にする `screenshot page` / `screenshot node` には Chapter / Collection 注釈を含めない。
+`screenshot canvas` は `--chapter-id` / `chapterID` または `--collection-id` / `collectionID` で対象を排他的に選び、省略時は先頭 Chapter を使う。WebKit で描画した対象 Chapter の page card 群または Collection の component card 群へ、App と同じ ink、sticky note の順で `.ogp` 注釈を前面合成し、card と annotation の world frame の union を出力範囲にする。capture 前に全 card が有限座標と正の寸法であることを確認し、出力の一辺 16,384 px、総 33,554,432 pixel、またはcard snapshot累積33,554,432 pixelの安全上限を超える場合は明示エラーを返す。Canvas Object Reference は editor viewport のため `screenshot canvas` に含めない。個別 HTML を対象にする `screenshot page` / `screenshot node` には Chapter / Collection 注釈を含めない。
 
 ## Page Graph
 

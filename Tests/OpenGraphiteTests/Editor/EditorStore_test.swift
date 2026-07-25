@@ -3943,6 +3943,49 @@ struct EditorStoreTests {
         #expect(store.canRedo == false)
     }
 
+    /// 論理名（日本語）: 作業履歴表示項目状態遷移テスト
+    /// 概要: HTML編集の対象名、時刻、簡易プレビューが公開され、同じ項目がUndo / Redo状態間を移動することを検証します。
+    @Test("作業履歴表示が対象オブジェクトとUndo Redo状態を保持する")
+    func testHistoryListItemKeepsObjectMetadataAcrossUndoRedo() throws {
+        // コンディション：一時projectのpageでtextオブジェクトを選択し、記録開始時刻を保持する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            [
+                "id": "hero-copy",
+                "internalID": "hero-copy-node",
+                "tagName": "h1",
+                "type": "text",
+                "cssVariables": [String: String](),
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: "hero-copy")
+        let recordedAfter = Date()
+
+        // 検証内容：HTMLを同期し、同じ操作をUndoしてからRedoする（When）
+        store.syncCurrentHTML("<!doctype html>\n<html><body><h1>edited</h1></body></html>")
+        let undoableItem = try #require(store.historyItems.first)
+        store.undoDocumentChange()
+        let redoableItem = try #require(store.historyItems.first)
+        store.redoDocumentChange()
+        let restoredItem = try #require(store.historyItems.first)
+
+        // 期待値：記録時の対象名、text preview、時刻、IDを維持してUndo / Redo状態だけが移動する（Then）
+        #expect(undoableItem.objectName == "hero-copy")
+        #expect(undoableItem.actionName == "HTMLを編集")
+        #expect(undoableItem.timestamp >= recordedAfter)
+        #expect(undoableItem.state == .undoable)
+        #expect(undoableItem.previewKind == .node(type: "text"))
+        #expect(redoableItem.id == undoableItem.id)
+        #expect(redoableItem.state == .redoable)
+        #expect(restoredItem.id == undoableItem.id)
+        #expect(restoredItem.state == .undoable)
+    }
+
     /// 論理名（日本語）: 外部HTML更新後Undo競合拒否テスト
     /// 概要: 履歴記録後に対象 HTML が外部更新された場合、Undo が最新ディスク値を古いsnapshotで上書きしないことを検証します。
     @Test("外部更新されたHTMLへ古いUndo履歴を適用しない")

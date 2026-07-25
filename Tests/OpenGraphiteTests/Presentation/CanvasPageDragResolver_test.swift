@@ -79,6 +79,31 @@ struct CanvasPageDragResolverTests {
         #expect(documentWidth == captionWidth)
     }
 
+    /// 論理名（日本語）: 参照情報カード詳細テスト
+    /// 概要: 参照viewportも通常pageと同じ情報カード形式を使い、参照ラベルだけを追加することを検証します。
+    @Test("参照viewportは通常pageと共通の情報カード詳細を使う")
+    func testReferenceCaptionUsesSharedPageDetailFormat() {
+        // コンディション：参照ラベル、参照元path、縮小後の実表示寸法を用意する（Given）
+        let visualLayout = CanvasReferenceVisualLayoutResolver.layout(
+            sourceSize: CGSize(width: 560, height: 420),
+            fitBounds: CGSize(width: 360, height: 240)
+        )
+        let placementName = "参照"
+        let path = "index.html"
+
+        // 検証内容：通常pageと共通の情報カード詳細を生成する（When）
+        let detail = CanvasPageNameCardDetailResolver.detailText(
+            placementName: placementName,
+            path: path,
+            resolution: CanvasReferenceVisualLayoutResolver.resolutionLabel(
+                for: visualLayout?.renderedSize ?? .zero
+            )
+        )
+
+        // 期待値：参照であることと余白を除いた実表示寸法が左上カードへ表示される（Then）
+        #expect(detail == "参照 · index.html · 320 x 240")
+    }
+
     /// 論理名（日本語）: 右辺ページリサイズズーム換算テスト
     /// 概要: 画面上のドラッグ量が現在倍率で割られ、page canvas の width 変更になることを検証します。
     @Test("右辺ドラッグはpage canvasのwidthへ変換できる")
@@ -149,6 +174,96 @@ struct CanvasPageDragResolverTests {
 
         // 期待値：右辺を保ったまま幅が最小サイズの 2pt で止まる（Then）
         #expect(resizedCanvas == OpenGraphiteCanvas(x: 108, y: 20, width: 2, height: 80))
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照視覚レイアウト関連のテストスイート
+/// 概要: 参照元nodeの実際の縦横比を保ち、最大表示領域の未使用部分をカード余白にしない寸法計算を検証します。
+@Suite("キャンバス参照視覚レイアウト関連のテストスイート")
+struct CanvasReferenceVisualLayoutResolverTests {
+    /// 論理名（日本語）: 高さ制約参照実寸テスト
+    /// 概要: 高さで縮小倍率が決まるnodeでは、余った横幅を参照カードへ含めないことを確認します。
+    @Test("高さ制約で余った横幅を参照カードへ含めない")
+    func testHeightConstrainedLayoutRemovesHorizontalLetterbox() throws {
+        // コンディション：560 x 420のnodeと360 x 240の最大表示領域を用意する（Given）
+        let sourceSize = CGSize(width: 560, height: 420)
+        let fitBounds = CGSize(width: 360, height: 240)
+
+        // 検証内容：縦横比を保つ参照視覚レイアウトを解決する（When）
+        let layout = try #require(
+            CanvasReferenceVisualLayoutResolver.layout(
+                sourceSize: sourceSize,
+                fitBounds: fitBounds
+            )
+        )
+
+        // 期待値：高さ240へ縮小し、横幅は320だけをカード本体として使う（Then）
+        #expect(abs(layout.scale - (4.0 / 7.0)) < 0.0001)
+        #expect(abs(layout.renderedSize.width - 320) < 0.0001)
+        #expect(layout.renderedSize.height == 240)
+        #expect(layout.renderedSize.width < layout.fitBounds.width)
+    }
+
+    /// 論理名（日本語）: 幅制約参照実寸テスト
+    /// 概要: 幅で縮小倍率が決まるnodeでは、余った高さを参照カードへ含めないことを確認します。
+    @Test("幅制約で余った高さを参照カードへ含めない")
+    func testWidthConstrainedLayoutRemovesVerticalLetterbox() throws {
+        // コンディション：600 x 200のnodeと360 x 240の最大表示領域を用意する（Given）
+        let sourceSize = CGSize(width: 600, height: 200)
+        let fitBounds = CGSize(width: 360, height: 240)
+
+        // 検証内容：縦横比を保つ参照視覚レイアウトを解決する（When）
+        let layout = try #require(
+            CanvasReferenceVisualLayoutResolver.layout(
+                sourceSize: sourceSize,
+                fitBounds: fitBounds
+            )
+        )
+
+        // 期待値：横幅360へ縮小し、高さ120だけをカード本体として使う（Then）
+        #expect(layout.scale == 0.6)
+        #expect(layout.renderedSize.width == 360)
+        #expect(layout.renderedSize.height == 120)
+        #expect(layout.renderedSize.height < layout.fitBounds.height)
+    }
+
+    /// 論理名（日本語）: 小型参照非拡大テスト
+    /// 概要: 最大表示領域より小さい参照元nodeを拡大せず、原寸のカード本体として扱うことを確認します。
+    @Test("小さい参照元nodeを拡大しない")
+    func testSmallSourceRemainsAtOriginalSize() throws {
+        // コンディション：120 x 80のnodeと360 x 240の最大表示領域を用意する（Given）
+        let sourceSize = CGSize(width: 120, height: 80)
+        let fitBounds = CGSize(width: 360, height: 240)
+
+        // 検証内容：参照視覚レイアウトを解決する（When）
+        let layout = try #require(
+            CanvasReferenceVisualLayoutResolver.layout(
+                sourceSize: sourceSize,
+                fitBounds: fitBounds
+            )
+        )
+
+        // 期待値：倍率1と原寸を維持し、最大表示領域の残りを背景として表示しない（Then）
+        #expect(layout.scale == 1)
+        #expect(layout.renderedSize == sourceSize)
+        #expect(CanvasReferenceVisualLayoutResolver.resolutionLabel(for: layout.renderedSize) == "120 x 80")
+    }
+
+    /// 論理名（日本語）: 不正参照寸法拒否テスト
+    /// 概要: 参照元または最大表示領域が不正な場合、誤ったカード寸法を生成しないことを確認します。
+    @Test("不正な参照寸法から視覚レイアウトを生成しない")
+    func testInvalidDimensionsAreRejected() {
+        // コンディション：幅0の参照元nodeを用意する（Given）
+        let sourceSize = CGSize(width: 0, height: 80)
+
+        // 検証内容：参照視覚レイアウトを解決する（When）
+        let layout = CanvasReferenceVisualLayoutResolver.layout(
+            sourceSize: sourceSize,
+            fitBounds: CGSize(width: 360, height: 240)
+        )
+
+        // 期待値：不正なnode寸法は解決不能になる（Then）
+        #expect(layout == nil)
     }
 }
 

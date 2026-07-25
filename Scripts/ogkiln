@@ -8,6 +8,7 @@ BINARY="$BUILD_DIR/ogkiln"
 sources=(
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteCanvasAnnotation.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteCanvasGuide.swift"
+  "$ROOT_DIR/App/Sources/Domain/OpenGraphiteCanvasReference.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteProject.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteNode.swift"
   "$ROOT_DIR/App/Sources/Domain/OpenGraphiteReferenceID.swift"

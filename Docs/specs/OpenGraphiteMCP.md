@@ -22,6 +22,8 @@ Canvas annotation tool は読み取り専用である。`list_canvas_annotations
 
 project summary resource は Chapter / Collection の `.ogp` Guide 数を `guideCount` として返す。個別 Guide の読み書き tool は提供せず、app が `guides[]` を編集する。schema と screenshot / build 除外契約は [CanvasAids.md](CanvasAids.md) を正本とする。
 
+project summary resource は Chapter / Collection の Canvas Object Reference 配置数を `referenceCount` として返す。参照配置の読み書き tool は提供せず、app が `.ogp` の `references[]` を編集する。配置は HTML object 内へ挿入せず、build と MCP screenshot へ出力しない。schema と編集同期契約は [CanvasObjectReferences.md](CanvasObjectReferences.md) を正本とする。
+
 ## Resources
 
 | URI | MIME | Description |
@@ -104,9 +106,9 @@ component placement の状態差分は HTML 正本ではなく、`.ogp` canvas m
 
 `remove_project_component.deleteFile` は既定で `false` である。`true` の場合のみ、`.ogp` からの登録削除に加えて component HTML file も削除する。
 
-`build_project.outputPath` は build 出力ディレクトリである。build は Pages HTML を対象にし、component Collection の HTML、runtime script、editor-only の入力 `.ogp` manifest は公開 asset として出力しない。`.ogp` 注釈は component 展開へ使わず、生成 HTML / CSS へ付箋本文、色、stroke、annotation ID を注入しない。
+`build_project.outputPath` は build 出力ディレクトリである。build は Pages HTML を対象にし、component Collection の HTML、runtime script、editor-only の入力 `.ogp` manifest は公開 asset として出力しない。`.ogp` 注釈は component 展開へ使わず、生成 HTML / CSS へ付箋本文、色、stroke、annotation ID を注入しない。Canvas Object Reference も参照 clone、typed ID、frame を生成物へ注入しない。
 
-`screenshot_canvas.chapterID` / `collectionID` は任意かつ相互排他で、表示 ID、内部 ID、`ogref:chapter` / `ogref:collection` を受け取る。両方を省略した場合は先頭 Chapter を使う。対象 Chapter の WebKit page snapshot または Collection の component snapshot と `annotations[]` を canonical world 座標で合成し、App と同じ ink、sticky note の順で注釈を前面へ描画する。全cardは有限座標と正の寸法を必須とし、出力が一辺16,384 pxまたは総33,554,432 pixel、もしくはcard snapshot累積が33,554,432 pixelの安全上限を超える場合はcaptureやbitmap確保を行わず明示エラーを返す。`screenshot_page` の `width`、`height` は任意であり、省略時は `.ogp` entry の `canvas.width`、`canvas.height` を viewport として使う。`fullPage:true` の場合は document 全体を保存する。個別 HTML を対象にする `screenshot_page` / `screenshot_node` は Chapter / Collection 注釈を含めない。
+`screenshot_canvas.chapterID` / `collectionID` は任意かつ相互排他で、表示 ID、内部 ID、`ogref:chapter` / `ogref:collection` を受け取る。両方を省略した場合は先頭 Chapter を使う。対象 Chapter の WebKit page snapshot または Collection の component snapshot と `annotations[]` を canonical world 座標で合成し、App と同じ ink、sticky note の順で注釈を前面へ描画する。Canvas Object Reference は editor viewport のため `references[]` を描画しない。全cardは有限座標と正の寸法を必須とし、出力が一辺16,384 pxまたは総33,554,432 pixel、もしくはcard snapshot累積が33,554,432 pixelの安全上限を超える場合はcaptureやbitmap確保を行わず明示エラーを返す。`screenshot_page` の `width`、`height` は任意であり、省略時は `.ogp` entry の `canvas.width`、`canvas.height` を viewport として使う。`fullPage:true` の場合は document 全体を保存する。個別 HTML を対象にする `screenshot_page` / `screenshot_node` は Chapter / Collection 注釈を含めない。
 
 `position` は `before`、`after`、`prepend`、`append` のいずれかである。
 
