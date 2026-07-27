@@ -37,3 +37,6 @@ xcodebuild \
 
 echo "==> ogkiln validate sample"
 ./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json >/dev/null
+
+echo "==> validate tutorial synchronization"
+./Scripts/validate_tutorial_sync.sh

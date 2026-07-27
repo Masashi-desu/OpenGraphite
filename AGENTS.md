@@ -11,6 +11,7 @@
 - `project.yml` を XcodeGen の正本として扱い、`OpenGraphite.xcodeproj` は生成物として直接編集しない。
 - Swift コードを追加・変更する場合は `Docs/rules/DocumentCommentStandards.md` に従い、主要な型と関数へ `///` ドキュメントコメントを付与する。
 - テストを追加・変更する場合は `Docs/rules/TestingStandards.md` に従い、Swift Testing の `@Suite` / `@Test` と Given/When/Then コメントを用いる。
+- ユーザーが観察できる機能を追加・改修・削除する場合は `Docs/rules/TutorialSynchronizationStandards.md` に従い、対応する `Tutorials` 教材、同名 companion CSS、Sample `.ogp` metadata を同じ変更単位で同期する。
 - TODO 文書を追加・更新する場合は `Docs/operations/TODO/GOVERNANCE.md` と `Docs/operations/TODO/TEMPLATE.md` に従い、残タスクだけを直列化して管理する。
 - 作業指示、利用者向け説明、エージェント向け知識、仕様、開発規約、運用手順、リリース手順、自動化定義、検証入口は、実装と同じリポジトリ資源として扱う。
 - 挙動、正本モデル、ディレクトリ責務、検証ハーネス、リリース手順を変える場合は、関連する実装、テスト、資料、skill、workflow を同じ変更単位で更新する。
@@ -49,7 +50,7 @@
 │   └── OpenGraphiteTests/       # Swift Testing の単体・統合寄りテスト
 ├── Docs/                        # 設計、仕様、ルール、TODO 運用、リリース手順、調査記録
 │   ├── specs/                   # source-of-truth、CLI、MCP、設計思想などの仕様
-│   ├── rules/                   # ドキュメントコメントとテスト記述の規約
+│   ├── rules/                   # ドキュメントコメント、テスト、チュートリアル同期の規約
 │   ├── operations/              # TODO governance と運用 TODO
 │   ├── release/                 # DMG、notarization、dev/main release 手順
 │   └── investigations/          # 調査記録
@@ -78,6 +79,7 @@ flowchart TD
         xctest["xcodebuild test<br/>OpenGraphite scheme の Swift Testing 実行"]
         cliBuild["xcodebuild build ogkiln<br/>CLI target を Xcode 経由でビルド"]
         validate["ogkiln validate<br/>サンプル .ogp と参照資源の整合性検証"]
+        tutorialValidate["validate_tutorial_sync.sh<br/>Tutorials HTML / CSS / .ogp 登録の構造同期検証"]
     end
 
     subgraph generated["生成物"]
@@ -104,7 +106,7 @@ flowchart TD
     subgraph knowledge["資料・知識同期"]
         implementation["実装編集<br/>App / Shared / Tools / CSS / public / SampleProject の変更"]
         specs["仕様<br/>Source-of-truth / CLI / MCP / design philosophy の説明"]
-        rules["規約<br/>開発規約 / 運用規約 / リリース方針"]
+        rules["規約<br/>開発規約 / チュートリアル同期 / 運用規約 / リリース方針"]
         skills["Skills<br/>Codex が参照する OpenGraphite 作業知識"]
     end
 
@@ -121,6 +123,7 @@ flowchart TD
     quality --> xctest
     quality --> cliBuild
     quality --> validate
+    quality --> tutorialValidate
 
     project --> xcodegen
     xcodegen --> xcodeproj
@@ -151,4 +154,8 @@ flowchart TD
     sample --> validate
     web --> validate
     css --> validate
+
+    rules --> tutorialValidate
+    sample --> tutorialValidate
+    web --> tutorialValidate
 ```

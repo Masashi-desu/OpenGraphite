@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tutorial 07 — Component Instances</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <link rel="stylesheet" href="./_components/tutorial-components-slots.css">
+    <link rel="stylesheet" href="./tutorial-component-instances.css">
+    <link rel="opengraphite-components" href="./_components/tutorial-components-slots.html">
+    <script src="./OpenGraphite.runtime.js" defer></script>
+  </head>
+  <body>
+    <TutorialInstances data-og-id="tutorial-instances" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutinsroot007">
+      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsheader07">
+        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutinsstep007">PAGES TUTORIAL · 07</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutinstitle07">Component Instance を使う</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutinslead007">Instance は Master を参照し、Slot content だけを個別に持ちます。下の3枚は同じ tutorial-profile-card Master から展開されています。</TutorialLead>
+      </TutorialHeader>
+
+      <ConnectionMap data-og-id="connection-map" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutinsmap007">
+        <MapNode data-og-id="map-master" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsmapmaster"><MapLabel data-og-id="map-master-label" data-og-type="text" data-og-internal-id="tutinsmapmlbl">MASTER</MapLabel><MapValue data-og-id="map-master-value" data-og-type="text" data-og-internal-id="tutinsmapmval">tutorial-profile-card</MapValue></MapNode>
+        <MapArrow data-og-id="map-arrow" data-og-type="text" data-og-internal-id="tutinsmaparrow">→</MapArrow>
+        <MapNode data-og-id="map-instances" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsmapinst"><MapLabel data-og-id="map-instances-label" data-og-type="text" data-og-internal-id="tutinsmapilbl">INSTANCES</MapLabel><MapValue data-og-id="map-instances-value" data-og-type="text" data-og-internal-id="tutinsmapival">Design / Engineering / Research</MapValue></MapNode>
+        <MapNode data-og-id="map-slots" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsmapslot"><MapLabel data-og-id="map-slots-label" data-og-type="text" data-og-internal-id="tutinsmapslbl">OVERRIDES</MapLabel><MapValue data-og-id="map-slots-value" data-og-type="text" data-og-internal-id="tutinsmapsval">name / role / bio / action</MapValue></MapNode>
+      </ConnectionMap>
+
+      <InstanceRow data-og-id="instance-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutinsrow007">
+        <InstanceLesson data-og-id="instance-design-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsdesignls">
+          <InstanceLabel data-og-id="instance-design-label" data-og-type="text" data-og-internal-id="tutinsdesignlb">INSTANCE A</InstanceLabel>
+          <og-instance data-og-id="profile-design" data-og-type="frame" data-og-component="tutorial-profile-card" data-og-internal-id="tutinsdesign07">
+            <span slot="name">Mika / Design</span>
+            <span slot="role">Product designer</span>
+            <span slot="bio">Canvas でレイアウトと外観を整え、HTML / CSS に直接保存します。</span>
+            <span slot="action">Open design</span>
+          </og-instance>
+        </InstanceLesson>
+        <InstanceLesson data-og-id="instance-engineering-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsenginels">
+          <InstanceLabel data-og-id="instance-engineering-label" data-og-type="text" data-og-internal-id="tutinsenginelb">INSTANCE B</InstanceLabel>
+          <og-instance data-og-id="profile-engineering" data-og-type="frame" data-og-component="tutorial-profile-card" data-og-internal-id="tutinsengine07">
+            <span slot="name">Ren / Engineering</span>
+            <span slot="role">Frontend engineer</span>
+            <span slot="bio">同じ source をコードから編集し、OpenGraphite の表示と同期します。</span>
+            <span slot="action">View source</span>
+          </og-instance>
+        </InstanceLesson>
+        <InstanceLesson data-og-id="instance-research-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinsresearch">
+          <InstanceLabel data-og-id="instance-research-label" data-og-type="text" data-og-internal-id="tutinsreslabel">INSTANCE C</InstanceLabel>
+          <og-instance data-og-id="profile-research" data-og-type="frame" data-og-component="tutorial-profile-card" data-og-internal-id="tutinsresear07">
+            <span slot="name">Aoi / Research</span>
+            <span slot="role">UX researcher</span>
+            <span slot="bio">構造を共有したまま、各カード固有の Slot content を管理します。</span>
+            <span slot="action">Read notes</span>
+          </og-instance>
+        </InstanceLesson>
+      </InstanceRow>
+
+      <SyncLesson data-og-id="sync-lesson" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutinssyncless">
+        <SyncCopy data-og-id="sync-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinssynccopy"><SyncLabel data-og-id="sync-label" data-og-type="text" data-og-internal-id="tutinssynclabel">TRY · SYNC TEST</SyncLabel><SyncTitle data-og-id="sync-title" data-og-type="text" data-og-internal-id="tutinssynctitle">Master の変更を3枚へ反映する</SyncTitle><SyncText data-og-id="sync-text" data-og-type="text" data-og-internal-id="tutinssynctext">Components Tutorial 02 で Profile Card の Gap、Background、Radius のいずれかを変更し、このページへ戻って全 Instance が更新されたことを確認します。</SyncText></SyncCopy>
+        <SyncSteps data-og-id="sync-steps" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutinssyncsteps"><SyncStep data-og-id="sync-step-1" data-og-type="text" data-og-internal-id="tutinssyncstep1">1 · Components を開く</SyncStep><SyncStep data-og-id="sync-step-2" data-og-type="text" data-og-internal-id="tutinssyncstep2">2 · Master を編集</SyncStep><SyncStep data-og-id="sync-step-3" data-og-type="text" data-og-internal-id="tutinssyncstep3">3 · Pages で同期確認</SyncStep></SyncSteps>
+      </SyncLesson>
+    </TutorialInstances>
+  </body>
+</html>

@@ -1,0 +1,253 @@
+[data-og-internal-id="tutobjroot01"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 28px;
+  background: #0b0d10;
+  color: #f5f7fa;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutobjheader01"] {
+  width: 100%;
+  gap: 32px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutobjheadcopy"] {
+  max-width: 760px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutobjstep01"],
+[data-og-internal-id="tutobjnumfrm"],
+[data-og-internal-id="tutobjnumtext"],
+[data-og-internal-id="tutobjnumbtn0"],
+[data-og-internal-id="tutobjpracticei"],
+[data-og-internal-id="tutobjmgmtlabel"] {
+  color: #7fd7ff;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+[data-og-internal-id="tutobjtitle01"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutobjlead001"] {
+  max-width: 720px;
+  color: #b8c1ca;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutobjgoal001"] {
+  width: 300px;
+  gap: 8px;
+  padding: 20px;
+  background: #13171c;
+  border: 1px solid #2e3741;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutobjgoallbl"] {
+  color: #8c98a4;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+}
+
+[data-og-internal-id="tutobjgoaltxt"] {
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutobjgrid001"] {
+  width: 100%;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutobjcardfrm"],
+[data-og-internal-id="tutobjcardtxt"],
+[data-og-internal-id="tutobjcardbtn"] {
+  flex: 1 1 0;
+  min-height: 370px;
+  gap: 22px;
+  padding: 24px;
+  background: #111419;
+  border: 1px solid #303842;
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.22);
+}
+
+[data-og-internal-id="tutobjframedemo"] {
+  min-height: 210px;
+  gap: 18px;
+  padding: 24px;
+  background: linear-gradient(145deg, #182c36, #142029);
+  border: 1px solid #31596c;
+  border-radius: 8px;
+}
+
+[data-og-internal-id="tutobjfrmlabel"] {
+  color: #d9f4ff;
+  font-size: 18px;
+  font-weight: 720;
+}
+
+[data-og-internal-id="tutobjfrmchild"] {
+  width: 72%;
+  height: 70px;
+  background: #7fd7ff;
+  border-radius: 6px;
+  box-shadow: 0 12px 30px rgba(80,183,231,0.24);
+}
+
+[data-og-internal-id="tutobjtextdemo"] {
+  min-height: 170px;
+  padding: 24px;
+  color: #f4f0ff;
+  background: linear-gradient(145deg, #281f35, #1b1824);
+  border: 1px solid #5a4672;
+  border-radius: 8px;
+  font-size: 27px;
+  font-weight: 720;
+  line-height: 1.35;
+}
+
+[data-og-internal-id="tutobjtextmeta"] {
+  color: #c5a3ff;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.1em;
+}
+
+[data-og-internal-id="tutobjbtndemo"] {
+  width: 100%;
+  min-height: 64px;
+  padding: 16px 22px;
+  color: #0d1114;
+  background: #b8f29a;
+  border: 1px solid #d8ffc5;
+  border-radius: 10px;
+  box-shadow: 0 14px 34px rgba(132,214,94,0.2);
+  font-size: 16px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutobjbtncaption"] {
+  color: #aeb8c2;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+[data-og-internal-id="tutobjhintfrm"],
+[data-og-internal-id="tutobjhinttxt"],
+[data-og-internal-id="tutobjhintbtn"] {
+  margin: auto 0 0;
+  padding: 14px 0 0;
+  color: #d6dbe0;
+  border: 1px solid transparent;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutobjpractice"] {
+  width: 100%;
+  gap: 24px;
+  padding: 20px 24px;
+  align-items: center;
+  background: #15191e;
+  border: 1px solid #353e48;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutobjprsteps"] {
+  flex: 1 1 auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutobjprstep1"],
+[data-og-internal-id="tutobjprstep2"],
+[data-og-internal-id="tutobjprstep3"] {
+  flex: 1 1 0;
+  padding: 12px 14px;
+  color: #c7cfd7;
+  background: #0e1115;
+  border: 1px solid #29313a;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+[data-og-internal-id="tutobjpagemgmt"] {
+  width: 100%;
+  gap: 14px;
+  padding: 20px;
+  background: #10141a;
+  border: 1px solid #34404d;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutobjmgmthead"] {
+  width: 100%;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutobjmgmthint"] {
+  color: #97a3af;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutobjmgmtacts"] {
+  width: 100%;
+  gap: 10px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutobjhidepage"],
+[data-og-internal-id="tutobjdeletepg"],
+[data-og-internal-id="tutobjhidechap"] {
+  flex: 1 1 0;
+  min-height: 132px;
+  gap: 7px;
+  padding: 14px;
+  background: #171c23;
+  border: 1px solid #303b47;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutobjhideptype"],
+[data-og-internal-id="tutobjdelpgtype"],
+[data-og-internal-id="tutobjhidectype"] {
+  color: #7fd7ff;
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.1em;
+}
+
+[data-og-internal-id="tutobjhideptitl"],
+[data-og-internal-id="tutobjdelpgtitle"],
+[data-og-internal-id="tutobjhidectitle"] {
+  font-size: 15px;
+  font-weight: 720;
+}
+
+[data-og-internal-id="tutobjhideptxt"],
+[data-og-internal-id="tutobjdelpgtxt"],
+[data-og-internal-id="tutobjhidectxt"] {
+  color: #b6c0ca;
+  font-size: 11px;
+  line-height: 1.55;
+}

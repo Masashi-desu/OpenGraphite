@@ -24,7 +24,7 @@ OpenGraphite は、意味、編集情報、デザイン値、描画規則を分�
 | `data-og-*` | エディタが扱う構造、種別、参照 | `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-component` |
 | companion CSS | ページ / component 固有のデザイン値 | `[data-og-internal-id="hero"] { gap: 32px; }` |
 | `OpenGraphite.css` | アプリ内描画とブラウザ描画を一致させる共有規則 | `[data-og-layout="vertical"]` |
-| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置、editor-only 注釈・ガイド | `htmlRoot`, `chapters`, `collections`, `canvas`, `annotations`, `guides` |
+| `.ogp` | プロジェクト管理、Chapter / Collection、ページ参照、component canvas 参照、キャンバス配置、editor-only 表示状態・注釈・ガイド | `htmlRoot`, `chapters`, `collections`, `canvas`, `isSidebarHidden`, `isCanvasHidden`, `annotations`, `guides` |
 
 class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として将来使う余地を残しますが、OpenGraphite が編集対象として信頼する主な契約は HTML の `data-og-*` と同名 companion CSS の node-scoped CSS declaration です。
 
@@ -55,11 +55,16 @@ app 内で編集可能な項目は、種別に関わらずこの規約に従い�
 - HTML ページ一覧。
 - component master を置く Collection 内 source file 一覧。
 - キャンバス上の配置、表示サイズ、ズーム初期値など、エディタ固有の情報。
+- Chapter の Sidebar 表示状態と、Page card の Chapter キャンバス表示状態。
 - editor preview のためだけに注入する Mock State。
 - Chapter / Collection のキャンバス前面へ置く付箋・手書き注釈。
 - Chapter / Collection で共有するキャンバスガイドの方向と world 座標。
 
 公開リポジトリで共有できるように、`.ogp` 内のパスは相対参照を基本とします。ユーザーのディスク上の絶対パスは、実行時に解決される表示情報として扱い、永続化される IR へ固定しません。
+
+`chapters[].isSidebarHidden` は Chapter を Sidebar の一覧から隠す editor-only metadata であり、Chapter の `pages`、注釈、ガイド、参照配置を削除しません。`chapters[].pages[].isCanvasHidden` は Page entry を Sidebar と build 対象に残したまま、Chapter キャンバスと canvas screenshot の card 合成対象から外します。どちらも未指定時は `false` として読み込み、公開 HTML、companion CSS、runtime、build 出力へ書き込みません。CLI / MCP の project summary はそれぞれ `isSidebarHidden` と `isCanvasHidden` を返します。
+
+Page の「完全に削除」は表示状態の変更ではありません。同じ解決済み HTML path を使う Page / Component 配置が `.ogp` 内に一つだけの場合に限り、Page entry、対象 Page node を指す canvas object reference、HTML、同名 companion CSS を削除します。別配置が同じ HTML を使う場合は source file を共有しているため、この操作を無効にします。
 
 ## Canvas Annotation Contract
 

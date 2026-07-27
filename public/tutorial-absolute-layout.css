@@ -1,0 +1,233 @@
+[data-og-internal-id="tutabsroot003"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 30px;
+  background: #0b0c10;
+  color: #f5f6f8;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutabsheader03"] {
+  max-width: 860px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutabsstep003"],
+[data-og-internal-id="tutabsposlabel"],
+[data-og-internal-id="tutabssizelabel"],
+[data-og-internal-id="tutabslayerlbl"],
+[data-og-internal-id="tutabsfloatidx"],
+[data-og-internal-id="tutabsoverlabel"] {
+  color: #ffd37d;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutabstitle03"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutabslead003"] {
+  color: #b7bec7;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutabsworkspace"] {
+  width: 100%;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutabsrail003"] {
+  width: 260px;
+  min-width: 260px;
+  gap: 12px;
+  padding: 20px;
+  background: #12151a;
+  border: 1px solid #303640;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutabsrailtitle"] {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutabsctrlpos"],
+[data-og-internal-id="tutabsctrlsize"],
+[data-og-internal-id="tutabsctrllayer"] {
+  gap: 6px;
+  padding: 14px;
+  background: #191d23;
+  border: 1px solid #333b45;
+  border-radius: 6px;
+}
+
+[data-og-internal-id="tutabsposvalue"],
+[data-og-internal-id="tutabssizevalue"],
+[data-og-internal-id="tutabslayerval"] {
+  color: #e5e9ed;
+  font-family: var(--font-family-mono);
+  font-size: 13px;
+}
+
+[data-og-internal-id="tutabsrailnote"] {
+  margin: auto 0 0;
+  padding: 14px;
+  color: #c8cfd6;
+  background: #201b12;
+  border: 1px solid #514328;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+[data-og-internal-id="tutabsstage003"] {
+  flex: 1 1 auto;
+  height: 520px;
+  overflow: hidden;
+  background: #11151b;
+  border: 1px solid #39434d;
+  border-radius: 10px;
+  box-shadow: 0 20px 48px rgba(0,0,0,0.22);
+}
+
+[data-og-internal-id="tutabsgrid003"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+[data-og-internal-id="tutabsstagelbl"] {
+  position: absolute;
+  left: 24px;
+  top: 20px;
+  color: #697681;
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+}
+
+[data-og-internal-id="tutabscircle03"] {
+  position: absolute;
+  left: auto;
+  right: 54px;
+  top: 62px;
+  width: 220px;
+  height: 220px;
+  background: linear-gradient(145deg, #ffc65a, #ff826b);
+  border-radius: 220px;
+  box-shadow: 0 30px 70px rgba(255,151,85,0.22);
+}
+
+[data-og-internal-id="tutabsfloatcard"] {
+  position: absolute;
+  left: 88px;
+  top: 120px;
+  z-index: 2;
+  width: 370px;
+  min-height: 230px;
+  gap: 14px;
+  padding: 28px;
+  background: rgba(26,30,37,0.94);
+  border: 1px solid #58616b;
+  border-radius: 12px;
+  box-shadow: 0 28px 70px rgba(0,0,0,0.36);
+}
+
+[data-og-internal-id="tutabsfloattitle"] {
+  font-size: 28px;
+  font-weight: 820;
+  line-height: 1.15;
+}
+
+[data-og-internal-id="tutabsfloattext"] {
+  color: #b6c0c9;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutabscoord003"] {
+  position: absolute;
+  left: 88px;
+  top: 368px;
+  z-index: 4;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #ffd37d;
+  border-radius: 5px;
+}
+
+[data-og-internal-id="tutabscoordx03"],
+[data-og-internal-id="tutabscoordy03"] {
+  color: #17130a;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutabsoverlay03"] {
+  position: absolute;
+  left: auto;
+  top: auto;
+  right: 82px;
+  bottom: 58px;
+  z-index: 3;
+  width: 260px;
+  gap: 10px;
+  padding: 20px;
+  background: #252035;
+  border: 1px solid #78639c;
+  border-radius: 8px;
+  box-shadow: 0 18px 44px rgba(23,14,39,0.4);
+}
+
+[data-og-internal-id="tutabsovertext"] {
+  color: #f1e9ff;
+  font-size: 20px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutabsorigin003"] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 22px;
+  height: 22px;
+  background: #ffd37d;
+  border-radius: 0 0 22px 0;
+}
+
+[data-og-internal-id="tutabspractice"] {
+  width: 100%;
+  gap: 20px;
+  padding: 18px 22px;
+  align-items: center;
+  background: #17191e;
+  border: 1px solid #373d46;
+  border-radius: 8px;
+}
+
+[data-og-internal-id="tutabsprtitle"] {
+  min-width: 140px;
+  color: #ffd37d;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutabsprtext"] {
+  color: #c2cad1;
+  font-size: 13px;
+  line-height: 1.6;
+}

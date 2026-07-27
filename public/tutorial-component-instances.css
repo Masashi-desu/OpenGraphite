@@ -1,0 +1,147 @@
+[data-og-internal-id="tutinsroot007"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 30px;
+  background: #0b0d0c;
+  color: #f5f7f5;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutinsheader07"] {
+  max-width: 900px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutinsstep007"],
+[data-og-internal-id="tutinsmapmlbl"],
+[data-og-internal-id="tutinsmapilbl"],
+[data-og-internal-id="tutinsmapslbl"],
+[data-og-internal-id="tutinsdesignlb"],
+[data-og-internal-id="tutinsenginelb"],
+[data-og-internal-id="tutinsreslabel"],
+[data-og-internal-id="tutinssynclabel"] {
+  color: #b8f29a;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutinstitle07"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutinslead007"] {
+  color: #b7c0b8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutinsmap007"] {
+  width: 100%;
+  gap: 12px;
+  align-items: center;
+}
+
+[data-og-internal-id="tutinsmapmaster"],
+[data-og-internal-id="tutinsmapinst"],
+[data-og-internal-id="tutinsmapslot"] {
+  flex: 1 1 0;
+  gap: 6px;
+  padding: 15px;
+  background: #151a15;
+  border: 1px solid #354236;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutinsmapmval"],
+[data-og-internal-id="tutinsmapival"],
+[data-og-internal-id="tutinsmapsval"] {
+  color: #c6cfc7;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutinsmaparrow"] {
+  color: #627064;
+  font-size: 24px;
+}
+
+[data-og-internal-id="tutinsrow007"] {
+  width: 100%;
+  gap: 16px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutinsdesignls"],
+[data-og-internal-id="tutinsenginels"],
+[data-og-internal-id="tutinsresearch"] {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px;
+  background: #101410;
+  border: 1px solid #2e392f;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutinsdesign07"],
+[data-og-internal-id="tutinsengine07"],
+[data-og-internal-id="tutinsresear07"] {
+  width: 100%;
+}
+
+[data-og-id="profile-design"],
+[data-og-id="profile-engineering"],
+[data-og-id="profile-research"] {
+  width: 100%;
+  min-width: 0;
+}
+
+[data-og-internal-id="tutinssyncless"] {
+  width: 100%;
+  gap: 28px;
+  padding: 26px;
+  align-items: center;
+  background: #151b15;
+  border: 1px solid #384638;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutinssynccopy"] {
+  flex: 1 1 auto;
+  gap: 10px;
+}
+
+[data-og-internal-id="tutinssynctitle"] {
+  font-size: 24px;
+  font-weight: 820;
+}
+
+[data-og-internal-id="tutinssynctext"] {
+  max-width: 760px;
+  color: #b4beb5;
+  font-size: 13px;
+  line-height: 1.68;
+}
+
+[data-og-internal-id="tutinssyncsteps"] {
+  width: 250px;
+  min-width: 250px;
+  gap: 8px;
+}
+
+[data-og-internal-id="tutinssyncstep1"],
+[data-og-internal-id="tutinssyncstep2"],
+[data-og-internal-id="tutinssyncstep3"] {
+  padding: 10px 12px;
+  color: #ddf2dd;
+  background: #1c261c;
+  border: 1px solid #3b503b;
+  border-radius: 5px;
+  font-size: 12px;
+}

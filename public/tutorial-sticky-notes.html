@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tutorial 08 — Sticky Notes</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <link rel="stylesheet" href="./tutorial-sticky-notes.css">
+  </head>
+  <body>
+    <TutorialStickyNotes data-og-id="tutorial-sticky-notes" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutstroot008">
+      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstheader08">
+        <HeaderCopy data-og-id="header-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstheadcopy">
+          <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutststep008">PAGES TUTORIAL · 08</StepLabel>
+          <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutsttitle008">付箋でフィードバックを残す</TutorialTitle>
+          <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutstlead0008">付箋はページのDOMではなく、Chapter全体のキャンバス前面へ置く共同作業用のメモです。ソースを汚さず、レビューの意図をその場に残せます。</TutorialLead>
+        </HeaderCopy>
+        <OwnershipCard data-og-id="ownership-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstowncard8">
+          <OwnershipLabel data-og-id="ownership-label" data-og-type="text" data-og-internal-id="tutstownlabel">SAVED TO</OwnershipLabel>
+          <OwnershipValue data-og-id="ownership-value" data-og-type="text" data-og-internal-id="tutstownvalue">.ogp · annotations[]</OwnershipValue>
+          <OwnershipText data-og-id="ownership-text" data-og-type="text" data-og-internal-id="tutstowntext8">HTML / CSS / build outputには入りません</OwnershipText>
+        </OwnershipCard>
+      </TutorialHeader>
+
+      <LessonGrid data-og-id="lesson-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstgrid0008">
+        <WorkflowCard data-og-id="workflow-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstworkflow">
+          <CardLabel data-og-id="workflow-label" data-og-type="text" data-og-internal-id="tutstworklabel">WORKFLOW</CardLabel>
+          <WorkflowStep data-og-id="workflow-step-1" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstworkstep1">
+            <StepNumber data-og-id="workflow-number-1" data-og-type="text" data-og-internal-id="tutstworknum01">1</StepNumber>
+            <StepCopy data-og-id="workflow-copy-1" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstworkcopy1">
+              <StepTitle data-og-id="workflow-title-1" data-og-type="text" data-og-internal-id="tutstworktitle1">Sticky Note toolを選ぶ</StepTitle>
+              <StepText data-og-id="workflow-text-1" data-og-type="text" data-og-internal-id="tutstworktext1">左のCanvas toolbarにある付箋アイコンを選択します。</StepText>
+            </StepCopy>
+          </WorkflowStep>
+          <WorkflowStep data-og-id="workflow-step-2" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstworkstep2">
+            <StepNumber data-og-id="workflow-number-2" data-og-type="text" data-og-internal-id="tutstworknum02">2</StepNumber>
+            <StepCopy data-og-id="workflow-copy-2" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstworkcopy2">
+              <StepTitle data-og-id="workflow-title-2" data-og-type="text" data-og-internal-id="tutstworktitle2">Canvasをクリックして入力</StepTitle>
+              <StepText data-og-id="workflow-text-2" data-og-type="text" data-og-internal-id="tutstworktext2">置きたいworld座標をクリックし、プレーンテキストを入力します。</StepText>
+            </StepCopy>
+          </WorkflowStep>
+          <WorkflowStep data-og-id="workflow-step-3" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstworkstep3">
+            <StepNumber data-og-id="workflow-number-3" data-og-type="text" data-og-internal-id="tutstworknum03">3</StepNumber>
+            <StepCopy data-og-id="workflow-copy-3" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstworkcopy3">
+              <StepTitle data-og-id="workflow-title-3" data-og-type="text" data-og-internal-id="tutstworktitle3">選択して整理する</StepTitle>
+              <StepText data-og-id="workflow-text-3" data-og-type="text" data-og-internal-id="tutstworktext3">Select toolで移動・リサイズ・削除。⌘Zで直前の操作を戻せます。</StepText>
+            </StepCopy>
+          </WorkflowStep>
+        </WorkflowCard>
+
+        <PracticeSurface data-og-id="practice-surface" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstpractice8">
+          <PracticeHeader data-og-id="practice-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstprheader8">
+            <PracticeLabel data-og-id="practice-label" data-og-type="text" data-og-internal-id="tutstprlabel08">LIVE CANVAS AREA</PracticeLabel>
+            <PracticeState data-og-id="practice-state" data-og-type="text" data-og-internal-id="tutstprstate08">ANNOTATION LAYER</PracticeState>
+          </PracticeHeader>
+          <PracticeTarget data-og-id="practice-target" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutstprtarget8">
+            <TargetCross data-og-id="target-cross" data-og-type="text" data-og-internal-id="tutsttargetico">＋</TargetCross>
+            <TargetTitle data-og-id="target-title" data-og-type="text" data-og-internal-id="tutsttargettit">右上の付箋は実物です</TargetTitle>
+            <TargetText data-og-id="target-text" data-og-type="text" data-og-internal-id="tutsttargettxt">選択して本文・位置・サイズを変え、HTMLを再確認してください。</TargetText>
+          </PracticeTarget>
+          <LayerOrder data-og-id="layer-order" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutstlayer008">
+            <LayerChip data-og-id="html-layer" data-og-type="text" data-og-internal-id="tutstlayerhtml">HTML CARD</LayerChip>
+            <LayerArrow data-og-id="layer-arrow" data-og-type="text" data-og-internal-id="tutstlayerarr">→</LayerArrow>
+            <LayerChip data-og-id="annotation-layer" data-og-type="text" data-og-internal-id="tutstlayeranno">ANNOTATION FRONT</LayerChip>
+          </LayerOrder>
+        </PracticeSurface>
+      </LessonGrid>
+
+      <TryPanel data-og-id="try-panel" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutsttrypanel8">
+        <TryLabel data-og-id="try-label" data-og-type="text" data-og-internal-id="tutsttrylabel8">TRY IT</TryLabel>
+        <TryText data-og-id="try-text" data-og-type="text" data-og-internal-id="tutsttrytext08">付箋を選択 → 本文を書き換える → Canvasの別の場所へ移動 → ⌘Zで戻す</TryText>
+      </TryPanel>
+    </TutorialStickyNotes>
+  </body>
+</html>

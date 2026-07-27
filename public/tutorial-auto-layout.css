@@ -1,0 +1,246 @@
+[data-og-internal-id="tutlayroot001"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 32px;
+  background: #0a0d10;
+  color: #f4f7f8;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutlayheader01"] {
+  max-width: 860px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutlaystep002"],
+[data-og-internal-id="tutlayvindex02"],
+[data-og-internal-id="tutlayhindex02"],
+[data-og-internal-id="tutlaynindex02"],
+[data-og-internal-id="tutlaybadge002a"],
+[data-og-internal-id="tutlaybadge002b"] {
+  color: #b8f29a;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutlaytitle002"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutlaylead0002"] {
+  color: #b7c0c8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutlaycompare2"] {
+  width: 100%;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutlayvertical"],
+[data-og-internal-id="tutlayhorizont"] {
+  flex: 1 1 0;
+  min-height: 390px;
+  gap: 20px;
+  padding: 24px;
+  background: #12161a;
+  border: 1px solid #303941;
+  border-radius: 12px;
+}
+
+[data-og-internal-id="tutlayvhead002"],
+[data-og-internal-id="tutlayhhead002"] {
+  gap: 10px;
+  align-items: center;
+}
+
+[data-og-internal-id="tutlayvtitle02"],
+[data-og-internal-id="tutlayhtitle02"] {
+  font-size: 21px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutlayvstack02"] {
+  gap: 12px;
+}
+
+[data-og-internal-id="tutlayvcard201"],
+[data-og-internal-id="tutlayvcard202"],
+[data-og-internal-id="tutlayvcard203"] {
+  width: 100%;
+  gap: 12px;
+  padding: 16px;
+  align-items: center;
+  background: #192027;
+  border: 1px solid #34414b;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutlayvdot0201"],
+[data-og-internal-id="tutlayvdot0202"],
+[data-og-internal-id="tutlayvdot0203"] {
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  background: #b8f29a;
+  border-radius: 18px;
+}
+
+[data-og-internal-id="tutlayvtext201"],
+[data-og-internal-id="tutlayvtext202"],
+[data-og-internal-id="tutlayvtext203"] {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+[data-og-internal-id="tutlayhrow0002"] {
+  min-height: 190px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutlaymetric21"],
+[data-og-internal-id="tutlaymetric22"],
+[data-og-internal-id="tutlaymetric23"] {
+  flex: 1 1 0;
+  gap: 10px;
+  padding: 18px 14px;
+  justify-content: center;
+  background: #1a2025;
+  border: 1px solid #364149;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutlayvalue021"],
+[data-og-internal-id="tutlayvalue022"],
+[data-og-internal-id="tutlayvalue023"] {
+  color: #eafde1;
+  font-size: 22px;
+  font-weight: 820;
+  text-align: center;
+}
+
+[data-og-internal-id="tutlaylabel021"],
+[data-og-internal-id="tutlaylabel022"],
+[data-og-internal-id="tutlaylabel023"] {
+  color: #8d99a3;
+  font-size: 12px;
+  text-align: center;
+}
+
+[data-og-internal-id="tutlayvhint002"],
+[data-og-internal-id="tutlayhhint002"] {
+  margin: auto 0 0;
+  padding: 12px 14px;
+  color: #d4dbe0;
+  background: #0d1013;
+  border: 1px solid #283039;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+[data-og-internal-id="tutlaynested02"] {
+  width: 100%;
+  gap: 28px;
+  padding: 28px;
+  align-items: stretch;
+  background: #101418;
+  border: 1px solid #354039;
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+}
+
+[data-og-internal-id="tutlaynestcopy"] {
+  width: 34%;
+  gap: 12px;
+  justify-content: center;
+}
+
+[data-og-internal-id="tutlayntitle02"] {
+  font-size: 26px;
+  font-weight: 820;
+  line-height: 1.2;
+}
+
+[data-og-internal-id="tutlayndesc002"] {
+  color: #acb5bd;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutlayntask002"] {
+  padding: 12px 14px;
+  color: #dfffd0;
+  background: #152317;
+  border: 1px solid #375a36;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutlayproducts2"] {
+  flex: 1 1 auto;
+  gap: 14px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutlayproducta"],
+[data-og-internal-id="tutlayproductb"] {
+  flex: 1 1 0;
+  min-height: 260px;
+  gap: 12px;
+  padding: 20px;
+  background: #181d22;
+  border: 1px solid #364149;
+  border-radius: 8px;
+}
+
+[data-og-internal-id="tutlayprodtitlea"],
+[data-og-internal-id="tutlayprodtitleb"] {
+  font-size: 22px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutlayprodcopya"],
+[data-og-internal-id="tutlayprodcopyb"] {
+  color: #aab4bd;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+[data-og-internal-id="tutlayactions2a"],
+[data-og-internal-id="tutlayactions2b"] {
+  margin: auto 0 0;
+  gap: 8px;
+}
+
+[data-og-internal-id="tutlayactiona1"],
+[data-og-internal-id="tutlayactionb1"] {
+  flex: 1 1 auto;
+  min-height: 38px;
+  padding: 10px 14px;
+  color: #0b1009;
+  background: #b8f29a;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 720;
+}
+
+[data-og-internal-id="tutlayactiona2"],
+[data-og-internal-id="tutlayactionb2"] {
+  min-height: 38px;
+  padding: 10px 14px;
+  color: #d8dee3;
+  background: #20262c;
+  border: 1px solid #3b454e;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 650;
+}

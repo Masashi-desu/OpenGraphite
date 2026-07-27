@@ -2285,6 +2285,29 @@ struct OpenGraphiteAgentCoreTests {
         #expect(summary.collections.first?.referenceCount == 1)
     }
 
+    /// 論理名（日本語）: Project要約表示状態テスト
+    /// 概要: `.ogp` の Chapter / Page editor-only 表示状態が project inspect へ反映されることを確認します。
+    @Test("project inspectがChapterとPageの表示状態を返す")
+    func testInspectProjectIncludesVisibilityState() throws {
+        // コンディション：Chapter と Page を非表示にした project を用意する（Given）
+        let fixture = try AgentInterfaceFixture()
+        defer { fixture.cleanUp() }
+        let projectURL = fixture.rootURL.appendingPathComponent("Sample.ogp")
+        try fixture.writeHTML("<!doctype html><html><body><Page data-og-id=\"page\" data-og-type=\"page\"></Page></body></html>")
+        try fixture.writeProject(to: projectURL)
+        var project = try ProjectLoader().loadProject(at: projectURL).project
+        project.chapters[0].isSidebarHidden = true
+        project.chapters[0].pages[0].isCanvasHidden = true
+        try JSONEncoder().encode(project).write(to: projectURL, options: .atomic)
+
+        // 検証内容：project summary を取得する（When）
+        let summary = try fixture.core.inspectProject(at: projectURL)
+
+        // 期待値：Chapter と Page の表示状態が editor-only metadata として返る（Then）
+        #expect(summary.chapters.first?.isSidebarHidden == true)
+        #expect(summary.pages.first?.isCanvasHidden == true)
+    }
+
     /// 論理名（日本語）: Componentsセグメント検証テスト
     /// 概要: project validation が Components セグメントの HTML も検証対象に含めることを確認します。
     @Test("project validateはComponents HTMLも検証する")

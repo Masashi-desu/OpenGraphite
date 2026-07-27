@@ -1,0 +1,208 @@
+[data-og-internal-id="tutcmpsltroot"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 30px;
+  background: #0b0d0c;
+  color: #f5f7f5;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutcmpslthead"] {
+  max-width: 860px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutcmpsltstep"],
+[data-og-internal-id="tutcmpsltinsttl"] {
+  color: #b8f29a;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutcmpslttitl"] {
+  font-size: 44px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutcmpsltlead"] {
+  color: #b8c0b9;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutcmpsltdiag"] {
+  width: 100%;
+  gap: 12px;
+  align-items: center;
+}
+
+[data-og-internal-id="tutcmpsltdmstr"],
+[data-og-internal-id="tutcmpsltdslot"],
+[data-og-internal-id="tutcmpsltdinst"] {
+  flex: 1 1 0;
+  min-height: 110px;
+  gap: 6px;
+  padding: 16px;
+  justify-content: center;
+  background: #141914;
+  border: 1px solid #344234;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutcmpsltdmi"],
+[data-og-internal-id="tutcmpsltdsi"],
+[data-og-internal-id="tutcmpsltdii"] {
+  color: #b8f29a;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutcmpsltdmt"],
+[data-og-internal-id="tutcmpsltdst"],
+[data-og-internal-id="tutcmpsltdit"] {
+  font-size: 17px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutcmpsltdmx"],
+[data-og-internal-id="tutcmpsltdsx"],
+[data-og-internal-id="tutcmpsltdix"] {
+  color: #aeb8af;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutcmpsltarr1"],
+[data-og-internal-id="tutcmpsltarr2"] {
+  color: #657366;
+  font-size: 24px;
+}
+
+[data-og-internal-id="tutcmpsltwork"] {
+  width: 100%;
+  gap: 24px;
+  padding: 30px;
+  align-items: center;
+  background: #111511;
+  border: 1px solid #334034;
+  border-radius: 12px;
+}
+
+[data-og-internal-id="tutcmpprofmst"] {
+  width: 480px;
+  min-width: 480px;
+  min-height: 430px;
+  gap: 24px;
+  padding: 30px;
+  background: #182019;
+  border: 1px solid #445846;
+  border-radius: 12px;
+  box-shadow: 0 24px 54px rgba(0,0,0,0.24);
+}
+
+[data-og-internal-id="tutcmpproftop"] {
+  gap: 16px;
+  align-items: center;
+}
+
+[data-og-internal-id="tutcmpprofava"] {
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  align-items: center;
+  justify-content: center;
+  background: #b8f29a;
+  border-radius: 72px;
+}
+
+[data-og-internal-id="tutcmpprofinit"] {
+  color: #0d130b;
+  font-size: 20px;
+  font-weight: 820;
+}
+
+[data-og-internal-id="tutcmpprofident"] {
+  gap: 5px;
+}
+
+[data-og-internal-id="tutcmpprofname"] {
+  font-size: 24px;
+  font-weight: 820;
+}
+
+[data-og-internal-id="tutcmpprofrole"] {
+  color: #9daa9e;
+  font-size: 13px;
+}
+
+[data-og-internal-id="tutcmpprofbio"] {
+  color: #bdc7be;
+  font-size: 15px;
+  line-height: 1.72;
+}
+
+[data-og-internal-id="tutcmpprofaction"] {
+  margin: auto 0 0;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 18px;
+  color: #0d130b;
+  background: #b8f29a;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutcmpsltinspect"] {
+  flex: 1 1 auto;
+  gap: 10px;
+}
+
+[data-og-internal-id="tutcmpsltrowava"],
+[data-og-internal-id="tutcmpsltrownam"],
+[data-og-internal-id="tutcmpsltrowrol"],
+[data-og-internal-id="tutcmpsltrowbio"],
+[data-og-internal-id="tutcmpsltrowact"] {
+  width: 100%;
+  gap: 12px;
+  padding: 12px 14px;
+  align-items: center;
+  justify-content: space-between;
+  background: #191f19;
+  border: 1px solid #354236;
+  border-radius: 6px;
+}
+
+[data-og-internal-id="tutcmpsltnameav"],
+[data-og-internal-id="tutcmpsltnamena"],
+[data-og-internal-id="tutcmpsltnamero"],
+[data-og-internal-id="tutcmpsltnamebi"],
+[data-og-internal-id="tutcmpsltnameac"] {
+  color: #e4f6e5;
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+}
+
+[data-og-internal-id="tutcmpsltkindav"],
+[data-og-internal-id="tutcmpsltkindna"],
+[data-og-internal-id="tutcmpsltkindro"],
+[data-og-internal-id="tutcmpsltkindbi"],
+[data-og-internal-id="tutcmpsltkindac"] {
+  color: #869288;
+  font-size: 11px;
+}
+
+[data-og-internal-id="tutcmpsltintask"] {
+  margin: 10px 0 0;
+  padding: 14px;
+  color: #e1ffda;
+  background: #192818;
+  border: 1px solid #3c6038;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+}

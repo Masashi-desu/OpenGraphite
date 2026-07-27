@@ -44,6 +44,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "internalID": "6q8zy7p2k1",
       "index": 0,
       "title": "Main",
+      "isSidebarHidden": false,
       "annotationCount": 0,
       "guideCount": 0,
       "referenceCount": 0,
@@ -58,6 +59,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
           "pageIndex": 0,
           "path": "index.html",
           "htmlURL": "/repo/public/index.html",
+          "isCanvasHidden": false,
           "canvas": {
             "name": "",
             "x": 0,
@@ -87,6 +89,7 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
       "pageIndex": 0,
       "path": "index.html",
       "htmlURL": "/repo/public/index.html",
+      "isCanvasHidden": false,
       "canvas": { "name": "", "x": 0, "y": 0, "width": 1440, "height": 1200 }
     }
   ],
@@ -136,6 +139,8 @@ MCP の表向きの名前は OpenGraphite とする。`ogkiln` は CLI 名であ
 ```
 
 `internalID` は `.ogp` 内で一意な内部キーである。表示名や `id` を含まない不透明 ID として扱い、保存時には manifest に書き戻す。
+
+Chapter の `isSidebarHidden` と Pages の `isCanvasHidden` は editor-only 表示状態である。project summary は両方を返すが、非表示 Chapter / Page も project の編集対象として解決できる。`screenshot canvas` は明示された Chapter では `isCanvasHidden == false` の Page card だけを合成し、Chapter selector 省略時は `isSidebarHidden == false` の先頭 Chapterを選ぶ。全 Chapter が非表示なら暗黙選択せず、明示的な Chapter / Collection selector を要求する。
 
 Guide は Pages では `chapters[].guides[]`、Components では `collections[].guides[]` に `internalID`、`orientation`、`position` を保存する。project summary は各 container の `guideCount` を返すが、Guide は HTML graph、canvas / page / node screenshot、build 出力には含めない。詳細は [CanvasAids.md](CanvasAids.md) を正本とする。
 
@@ -201,7 +206,7 @@ ogkiln annotation get SampleProject/OpenGraphiteSample.ogp --id ogref:annotation
 
 `annotation list` は手書き点列を展開せず、付箋本文、frame、色、stroke / point count を返す。`annotation get` は typed annotation reference と完全な stroke / point payload を返す。CLI と MCP の annotation interface は読み取り専用であり、HTML / CSS を変更しない。
 
-`screenshot canvas` は `--chapter-id` / `chapterID` または `--collection-id` / `collectionID` で対象を排他的に選び、省略時は先頭 Chapter を使う。WebKit で描画した対象 Chapter の page card 群または Collection の component card 群へ、App と同じ ink、sticky note の順で `.ogp` 注釈を前面合成し、card と annotation の world frame の union を出力範囲にする。capture 前に全 card が有限座標と正の寸法であることを確認し、出力の一辺 16,384 px、総 33,554,432 pixel、またはcard snapshot累積33,554,432 pixelの安全上限を超える場合は明示エラーを返す。Canvas Object Reference は editor viewport のため `screenshot canvas` に含めない。個別 HTML を対象にする `screenshot page` / `screenshot node` には Chapter / Collection 注釈を含めない。
+`screenshot canvas` は `--chapter-id` / `chapterID` または `--collection-id` / `collectionID` で対象を排他的に選び、省略時は Sidebar 表示中の先頭 Chapter を使う。全 Chapter が Sidebar 非表示なら selector を要求する。WebKit で描画した対象 Chapter の `isCanvasHidden == false` の page card 群または Collection の component card 群へ、App と同じ ink、sticky note の順で `.ogp` 注釈を前面合成し、card と annotation の world frame の union を出力範囲にする。capture 前に全 card が有限座標と正の寸法であることを確認し、出力の一辺 16,384 px、総 33,554,432 pixel、またはcard snapshot累積33,554,432 pixelの安全上限を超える場合は明示エラーを返す。Canvas Object Reference は editor viewport のため `screenshot canvas` に含めない。個別 HTML を対象にする `screenshot page` / `screenshot node` には Chapter / Collection 注釈を含めない。
 
 ## Page Graph
 

@@ -230,6 +230,7 @@ struct OpenGraphiteProjectSummary: Codable, Equatable {
 /// - `internalID`: `.ogp` 内で一意な Chapter 内部 ID。
 /// - `index`: `.ogp` 内の Chapter index。
 /// - `title`: Chapter 表示名。
+/// - `isSidebarHidden`: Editor の Chapter 一覧から非表示か。
 /// - `annotationCount`: Chapter キャンバスに保存された注釈数。
 /// - `guideCount`: Chapter キャンバスに保存されたガイド数。
 /// - `referenceCount`: Chapter キャンバス直下に保存されたオブジェクト参照数。
@@ -239,6 +240,7 @@ struct OpenGraphiteChapterSummary: Codable, Equatable {
     var internalID: String
     var index: Int
     var title: String?
+    var isSidebarHidden: Bool
     var annotationCount: Int
     var guideCount: Int
     var referenceCount: Int
@@ -367,6 +369,7 @@ struct OpenGraphiteCanvasAnnotationGetResult: Codable, Equatable {
 /// - `pageIndex`: Chapter または Collection 配列内の page index。
 /// - `path`: `htmlRoot` からの相対パス。
 /// - `htmlURL`: 解決済み HTML URL。
+/// - `isCanvasHidden`: Chapter キャンバスから非表示か。Components では常に `false`。
 /// - `canvas`: キャンバス定義。
 struct OpenGraphitePageSummary: Codable, Equatable {
     var chapterID: String?
@@ -382,6 +385,7 @@ struct OpenGraphitePageSummary: Codable, Equatable {
     var pageIndex: Int
     var path: String
     var htmlURL: String
+    var isCanvasHidden: Bool
     var canvas: OpenGraphiteCanvas
 }
 
@@ -795,6 +799,7 @@ struct OpenGraphiteAgentCore {
                 internalID: chapter.internalID,
                 index: chapterIndex,
                 title: chapter.title,
+                isSidebarHidden: chapter.isSidebarHidden,
                 annotationCount: chapter.annotations.count,
                 guideCount: chapter.guides.count,
                 referenceCount: chapter.references.count,
@@ -4214,6 +4219,7 @@ struct OpenGraphiteAgentCore {
             pageIndex: pageIndex,
             path: page.path,
             htmlURL: loadedProject.htmlURL(for: page).path,
+            isCanvasHidden: segment == "pages" && page.isCanvasHidden,
             canvas: page.canvas
         )
     }

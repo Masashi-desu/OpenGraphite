@@ -1,0 +1,241 @@
+[data-og-internal-id="tutgdroot009"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 30px;
+  background: #090d14;
+  color: #f4f7fb;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutgdheader09"] {
+  max-width: 850px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutgdstep009"],
+[data-og-internal-id="tutgdstepidx01"],
+[data-og-internal-id="tutgdstepidx02"],
+[data-og-internal-id="tutgdstepidx03"],
+[data-og-internal-id="tutgdtrylabel9"] {
+  color: #69b7ff;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutgdtitle009"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutgdlead0009"] {
+  color: #adb9c8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutgdworkspace"] {
+  width: 100%;
+  min-height: 520px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutgddiagram9"] {
+  flex: 1 1 0;
+  min-height: 520px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(78, 107, 142, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(78, 107, 142, 0.11) 1px, transparent 1px),
+    #101722;
+  background-size: 24px 24px;
+  border: 1px solid #34445a;
+  border-radius: 12px;
+}
+
+[data-og-internal-id="tutgdtopruler"] {
+  position: absolute;
+  left: 24px;
+  right: 0;
+  top: 0;
+  height: 24px;
+  background: repeating-linear-gradient(90deg, #4b5c72 0 1px, transparent 1px 12px), #182333;
+  border-bottom: 1px solid #40536b;
+}
+
+[data-og-internal-id="tutgdleftruler"] {
+  position: absolute;
+  left: 0;
+  top: 24px;
+  bottom: 0;
+  width: 24px;
+  background: repeating-linear-gradient(#4b5c72 0 1px, transparent 1px 12px), #182333;
+  border-right: 1px solid #40536b;
+}
+
+[data-og-internal-id="tutgdvertguide"] {
+  position: absolute;
+  left: 57%;
+  top: 24px;
+  bottom: 0;
+  width: 1px;
+  background: #38a9ff;
+  box-shadow: 0 0 0 1px rgba(56,169,255,0.15);
+}
+
+[data-og-internal-id="tutgdhorizguide"] {
+  position: absolute;
+  left: 24px;
+  right: 0;
+  top: 55%;
+  height: 1px;
+  background: #38a9ff;
+  box-shadow: 0 0 0 1px rgba(56,169,255,0.15);
+}
+
+[data-og-internal-id="tutgdmarker009"] {
+  position: absolute;
+  left: calc(57% - 5px);
+  top: 24px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 9px solid #38a9ff;
+}
+
+[data-og-internal-id="tutgdcarda009"],
+[data-og-internal-id="tutgdcardb009"] {
+  position: absolute;
+  width: 180px;
+  height: 150px;
+  gap: 22px;
+  padding: 20px;
+  background: #192434;
+  border: 1px solid #3b516c;
+  border-radius: 9px;
+  box-shadow: 0 16px 34px rgba(0,0,0,0.25);
+}
+
+[data-og-internal-id="tutgdcarda009"] {
+  left: 80px;
+  top: 100px;
+}
+
+[data-og-internal-id="tutgdcardb009"] {
+  left: 57%;
+  top: 55%;
+}
+
+[data-og-internal-id="tutgdcardaidx"],
+[data-og-internal-id="tutgdcardbidx"] {
+  color: #8fcaff;
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+}
+
+[data-og-internal-id="tutgdcardaline"],
+[data-og-internal-id="tutgdcardbline"] {
+  width: 100%;
+  height: 12px;
+  background: #445a74;
+  border-radius: 4px;
+}
+
+[data-og-internal-id="tutgdcaption09"] {
+  position: absolute;
+  left: 48px;
+  top: auto;
+  bottom: 28px;
+  color: #8796a8;
+  font-size: 11px;
+}
+
+[data-og-internal-id="tutgdsteps009"] {
+  width: 410px;
+  min-width: 410px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutgdstepcard1"],
+[data-og-internal-id="tutgdstepcard2"],
+[data-og-internal-id="tutgdstepcard3"] {
+  flex: 1 1 0;
+  gap: 7px;
+  padding: 19px;
+  background: #121923;
+  border: 1px solid #303f52;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutgdsteptit01"],
+[data-og-internal-id="tutgdsteptit02"],
+[data-og-internal-id="tutgdsteptit03"] {
+  font-size: 16px;
+  font-weight: 740;
+}
+
+[data-og-internal-id="tutgdsteptxt01"],
+[data-og-internal-id="tutgdsteptxt02"],
+[data-og-internal-id="tutgdsteptxt03"] {
+  color: #aab5c2;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+[data-og-internal-id="tutgdsettings9"] {
+  width: 100%;
+  gap: 10px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutgdrulerchip"],
+[data-og-internal-id="tutgdguidechip"],
+[data-og-internal-id="tutgdgridchip0"] {
+  flex: 1 1 0;
+  gap: 10px;
+  padding: 13px 15px;
+  align-items: center;
+  background: #111823;
+  border: 1px solid #2f3d4f;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutgdrulerdot0"],
+[data-og-internal-id="tutgdguidedot0"],
+[data-og-internal-id="tutgdgriddot00"] {
+  width: 9px;
+  height: 9px;
+  min-width: 9px;
+  background: #69b7ff;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutgdrulertxt0"],
+[data-og-internal-id="tutgdguidetxt0"],
+[data-og-internal-id="tutgdgridtext00"] {
+  color: #aab6c4;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+
+[data-og-internal-id="tutgdtrypanel9"] {
+  width: 100%;
+  gap: 22px;
+  padding: 18px 22px;
+  align-items: center;
+  background: #10243a;
+  border: 1px solid #285986;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutgdtrytext09"] {
+  color: #d1e5f7;
+  font-size: 13px;
+  line-height: 1.6;
+}

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tutorial 01 — 基本オブジェクトとページ管理</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <link rel="stylesheet" href="./tutorial-objects.css">
+  </head>
+  <body>
+    <TutorialObjects data-og-id="tutorial-objects" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutobjroot01">
+      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjheader01">
+        <HeaderCopy data-og-id="header-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjheadcopy">
+          <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutobjstep01">PAGES TUTORIAL · 01</StepLabel>
+          <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutobjtitle01">基本オブジェクトとページを扱う</TutorialTitle>
+          <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutobjlead001">Canvas 上のオブジェクトをクリックすると、Layers と Inspector が同じノードを示します。Page と Chapter の右クリックでは、ソースを守りながら表示範囲を整理できます。</TutorialLead>
+        </HeaderCopy>
+        <GoalCard data-og-id="goal-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjgoal001">
+          <GoalLabel data-og-id="goal-label" data-og-type="text" data-og-internal-id="tutobjgoallbl">このセクションのゴール</GoalLabel>
+          <GoalText data-og-id="goal-text" data-og-type="text" data-og-internal-id="tutobjgoaltxt">選択と表示整理の安全な違いを理解する</GoalText>
+        </GoalCard>
+      </TutorialHeader>
+
+      <LessonGrid data-og-id="lesson-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjgrid001">
+        <ObjectCard data-og-id="frame-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardfrm">
+          <ObjectNumber data-og-id="frame-object-number" data-og-type="text" data-og-internal-id="tutobjnumfrm">01 · FRAME</ObjectNumber>
+          <FrameDemo data-og-id="frame-demo" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjframedemo">
+            <FrameDemoLabel data-og-id="frame-demo-label" data-og-type="text" data-og-internal-id="tutobjfrmlabel">子オブジェクトをまとめる箱</FrameDemoLabel>
+            <FrameDemoChild data-og-id="frame-demo-child" data-og-type="frame" data-og-internal-id="tutobjfrmchild"></FrameDemoChild>
+          </FrameDemo>
+          <ObjectHint data-og-id="frame-object-hint" data-og-type="text" data-og-internal-id="tutobjhintfrm">試す：選択して Padding、Gap、Layout を確認</ObjectHint>
+        </ObjectCard>
+
+        <ObjectCard data-og-id="text-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardtxt">
+          <ObjectNumber data-og-id="text-object-number" data-og-type="text" data-og-internal-id="tutobjnumtext">02 · TEXT</ObjectNumber>
+          <TextDemo data-og-id="text-demo" data-og-type="text" data-og-internal-id="tutobjtextdemo">文字はダブルクリックして直接編集できます。</TextDemo>
+          <TextMeta data-og-id="text-meta" data-og-type="text" data-og-internal-id="tutobjtextmeta">TYPE / WEIGHT / LINE HEIGHT</TextMeta>
+          <ObjectHint data-og-id="text-object-hint" data-og-type="text" data-og-internal-id="tutobjhinttxt">試す：本文を書き換え、Font size を調整</ObjectHint>
+        </ObjectCard>
+
+        <ObjectCard data-og-id="button-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardbtn">
+          <ObjectNumber data-og-id="button-object-number" data-og-type="text" data-og-internal-id="tutobjnumbtn0">03 · BUTTON</ObjectNumber>
+          <button data-og-id="button-demo" data-og-type="button" type="button" data-og-internal-id="tutobjbtndemo">Button object</button>
+          <ButtonCaption data-og-id="button-caption" data-og-type="text" data-og-internal-id="tutobjbtncaption">Frame とは異なる操作オブジェクト。内容は中央揃えが基本です。</ButtonCaption>
+          <ObjectHint data-og-id="button-object-hint" data-og-type="text" data-og-internal-id="tutobjhintbtn">試す：Background、Radius、Padding を変更</ObjectHint>
+        </ObjectCard>
+      </LessonGrid>
+
+      <PracticePanel data-og-id="practice-panel" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjpractice">
+        <PracticeIndex data-og-id="practice-index" data-og-type="text" data-og-internal-id="tutobjpracticei">TRY IT</PracticeIndex>
+        <PracticeSteps data-og-id="practice-steps" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjprsteps">
+          <PracticeStep data-og-id="practice-step-1" data-og-type="text" data-og-internal-id="tutobjprstep1">1. カードを選択</PracticeStep>
+          <PracticeStep data-og-id="practice-step-2" data-og-type="text" data-og-internal-id="tutobjprstep2">2. Layers で親子を確認</PracticeStep>
+          <PracticeStep data-og-id="practice-step-3" data-og-type="text" data-og-internal-id="tutobjprstep3">3. Inspector で値を1つ変更</PracticeStep>
+        </PracticeSteps>
+      </PracticePanel>
+
+      <PageManagement data-og-id="page-management" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjpagemgmt">
+        <ManagementHeader data-og-id="management-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjmgmthead">
+          <ManagementLabel data-og-id="management-label" data-og-type="text" data-og-internal-id="tutobjmgmtlabel">PAGE &amp; CHAPTER · 右クリック</ManagementLabel>
+          <ManagementHint data-og-id="management-hint" data-og-type="text" data-og-internal-id="tutobjmgmthint">非表示は editor-only metadata、完全削除だけが source を削除</ManagementHint>
+        </ManagementHeader>
+        <ManagementActions data-og-id="management-actions" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjmgmtacts">
+          <ManagementCard data-og-id="hide-page-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjhidepage">
+            <ManagementType data-og-id="hide-page-type" data-og-type="text" data-og-internal-id="tutobjhideptype">PAGE · REVERSIBLE</ManagementType>
+            <ManagementTitle data-og-id="hide-page-title" data-og-type="text" data-og-internal-id="tutobjhideptitl">キャンバスから非表示</ManagementTitle>
+            <ManagementText data-og-id="hide-page-text" data-og-type="text" data-og-internal-id="tutobjhideptxt">SidebarとHTML/CSSは残ります。Pageを右クリックし「キャンバスに表示」で戻せます。</ManagementText>
+          </ManagementCard>
+          <ManagementCard data-og-id="delete-page-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjdeletepg">
+            <ManagementType data-og-id="delete-page-type" data-og-type="text" data-og-internal-id="tutobjdelpgtype">PAGE · DESTRUCTIVE</ManagementType>
+            <ManagementTitle data-og-id="delete-page-title" data-og-type="text" data-og-internal-id="tutobjdelpgtitle">完全に削除</ManagementTitle>
+            <ManagementText data-og-id="delete-page-text" data-og-type="text" data-og-internal-id="tutobjdelpgtxt">同じHTMLが .ogp 内の他配置で未使用のときだけ有効です。Page entry、HTML、同名CSSを削除します。</ManagementText>
+          </ManagementCard>
+          <ManagementCard data-og-id="hide-chapter-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjhidechap">
+            <ManagementType data-og-id="hide-chapter-type" data-og-type="text" data-og-internal-id="tutobjhidectype">CHAPTER · PRESERVE</ManagementType>
+            <ManagementTitle data-og-id="hide-chapter-title" data-og-type="text" data-og-internal-id="tutobjhidectitle">一覧から非表示</ManagementTitle>
+            <ManagementText data-og-id="hide-chapter-text" data-og-type="text" data-og-internal-id="tutobjhidectxt">Chapter行の右クリックから隠します。Page、付箋、手書き、Guide、参照配置は .ogp に保持されます。</ManagementText>
+          </ManagementCard>
+        </ManagementActions>
+      </PageManagement>
+    </TutorialObjects>
+  </body>
+</html>

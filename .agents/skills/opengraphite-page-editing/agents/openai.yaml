@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenGraphite ページ編集"
-  short_description: "OpenGraphite 管理下ページ編集の思想を示す"
-  default_prompt: "$opengraphite-page-editing を使って、OpenGraphite 管理下の public/ ページや component HTML を編集するときの思想を確認する。"
+  short_description: "ページ編集と機能変更時のTutorials同期を支援する"
+  default_prompt: "$opengraphite-page-editing を使って、OpenGraphite 管理下のページ編集と機能変更に伴うTutorials教材の同期方針を確認する。"

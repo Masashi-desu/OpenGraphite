@@ -264,7 +264,7 @@ final class EditorStore: ObservableObject {
     var selectedChapter: OpenGraphiteChapter? {
         guard let loadedProject else { return nil }
         return loadedProject.project.chapters.first { $0.internalID == selectedChapterInternalID }
-            ?? loadedProject.project.chapters.first
+            ?? Self.preferredVisibleChapter(in: loadedProject.project)
     }
 
     var selectedChapterPages: [OpenGraphitePage] {
@@ -284,7 +284,7 @@ final class EditorStore: ObservableObject {
     var selectedCanvasPages: [OpenGraphitePage] {
         switch selectedCanvasSegment {
         case .pages:
-            return selectedChapterPages
+            return selectedChapterPages.filter { !$0.isCanvasHidden }
         case .components:
             return componentPages
         }
@@ -988,6 +988,185 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: Chapter一覧非表示関数
+    /// 処理概要: 指定 Chapter とそのキャンバス内容を `.ogp` に残したまま、Sidebar の Chapter 一覧から隠します。
+    ///
+    /// - Parameter internalID: 非表示にする Chapter の内部 ID。
+    func hideChapterFromSidebar(internalID: String) {
+        guard var loadedProject,
+              let chapterIndex = loadedProject.project.chapters.firstIndex(where: {
+                  $0.internalID == internalID && !$0.isSidebarHidden
+              })
+        else {
+            return
+        }
+
+        let hiddenChapter = loadedProject.project.chapters[chapterIndex]
+        loadedProject.project.chapters[chapterIndex].isSidebarHidden = true
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            self.loadedProject = loadedProject
+            if selectedChapterInternalID == internalID {
+                selectChapter(Self.preferredVisibleChapter(in: loadedProject.project))
+            }
+            lastError = nil
+            statusMessage = "\(hiddenChapter.displayName) を一覧から非表示にしました。キャンバス内容は保持されています。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Pageキャンバス表示更新関数
+    /// 処理概要: 指定 Page entry を Sidebar に残したまま、Chapter キャンバスでの表示状態を `.ogp` に保存します。
+    ///
+    /// - Parameters:
+    ///   - internalID: 更新対象 Page の内部 ID。
+    ///   - hidden: キャンバスから隠す場合は `true`、再表示する場合は `false`。
+    func setPageCanvasHidden(internalID: String, hidden: Bool) {
+        guard var loadedProject,
+              let chapterIndex = loadedProject.project.chapters.firstIndex(where: { chapter in
+                  chapter.pages.contains { $0.internalID == internalID }
+              }),
+              let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: {
+                  $0.internalID == internalID
+              }),
+              loadedProject.project.chapters[chapterIndex].pages[pageIndex].isCanvasHidden != hidden
+        else {
+            return
+        }
+
+        loadedProject.project.chapters[chapterIndex].pages[pageIndex].isCanvasHidden = hidden
+        let updatedPage = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            self.loadedProject = loadedProject
+            if hidden, selectedPageInternalID == internalID {
+                selectedNodeID = nil
+                selectedCanvasAnnotationID = nil
+                nodes = []
+                focusedPreviewTarget = nil
+            }
+            lastError = nil
+            statusMessage = hidden
+                ? "\(updatedPage.displayName) をキャンバスから非表示にしました。"
+                : "\(updatedPage.displayName) をキャンバスに表示しました。"
+            restartExternalProjectMonitoring(force: true)
+        } catch {
+            lastError = ".ogp の保存に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Page完全削除可否判定関数
+    /// 処理概要: 指定 Page の HTML path が `.ogp` 内の他の Page / Component 配置から使われていない場合だけ削除可能と判定します。
+    ///
+    /// - Parameter internalID: 判定対象 Page の内部 ID。
+    /// - Returns: Page entry と HTML / companion CSS を安全に削除できる場合は `true`。
+    func canPermanentlyDeletePage(internalID: String) -> Bool {
+        guard let loadedProject,
+              let page = loadedProject.project.chapters
+                .flatMap(\.pages)
+                .first(where: { $0.internalID == internalID })
+        else {
+            return false
+        }
+
+        let pageURL = loadedProject.htmlURL(for: page).standardizedFileURL
+        return loadedProject.project.allPages.filter {
+            loadedProject.htmlURL(for: $0).standardizedFileURL == pageURL
+        }.count == 1
+    }
+
+    /// 論理名（日本語）: Page完全削除関数
+    /// 処理概要: 他に配置されていない Page entry、参照配置、HTML、同名 companion CSS を一つの操作として削除します。
+    ///
+    /// - Parameter internalID: 完全削除する Page の内部 ID。
+    func permanentlyDeletePage(internalID: String) {
+        guard var loadedProject,
+              canPermanentlyDeletePage(internalID: internalID),
+              let chapterIndex = loadedProject.project.chapters.firstIndex(where: { chapter in
+                  chapter.pages.contains { $0.internalID == internalID }
+              }),
+              let pageIndex = loadedProject.project.chapters[chapterIndex].pages.firstIndex(where: {
+                  $0.internalID == internalID
+              })
+        else {
+            lastError = "この Page は `.ogp` 内の別の配置でも使われているため、完全に削除できません。"
+            return
+        }
+
+        let previousProject = loadedProject.project
+        let page = loadedProject.project.chapters[chapterIndex].pages[pageIndex]
+        let htmlURL = loadedProject.htmlURL(for: page).standardizedFileURL
+        let companionCSSURL = OpenGraphiteCompanionCSSDocument
+            .companionURL(forHTMLURL: htmlURL)
+            .standardizedFileURL
+        let htmlRootURL = loadedProject.rootURL
+            .appendingPathComponent(loadedProject.project.htmlRoot)
+            .standardizedFileURL
+        let fileManager = FileManager.default
+        var htmlIsDirectory: ObjCBool = false
+        var companionCSSIsDirectory: ObjCBool = false
+
+        guard Self.isFileURL(htmlURL, containedIn: htmlRootURL),
+              Self.isFileURL(companionCSSURL, containedIn: htmlRootURL),
+              htmlURL.pathExtension.lowercased() == "html",
+              companionCSSURL.pathExtension.lowercased() == "css",
+              !(fileManager.fileExists(atPath: htmlURL.path, isDirectory: &htmlIsDirectory)
+                  && htmlIsDirectory.boolValue),
+              !(fileManager.fileExists(atPath: companionCSSURL.path, isDirectory: &companionCSSIsDirectory)
+                  && companionCSSIsDirectory.boolValue)
+        else {
+            lastError = "HTML root 外のファイルは完全に削除できません。"
+            return
+        }
+
+        let htmlBackup = try? Data(contentsOf: htmlURL)
+        let companionCSSBackup = try? Data(contentsOf: companionCSSURL)
+        loadedProject.project.chapters[chapterIndex].pages.remove(at: pageIndex)
+        Self.removeCanvasReferences(toPageInternalID: internalID, from: &loadedProject.project)
+
+        do {
+            try writeProjectManifest(loadedProject.project, to: loadedProject.fileURL)
+            if fileManager.fileExists(atPath: htmlURL.path) {
+                try fileManager.removeItem(at: htmlURL)
+            }
+            if fileManager.fileExists(atPath: companionCSSURL.path) {
+                try fileManager.removeItem(at: companionCSSURL)
+            }
+
+            let reloadedProject = try loader.loadProject(at: loadedProject.fileURL)
+            self.loadedProject = reloadedProject
+            discardPageRuntimeState(pageInternalID: internalID, pageURL: htmlURL)
+            if selectedPageInternalID == internalID {
+                selectedPageID = nil
+                selectedPageInternalID = nil
+                selectedNodeID = nil
+                selectedCanvasAnnotationID = nil
+                nodes = []
+                focusedPreviewTarget = nil
+            }
+            clearCanvasReferenceSelection()
+            seedKnownHTMLForProject(reloadedProject)
+            lastError = nil
+            statusMessage = "\(page.displayName) と同名 companion CSS を完全に削除しました。"
+            restartExternalProjectMonitoring(force: true)
+            restartExternalPageMonitoring(force: true)
+            restartExternalDependencyMonitoring(force: true)
+        } catch {
+            if let htmlBackup {
+                try? htmlBackup.write(to: htmlURL, options: .atomic)
+            }
+            if let companionCSSBackup {
+                try? companionCSSBackup.write(to: companionCSSURL, options: .atomic)
+            }
+            try? writeProjectManifest(previousProject, to: loadedProject.fileURL)
+            lastError = "Page の完全削除に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
     /// 論理名（日本語）: Collection表示名更新関数
     /// 処理概要: 指定 Component Collection の UI 表示タイトルを `.ogp` に保存し、選択状態を維持したまま反映します。
     ///
@@ -1355,13 +1534,14 @@ final class EditorStore: ObservableObject {
     func openProject(at url: URL) {
         do {
             let project = try loader.loadProject(at: url)
+            let initialChapter = Self.preferredVisibleChapter(in: project.project)
             let initialCollection = Self.preferredCollection(in: project.project)
             loadedProject = project
             selectedCanvasSegment = project.project.chapters.flatMap(\.pages).isEmpty && !project.project.collections.isEmpty
                 ? .components
                 : .pages
-            selectedChapterID = project.project.chapters.first?.id
-            selectedChapterInternalID = project.project.chapters.first?.internalID
+            selectedChapterID = initialChapter?.id
+            selectedChapterInternalID = initialChapter?.internalID
             selectedPageID = nil
             selectedPageInternalID = nil
             selectedCollectionID = initialCollection?.id
@@ -1461,7 +1641,7 @@ final class EditorStore: ObservableObject {
     func selectChapter(id: String?) {
         guard id == nil else { return }
         guard let loadedProject else { return }
-        selectChapter(loadedProject.project.chapters.first)
+        selectChapter(Self.preferredVisibleChapter(in: loadedProject.project))
     }
 
     /// 論理名（日本語）: 内部ID Chapter選択関数
@@ -1471,7 +1651,7 @@ final class EditorStore: ObservableObject {
     func selectChapter(internalID: String?) {
         guard let loadedProject else { return }
         let chapter = loadedProject.project.chapters.first { $0.internalID == internalID }
-            ?? loadedProject.project.chapters.first
+            ?? Self.preferredVisibleChapter(in: loadedProject.project)
         selectChapter(chapter)
     }
 
@@ -1556,8 +1736,10 @@ final class EditorStore: ObservableObject {
         selectedProjectResource = nil
         selectedCanvasSegment = .pages
         if selectedChapterInternalID == nil
-            || loadedProject?.project.chapters.contains(where: { $0.internalID == selectedChapterInternalID }) != true {
-            let chapter = loadedProject?.project.chapters.first
+            || loadedProject?.project.chapters.contains(where: {
+                $0.internalID == selectedChapterInternalID && !$0.isSidebarHidden
+            }) != true {
+            let chapter = loadedProject.flatMap { Self.preferredVisibleChapter(in: $0.project) }
             selectedChapterID = chapter?.id
             selectedChapterInternalID = chapter?.internalID
         }
@@ -4857,13 +5039,14 @@ final class EditorStore: ObservableObject {
             seedKnownHTMLForProject(reloadedProject)
 
             if let chapter = reloadedProject.project.chapters.first(where: {
-                $0.internalID == previousSelectedChapterInternalID
+                $0.internalID == previousSelectedChapterInternalID && !$0.isSidebarHidden
             }) {
                 selectedChapterID = chapter.id
                 selectedChapterInternalID = chapter.internalID
             } else {
-                selectedChapterID = reloadedProject.project.chapters.first?.id
-                selectedChapterInternalID = reloadedProject.project.chapters.first?.internalID
+                let chapter = Self.preferredVisibleChapter(in: reloadedProject.project)
+                selectedChapterID = chapter?.id
+                selectedChapterInternalID = chapter?.internalID
             }
 
             let currentChapterPages = selectedChapter?.pages ?? []
@@ -6121,16 +6304,20 @@ final class EditorStore: ObservableObject {
            let index = project.chapters.firstIndex(where: { $0.internalID == selectedChapterInternalID }) {
             return index
         }
-        if project.chapters.isEmpty {
-            project.chapters.append(
-                OpenGraphiteChapter(
-                    id: OpenGraphiteChapter.defaultID,
-                    title: OpenGraphiteChapter.defaultTitle,
-                    pages: []
-                )
-            )
+        if let visibleChapterIndex = project.chapters.firstIndex(where: { !$0.isSidebarHidden }) {
+            return visibleChapterIndex
         }
-        return project.chapters.startIndex
+        project.chapters.append(
+            OpenGraphiteChapter(
+                id: project.chapters.isEmpty ? OpenGraphiteChapter.defaultID : nextChapterID(in: project),
+                internalID: nextChapterInternalID(in: project),
+                title: project.chapters.isEmpty
+                    ? OpenGraphiteChapter.defaultTitle
+                    : "Chapter \(project.chapters.count + 1)",
+                pages: []
+            )
+        )
+        return project.chapters.index(before: project.chapters.endIndex)
     }
 
     /// 論理名（日本語）: 既存HTML path検証関数
@@ -6430,6 +6617,74 @@ final class EditorStore: ObservableObject {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 論理名（日本語）: 優先表示Chapter解決関数
+    /// 処理概要: Sidebar で非表示にされていない Chapter のうち、指定内部 ID または先頭 Chapter を返します。
+    ///
+    /// - Parameters:
+    ///   - project: Chapter を保持する project manifest。
+    ///   - internalID: 優先して選択する Chapter 内部 ID。
+    /// - Returns: 表示可能な Chapter。全 Chapter が非表示の場合は `nil`。
+    private static func preferredVisibleChapter(
+        in project: OpenGraphiteProject,
+        internalID: String? = nil
+    ) -> OpenGraphiteChapter? {
+        if let internalID,
+           let chapter = project.chapters.first(where: {
+               $0.internalID == internalID && !$0.isSidebarHidden
+           }) {
+            return chapter
+        }
+        return project.chapters.first { !$0.isSidebarHidden }
+    }
+
+    /// 論理名（日本語）: HTML root内URL判定関数
+    /// 処理概要: 削除候補の file URL が symlink 解決後も指定 HTML root の配下にあるかを検証します。
+    ///
+    /// - Parameters:
+    ///   - fileURL: 検証する file URL。
+    ///   - directoryURL: 許可する HTML root URL。
+    /// - Returns: file URL が HTML root 配下にある場合は `true`。
+    private static func isFileURL(_ fileURL: URL, containedIn directoryURL: URL) -> Bool {
+        guard fileURL.isFileURL, directoryURL.isFileURL else { return false }
+        let directoryPath = directoryURL
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        let filePath = fileURL
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+        return filePath.hasPrefix(directoryPath + "/")
+    }
+
+    /// 論理名（日本語）: Page参照配置除去関数
+    /// 処理概要: 完全削除する Page の node を指す Chapter / Collection 直下の参照配置を manifest から取り除きます。
+    ///
+    /// - Parameters:
+    ///   - pageInternalID: 完全削除する Page の内部 ID。
+    ///   - project: 参照配置を更新する project manifest。
+    private static func removeCanvasReferences(
+        toPageInternalID pageInternalID: String,
+        from project: inout OpenGraphiteProject
+    ) {
+        let targetsPage: (OpenGraphiteCanvasReference) -> Bool = { reference in
+            guard let parsed = OpenGraphiteReferenceID(parsing: reference.referenceID),
+                  parsed.type == .node,
+                  parsed.parts.count >= 2
+            else {
+                return false
+            }
+            return parsed.parts[1] == pageInternalID
+        }
+
+        for chapterIndex in project.chapters.indices {
+            project.chapters[chapterIndex].references.removeAll(where: targetsPage)
+        }
+        for collectionIndex in project.collections.indices {
+            project.collections[collectionIndex].references.removeAll(where: targetsPage)
+        }
+    }
+
     /// 論理名（日本語）: アイコン値正規化関数
     /// 処理概要: Inspector 入力の前後空白を除去し、空の場合は既定値へ置き換えます。
     ///
@@ -6559,6 +6814,36 @@ final class EditorStore: ObservableObject {
             pageChangeMonitorsByURL[key]?.cancel()
             pageChangeMonitorsByURL.removeValue(forKey: key)
         }
+    }
+
+    /// 論理名（日本語）: Page実行時状態破棄関数
+    /// 処理概要: 完全削除した Page に結び付く履歴、監視、reload token、静的フロー cache を破棄します。
+    ///
+    /// - Parameters:
+    ///   - pageInternalID: 削除した Page の内部 ID。
+    ///   - pageURL: 削除した HTML の URL。
+    private func discardPageRuntimeState(pageInternalID: String, pageURL: URL) {
+        let standardizedURL = pageURL.standardizedFileURL
+        if let key = matchingURLKey(in: syncHistories, for: standardizedURL) {
+            syncHistories.removeValue(forKey: key)
+        }
+        if let key = matchingURLKey(in: lastKnownPageHTMLByURL, for: standardizedURL) {
+            lastKnownPageHTMLByURL.removeValue(forKey: key)
+        }
+        if let key = matchingURLKey(in: staticFlowLinksByPageURL, for: standardizedURL) {
+            staticFlowLinksByPageURL.removeValue(forKey: key)
+        }
+        if let key = matchingURLKey(in: pageReloadTokensByURL, for: standardizedURL) {
+            pageReloadTokensByURL.removeValue(forKey: key)
+        }
+        if let key = matchingURLKey(in: pageChangeMonitorsByURL, for: standardizedURL) {
+            pageChangeMonitorsByURL[key]?.cancel()
+            pageChangeMonitorsByURL.removeValue(forKey: key)
+        }
+        staticFlowLinksByPageInternalID.removeValue(forKey: pageInternalID)
+        editorUndoStack.removeAll()
+        editorRedoStack.removeAll()
+        updateHistoryAvailability()
     }
 
     /// 論理名（日本語）: URL辞書key照合関数

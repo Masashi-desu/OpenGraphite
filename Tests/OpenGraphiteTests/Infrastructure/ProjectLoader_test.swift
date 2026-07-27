@@ -164,6 +164,50 @@ struct ProjectLoaderTests {
         #expect(loadedProject.project.allPages.isEmpty)
     }
 
+    /// 論理名（日本語）: 表示状態後方互換テスト
+    /// 概要: 表示状態を持たない既存 `.ogp` は表示扱いになり、非表示状態だけが明示保存されることを確認します。
+    @Test("ChapterとPageの表示状態を後方互換で保存できる")
+    func testVisibilityStateRoundTripsWithBackwardCompatibility() throws {
+        // コンディション：表示状態を持たない既存形式の project JSON を用意する（Given）
+        let legacyData = try #require(
+            """
+            {
+              "version": "1",
+              "name": "Visibility",
+              "htmlRoot": "public",
+              "cssLibrary": "CSS/OpenGraphite.css",
+              "chapters": [
+                {
+                  "id": "main",
+                  "pages": [
+                    {
+                      "id": "home",
+                      "path": "index.html",
+                      "canvas": { "name": "", "x": 0, "y": 0, "width": 100, "height": 100 }
+                    }
+                  ]
+                }
+              ]
+            }
+            """.data(using: .utf8)
+        )
+
+        // 検証内容：既存形式を読み、Chapter と Page を非表示にして再エンコードする（When）
+        var project = try JSONDecoder().decode(OpenGraphiteProject.self, from: legacyData)
+        #expect(project.chapters[0].isSidebarHidden == false)
+        #expect(project.chapters[0].pages[0].isCanvasHidden == false)
+        project.chapters[0].isSidebarHidden = true
+        project.chapters[0].pages[0].isCanvasHidden = true
+        let roundTrippedProject = try JSONDecoder().decode(
+            OpenGraphiteProject.self,
+            from: JSONEncoder().encode(project)
+        )
+
+        // 期待値：非表示状態が Chapter と Page の双方で保持される（Then）
+        #expect(roundTrippedProject.chapters[0].isSidebarHidden)
+        #expect(roundTrippedProject.chapters[0].pages[0].isCanvasHidden)
+    }
+
     /// 論理名（日本語）: HTML未検出エラーテスト
     /// 概要: pages は存在するが対象 HTML がない場合に missingHTML が発生することを検証します。
     @Test("HTMLがなければmissingHTMLを返す")

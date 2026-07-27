@@ -21,6 +21,7 @@ OpenGraphite is a macOS SwiftUI design editor that treats HTML as the editable s
 - `Docs/specs/CanvasObjectReferences.md`: `.ogp` canvas-level editable object-reference contract
 - `Docs/specs/CanvasAids.md`: ruler, `.ogp` guide, grid, coordinate, and persistence contract
 - `Docs/specs/AgentInterface.md`: CLI, MCP, JSON graph, and external-sync contract
+- `Docs/rules/TutorialSynchronizationStandards.md`: required synchronization rule for user-facing feature changes and `Tutorials` sample resources
 
 ## Model
 
@@ -88,7 +89,19 @@ Run the required quality gate before completing code or project-configuration ch
 ./Scripts/quality_gate.sh
 ```
 
-The gate regenerates `OpenGraphite.xcodeproj` from `project.yml` and runs the Swift Testing suite.
+The gate regenerates `OpenGraphite.xcodeproj` from `project.yml`, runs the Swift Testing suite, builds `ogkiln`, validates the sample project, and checks that tutorial HTML, companion CSS, and `Tutorials` manifest registration remain structurally synchronized.
+
+## Tutorial Synchronization
+
+User-observable feature additions, changes, and removals must update the corresponding `Tutorials` learning canvas in the same change. Prefer updating the most specific existing lesson; add a new lesson when the feature introduces an independent user goal or workflow. Keep page lessons under `public/tutorial-*.html`, component lessons under `public/_components/tutorial-components-*.html`, and register each lesson with its same-named companion CSS in the Sample `.ogp`.
+
+Editor-only teaching examples must keep their normal ownership: sticky notes and ink in `.ogp` `annotations[]`, Guide positions in `.ogp` `guides[]`, and preview mocks in the target canvas `previewContext`. Do not duplicate them into tutorial HTML or CSS.
+
+The complete scope, exceptions, workflow, and completion criteria are defined in `Docs/rules/TutorialSynchronizationStandards.md`. Run the structural check directly with:
+
+```bash
+./Scripts/validate_tutorial_sync.sh
+```
 
 ## Agent Interface
 
@@ -129,7 +142,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 
 `ogkiln build` expands component instances into static Pages HTML, removes the runtime/component source links from the output, and copies `OpenGraphite.css`, companion CSS, and non-HTML public assets into the output directory. The input `.ogp` manifest is editor-only and is not copied; its canvas annotations, guides, and canvas object references are not injected into generated HTML or CSS.
 
-`ogkiln screenshot canvas` accepts either `--chapter-id` or `--collection-id` to composite that container's HTML cards and `.ogp` annotations; with neither selector it uses the first Chapter.
+`ogkiln screenshot canvas` accepts either `--chapter-id` or `--collection-id` to composite that container's visible HTML cards and `.ogp` annotations; with neither selector it uses the first Chapter that is visible in the Sidebar, and requires an explicit selector when every Chapter is hidden.
 
 The OpenGraphite MCP server exposes the same repository-backed operations over stdio:
 
@@ -210,6 +223,13 @@ Details are documented in `Docs/release/README_local_DMG.md`.
 
 Open `SampleProject/OpenGraphiteSample.ogp` from the Welcome screen or press **Open Sample Project**. The sample resolves `public/index.html` and `CSS/OpenGraphite.css` from the repository root.
 
+The sample keeps the public OpenGraphite site in the `Main` Chapter / Collection and provides hands-on learning canvases separately under `Tutorials`.
+
+- Pages tutorials: basic objects and Page / Chapter visibility management, Auto Layout, Absolute Layout, appearance and typography, media and icons, motion and object state, component instances, sticky notes, rulers and guides, and stylus ink.
+- Components tutorials: master anatomy, slots and instance content, and synchronized state previews with component placements.
+- Each tutorial is an independent HTML file with a same-named companion CSS file, so users can select the examples in Canvas, inspect their hierarchy in Layers, and safely change the prompted values in Inspector.
+- The sticky-note and stylus tutorials also include live `.ogp` annotations, while the guide tutorial includes project-persisted Guide positions; these teaching aids remain separate from the public HTML and CSS.
+
 When launched through the Debug scheme, `OPENGRAPHITE_SAMPLE_PROJECT_PATH` points Open Sample Project at `SampleProject/OpenGraphiteSample.ogp` in the checkout. The app still resolves and saves HTML through the paths declared in that `.ogp`; the repository files are touched because the sample `.ogp` points there.
 
 When launched without that environment variable, Open Sample Project treats the bundled `SampleProject`, `public`, and `CSS` directories as a read-only seed. On first use it copies them to `~/Library/Application Support/OpenGraphite/Samples/OpenGraphiteSample/` and opens that copied `.ogp`. Existing copied samples are not overwritten.
@@ -218,6 +238,7 @@ When launched without that environment variable, Open Sample Project treats the 
 
 - Welcome screen with sample and arbitrary `.ogp` open actions
 - Pages/Components sidebar with resizable, collapsible Chapter/Collection selectors and layers inside each HTML card
+- Page context actions to hide or restore a card on its Chapter canvas, plus permanent source deletion only when no other `.ogp` placement uses the same HTML; Chapter context actions can hide a Chapter from the Sidebar while preserving its canvas contents
 - Top-chrome Objects / History icon-only sidebar switcher, with a session-only unified Undo / Redo list that shows each operation timestamp, object name, and object-type thumbnail
 - WKWebView canvas using `.ogp` canvas dimensions
 - Canvas-background context-menu insertion of any typed page/component node reference, with live object preview, exact world-position placement, drag repositioning, and edits synchronized to the referenced source

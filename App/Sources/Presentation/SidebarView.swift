@@ -135,6 +135,7 @@ private struct SidebarPanelSwitcher: View {
 /// - `editingID`: 現在タイトル編集中のグループ内部 ID。
 /// - `onRename`: タイトル確定時の更新処理。
 /// - `onCopyReferenceID`: 参照 ID コピー時に呼び出す処理。
+/// - `onHideFromList`: Chapter を一覧から非表示にするときに呼び出す処理。
 private struct SidebarGroupRow: View {
     var id: String
     var title: String
@@ -146,6 +147,7 @@ private struct SidebarGroupRow: View {
     @Binding var editingID: String?
     var onRename: (String) -> Void
     var onCopyReferenceID: () -> Void
+    var onHideFromList: (() -> Void)?
     @State private var draftTitle = ""
     @FocusState private var isTitleFieldFocused: Bool
 
@@ -215,6 +217,12 @@ private struct SidebarGroupRow: View {
         }
         .contextMenu {
             Button("参照IDをコピー", action: onCopyReferenceID)
+
+            if let onHideFromList {
+                Divider()
+
+                Button("一覧から非表示", action: onHideFromList)
+            }
         }
         .help(detail.isEmpty ? title : "\(title) (\(detail))")
     }
@@ -1596,7 +1604,10 @@ private struct PageLayerListView: View {
                             },
                             onCopyReferenceID: {
                                 copyGroupReferenceID(group)
-                            }
+                            },
+                            onHideFromList: segment == .pages ? {
+                                store.hideChapterFromSidebar(internalID: group.internalID)
+                            } : nil
                         )
                         .onCopyCommand {
                             guard isGroupSelected(group), selectedPageID == nil else { return [] }
@@ -1661,6 +1672,18 @@ private struct PageLayerListView: View {
                                     select(page, in: group)
                                     store.updatePageFilename(internalID: page.internalID, segment: segment, value: value)
                                 },
+                                isCanvasHidden: segment == .pages && page.isCanvasHidden,
+                                canPermanentlyDelete: segment == .pages
+                                    && store.canPermanentlyDeletePage(internalID: page.internalID),
+                                onToggleCanvasVisibility: segment == .pages ? {
+                                    store.setPageCanvasHidden(
+                                        internalID: page.internalID,
+                                        hidden: !page.isCanvasHidden
+                                    )
+                                } : nil,
+                                onPermanentDelete: segment == .pages ? {
+                                    store.permanentlyDeletePage(internalID: page.internalID)
+                                } : nil,
                                 nodeReferenceID: { node in
                                     store.nodeReferenceID(forNodeID: node.editTargetNodeID, nodeInternalID: node.internalID)
                                 }
@@ -1686,7 +1709,7 @@ private struct PageLayerListView: View {
         guard let project = store.loadedProject?.project else { return [] }
         switch segment {
         case .pages:
-            return project.chapters.map { chapter in
+            return project.chapters.filter { !$0.isSidebarHidden }.map { chapter in
                 SidebarPageGroup(
                     internalID: chapter.internalID,
                     title: chapter.displayName,
@@ -2062,6 +2085,10 @@ private struct PageLayerListView: View {
 /// - `onSelectNode`: DOM node 選択時にノード ID、表示中ノード ID、範囲選択フラグを渡す処理。
 /// - `onRenameNode`: DOM node 名変更時に呼び出す処理。
 /// - `onRenamePageFile`: HTML カードのファイル名変更時に呼び出す処理。
+/// - `isCanvasHidden`: Page が Chapter キャンバスで非表示か。
+/// - `canPermanentlyDelete`: Page entry と HTML / companion CSS を完全削除できるか。
+/// - `onToggleCanvasVisibility`: Page のキャンバス表示状態を切り替える処理。
+/// - `onPermanentDelete`: Page を完全削除する処理。
 /// - `nodeReferenceID`: DOM node の agent 向け参照 ID を返す処理。
 private struct PageLayerCard: View {
     var page: OpenGraphitePage
@@ -2079,8 +2106,13 @@ private struct PageLayerCard: View {
     var onSelectNode: (String, [String], Bool) -> Void
     var onRenameNode: (OpenGraphiteNode, String) -> Void
     var onRenamePageFile: (String) -> Void
+    var isCanvasHidden: Bool
+    var canPermanentlyDelete: Bool
+    var onToggleCanvasVisibility: (() -> Void)?
+    var onPermanentDelete: (() -> Void)?
     var nodeReferenceID: (OpenGraphiteNode) -> String?
     @State private var draftFileName = ""
+    @State private var isPresentingPermanentDeleteConfirmation = false
     @FocusState private var isFileNameFieldFocused: Bool
 
     var body: some View {
@@ -2128,6 +2160,13 @@ private struct PageLayerCard: View {
                     }
 
                     Spacer(minLength: 0)
+
+                    if isCanvasHidden {
+                        Image(systemName: "eye.slash")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .help("キャンバスから非表示")
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -2154,7 +2193,7 @@ private struct PageLayerCard: View {
                     }
                 }
                 .contextMenu {
-                    Button("参照IDをコピー", action: onCopyReferenceID)
+                    pageContextMenuItems
                 }
                 .help(page.path)
             }
@@ -2191,7 +2230,42 @@ private struct PageLayerCard: View {
                 .stroke(isSelected || isExpanded ? Color(nsColor: .separatorColor).opacity(0.5) : Color.clear, lineWidth: 1)
         )
         .contextMenu {
-            Button("参照IDをコピー", action: onCopyReferenceID)
+            pageContextMenuItems
+        }
+        .confirmationDialog(
+            "\(page.displayName) を完全に削除しますか？",
+            isPresented: $isPresentingPermanentDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("HTMLとCSSを完全に削除", role: .destructive) {
+                onPermanentDelete?()
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この Page entry と HTML、同名 companion CSS は元に戻せません。")
+        }
+    }
+
+    /// 論理名（日本語）: Sidebar Pageコンテキストメニュー項目
+    /// 概要: 参照 ID コピー、キャンバス表示切替、安全条件付きの完全削除をまとめます。
+    @ViewBuilder
+    private var pageContextMenuItems: some View {
+        Button("参照IDをコピー", action: onCopyReferenceID)
+
+        if let onToggleCanvasVisibility {
+            Divider()
+
+            Button(
+                isCanvasHidden ? "キャンバスに表示" : "キャンバスから非表示",
+                action: onToggleCanvasVisibility
+            )
+
+            Divider()
+
+            Button("完全に削除", role: .destructive) {
+                isPresentingPermanentDeleteConfirmation = true
+            }
+            .disabled(!canPermanentlyDelete)
         }
     }
 

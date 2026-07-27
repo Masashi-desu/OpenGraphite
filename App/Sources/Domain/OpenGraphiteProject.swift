@@ -478,6 +478,7 @@ struct OpenGraphiteProject: Codable, Equatable {
 /// - `id`: Chapter 識別子。
 /// - `internalID`: `.ogp` 内で Chapter を一意に指す内部識別子。
 /// - `title`: UI 表示用タイトル。未指定時は `id` を表示名として使います。
+/// - `isSidebarHidden`: Chapter を Sidebar の一覧から隠すか。
 /// - `pages`: Chapter 内の HTML ページ一覧。
 /// - `annotations`: Chapter キャンバス前面へ表示する `.ogp` 専用注釈。
 /// - `guides`: Chapter キャンバスで共有する `.ogp` ガイド。
@@ -489,6 +490,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     var id: String
     var internalID: String
     var title: String?
+    var isSidebarHidden: Bool
     var pages: [OpenGraphitePage]
     var annotations: [OpenGraphiteCanvasAnnotation]
     var guides: [OpenGraphiteCanvasGuide]
@@ -503,6 +505,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         case id
         case internalID
         case title
+        case isSidebarHidden
         case pages
         case annotations
         case guides
@@ -516,6 +519,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
     ///   - id: 表示用 Chapter ID。
     ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
     ///   - title: UI 表示タイトル。
+    ///   - isSidebarHidden: Chapter を Sidebar の一覧から隠す場合は `true`。
     ///   - pages: Chapter に含まれる page entry 一覧。
     ///   - annotations: Chapter キャンバスに保存する注釈一覧。
     ///   - guides: Chapter キャンバスに保存するガイド一覧。
@@ -524,6 +528,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         id: String,
         internalID: String = "",
         title: String? = nil,
+        isSidebarHidden: Bool = false,
         pages: [OpenGraphitePage],
         annotations: [OpenGraphiteCanvasAnnotation] = [],
         guides: [OpenGraphiteCanvasGuide] = [],
@@ -532,6 +537,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         self.id = id
         self.internalID = internalID
         self.title = title
+        self.isSidebarHidden = isSidebarHidden
         self.pages = pages
         self.annotations = annotations
         self.guides = guides
@@ -547,6 +553,7 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
         id = try container.decode(String.self, forKey: .id)
         internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
         title = try container.decodeIfPresent(String.self, forKey: .title)
+        isSidebarHidden = try container.decodeIfPresent(Bool.self, forKey: .isSidebarHidden) ?? false
         pages = try container.decode([OpenGraphitePage].self, forKey: .pages)
         annotations = try container.decodeIfPresent([OpenGraphiteCanvasAnnotation].self, forKey: .annotations) ?? []
         guides = try container.decodeIfPresent([OpenGraphiteCanvasGuide].self, forKey: .guides) ?? []
@@ -564,6 +571,9 @@ struct OpenGraphiteChapter: Codable, Equatable, Identifiable {
             try container.encode(internalID, forKey: .internalID)
         }
         try container.encodeIfPresent(title, forKey: .title)
+        if isSidebarHidden {
+            try container.encode(true, forKey: .isSidebarHidden)
+        }
         try container.encode(pages, forKey: .pages)
         if !annotations.isEmpty {
             try container.encode(annotations, forKey: .annotations)
@@ -691,12 +701,14 @@ struct OpenGraphiteComponentCollection: Codable, Equatable, Identifiable {
 /// - `internalID`: `.ogp` 内で HTML カードを一意に指す内部識別子。
 /// - `title`: 旧 manifest 互換用タイトル。Page の UI 表示名には使わず、ファイル名を正本として扱います。
 /// - `path`: `htmlRoot` から見た HTML ファイルパス。
+/// - `isCanvasHidden`: Page を Chapter のキャンバスから隠すか。
 /// - `canvas`: キャンバス上の配置とサイズ。
 struct OpenGraphitePage: Codable, Equatable, Identifiable {
     var id: String
     var internalID: String
     var title: String?
     var path: String
+    var isCanvasHidden: Bool
     var canvas: OpenGraphiteCanvas
 
     var fileName: String {
@@ -712,6 +724,7 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
         case internalID
         case title
         case path
+        case isCanvasHidden
         case canvas
     }
 
@@ -723,12 +736,21 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
     ///   - internalID: `.ogp` 内で一意な内部 ID。空の場合は読み込み時に補完されます。
     ///   - title: UI 表示タイトル。
     ///   - path: `htmlRoot` から見た HTML path。
+    ///   - isCanvasHidden: Chapter のキャンバスから隠す場合は `true`。
     ///   - canvas: キャンバス配置。
-    init(id: String, internalID: String = "", title: String? = nil, path: String, canvas: OpenGraphiteCanvas) {
+    init(
+        id: String,
+        internalID: String = "",
+        title: String? = nil,
+        path: String,
+        isCanvasHidden: Bool = false,
+        canvas: OpenGraphiteCanvas
+    ) {
         self.id = id
         self.internalID = internalID
         self.title = title
         self.path = path
+        self.isCanvasHidden = isCanvasHidden
         self.canvas = canvas
     }
 
@@ -742,6 +764,7 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
         internalID = try container.decodeIfPresent(String.self, forKey: .internalID) ?? ""
         title = try container.decodeIfPresent(String.self, forKey: .title)
         path = try container.decode(String.self, forKey: .path)
+        isCanvasHidden = try container.decodeIfPresent(Bool.self, forKey: .isCanvasHidden) ?? false
         canvas = try container.decode(OpenGraphiteCanvas.self, forKey: .canvas)
     }
 
@@ -757,6 +780,9 @@ struct OpenGraphitePage: Codable, Equatable, Identifiable {
         }
         try container.encodeIfPresent(title, forKey: .title)
         try container.encode(path, forKey: .path)
+        if isCanvasHidden {
+            try container.encode(true, forKey: .isCanvasHidden)
+        }
         try container.encode(canvas, forKey: .canvas)
     }
 }

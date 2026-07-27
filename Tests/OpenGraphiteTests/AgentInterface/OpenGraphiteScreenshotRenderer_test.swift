@@ -6,6 +6,42 @@ import Testing
 /// 概要: page と `.ogp` 注釈の境界 union、および筆圧対応線幅の決定的な計算を確認します。
 @Suite("キャンバススクリーンショットレンダラー関連のテストスイート")
 struct OpenGraphiteScreenshotRendererTests {
+    /// 論理名（日本語）: 既定キャンバスChapter選択テスト
+    /// 概要: selector 省略時に Sidebar で非表示の Chapter を飛ばし、全件非表示なら暗黙選択しないことを確認します。
+    @Test("canvas screenshotの既定対象は先頭の表示中Chapterにする")
+    func testDefaultCanvasChapterSkipsHiddenChapters() throws {
+        // コンディション：非表示 Chapter の後ろに表示中 Chapter がある project を用意する（Given）
+        var project = OpenGraphiteProject(
+            version: "1",
+            name: "Visibility",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "hidden",
+                    internalID: "chapter-hidden",
+                    isSidebarHidden: true,
+                    pages: []
+                ),
+                OpenGraphiteChapter(
+                    id: "visible",
+                    internalID: "chapter-visible",
+                    pages: []
+                )
+            ]
+        )
+
+        // 検証内容：既定 Chapter を解決し、その後すべてを非表示にする（When）
+        let visibleChapter = OpenGraphiteScreenshotRenderer.defaultCanvasChapter(in: project)
+        project.chapters[1].isSidebarHidden = true
+        let missingChapter = OpenGraphiteScreenshotRenderer.defaultCanvasChapter(in: project)
+
+        // 期待値：表示中の先頭だけを返し、全件非表示では暗黙選択しない（Then）
+        #expect(visibleChapter?.internalID == "chapter-visible")
+        #expect(missingChapter == nil)
+    }
+
     /// 論理名（日本語）: Pageと注釈の包含境界テスト
     /// 概要: Page 外の付箋と手書き注釈が screenshot bounds から切れないことを検証します。
     @Test("pageと注釈のunionをcanvas screenshot boundsにする")

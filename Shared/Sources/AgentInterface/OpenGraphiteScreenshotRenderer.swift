@@ -326,7 +326,7 @@ struct OpenGraphiteScreenshotRenderer {
     /// - Parameters:
     ///   - projectURL: 対象 `.ogp` URL。
     ///   - outputURL: PNG 出力先 URL。
-    ///   - chapterID: 対象 Chapter の ID / 内部 ID / `ogref:chapter`。未指定時は先頭 Chapter。
+    ///   - chapterID: 対象 Chapter の ID / 内部 ID / `ogref:chapter`。未指定時は先頭の表示中 Chapter。
     ///   - collectionID: 対象 Collection の ID / 内部 ID / `ogref:collection`。`chapterID` と同時指定不可。
     /// - Returns: スクリーンショット結果。
     func captureCanvas(
@@ -630,8 +630,10 @@ struct OpenGraphiteScreenshotRenderer {
             }
             targetChapter = matchedChapter
         } else {
-            guard let firstChapter = project.chapters.first else {
-                throw OpenGraphiteScreenshotError(message: ".ogp に chapters がありません。collectionID を指定してください。")
+            guard let firstChapter = Self.defaultCanvasChapter(in: project) else {
+                throw OpenGraphiteScreenshotError(
+                    message: ".ogp に表示中の Chapter がありません。chapterID または collectionID を指定してください。"
+                )
             }
             targetChapter = firstChapter
         }
@@ -640,9 +642,18 @@ struct OpenGraphiteScreenshotRenderer {
             segment: .pages,
             chapterID: targetChapter.id,
             collectionID: nil,
-            pages: targetChapter.pages,
+            pages: targetChapter.pages.filter { !$0.isCanvasHidden },
             annotations: targetChapter.annotations
         )
+    }
+
+    /// 論理名（日本語）: 既定キャンバスChapter解決関数
+    /// 処理概要: selector を省略した canvas screenshot が使う、Sidebar 表示中の先頭 Chapter を返します。
+    ///
+    /// - Parameter project: 対象 `.ogp` project。
+    /// - Returns: 非表示でない先頭 Chapter。全 Chapter が非表示の場合は `nil`。
+    static func defaultCanvasChapter(in project: OpenGraphiteProject) -> OpenGraphiteChapter? {
+        project.chapters.first { !$0.isSidebarHidden }
     }
 
     /// 論理名（日本語）: Chapter selector解決関数

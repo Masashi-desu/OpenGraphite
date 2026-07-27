@@ -1,0 +1,278 @@
+[data-og-internal-id="tutinkroot010"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 30px;
+  background: #0b0c13;
+  color: #f7f6fc;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutinkheader10"] {
+  width: 100%;
+  gap: 30px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutinkheadcopy"] {
+  max-width: 790px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutinkstep010"],
+[data-og-internal-id="tutinkpadlabel"],
+[data-og-internal-id="tutinksource1l"],
+[data-og-internal-id="tutinksource2l"],
+[data-og-internal-id="tutinksource3l"],
+[data-og-internal-id="tutinktrylabel"] {
+  color: #70e4e8;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutinktitle010"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutinklead0010"] {
+  color: #bab8c8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutinkdevice10"] {
+  width: 250px;
+  gap: 6px;
+  padding: 17px 19px;
+  background: #151622;
+  border: 1px solid #39394e;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutinkdevlabel"] {
+  color: #78788c;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+[data-og-internal-id="tutinkdevvalue"] {
+  font-size: 14px;
+  font-weight: 740;
+}
+
+[data-og-internal-id="tutinkdevmeta0"] {
+  color: #70e4e8;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+}
+
+[data-og-internal-id="tutinkworkspace"] {
+  width: 100%;
+  min-height: 520px;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutinktoolrail"] {
+  width: 390px;
+  min-width: 390px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutinkpentool0"],
+[data-og-internal-id="tutinkeraser00"],
+[data-og-internal-id="tutinklasso000"] {
+  gap: 15px;
+  padding: 17px;
+  align-items: center;
+  background: #151622;
+  border: 1px solid #35364a;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutinkpentool0"] {
+  background: #102529;
+  border-color: #28616a;
+}
+
+[data-og-internal-id="tutinkpenicon0"],
+[data-og-internal-id="tutinkeraseric"],
+[data-og-internal-id="tutinklassoico"] {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 7px 0;
+  color: #0c1516;
+  background: #70e4e8;
+  border-radius: 10px;
+  font-size: 23px;
+  font-weight: 760;
+  text-align: center;
+}
+
+[data-og-internal-id="tutinkeraseric"],
+[data-og-internal-id="tutinklassoico"] {
+  color: #b9b7c7;
+  background: #272834;
+}
+
+[data-og-internal-id="tutinkpencopy0"],
+[data-og-internal-id="tutinkerasercp"],
+[data-og-internal-id="tutinklassocp0"] {
+  gap: 4px;
+}
+
+[data-og-internal-id="tutinkpentitle"],
+[data-og-internal-id="tutinkerasertt"],
+[data-og-internal-id="tutinklassotit"] {
+  font-size: 15px;
+  font-weight: 740;
+}
+
+[data-og-internal-id="tutinkpentext0"],
+[data-og-internal-id="tutinkerasertx"],
+[data-og-internal-id="tutinklassotxt"] {
+  color: #a9a7b6;
+  font-size: 12px;
+}
+
+[data-og-internal-id="tutinktoolhint"] {
+  margin: auto 0 0;
+  padding: 15px 17px;
+  color: #9f9dad;
+  background: #11121b;
+  border: 1px dashed #383849;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+[data-og-internal-id="tutinkpad0010"] {
+  flex: 1 1 auto;
+  min-height: 520px;
+  gap: 14px;
+  padding: 22px;
+  background: #141520;
+  border: 1px solid #393a4e;
+  border-radius: 12px;
+}
+
+[data-og-internal-id="tutinkpadhead0"] {
+  width: 100%;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutinkpaddev00"] {
+  color: #777689;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+}
+
+[data-og-internal-id="tutinkdrawarea"] {
+  flex: 1 1 auto;
+  min-height: 350px;
+  overflow: hidden;
+  background: #f2f4f0;
+  border: 1px solid #ced3cb;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutinkbaseline1"],
+[data-og-internal-id="tutinkbaseline2"],
+[data-og-internal-id="tutinkbaseline3"] {
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  height: 1px;
+  background: #d9ddd6;
+}
+
+[data-og-internal-id="tutinkbaseline1"] {
+  top: 90px;
+}
+
+[data-og-internal-id="tutinkbaseline2"] {
+  top: 175px;
+}
+
+[data-og-internal-id="tutinkbaseline3"] {
+  top: 260px;
+}
+
+[data-og-internal-id="tutinkdrawtext"] {
+  position: absolute;
+  left: 36px;
+  top: 28px;
+  color: #9aa19a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+[data-og-internal-id="tutinkpressure"] {
+  width: 100%;
+  gap: 12px;
+  align-items: center;
+}
+
+[data-og-internal-id="tutinkpresslbl"],
+[data-og-internal-id="tutinkpressends"] {
+  color: #7d7c8e;
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+}
+
+[data-og-internal-id="tutinkpressline"] {
+  flex: 1 1 auto;
+  height: 7px;
+  background: linear-gradient(90deg, rgba(112,228,232,0.2), #70e4e8);
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutinksource10"] {
+  width: 100%;
+  gap: 10px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutinksourcei1"],
+[data-og-internal-id="tutinksourcei2"],
+[data-og-internal-id="tutinksourcei3"] {
+  flex: 1 1 0;
+  gap: 5px;
+  padding: 14px 16px;
+  background: #13141e;
+  border: 1px solid #313143;
+  border-radius: 7px;
+}
+
+[data-og-internal-id="tutinksource1v"],
+[data-og-internal-id="tutinksource2v"],
+[data-og-internal-id="tutinksource3v"] {
+  color: #aaa8b8;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+
+[data-og-internal-id="tutinktrypanel"] {
+  width: 100%;
+  gap: 22px;
+  padding: 18px 22px;
+  align-items: center;
+  background: #10272a;
+  border: 1px solid #29646b;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutinktrytext0"] {
+  color: #cfebeb;
+  font-size: 13px;
+  line-height: 1.6;
+}

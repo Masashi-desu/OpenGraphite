@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tutorial 03 — Absolute Layout</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../CSS/OpenGraphite.css">
+    <link rel="stylesheet" href="./tutorial-absolute-layout.css">
+  </head>
+  <body>
+    <TutorialAbsolute data-og-id="tutorial-absolute" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutabsroot003">
+      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsheader03">
+        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutabsstep003">PAGES TUTORIAL · 03</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutabstitle03">Absolute で自由配置する</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutabslead003">Absolute Layout は直下の子を X / Y 座標で配置します。Flow と違い、重なり順や親の範囲を意識して構成します。</TutorialLead>
+      </TutorialHeader>
+
+      <Workspace data-og-id="absolute-workspace" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutabsworkspace">
+        <ControlRail data-og-id="control-rail" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsrail003">
+          <RailTitle data-og-id="rail-title" data-og-type="text" data-og-internal-id="tutabsrailtitle">選択して確認</RailTitle>
+          <ControlItem data-og-id="control-position" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsctrlpos">
+            <ControlLabel data-og-id="control-position-label" data-og-type="text" data-og-internal-id="tutabsposlabel">POSITION</ControlLabel>
+            <ControlValue data-og-id="control-position-value" data-og-type="text" data-og-internal-id="tutabsposvalue">left / top</ControlValue>
+          </ControlItem>
+          <ControlItem data-og-id="control-size" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsctrlsize">
+            <ControlLabel data-og-id="control-size-label" data-og-type="text" data-og-internal-id="tutabssizelabel">SIZE</ControlLabel>
+            <ControlValue data-og-id="control-size-value" data-og-type="text" data-og-internal-id="tutabssizevalue">width / height</ControlValue>
+          </ControlItem>
+          <ControlItem data-og-id="control-layer" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsctrllayer">
+            <ControlLabel data-og-id="control-layer-label" data-og-type="text" data-og-internal-id="tutabslayerlbl">LAYER</ControlLabel>
+            <ControlValue data-og-id="control-layer-value" data-og-type="text" data-og-internal-id="tutabslayerval">z-index</ControlValue>
+          </ControlItem>
+          <RailNote data-og-id="rail-note" data-og-type="text" data-og-internal-id="tutabsrailnote">親を Vertical / Horizontal に切り替えると、直下の position と inset は削除されて Flow に戻ります。</RailNote>
+        </ControlRail>
+
+        <AbsoluteStage data-og-id="absolute-stage" data-og-type="frame" data-og-layout="absolute" data-og-internal-id="tutabsstage003">
+          <StageGrid data-og-id="stage-grid" data-og-type="frame" data-og-internal-id="tutabsgrid003"></StageGrid>
+          <StageLabel data-og-id="stage-label" data-og-type="text" data-og-internal-id="tutabsstagelbl">ABSOLUTE STAGE · 760 × 500</StageLabel>
+          <AccentCircle data-og-id="accent-circle" data-og-type="frame" data-og-internal-id="tutabscircle03"></AccentCircle>
+          <FloatingCard data-og-id="floating-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsfloatcard">
+            <FloatingIndex data-og-id="floating-index" data-og-type="text" data-og-internal-id="tutabsfloatidx">OBJECT 01</FloatingIndex>
+            <FloatingTitle data-og-id="floating-title" data-og-type="text" data-og-internal-id="tutabsfloattitle">ドラッグして位置を変える</FloatingTitle>
+            <FloatingText data-og-id="floating-text" data-og-type="text" data-og-internal-id="tutabsfloattext">このカードは left: 88px / top: 120px。Inspector の Position でも数値編集できます。</FloatingText>
+          </FloatingCard>
+          <CoordinateBadge data-og-id="coordinate-badge" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutabscoord003">
+            <CoordinateText data-og-id="coordinate-x" data-og-type="text" data-og-internal-id="tutabscoordx03">X 88</CoordinateText>
+            <CoordinateText data-og-id="coordinate-y" data-og-type="text" data-og-internal-id="tutabscoordy03">Y 120</CoordinateText>
+          </CoordinateBadge>
+          <OverlayCard data-og-id="overlay-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutabsoverlay03">
+            <OverlayLabel data-og-id="overlay-label" data-og-type="text" data-og-internal-id="tutabsoverlabel">OBJECT 02 · Z 3</OverlayLabel>
+            <OverlayText data-og-id="overlay-text" data-og-type="text" data-og-internal-id="tutabsovertext">重なり順を確認</OverlayText>
+          </OverlayCard>
+          <OriginMarker data-og-id="origin-marker" data-og-type="frame" data-og-internal-id="tutabsorigin003"></OriginMarker>
+        </AbsoluteStage>
+      </Workspace>
+
+      <PracticePanel data-og-id="practice-panel" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutabspractice">
+        <PracticeTitle data-og-id="practice-title" data-og-type="text" data-og-internal-id="tutabsprtitle">3分チャレンジ</PracticeTitle>
+        <PracticeText data-og-id="practice-text" data-og-type="text" data-og-internal-id="tutabsprtext">Floating Card を動かす → Overlay Card の z-index を変える → 親 Stage を Vertical に切り替えて Flow へ戻す。</PracticeText>
+      </PracticePanel>
+    </TutorialAbsolute>
+  </body>
+</html>

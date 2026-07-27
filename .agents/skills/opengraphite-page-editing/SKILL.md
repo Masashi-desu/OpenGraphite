@@ -1,6 +1,6 @@
 ---
 name: opengraphite-page-editing
-description: "OpenGraphite リポジトリまたは OpenGraphite project の page / component HTML を編集するときに使う。特に public/、public/_components/、public/locales/、.ogp に登録された pages/components、OpenGraphite のホームページやドキュメントページを更新するときに、ページ編集の思想と判断原則を確認するために使う。"
+description: "OpenGraphite リポジトリまたは OpenGraphite project の page / component HTML を編集するとき、またはOpenGraphiteの機能追加・改修・削除に合わせてTutorials教材を同期するときに使う。特に public/、public/_components/、public/locales/、.ogp に登録されたpages/components、tutorial HTML/CSS、annotation、Guide、preview metadataを更新するときに、ページ編集の思想と判断原則を確認するために使う。"
 ---
 
 # OpenGraphite ページ編集
@@ -14,6 +14,7 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 - HTML / CSS / runtime / preview / resource の契約: `Docs/specs/SourceOfTruthContract.md`
 - CLI / MCP / graph / node edit / diagnostics の契約: `Docs/specs/AgentInterface.md`
 - OpenGraphite の設計思想と判断基準: `Docs/specs/DesignPhilosophy.md`
+- 機能変更と `Tutorials` 教材の同期規約: `Docs/rules/TutorialSynchronizationStandards.md`
 - リポジトリの build / test / quality gate / sample project の扱い: `README.md`
 - `OpenGraphite.css`、`data-og-*`、`--og-*`、role、layout、component の説明: `opengraphite-css-contract`
 
@@ -28,6 +29,7 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 - キャンバス前面の付箋と手書きは `.ogp` の collaboration annotation であり、page content ではない。注釈を実装指示として扱う場合も、明示的に source edit を実行するまでは HTML / CSS / build output へ混ぜず、実装結果は通常の Web source として保存する。
 - 既存機能で自然に編集できない場合は、ページを迂回して壊れやすい例外運用を増やすのではなく、OpenGraphite 側の不足として捉える。
 - 不足機能を追加するときは、短期的な作業効率よりも、source-of-truth model、Web 標準としての可読性、リポジトリ上でのレビュー可能性を優先する。
+- ユーザーが観察できる機能を追加・改修・削除するときは、最も近い既存教材を更新するか独立した教材を追加し、実装、仕様、テスト、Sample `.ogp` と同じ変更単位で同期する。教材を更新しない判断は、利用者が観察できる挙動を変えない場合に限る。
 - class や生成物や editor-only state を、OpenGraphite が信頼する主要な編集正本へ昇格させない。
 - ページ編集の完了判断は、見た目が一度整ったかではなく、OpenGraphite の正本モデルに沿って継続的に編集、検証、配布できる状態になっているかで行う。
 
@@ -40,3 +42,4 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 3. OpenGraphite の UI、CLI、MCP、AI agent が同じ正本を扱う協業モデルを保てているか。
 4. 例外的な手作業ではなく、次回以降も OpenGraphite の経路で自然に編集できるか。
 5. 公開リポジトリへ置いても、ユーザー固有情報、生成物の混入、別正本化を招かないか。
+6. 変更後のユーザーワークフロー、名称、制約、保存先、表示結果が対応する `Tutorials` 教材にも反映されているか。

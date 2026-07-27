@@ -1,0 +1,225 @@
+[data-og-internal-id="tutstroot008"] {
+  min-height: 100vh;
+  padding: 48px;
+  gap: 32px;
+  background: #0c1010;
+  color: #f5f7f3;
+  --og-font-family-default: var(--font-family-ui);
+  --og-font-family-ja: var(--font-family-ja);
+}
+
+[data-og-internal-id="tutstheader08"] {
+  width: 100%;
+  gap: 32px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutstheadcopy"] {
+  max-width: 760px;
+  gap: 12px;
+}
+
+[data-og-internal-id="tutststep008"],
+[data-og-internal-id="tutstworklabel"],
+[data-og-internal-id="tutstprlabel08"],
+[data-og-internal-id="tutsttrylabel8"] {
+  color: #f4d66f;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+}
+
+[data-og-internal-id="tutsttitle008"] {
+  font-size: 46px;
+  font-weight: 820;
+  line-height: 1.06;
+  letter-spacing: -0.03em;
+}
+
+[data-og-internal-id="tutstlead0008"] {
+  color: #b7c0b8;
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+[data-og-internal-id="tutstowncard8"] {
+  width: 292px;
+  gap: 7px;
+  padding: 18px 20px;
+  background: #171b17;
+  border: 1px solid #3f463a;
+  border-radius: 10px;
+}
+
+[data-og-internal-id="tutstownlabel"] {
+  color: #87917f;
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+[data-og-internal-id="tutstownvalue"] {
+  color: #ffe88a;
+  font-family: var(--font-family-mono);
+  font-size: 15px;
+  font-weight: 720;
+}
+
+[data-og-internal-id="tutstowntext8"] {
+  color: #aeb7a7;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+[data-og-internal-id="tutstgrid0008"] {
+  width: 100%;
+  gap: 18px;
+  align-items: stretch;
+}
+
+[data-og-internal-id="tutstworkflow"],
+[data-og-internal-id="tutstpractice8"] {
+  flex: 1 1 0;
+  min-height: 520px;
+  gap: 18px;
+  padding: 24px;
+  background: #141815;
+  border: 1px solid #363d34;
+  border-radius: 12px;
+}
+
+[data-og-internal-id="tutstworkstep1"],
+[data-og-internal-id="tutstworkstep2"],
+[data-og-internal-id="tutstworkstep3"] {
+  width: 100%;
+  gap: 16px;
+  padding: 17px;
+  align-items: flex-start;
+  background: #0f1310;
+  border: 1px solid #30372e;
+  border-radius: 8px;
+}
+
+[data-og-internal-id="tutstworknum01"],
+[data-og-internal-id="tutstworknum02"],
+[data-og-internal-id="tutstworknum03"] {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 6px 0;
+  color: #211d0e;
+  background: #f4d66f;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 820;
+  text-align: center;
+}
+
+[data-og-internal-id="tutstworkcopy1"],
+[data-og-internal-id="tutstworkcopy2"],
+[data-og-internal-id="tutstworkcopy3"] {
+  gap: 5px;
+}
+
+[data-og-internal-id="tutstworktitle1"],
+[data-og-internal-id="tutstworktitle2"],
+[data-og-internal-id="tutstworktitle3"] {
+  font-size: 15px;
+  font-weight: 720;
+}
+
+[data-og-internal-id="tutstworktext1"],
+[data-og-internal-id="tutstworktext2"],
+[data-og-internal-id="tutstworktext3"] {
+  color: #aeb7ad;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+[data-og-internal-id="tutstprheader8"] {
+  width: 100%;
+  justify-content: space-between;
+}
+
+[data-og-internal-id="tutstprstate08"] {
+  color: #6d776d;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+}
+
+[data-og-internal-id="tutstprtarget8"] {
+  flex: 1 1 auto;
+  min-height: 330px;
+  gap: 10px;
+  padding: 42px;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #101511, #171c17);
+  border: 1px dashed #57604f;
+  border-radius: 10px;
+  text-align: center;
+}
+
+[data-og-internal-id="tutsttargetico"] {
+  color: #f4d66f;
+  font-size: 44px;
+  font-weight: 300;
+}
+
+[data-og-internal-id="tutsttargettit"] {
+  font-size: 20px;
+  font-weight: 760;
+}
+
+[data-og-internal-id="tutsttargettxt"] {
+  max-width: 340px;
+  color: #9ea89c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+[data-og-internal-id="tutstlayer008"] {
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-og-internal-id="tutstlayerhtml"],
+[data-og-internal-id="tutstlayeranno"] {
+  padding: 8px 11px;
+  color: #9fa99d;
+  background: #0d110e;
+  border: 1px solid #31382f;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+}
+
+[data-og-internal-id="tutstlayeranno"] {
+  color: #ffe99a;
+  border-color: #665c2f;
+}
+
+[data-og-internal-id="tutstlayerarr"] {
+  color: #697066;
+}
+
+[data-og-internal-id="tutsttrypanel8"] {
+  width: 100%;
+  gap: 22px;
+  padding: 19px 22px;
+  align-items: center;
+  background: #211e12;
+  border: 1px solid #5f5430;
+  border-radius: 9px;
+}
+
+[data-og-internal-id="tutsttrytext08"] {
+  color: #e6dfc2;
+  font-size: 13px;
+  line-height: 1.6;
+}

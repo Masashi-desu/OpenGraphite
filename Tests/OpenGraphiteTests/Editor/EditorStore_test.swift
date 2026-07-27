@@ -717,6 +717,216 @@ struct EditorStoreTests {
         #expect(store.lastError == nil)
     }
 
+    /// 論理名（日本語）: Pageキャンバス表示切替テスト
+    /// 概要: Page entry と実ファイルを保持したまま、Chapter キャンバスでの表示だけを切り替えられることを確認します。
+    @Test("PageをSidebarに残したままキャンバス表示を切り替えられる")
+    func testSetPageCanvasHiddenPersistsWithoutDeletingSource() throws {
+        // コンディション：Page と同名 companion CSS を持つ project を開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeCompanionCSS("body { color: red; }")
+        let originalHTML = try Data(contentsOf: fixture.htmlURL)
+        let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        let originalCSS = try Data(contentsOf: companionCSSURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try #require(store.selectedChapterPages.first)
+
+        // 検証内容：Page をキャンバスから非表示にしてから再表示する（When）
+        store.setPageCanvasHidden(internalID: page.internalID, hidden: true)
+        let hiddenProject = try ProjectLoader().loadProject(at: fixture.projectURL)
+
+        // 期待値：Sidebar 用 Page entry と実ファイルは維持され、Canvas 対象だけから外れる（Then）
+        #expect(store.selectedChapterPages.map(\.internalID) == [page.internalID])
+        #expect(store.selectedCanvasPages.isEmpty)
+        #expect(hiddenProject.project.chapters[0].pages[0].isCanvasHidden)
+        #expect(try Data(contentsOf: fixture.htmlURL) == originalHTML)
+        #expect(try Data(contentsOf: companionCSSURL) == originalCSS)
+
+        store.setPageCanvasHidden(internalID: page.internalID, hidden: false)
+        #expect(store.selectedCanvasPages.map(\.internalID) == [page.internalID])
+        #expect(store.loadedProject?.project.chapters[0].pages[0].isCanvasHidden == false)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: Chapter一覧非表示テスト
+    /// 概要: Chapter を Sidebar の一覧から隠しても、Chapter と Page のキャンバス内容が `.ogp` に残ることを確認します。
+    @Test("Chapterを一覧から隠してもキャンバス内容を保持する")
+    func testHideChapterFromSidebarPreservesCanvasContents() throws {
+        // コンディション：Page を持つ2つの Chapter を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let docsURL = fixture.publicURL.appendingPathComponent("docs.html")
+        try "<!doctype html><html><body>docs</body></html>".write(
+            to: docsURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Visibility Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    internalID: "chapter-main",
+                    title: "Main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home",
+                            internalID: "page-home",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                ),
+                OpenGraphiteChapter(
+                    id: "docs",
+                    internalID: "chapter-docs",
+                    title: "Docs",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "docs",
+                            internalID: "page-docs",
+                            path: "docs.html",
+                            canvas: OpenGraphiteCanvas(x: 200, y: 0, width: 100, height: 100)
+                        )
+                    ]
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let mainChapterInternalID = try #require(store.loadedProject?.project.chapters[0].internalID)
+        let mainPageInternalID = try #require(store.loadedProject?.project.chapters[0].pages[0].internalID)
+        let docsChapterInternalID = try #require(store.loadedProject?.project.chapters[1].internalID)
+        let docsPageInternalID = try #require(store.loadedProject?.project.chapters[1].pages[0].internalID)
+
+        // 検証内容：現在選択中の Main Chapter を一覧から非表示にする（When）
+        store.hideChapterFromSidebar(internalID: mainChapterInternalID)
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+
+        // 期待値：Main の内容は残り、表示対象だけが次の可視 Chapter へ切り替わる（Then）
+        #expect(persistedProject.chapters.count == 2)
+        #expect(persistedProject.chapters[0].isSidebarHidden)
+        #expect(persistedProject.chapters[0].pages.map(\.internalID) == [mainPageInternalID])
+        #expect(persistedProject.chapters[0].pages[0].canvas.width == 100)
+        #expect(store.selectedChapterInternalID == docsChapterInternalID)
+        #expect(store.selectedCanvasPages.map(\.internalID) == [docsPageInternalID])
+        #expect(FileManager.default.fileExists(atPath: fixture.htmlURL.path))
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: Page完全削除安全条件テスト
+    /// 概要: 同じ HTML path が `.ogp` 内の別配置でも使われている場合に完全削除を無効化することを確認します。
+    @Test("別配置で使われるPageは完全削除できない")
+    func testCanPermanentlyDeletePageRejectsDuplicatePlacement() throws {
+        // コンディション：同じ index.html を2つの Page entry で配置した project を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Duplicate Placement Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(
+                    id: "main",
+                    internalID: "chapter-main",
+                    pages: [
+                        OpenGraphitePage(
+                            id: "home-desktop",
+                            internalID: "page-desktop",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                        ),
+                        OpenGraphitePage(
+                            id: "home-mobile",
+                            internalID: "page-mobile",
+                            path: "index.html",
+                            canvas: OpenGraphiteCanvas(x: 200, y: 0, width: 50, height: 100)
+                        )
+                    ]
+                )
+            ]
+        )
+        try JSONEncoder().encode(project).write(to: fixture.projectURL)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let desktopPageInternalID = try #require(store.loadedProject?.project.chapters[0].pages[0].internalID)
+        let mobilePageInternalID = try #require(store.loadedProject?.project.chapters[0].pages[1].internalID)
+
+        // 検証内容：一方の Page について完全削除可否を判定し、削除も試行する（When）
+        let canDelete = store.canPermanentlyDeletePage(internalID: desktopPageInternalID)
+        store.permanentlyDeletePage(internalID: desktopPageInternalID)
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+
+        // 期待値：完全削除は拒否され、両配置と HTML が維持される（Then）
+        #expect(canDelete == false)
+        #expect(
+            persistedProject.chapters[0].pages.map(\.internalID)
+                == [desktopPageInternalID, mobilePageInternalID]
+        )
+        #expect(FileManager.default.fileExists(atPath: fixture.htmlURL.path))
+        #expect(store.lastError?.contains("別の配置でも使われている") == true)
+    }
+
+    /// 論理名（日本語）: Page完全削除テスト
+    /// 概要: 他に配置されていない Page の entry、参照配置、HTML、同名 companion CSS を完全に削除できることを確認します。
+    @Test("単独配置のPageをHTMLとCSSごと完全に削除できる")
+    func testPermanentlyDeletePageRemovesManifestAndSourceFiles() throws {
+        // コンディション：単独配置の Page と同名 companion CSS を用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try fixture.writeCompanionCSS("body { color: red; }")
+        let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL)
+        var project = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        let pageInternalID = try #require(project.chapters[0].pages.first?.internalID)
+        let chapterInternalID = project.chapters[0].internalID
+        let pageNodeReference = OpenGraphiteCanvasReference(
+            internalID: "page-node-reference",
+            referenceID: OpenGraphiteReferenceID.node(
+                chapterID: chapterInternalID,
+                pageID: pageInternalID,
+                nodeID: "page-root"
+            ).stringValue,
+            x: 10,
+            y: 20
+        )
+        project.chapters[0].references = [pageNodeReference]
+        project.collections = [
+            OpenGraphiteComponentCollection(
+                id: "main",
+                internalID: "collection-main",
+                components: [],
+                references: [pageNodeReference]
+            )
+        ]
+        try JSONEncoder().encode(project).write(to: fixture.projectURL, options: .atomic)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        #expect(store.canPermanentlyDeletePage(internalID: pageInternalID))
+
+        // 検証内容：Page を完全削除する（When）
+        store.permanentlyDeletePage(internalID: pageInternalID)
+        let persistedProject = try ProjectLoader().loadProject(at: fixture.projectURL).project
+
+        // 期待値：manifest と実ファイルから削除され、Chapter 自体は空で維持される（Then）
+        #expect(persistedProject.chapters.count == 1)
+        #expect(persistedProject.chapters[0].pages.isEmpty)
+        #expect(persistedProject.chapters[0].references.isEmpty)
+        #expect(persistedProject.collections[0].references.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: fixture.htmlURL.path))
+        #expect(!FileManager.default.fileExists(atPath: companionCSSURL.path))
+        #expect(store.selectedChapterPages.isEmpty)
+        #expect(store.selectedPage == nil)
+        #expect(store.lastError == nil)
+    }
+
     /// 論理名（日本語）: 空ChapterへのPage追加保存テスト
     /// 概要: 選択中の空 Chapter に新しい HTML page file と page entry を追加し、その page が選択されることを検証します。
     @Test("空ChapterにPageを追加してogpへ保存できる")

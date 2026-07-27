@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Components Tutorial 02 — Slots</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+    <link rel="stylesheet" href="./tutorial-components-slots.css">
+  </head>
+  <body>
+    <ComponentTutorial data-og-id="component-tutorial-slots" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutcmpsltroot">
+      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpslthead">
+        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutcmpsltstep">COMPONENTS TUTORIAL · 02</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutcmpslttitl">Slot で内容を差し替える</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutcmpsltlead">Slot target は共有レイアウトを保ったまま、Instance ごとの内容を受け取ります。この Profile Card は Pages Tutorial 07 から参照されます。</TutorialLead>
+      </TutorialHeader>
+
+      <SlotDiagram data-og-id="slot-diagram" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltdiag">
+        <DiagramStep data-og-id="diagram-master" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpsltdmstr"><DiagramIndex data-og-id="diagram-master-index" data-og-type="text" data-og-internal-id="tutcmpsltdmi">1</DiagramIndex><DiagramTitle data-og-id="diagram-master-title" data-og-type="text" data-og-internal-id="tutcmpsltdmt">Master</DiagramTitle><DiagramText data-og-id="diagram-master-text" data-og-type="text" data-og-internal-id="tutcmpsltdmx">構造・Padding・Gap を共有</DiagramText></DiagramStep>
+        <DiagramArrow data-og-id="diagram-arrow-1" data-og-type="text" data-og-internal-id="tutcmpsltarr1">→</DiagramArrow>
+        <DiagramStep data-og-id="diagram-slots" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpsltdslot"><DiagramIndex data-og-id="diagram-slots-index" data-og-type="text" data-og-internal-id="tutcmpsltdsi">2</DiagramIndex><DiagramTitle data-og-id="diagram-slots-title" data-og-type="text" data-og-internal-id="tutcmpsltdst">Slots</DiagramTitle><DiagramText data-og-id="diagram-slots-text" data-og-type="text" data-og-internal-id="tutcmpsltdsx">avatar / name / role / bio / action</DiagramText></DiagramStep>
+        <DiagramArrow data-og-id="diagram-arrow-2" data-og-type="text" data-og-internal-id="tutcmpsltarr2">→</DiagramArrow>
+        <DiagramStep data-og-id="diagram-instance" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpsltdinst"><DiagramIndex data-og-id="diagram-instance-index" data-og-type="text" data-og-internal-id="tutcmpsltdii">3</DiagramIndex><DiagramTitle data-og-id="diagram-instance-title" data-og-type="text" data-og-internal-id="tutcmpsltdit">Instance</DiagramTitle><DiagramText data-og-id="diagram-instance-text" data-og-type="text" data-og-internal-id="tutcmpsltdix">内容だけを個別に差し替え</DiagramText></DiagramStep>
+      </SlotDiagram>
+
+      <MasterWorkbench data-og-id="master-workbench" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltwork">
+        <ProfileCard data-og-id="tutorial-profile-card-master" data-og-type="frame" data-og-layout="vertical" data-og-component="tutorial-profile-card" data-og-component-kind="master" data-og-part="root" data-og-internal-id="tutcmpprofmst">
+          <ProfileTop data-og-id="profile-top" data-og-type="frame" data-og-layout="horizontal" data-og-part="header" data-og-internal-id="tutcmpproftop">
+            <ProfileAvatar data-og-id="profile-avatar" data-og-type="frame" data-og-layout="horizontal" data-og-slot="avatar" data-og-part="avatar" data-og-internal-id="tutcmpprofava"><AvatarInitial data-og-id="profile-avatar-initial" data-og-type="text" data-og-internal-id="tutcmpprofinit">OG</AvatarInitial></ProfileAvatar>
+            <ProfileIdentity data-og-id="profile-identity" data-og-type="frame" data-og-layout="vertical" data-og-part="identity" data-og-internal-id="tutcmpprofident">
+              <ProfileName data-og-id="profile-name" data-og-type="text" data-og-slot="name" data-og-part="name" data-og-internal-id="tutcmpprofname">Open Graphite</ProfileName>
+              <ProfileRole data-og-id="profile-role" data-og-type="text" data-og-slot="role" data-og-part="role" data-og-internal-id="tutcmpprofrole">Source-first design tool</ProfileRole>
+            </ProfileIdentity>
+          </ProfileTop>
+          <ProfileBio data-og-id="profile-bio" data-og-type="text" data-og-slot="bio" data-og-part="body" data-og-internal-id="tutcmpprofbio">HTML と companion CSS を正本として、Canvas から直接編集します。</ProfileBio>
+          <ProfileAction data-og-id="profile-action" data-og-type="button" data-og-slot="action" data-og-part="action" data-og-internal-id="tutcmpprofaction">View profile</ProfileAction>
+        </ProfileCard>
+
+        <SlotInspector data-og-id="slot-inspector" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpsltinspect">
+          <InspectorTitle data-og-id="inspector-title" data-og-type="text" data-og-internal-id="tutcmpsltinsttl">SLOT MAP</InspectorTitle>
+          <SlotRow data-og-id="slot-avatar-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltrowava"><SlotName data-og-id="slot-avatar-name" data-og-type="text" data-og-internal-id="tutcmpsltnameav">avatar</SlotName><SlotKind data-og-id="slot-avatar-kind" data-og-type="text" data-og-internal-id="tutcmpsltkindav">frame</SlotKind></SlotRow>
+          <SlotRow data-og-id="slot-name-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltrownam"><SlotName data-og-id="slot-name-name" data-og-type="text" data-og-internal-id="tutcmpsltnamena">name</SlotName><SlotKind data-og-id="slot-name-kind" data-og-type="text" data-og-internal-id="tutcmpsltkindna">text</SlotKind></SlotRow>
+          <SlotRow data-og-id="slot-role-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltrowrol"><SlotName data-og-id="slot-role-name" data-og-type="text" data-og-internal-id="tutcmpsltnamero">role</SlotName><SlotKind data-og-id="slot-role-kind" data-og-type="text" data-og-internal-id="tutcmpsltkindro">text</SlotKind></SlotRow>
+          <SlotRow data-og-id="slot-bio-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltrowbio"><SlotName data-og-id="slot-bio-name" data-og-type="text" data-og-internal-id="tutcmpsltnamebi">bio</SlotName><SlotKind data-og-id="slot-bio-kind" data-og-type="text" data-og-internal-id="tutcmpsltkindbi">text</SlotKind></SlotRow>
+          <SlotRow data-og-id="slot-action-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpsltrowact"><SlotName data-og-id="slot-action-name" data-og-type="text" data-og-internal-id="tutcmpsltnameac">action</SlotName><SlotKind data-og-id="slot-action-kind" data-og-type="text" data-og-internal-id="tutcmpsltkindac">button</SlotKind></SlotRow>
+          <InspectorTask data-og-id="inspector-task" data-og-type="text" data-og-internal-id="tutcmpsltintask">TRY：Master の Gap を変更し、Page instances の同期を確認</InspectorTask>
+        </SlotInspector>
+      </MasterWorkbench>
+    </ComponentTutorial>
+  </body>
+</html>

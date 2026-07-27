@@ -2157,6 +2157,7 @@ private struct CanvasDocumentView: View {
     @State private var pageDragTranslation: CGSize = .zero
     @State private var pageResizePreview: CanvasPageResizePreview?
     @State private var nodeResizePreview: CanvasNodeResizePreview?
+    @State private var isPresentingPermanentDeleteConfirmation = false
 
     var body: some View {
         let displayedCanvas = pageResizePreview?.pageInternalID == page.internalID
@@ -2305,10 +2306,22 @@ private struct CanvasDocumentView: View {
         .onChange(of: store.selectedNodeIDs) { _, _ in
             nodeResizePreview = nil
         }
+        .confirmationDialog(
+            "\(page.displayName) を完全に削除しますか？",
+            isPresented: $isPresentingPermanentDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("HTMLとCSSを完全に削除", role: .destructive) {
+                store.permanentlyDeletePage(internalID: page.internalID)
+            }
+            Button("キャンセル", role: .cancel) {}
+        } message: {
+            Text("この Page entry と HTML、同名 companion CSS は元に戻せません。")
+        }
     }
 
     /// 論理名（日本語）: ページコンテキストメニュー項目
-    /// 概要: page card 本体とcaptionの右クリックから、page全体のFocus表示と参照IDコピーを提供します。
+    /// 概要: page card 本体とcaptionの右クリックから、Focus表示、参照IDコピー、Pageの非表示と完全削除を提供します。
     @ViewBuilder
     private var pageContextMenuItems: some View {
         Button("フォーカス表示") {
@@ -2321,6 +2334,21 @@ private struct CanvasDocumentView: View {
             let segment = store.selectedCanvasSegment
             store.selectPage(internalID: page.internalID)
             store.copyPageReferenceIDToPasteboard(page, segment: segment)
+        }
+
+        if store.selectedCanvasSegment == .pages {
+            Divider()
+
+            Button("キャンバスから非表示") {
+                store.setPageCanvasHidden(internalID: page.internalID, hidden: true)
+            }
+
+            Divider()
+
+            Button("完全に削除", role: .destructive) {
+                isPresentingPermanentDeleteConfirmation = true
+            }
+            .disabled(!store.canPermanentlyDeletePage(internalID: page.internalID))
         }
     }
 

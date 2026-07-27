@@ -1,6 +1,123 @@
 {
+  "repositoryRoot" : "..",
   "chapters" : [
     {
+      "pages" : [
+        {
+          "internalID" : "kl1xxsgkiuue",
+          "canvas" : {
+            "height" : 1200,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "ja"
+              }
+            },
+            "name" : "Desktop",
+            "y" : 0,
+            "x" : 0,
+            "width" : 1440
+          },
+          "path" : "index.html",
+          "id" : "home"
+        },
+        {
+          "internalID" : "2s5pn481hyrao",
+          "canvas" : {
+            "width" : 1440,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "ja"
+              }
+            },
+            "y" : 0,
+            "height" : 1200,
+            "x" : 1520,
+            "name" : "Desktop"
+          },
+          "path" : "downloads.html",
+          "id" : "downloads"
+        },
+        {
+          "internalID" : "2opic2blumreb",
+          "canvas" : {
+            "height" : 1200,
+            "x" : 3040,
+            "y" : 0,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "ja"
+              }
+            },
+            "width" : 1440,
+            "name" : "Desktop"
+          },
+          "path" : "docs.html",
+          "id" : "docs"
+        },
+        {
+          "internalID" : "ecam046890kg",
+          "canvas" : {
+            "name" : "Desktop \/ eng",
+            "y" : 1280,
+            "width" : 1440,
+            "height" : 1200,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "eng"
+              }
+            },
+            "x" : 0
+          },
+          "path" : "index.html",
+          "id" : "home-eng"
+        },
+        {
+          "internalID" : "3ep2yvn3v4s96",
+          "canvas" : {
+            "name" : "Desktop \/ eng",
+            "x" : 1520,
+            "width" : 1440,
+            "height" : 1200,
+            "y" : 1280,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "eng"
+              }
+            }
+          },
+          "path" : "downloads.html",
+          "id" : "downloads-eng"
+        },
+        {
+          "internalID" : "js0y82wvglh",
+          "canvas" : {
+            "y" : 1280,
+            "width" : 1440,
+            "height" : 1200,
+            "previewContext" : {
+              "fieldMocks" : {
+                "selectedLanguage" : "eng"
+              }
+            },
+            "x" : 3040,
+            "name" : "Desktop \/ eng"
+          },
+          "path" : "docs.html",
+          "id" : "docs-eng"
+        }
+      ],
+      "guides" : [
+        {
+          "position" : -0,
+          "orientation" : "vertical",
+          "internalID" : "e9a17165-fe92-4bf0-b4ae-efdc3b090ec4"
+        },
+        {
+          "position" : 0,
+          "orientation" : "horizontal",
+          "internalID" : "3d1e2640-e052-477f-8cb9-e7a5e8debbf7"
+        }
+      ],
       "references" : [
         {
           "width" : 360,
@@ -11,176 +128,295 @@
           "referenceID" : "ogref:node:1gibtxulofmr0:kl1xxsgkiuue:1rl4q0jsthuim"
         }
       ],
-      "guides" : [
-        {
-          "internalID" : "e9a17165-fe92-4bf0-b4ae-efdc3b090ec4",
-          "orientation" : "vertical",
-          "position" : -0
-        },
-        {
-          "internalID" : "3d1e2640-e052-477f-8cb9-e7a5e8debbf7",
-          "orientation" : "horizontal",
-          "position" : 0
-        }
-      ],
       "id" : "main",
       "internalID" : "1gibtxulofmr0",
-      "title" : "Main",
-      "pages" : [
-        {
-          "id" : "home",
-          "path" : "index.html",
-          "internalID" : "kl1xxsgkiuue",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "ja"
-              }
-            },
-            "name" : "Desktop",
-            "y" : 0,
-            "height" : 1200,
-            "x" : 0
-          }
-        },
-        {
-          "id" : "downloads",
-          "path" : "downloads.html",
-          "internalID" : "2s5pn481hyrao",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "ja"
-              }
-            },
-            "name" : "Desktop",
-            "y" : 0,
-            "height" : 1200,
-            "x" : 1520
-          }
-        },
-        {
-          "id" : "docs",
-          "path" : "docs.html",
-          "internalID" : "2opic2blumreb",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "ja"
-              }
-            },
-            "name" : "Desktop",
-            "y" : 0,
-            "height" : 1200,
-            "x" : 3040
-          }
-        },
-        {
-          "id" : "home-eng",
-          "path" : "index.html",
-          "internalID" : "ecam046890kg",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "eng"
-              }
-            },
-            "name" : "Desktop \/ eng",
-            "y" : 1280,
-            "height" : 1200,
-            "x" : 0
-          }
-        },
-        {
-          "id" : "downloads-eng",
-          "path" : "downloads.html",
-          "internalID" : "3ep2yvn3v4s96",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "eng"
-              }
-            },
-            "name" : "Desktop \/ eng",
-            "y" : 1280,
-            "height" : 1200,
-            "x" : 1520
-          }
-        },
-        {
-          "id" : "docs-eng",
-          "path" : "docs.html",
-          "internalID" : "js0y82wvglh",
-          "canvas" : {
-            "width" : 1440,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "eng"
-              }
-            },
-            "name" : "Desktop \/ eng",
-            "y" : 1280,
-            "height" : 1200,
-            "x" : 3040
-          }
-        }
-      ]
+      "title" : "Main"
     },
     {
-      "id" : "chapter-1",
-      "internalID" : "2qrx5oessxa9d",
-      "title" : "Chapter 2",
+      "guides" : [
+        {
+          "position" : 3100,
+          "internalID" : "tutguidevertical09",
+          "orientation" : "vertical"
+        },
+        {
+          "position" : 2860,
+          "internalID" : "tutguidehorizontal09",
+          "orientation" : "horizontal"
+        }
+      ],
       "pages" : [
         {
-          "id" : "page-1",
-          "path" : "page-1.html",
-          "internalID" : "2oz0h0zhsvky",
+          "id" : "tutorial-objects",
+          "internalID" : "tutpageobjects1",
+          "path" : "tutorial-objects.html",
           "canvas" : {
-            "width" : 906,
-            "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "ja"
-              }
-            },
-            "name" : "Desktop",
-            "y" : 93,
-            "height" : 826,
-            "x" : 91
+            "y" : 0,
+            "width" : 1180,
+            "x" : 0,
+            "name" : "01 · Objects & Pages",
+            "height" : 1080
+          }
+        },
+        {
+          "id" : "tutorial-auto-layout",
+          "internalID" : "tutpageautolay",
+          "path" : "tutorial-auto-layout.html",
+          "canvas" : {
+            "height" : 1080,
+            "x" : 1260,
+            "y" : 0,
+            "width" : 1180,
+            "name" : "02 · Auto Layout"
+          }
+        },
+        {
+          "id" : "tutorial-absolute-layout",
+          "internalID" : "tutpageabsolute",
+          "path" : "tutorial-absolute-layout.html",
+          "canvas" : {
+            "x" : 2520,
+            "width" : 1180,
+            "y" : 0,
+            "height" : 1080,
+            "name" : "03 · Absolute"
+          }
+        },
+        {
+          "path" : "tutorial-appearance.html",
+          "canvas" : {
+            "height" : 1080,
+            "x" : 0,
+            "name" : "04 · Appearance & Type",
+            "y" : 1160,
+            "width" : 1180
+          },
+          "id" : "tutorial-appearance",
+          "internalID" : "tutpageappearan"
+        },
+        {
+          "path" : "tutorial-media-icons.html",
+          "canvas" : {
+            "x" : 1260,
+            "name" : "05 · Media & Icons",
+            "y" : 1160,
+            "width" : 1180,
+            "height" : 1040
+          },
+          "id" : "tutorial-media-icons",
+          "internalID" : "tutpagemediaico"
+        },
+        {
+          "id" : "tutorial-motion",
+          "internalID" : "tutpagemotion01",
+          "canvas" : {
+            "name" : "06 · Motion & State",
+            "y" : 1160,
+            "x" : 2520,
+            "height" : 1020,
+            "width" : 1180
+          },
+          "path" : "tutorial-motion.html"
+        },
+        {
+          "id" : "tutorial-component-instances",
+          "internalID" : "tutpageinstance",
+          "canvas" : {
+            "name" : "07 · Component Instances",
+            "y" : 2320,
+            "width" : 1180,
+            "height" : 1160,
+            "x" : 0
+          },
+          "path" : "tutorial-component-instances.html"
+        },
+        {
+          "id" : "tutorial-sticky-notes",
+          "internalID" : "tutpagesticky01",
+          "canvas" : {
+            "x" : 1260,
+            "height" : 1080,
+            "width" : 1180,
+            "name" : "08 · Sticky Notes",
+            "y" : 2320
+          },
+          "path" : "tutorial-sticky-notes.html"
+        },
+        {
+          "id" : "tutorial-guides",
+          "internalID" : "tutpageguides01",
+          "path" : "tutorial-guides.html",
+          "canvas" : {
+            "name" : "09 · Rulers & Guides",
+            "width" : 1180,
+            "height" : 1080,
+            "x" : 2520,
+            "y" : 2320
+          }
+        },
+        {
+          "id" : "tutorial-stylus-ink",
+          "internalID" : "tutpagestylus01",
+          "path" : "tutorial-stylus-ink.html",
+          "canvas" : {
+            "height" : 1080,
+            "x" : 0,
+            "width" : 1180,
+            "y" : 3560,
+            "name" : "10 · Stylus Ink"
           }
         }
-      ]
-    },
-    {
-      "id" : "chapter-2",
-      "internalID" : "3o2jeeo0b4qcm",
-      "title" : "Chapter 3",
-      "pages" : [
-
-      ]
+      ],
+      "annotations" : [
+        {
+          "kind" : "ink",
+          "internalID" : "tutstylusink10",
+          "frame" : {
+            "height" : 230,
+            "y" : 3990,
+            "x" : 610,
+            "width" : 430
+          },
+          "strokes" : [
+            {
+              "points" : [
+                {
+                  "x" : 8,
+                  "tiltX" : -0.15,
+                  "tiltY" : 0.2,
+                  "y" : 88,
+                  "pressure" : 0.35
+                },
+                {
+                  "x" : 42,
+                  "tiltX" : -0.08,
+                  "tiltY" : 0.18,
+                  "y" : 132,
+                  "pressure" : 0.62
+                },
+                {
+                  "x" : 116,
+                  "tiltX" : 0.12,
+                  "tiltY" : 0.08,
+                  "y" : 24,
+                  "pressure" : 0.9
+                }
+              ],
+              "lineWidth" : 6,
+              "color" : "#2ABCC4",
+              "inputDevice" : "pen"
+            },
+            {
+              "points" : [
+                {
+                  "y" : 72,
+                  "tiltX" : -0.22,
+                  "pressure" : 0.28,
+                  "tiltY" : 0.32,
+                  "x" : 154
+                },
+                {
+                  "y" : 46,
+                  "tiltX" : -0.12,
+                  "pressure" : 0.45,
+                  "tiltY" : 0.26,
+                  "x" : 205
+                },
+                {
+                  "y" : 82,
+                  "tiltX" : 0.02,
+                  "pressure" : 0.66,
+                  "tiltY" : 0.2,
+                  "x" : 258
+                },
+                {
+                  "y" : 48,
+                  "tiltX" : 0.15,
+                  "pressure" : 0.78,
+                  "tiltY" : 0.14,
+                  "x" : 316
+                },
+                {
+                  "y" : 76,
+                  "tiltX" : 0.24,
+                  "pressure" : 0.96,
+                  "tiltY" : 0.06,
+                  "x" : 404
+                }
+              ],
+              "inputDevice" : "pen",
+              "color" : "#2ABCC4",
+              "lineWidth" : 5
+            },
+            {
+              "points" : [
+                {
+                  "tiltX" : -0.18,
+                  "tiltY" : 0.24,
+                  "y" : 162,
+                  "x" : 146,
+                  "pressure" : 0.4
+                },
+                {
+                  "tiltX" : -0.04,
+                  "tiltY" : 0.2,
+                  "y" : 174,
+                  "x" : 226,
+                  "pressure" : 0.58
+                },
+                {
+                  "tiltX" : 0.1,
+                  "tiltY" : 0.12,
+                  "y" : 168,
+                  "x" : 318,
+                  "pressure" : 0.74
+                },
+                {
+                  "tiltX" : 0.2,
+                  "tiltY" : 0.08,
+                  "y" : 182,
+                  "x" : 410,
+                  "pressure" : 0.88
+                }
+              ],
+              "inputDevice" : "pen",
+              "color" : "#2ABCC4",
+              "lineWidth" : 4.5
+            }
+          ]
+        },
+        {
+          "kind" : "stickyNote",
+          "frame" : {
+            "x" : 2070,
+            "width" : 280,
+            "y" : 2740,
+            "height" : 180
+          },
+          "textColor" : "#231F14",
+          "text" : "TRY IT\nこの付箋を選択して、本文・位置・サイズを変更してみよう。",
+          "internalID" : "tutstickynote08",
+          "backgroundColor" : "#FFE88A"
+        }
+      ],
+      "id" : "tutorials",
+      "internalID" : "tutorialpages01",
+      "title" : "Tutorials"
     }
   ],
+  "version" : "0.1.0",
   "htmlRoot" : "public",
+  "cssLibrary" : "CSS\/OpenGraphite.css",
+  "name" : "OpenGraphite Sample",
   "collections" : [
     {
-      "id" : "main",
-      "internalID" : "component-main",
       "title" : "Main",
       "components" : [
         {
           "id" : "design-system",
-          "path" : "_components\/design-system.html",
-          "internalID" : "3bgx6phkz3jv5",
           "canvas" : {
-            "width" : 1180,
+            "height" : 4300,
             "previewContext" : {
-              "fieldMocks" : {
-                "selectedLanguage" : "ja"
-              },
               "placementMocks" : {
                 "docsnavcollapsedplacement" : {
                   "placementMode" : "collapsed"
@@ -189,19 +425,65 @@
                   "codeViewerMode" : "preview",
                   "selectedLanguage" : "ja"
                 }
+              },
+              "fieldMocks" : {
+                "selectedLanguage" : "ja"
               }
             },
+            "width" : 1180,
             "name" : "Desktop",
             "y" : 0,
-            "height" : 4300,
             "x" : 1120
+          },
+          "internalID" : "3bgx6phkz3jv5",
+          "path" : "_components\/design-system.html"
+        }
+      ],
+      "id" : "main",
+      "internalID" : "component-main"
+    },
+    {
+      "title" : "Tutorials",
+      "components" : [
+        {
+          "id" : "tutorial-components-basics",
+          "path" : "_components\/tutorial-components-basics.html",
+          "canvas" : {
+            "width" : 1180,
+            "height" : 1000,
+            "name" : "01 · Master Anatomy",
+            "y" : 0,
+            "x" : 0
+          },
+          "internalID" : "tutcompbasics01"
+        },
+        {
+          "id" : "tutorial-components-slots",
+          "path" : "_components\/tutorial-components-slots.html",
+          "canvas" : {
+            "y" : 0,
+            "height" : 1080,
+            "x" : 1260,
+            "name" : "02 · Slots",
+            "width" : 1180
+          },
+          "internalID" : "tutcompslots001"
+        },
+        {
+          "internalID" : "tutcompstates01",
+          "path" : "_components\/tutorial-components-states.html",
+          "id" : "tutorial-components-states",
+          "canvas" : {
+            "name" : "03 · States & Placements",
+            "x" : 2520,
+            "width" : 1180,
+            "height" : 1280,
+            "y" : 0
           }
         }
-      ]
+      ],
+      "id" : "tutorials",
+      "internalID" : "tutorialcomponents01"
     }
-  ],
-  "repositoryRoot" : "..",
-  "name" : "OpenGraphite Sample",
-  "cssLibrary" : "CSS\/OpenGraphite.css",
-  "version" : "0.1.0"
+  ]
 }
