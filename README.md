@@ -223,7 +223,7 @@ When launched without that environment variable, Open Sample Project treats the 
 - Canvas-background context-menu insertion of any typed page/component node reference, with live object preview, exact world-position placement, drag repositioning, and edits synchronized to the referenced source
 - Normal / Flow canvas modes, plus a separate right-click Focus preview that shows one HTML object or a whole page card in a centered, finite scrolling region; Focus uses the same canvas zoom input resolver for `Command + scroll`, trackpad pinch, and compatible gesture events, keeps 100% as original size, supports zoom in/out without creating an infinite canvas, and removes editor-only object-focus markers before HTML is saved
 - Front-layer sticky notes and mouse/Sidecar Apple Pencil ink, with eraser and lasso multi-selection tools, stored only in Chapter/Collection `.ogp` annotations
-- Rulers, undoable `.ogp`-persisted draggable guides, and an adaptive canvas grid, independently visible from Settings without changing HTML or CSS
+- Rulers, undoable `.ogp`-persisted guides creatable by ruler drag or context menu and repositionable by drag or numeric input, plus an adaptive canvas grid, independently visible from Settings without changing HTML or CSS
 - DOM layer extraction from `[data-og-id]`
 - Canvas and nested layer node selection
 - Inspector display for tag, `data-og-id`, `data-og-type`, `data-og-layout`, `data-og-role`

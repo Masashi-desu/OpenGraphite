@@ -224,6 +224,69 @@ struct CanvasAidsViewTests {
         #expect(!horizontalAtTop)
     }
 
+    /// 論理名（日本語）: ルーラー右クリック位置変換テスト
+    /// 概要: 上・左ルーラー内の右クリック位置がCanvasPane上の同じ目盛り位置へ変換されることを検証します。
+    @Test("ruler内の右クリック位置をcanvas pane座標へ変換する")
+    func testRulerContextGuidePositionResolvesPanePoint() {
+        // コンディション：CanvasPane上の上・左ルーラー矩形と各View内の右クリック位置を用意する（Given）
+        let topRulerRect = CGRect(x: 270, y: 44, width: 430, height: 30)
+        let leftRulerRect = CGRect(x: 240, y: 74, width: 30, height: 726)
+
+        // 検証内容：各ルーラー内座標をCanvasPane座標へ変換する（When）
+        let topClick = CanvasRulerContextGuideResolver.panePoint(
+            localPoint: CGPoint(x: 150, y: 10),
+            rulerRect: topRulerRect
+        )
+        let leftClick = CanvasRulerContextGuideResolver.panePoint(
+            localPoint: CGPoint(x: 10, y: 286),
+            rulerRect: leftRulerRect
+        )
+        let outsideClick = CanvasRulerContextGuideResolver.panePoint(
+            localPoint: CGPoint(x: 431, y: 10),
+            rulerRect: topRulerRect
+        )
+
+        // 期待値：上ルーラーはX、左ルーラーはYがクリックした目盛り位置へ一致し、範囲外は拒否される（Then）
+        #expect(topClick == CGPoint(x: 420, y: 54))
+        #expect(leftClick == CGPoint(x: 250, y: 360))
+        #expect(outsideClick == nil)
+    }
+
+    /// 論理名（日本語）: ガイド位置入力変換テスト
+    /// 概要: 現在位置の表示文字列と手入力値が有限 world 座標として相互変換されることを検証します。
+    @Test("guide位置を入力用文字列と有限座標へ変換する")
+    func testGuidePositionInputResolvesFiniteWorldCoordinates() {
+        // コンディション：整数、小数、前後空白を含む負数のガイド位置を用意する（Given）
+        let integerText = CanvasGuidePositionInput.text(for: 320)
+        let decimalText = CanvasGuidePositionInput.text(for: -48.5)
+        let negativeZeroText = CanvasGuidePositionInput.text(for: -0.0)
+
+        // 検証内容：表示文字列と手入力文字列をworld座標へ変換する（When）
+        let integerValue = CanvasGuidePositionInput.value(from: integerText)
+        let decimalValue = CanvasGuidePositionInput.value(from: "  \(decimalText) \n")
+
+        // 期待値：整数は不要な小数部なし、負のゼロは通常のゼロとして表示され、入力値は元の有限座標へ戻る（Then）
+        #expect(integerText == "320")
+        #expect(decimalText == "-48.5")
+        #expect(negativeZeroText == "0")
+        #expect(integerValue == 320)
+        #expect(decimalValue == -48.5)
+    }
+
+    /// 論理名（日本語）: ガイド位置不正入力拒否テスト
+    /// 概要: 空文字、数値以外、非有限値をガイド位置として確定できないことを検証します。
+    @Test("guide位置の不正入力と非有限値を拒否する")
+    func testGuidePositionInputRejectsInvalidValues() {
+        // コンディション：保存できない複数の位置入力を用意する（Given）
+        let invalidInputs = ["", "position", "nan", "inf", "-inf"]
+
+        // 検証内容：各文字列をworld座標へ変換する（When）
+        let resolvedValues = invalidInputs.map(CanvasGuidePositionInput.value(from:))
+
+        // 期待値：すべての入力が無効として扱われる（Then）
+        #expect(resolvedValues.allSatisfy { $0 == nil })
+    }
+
     /// 論理名（日本語）: Zoom別目盛り刻みテスト
     /// 概要: Zoomに応じて小目盛りが過密にならず、大目盛りも安定した間隔になることを検証します。
     @Test("zoomに応じてgridとrulerの刻みを選ぶ")

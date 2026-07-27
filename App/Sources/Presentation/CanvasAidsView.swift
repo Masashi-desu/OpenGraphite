@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -295,6 +296,62 @@ enum CanvasGuideInteractionResolver {
     }
 }
 
+/// 論理名（日本語）: ルーラーコンテキストガイド位置解決器
+/// 概要: ルーラー内の右クリック位置をキャンバスペイン座標へ変換します。
+enum CanvasRulerContextGuideResolver {
+    /// 論理名（日本語）: ルーラー右クリック位置変換関数
+    /// 処理概要: ルーラー左上を原点にした AppKit 座標へルーラー矩形の原点を加え、共有座標変換で使うペイン座標を返します。
+    ///
+    /// - Parameters:
+    ///   - localPoint: ルーラー内の左上原点右クリック位置。
+    ///   - rulerRect: CanvasPane 上のルーラー矩形。
+    /// - Returns: CanvasPane 上の右クリック位置。入力が無効またはルーラー外の場合は `nil`。
+    static func panePoint(localPoint: CGPoint, rulerRect: CGRect) -> CGPoint? {
+        guard localPoint.x.isFinite,
+              localPoint.y.isFinite,
+              rulerRect.minX.isFinite,
+              rulerRect.minY.isFinite,
+              rulerRect.width.isFinite,
+              rulerRect.height.isFinite,
+              rulerRect.width > 0,
+              rulerRect.height > 0,
+              CGRect(origin: .zero, size: rulerRect.size).contains(localPoint)
+        else {
+            return nil
+        }
+        return CGPoint(
+            x: rulerRect.minX + localPoint.x,
+            y: rulerRect.minY + localPoint.y
+        )
+    }
+}
+
+/// 論理名（日本語）: ガイド位置入力解決器
+/// 概要: コンテキストメニューから開く位置入力で使う表示文字列と有限数値への変換を提供します。
+enum CanvasGuidePositionInput {
+    /// 論理名（日本語）: ガイド位置表示文字列生成関数
+    /// 処理概要: 現在位置を再入力可能な文字列へ変換し、整数値では不要な小数点以下を省略します。
+    ///
+    /// - Parameter position: 表示するガイドの world 座標。
+    /// - Returns: 位置入力欄へ初期表示する文字列。
+    static func text(for position: Double) -> String {
+        guard position != 0 else { return "0" }
+        let text = String(position)
+        return text.hasSuffix(".0") ? String(text.dropLast(2)) : text
+    }
+
+    /// 論理名（日本語）: ガイド位置入力値解決関数
+    /// 処理概要: 前後の空白を除去して数値へ変換し、`.ogp` に保存できない非有限値を拒否します。
+    ///
+    /// - Parameter text: 利用者が位置入力欄へ入力した文字列。
+    /// - Returns: 有効な有限 world 座標。空文字、数値以外、非有限値の場合は `nil`。
+    static func value(from text: String) -> Double? {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Double(trimmedText), value.isFinite else { return nil }
+        return value
+    }
+}
+
 /// 論理名（日本語）: キャンバスグリッドオーバーレイ
 /// 概要: スクロールと Zoom に追従する格子を HTML カードより背面のキャンバス全体へ描画します。
 struct CanvasGridOverlay: View {
@@ -570,6 +627,24 @@ struct CanvasRulerGuideOverlay: View {
             Rectangle().stroke(Color.primary.opacity(0.16), lineWidth: 0.5)
         )
         .contentShape(Rectangle())
+        .background {
+            CanvasRulerContextMenuView(
+                itemTitle: orientation == .vertical
+                    ? "ここに垂直ガイドを追加"
+                    : "ここに水平ガイドを追加",
+                isActionEnabled: showsGuides
+            ) { localPoint in
+                guard let panePoint = CanvasRulerContextGuideResolver.panePoint(
+                    localPoint: localPoint,
+                    rulerRect: rect
+                ),
+                let position = worldPosition(at: panePoint, orientation: orientation)
+                else {
+                    return
+                }
+                onAddGuide(orientation, position.rounded())
+            }
+        }
         .position(x: rect.midX, y: rect.midY)
         .gesture(
             DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.coordinateSpaceName))
@@ -599,7 +674,7 @@ struct CanvasRulerGuideOverlay: View {
         )
         .zIndex(CanvasRulerGuideLayer.ruler.rawValue)
         .accessibilityLabel(orientation == .vertical ? "上ルーラー" : "左ルーラー")
-        .accessibilityHint("キャンバスへドラッグしてガイドを追加")
+        .accessibilityHint("ドラッグまたはコンテキストメニューでガイドを追加")
     }
 
     /// 論理名（日本語）: ガイド線生成関数
@@ -673,6 +748,133 @@ struct CanvasRulerGuideOverlay: View {
             contentPadding: CanvasMetrics.documentPadding,
             contentOffset: CanvasAidCoordinateResolver.contentOffset(for: orientation)
         )
+    }
+}
+
+/// 論理名（日本語）: ルーラーコンテキストメニューView
+/// 概要: SwiftUI のドラッグ操作を遮らず、ルーラー内の右クリックだけを AppKit で監視してガイド追加メニューを表示します。
+private struct CanvasRulerContextMenuView: NSViewRepresentable {
+    var itemTitle: String
+    var isActionEnabled: Bool
+    var onAddGuide: (CGPoint) -> Void
+
+    /// 論理名（日本語）: ルーラーコンテキストメニューAppKit View生成関数
+    /// 処理概要: 右クリック位置とガイド追加callbackを保持する非ヒットテストViewを生成します。
+    ///
+    /// - Parameter context: SwiftUI が提供するRepresentableコンテキスト。
+    /// - Returns: ルーラー右クリックをローカル監視するAppKit View。
+    func makeNSView(context: Context) -> CanvasRulerContextMenuNSView {
+        let view = CanvasRulerContextMenuNSView()
+        update(view)
+        return view
+    }
+
+    /// 論理名（日本語）: ルーラーコンテキストメニューAppKit View更新関数
+    /// 処理概要: 表示文言、ガイド表示状態、追加callbackを最新のSwiftUI状態へ同期します。
+    ///
+    /// - Parameters:
+    ///   - nsView: 更新対象のAppKit View。
+    ///   - context: SwiftUI が提供するRepresentableコンテキスト。
+    func updateNSView(_ nsView: CanvasRulerContextMenuNSView, context: Context) {
+        update(nsView)
+    }
+
+    /// 論理名（日本語）: ルーラーコンテキストメニューView破棄関数
+    /// 処理概要: SwiftUI階層から外れる際にローカルイベント監視を明示的に解除します。
+    ///
+    /// - Parameters:
+    ///   - nsView: 破棄対象のAppKit View。
+    ///   - coordinator: SwiftUI が提供するCoordinator。
+    static func dismantleNSView(_ nsView: CanvasRulerContextMenuNSView, coordinator: Void) {
+        nsView.stopMonitoring()
+    }
+
+    /// 論理名（日本語）: ルーラーコンテキストメニュー内容更新関数
+    /// 処理概要: Representableの生成時と更新時に共通する値同期を適用します。
+    ///
+    /// - Parameter view: 値を同期するAppKit View。
+    private func update(_ view: CanvasRulerContextMenuNSView) {
+        view.itemTitle = itemTitle
+        view.isActionEnabled = isActionEnabled
+        view.onAddGuide = onAddGuide
+    }
+}
+
+/// 論理名（日本語）: ルーラーコンテキストメニューAppKit View
+/// 概要: 自身をマウスヒット対象にせず、同一Windowの右クリックからルーラー内座標を固定してネイティブメニューを開きます。
+private final class CanvasRulerContextMenuNSView: NSView {
+    var itemTitle = ""
+    var isActionEnabled = true
+    var onAddGuide: ((CGPoint) -> Void)?
+
+    private var contextPoint = CGPoint.zero
+    private var eventMonitor: Any?
+
+    override var isFlipped: Bool { true }
+
+    /// 論理名（日本語）: ルーラーコンテキストメニューViewヒットテスト関数
+    /// 処理概要: SwiftUI側の左ドラッグ操作を維持するため、自身を通常のマウスイベント対象から除外します。
+    ///
+    /// - Parameter point: View内のヒットテスト位置。
+    /// - Returns: 常に `nil`。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    /// 論理名（日本語）: Window所属変更処理関数
+    /// 処理概要: Windowへ追加された間だけ右クリックのローカルイベント監視を有効にします。
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        stopMonitoring()
+        guard window != nil else { return }
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self else { return event }
+            return self.handleRightMouseDown(event)
+        }
+    }
+
+    /// 論理名（日本語）: 右クリックイベント処理関数
+    /// 処理概要: 同一Windowかつ自身の表示矩形内だけを対象に、クリック位置を固定してガイド追加メニューを表示します。
+    ///
+    /// - Parameter event: AppKit から届いた右マウスダウンイベント。
+    /// - Returns: メニューを表示した場合は `nil`、対象外の場合は元イベント。
+    private func handleRightMouseDown(_ event: NSEvent) -> NSEvent? {
+        guard let window,
+              event.window === window,
+              !isHiddenOrHasHiddenAncestor
+        else {
+            return event
+        }
+        let localPoint = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(localPoint) else { return event }
+
+        contextPoint = localPoint
+        let menu = NSMenu(title: "OpenGraphite Ruler")
+        let item = NSMenuItem(
+            title: itemTitle,
+            action: #selector(addGuideAtContextPoint),
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.isEnabled = isActionEnabled
+        menu.addItem(item)
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+        return nil
+    }
+
+    /// 論理名（日本語）: 右クリック位置ガイド追加関数
+    /// 処理概要: メニュー表示時に固定したルーラー内座標をSwiftUIへ通知します。
+    @objc private func addGuideAtContextPoint() {
+        guard isActionEnabled else { return }
+        onAddGuide?(contextPoint)
+    }
+
+    /// 論理名（日本語）: 右クリック監視終了関数
+    /// 処理概要: 登録済みのAppKitローカルイベントモニターを解除して保持を破棄します。
+    func stopMonitoring() {
+        guard let eventMonitor else { return }
+        NSEvent.removeMonitor(eventMonitor)
+        self.eventMonitor = nil
     }
 }
 
@@ -846,7 +1048,7 @@ struct CanvasRulerLabelLayout: Equatable {
 }
 
 /// 論理名（日本語）: 配置済みキャンバスガイドビュー
-/// 概要: `.ogp` に保存済みのガイドを表示し、ドラッグ移動とルーラー側へのドラッグ削除を提供します。
+/// 概要: `.ogp` に保存済みのガイドを表示し、ドラッグ移動、位置の数値入力、ルーラー側へのドラッグ削除を提供します。
 private struct CanvasPlacedGuideView: View {
     var guide: OpenGraphiteCanvasGuide
     var viewport: CanvasViewportState
@@ -859,6 +1061,8 @@ private struct CanvasPlacedGuideView: View {
     var onDelete: (String) -> Void
 
     @State private var dragPosition: Double?
+    @State private var positionEditorIsPresented = false
+    @State private var draftPositionText = ""
 
     var body: some View {
         if let position = viewportPosition(for: dragPosition ?? guide.position) {
@@ -887,8 +1091,24 @@ private struct CanvasPlacedGuideView: View {
             )
             .modifier(interactionModifier)
             .accessibilityLabel(guide.orientation == .vertical ? "垂直ガイド" : "水平ガイド")
-            .accessibilityValue(String(Int((dragPosition ?? guide.position).rounded())))
-            .accessibilityHint("ドラッグで移動。ルーラー側へ戻すかコンテキストメニューで削除")
+            .accessibilityValue(
+                CanvasGuidePositionInput.text(for: (dragPosition ?? guide.position).rounded())
+            )
+            .accessibilityHint("ドラッグで移動。コンテキストメニューで位置変更または削除")
+            .alert(
+                guide.orientation == .vertical ? "垂直ガイドの位置" : "水平ガイドの位置",
+                isPresented: $positionEditorIsPresented
+            ) {
+                TextField("位置", text: $draftPositionText)
+                Button("キャンセル", role: .cancel) {}
+                Button("変更") {
+                    commitDraftPosition()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(draftPosition == nil)
+            } message: {
+                Text(guide.orientation == .vertical ? "X 座標を入力してください。" : "Y 座標を入力してください。")
+            }
 
             if showsRulerMarker {
                 let markerFrame = CanvasGuideRulerMarkerLayout.interactionFrame(
@@ -905,14 +1125,16 @@ private struct CanvasPlacedGuideView: View {
                             ? "垂直ガイドのルーラーマーカー"
                             : "水平ガイドのルーラーマーカー"
                     )
-                    .accessibilityValue(String(Int((dragPosition ?? guide.position).rounded())))
-                    .accessibilityHint("ドラッグで移動。コンテキストメニューでガイドを削除")
+                    .accessibilityValue(
+                        CanvasGuidePositionInput.text(for: (dragPosition ?? guide.position).rounded())
+                    )
+                    .accessibilityHint("ドラッグで移動。コンテキストメニューで位置変更または削除")
             }
         }
     }
 
     /// 論理名（日本語）: ガイド共通操作Modifier
-    /// 概要: ガイド線とルーラー上の三角マーカーへ同じ移動・削除インターフェースを付与します。
+    /// 概要: ガイド線とルーラー上の三角マーカーへ同じ移動・数値入力・削除インターフェースを付与します。
     private var interactionModifier: CanvasGuideInteractionModifier {
         CanvasGuideInteractionModifier(
             guide: guide,
@@ -922,9 +1144,30 @@ private struct CanvasPlacedGuideView: View {
             worldPosition: { point in
                 worldPosition(at: point)
             },
+            onEditPosition: presentPositionEditor,
             onUpdate: onUpdate,
             onDelete: onDelete
         )
+    }
+
+    /// 論理名（日本語）: ガイド位置入力ダイアログ表示関数
+    /// 処理概要: 最新の保存位置を入力欄へ設定し、右クリック元に関係なく共通ダイアログを表示します。
+    private func presentPositionEditor() {
+        draftPositionText = CanvasGuidePositionInput.text(for: guide.position)
+        positionEditorIsPresented = true
+    }
+
+    /// 論理名（日本語）: ガイド位置入力値確定関数
+    /// 処理概要: 有効な入力だけを既存のガイド更新経路へ渡し、Undo 可能な1操作として保存します。
+    private func commitDraftPosition() {
+        guard let draftPosition else { return }
+        onUpdate(guide.id, draftPosition)
+    }
+
+    /// 論理名（日本語）: ガイド位置入力中の数値
+    /// 概要: 入力文字列を `.ogp` へ保存可能な有限 world 座標として解決します。
+    private var draftPosition: Double? {
+        CanvasGuidePositionInput.value(from: draftPositionText)
     }
 
     /// 論理名（日本語）: ドラッグ位置ワールド座標取得関数
@@ -1010,13 +1253,14 @@ private struct CanvasGuideRulerMarkerShape: Shape {
 }
 
 /// 論理名（日本語）: ガイド共通操作Modifier
-/// 概要: ガイド線とルーラーマーカーへ共通のドラッグ移動、ルーラー戻し削除、右クリック削除を提供します。
+/// 概要: ガイド線とルーラーマーカーへ共通のドラッグ移動、数値入力、ルーラー戻し削除、右クリック削除を提供します。
 private struct CanvasGuideInteractionModifier: ViewModifier {
     var guide: OpenGraphiteCanvasGuide
     @Binding var dragPosition: Double?
     var contentRect: CGRect
     var coordinateSpaceName: String
     var worldPosition: (CGPoint) -> Double?
+    var onEditPosition: () -> Void
     var onUpdate: (String, Double) -> Void
     var onDelete: (String) -> Void
 
@@ -1041,6 +1285,10 @@ private struct CanvasGuideInteractionModifier: ViewModifier {
                     }
             )
             .contextMenu {
+                Button("位置を変更…") {
+                    onEditPosition()
+                }
+                Divider()
                 Button("ガイドを削除", role: .destructive) {
                     onDelete(guide.id)
                 }
