@@ -1964,9 +1964,7 @@ private struct PageLayerListView: View {
             }
             store.selectPage(internalID: page.internalID)
         case .components:
-            if store.selectedCollectionInternalID != group.internalID || store.selectedCanvasSegment != .components {
-                store.selectCollection(internalID: group.internalID)
-            }
+            // Component 選択側で所属 Collection も同時に解決し、先頭 component を経由する二重遷移を避ける。
             store.selectComponentPage(internalID: page.internalID)
         }
     }

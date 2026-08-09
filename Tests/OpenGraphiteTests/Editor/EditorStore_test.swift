@@ -979,6 +979,64 @@ struct EditorStoreTests {
         #expect(store.nodes.isEmpty)
     }
 
+    /// 論理名（日本語）: Components初期選択抑止テスト
+    /// 概要: Pages から Components へ切り替えても先頭 component を自動選択せず、明示選択まで重い編集準備を開始しないことを検証します。
+    @Test("PagesからComponentsへ切り替えても先頭componentを自動選択しない")
+    func testSelectComponentsSegmentKeepsComponentUnselected() throws {
+        // コンディション：Page と2件の component を持つprojectでPageを選択し、DOM nodeを読み込む（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let componentDirectory = fixture.publicURL.appendingPathComponent("_components", isDirectory: true)
+        try FileManager.default.createDirectory(at: componentDirectory, withIntermediateDirectories: true)
+        let firstComponentURL = componentDirectory.appendingPathComponent("first.html")
+        let secondComponentURL = componentDirectory.appendingPathComponent("second.html")
+        try "<!doctype html><html><body>First</body></html>".write(to: firstComponentURL, atomically: true, encoding: .utf8)
+        try "<!doctype html><html><body>Second</body></html>".write(to: secondComponentURL, atomically: true, encoding: .utf8)
+        var project = try ProjectLoader().loadProject(at: fixture.projectURL).project
+        project.collections = [
+            OpenGraphiteComponentCollection(
+                id: "components",
+                internalID: "collection-components",
+                components: [
+                    OpenGraphitePage(
+                        id: "first",
+                        internalID: "component-first",
+                        path: "_components/first.html",
+                        canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 100, height: 100)
+                    ),
+                    OpenGraphitePage(
+                        id: "second",
+                        internalID: "component-second",
+                        path: "_components/second.html",
+                        canvas: OpenGraphiteCanvas(x: 120, y: 0, width: 100, height: 100)
+                    )
+                ]
+            )
+        ]
+        try JSONEncoder().encode(project).write(to: fixture.projectURL, options: .atomic)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.ingestNodePayload([
+            ["id": "page-node", "tagName": "main", "depth": 0]
+        ])
+
+        // 検証内容：Sidebar 相当の操作で Components セグメントへ切り替える（When）
+        store.selectComponentsSegment()
+
+        // 期待値：Collection と全component canvasは表示対象になるが、component・node・HTML履歴対象は未選択になる（Then）
+        #expect(store.selectedCanvasSegment == .components)
+        #expect(store.selectedComponentCollection?.id == "components")
+        #expect(store.componentPages.map(\.id) == ["first", "second"])
+        #expect(store.selectedComponentPageID == nil)
+        #expect(store.selectedComponentPageInternalID == nil)
+        #expect(store.selectedPage == nil)
+        #expect(store.selectedPageURL == nil)
+        #expect(store.nodes.isEmpty)
+        #expect(store.canUndo == false)
+        #expect(store.canRedo == false)
+    }
+
     /// 論理名（日本語）: Chapter追加保存テスト
     /// 概要: Store から新しい Chapter を追加し、選択状態と `.ogp` の保存内容が更新されることを検証します。
     @Test("Chapterを追加してogpへ保存できる")
@@ -1668,6 +1726,7 @@ struct EditorStoreTests {
         store.openProject(at: fixture.projectURL)
         store.selectComponentsSegment()
         let component = try #require(store.componentPages.first)
+        store.selectComponentPage(internalID: component.internalID)
         let initialPageReloadToken = store.reloadToken(for: fixture.htmlURL)
 
         // 検証内容：Component ファイル名を拡張子なしで変更する（When）
@@ -1960,6 +2019,8 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         store.selectComponentsSegment()
+        let component = try #require(store.componentPages.first)
+        store.selectComponentPage(internalID: component.internalID)
 
         // 検証内容：Components セグメントで選択中の component canvas の位置だけを更新する（When）
         store.updateSelectedPageCanvasPosition(x: 320, y: -48)

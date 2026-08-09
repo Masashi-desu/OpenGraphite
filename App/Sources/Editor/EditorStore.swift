@@ -2332,8 +2332,8 @@ final class EditorStore: ObservableObject {
             selectedPageInternalID = nil
             selectedCollectionID = initialCollection?.id
             selectedCollectionInternalID = initialCollection?.internalID
-            selectedComponentPageID = initialCollection?.components.first?.id
-            selectedComponentPageInternalID = initialCollection?.components.first?.internalID
+            selectedComponentPageID = nil
+            selectedComponentPageInternalID = nil
             selectedCanvasAnnotationID = nil
             clearCanvasReferenceSelection()
             selectedProjectResource = nil
@@ -2503,7 +2503,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: Collection選択共通関数
-    /// 処理概要: 指定 Collection を Components セグメントへ反映し、先頭 component canvas を選択します。
+    /// 処理概要: 指定 Collection を Components セグメントへ反映し、component canvas は未選択にします。
     ///
     /// - Parameter collection: 選択する Collection。`nil` の場合は未選択状態にします。
     private func selectCollection(_ collection: OpenGraphiteComponentCollection?) {
@@ -2514,8 +2514,8 @@ final class EditorStore: ObservableObject {
         selectedCanvasSegment = .components
         selectedCollectionID = collection?.id
         selectedCollectionInternalID = collection?.internalID
-        selectedComponentPageID = collection?.components.first?.id
-        selectedComponentPageInternalID = collection?.components.first?.internalID
+        selectedComponentPageID = nil
+        selectedComponentPageInternalID = nil
         selectedNodeID = nil
         selectedCanvasAnnotationID = nil
         if selectedCanvasSegment != previousCanvasSegment || selectedPageURL != previousPageURL || selectedPage == nil {
@@ -2559,7 +2559,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: Componentsセグメント選択関数
-    /// 処理概要: Components canvas を表示し、必要に応じて先頭 component page を選択します。
+    /// 処理概要: Components canvas を表示し、有効な既存選択だけを維持します。
     func selectComponentsSegment() {
         let previousCanvasSegment = selectedCanvasSegment
         let previousPageURL = selectedPageURL
@@ -2573,8 +2573,8 @@ final class EditorStore: ObservableObject {
             selectedCollectionInternalID = collection?.internalID
         }
         if selectedComponentPageInternalID == nil || !componentPages.contains(where: { $0.internalID == selectedComponentPageInternalID }) {
-            selectedComponentPageID = componentPages.first?.id
-            selectedComponentPageInternalID = componentPages.first?.internalID
+            selectedComponentPageID = nil
+            selectedComponentPageInternalID = nil
         }
         selectedNodeID = nil
         selectedCanvasAnnotationID = nil
@@ -6372,8 +6372,8 @@ final class EditorStore: ObservableObject {
                 let fallbackCollection = Self.preferredCollection(in: reloadedProject.project, internalID: selectedCollectionInternalID)
                 selectedCollectionID = fallbackCollection?.id
                 selectedCollectionInternalID = fallbackCollection?.internalID
-                selectedComponentPageID = fallbackCollection?.components.first?.id
-                selectedComponentPageInternalID = fallbackCollection?.components.first?.internalID
+                selectedComponentPageID = nil
+                selectedComponentPageInternalID = nil
             }
 
             if previousSelectedCanvasSegment == .components, !reloadedProject.project.collections.isEmpty {
