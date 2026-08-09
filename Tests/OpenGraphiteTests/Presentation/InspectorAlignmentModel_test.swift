@@ -2,47 +2,48 @@ import Testing
 @testable import OpenGraphite
 
 /// 論理名（日本語）: インスペクター整列モデル関連のテストスイート
-/// 概要: `data-og-layout` から主軸と交差軸の対応、整列の有効性、既定値の補完が解決できることを確認します。
+/// 概要: computed `display` / `flex-direction`由来のlayoutから軸、適用可否、WebKit実効値を解決できることを確認します。
 @Suite("インスペクター整列モデル関連のテストスイート")
 struct InspectorAlignmentModelTests {
     /// 論理名（日本語）: レイアウト方向判定テスト
-    /// 概要: `data-og-layout` から縦並びかどうかと整列の有効性を判定できることを検証します。
-    @Test("layout値から並び方向と整列の有効性を判定できる")
+    /// 概要: computed style由来のlayoutから縦並びとflex/grid整列の有効性を判定できることを検証します。
+    @Test("computed layoutから並び方向と整列の有効性を判定できる")
     func testLayoutClassification() {
-        // コンディション：3 種類の layout 値を用意する（Given）
+        // コンディション：flex縦横、grid、blockのlayout分類を用意する（Given）
         let verticalLayout = "vertical"
         let horizontalLayout = "horizontal"
-        let absoluteLayout = "absolute"
+        let gridLayout = "grid"
+        let blockLayout = "block"
 
         // 検証内容：並び方向と整列の有効性を判定する（When）
         let isVertical = InspectorAlignmentModel.isVerticalLayout(verticalLayout)
         let isHorizontalVertical = InspectorAlignmentModel.isVerticalLayout(horizontalLayout)
         let supportsVerticalAlignment = InspectorAlignmentModel.supportsAlignment(verticalLayout)
-        let supportsAbsoluteAlignment = InspectorAlignmentModel.supportsAlignment(absoluteLayout)
+        let supportsGridAlignment = InspectorAlignmentModel.supportsAlignment(gridLayout)
+        let supportsBlockAlignment = InspectorAlignmentModel.supportsAlignment(blockLayout)
 
-        // 期待値：vertical だけ縦並びで、absolute は整列が効かない（Then）
+        // 期待値：verticalだけ縦並びで、flex/gridでは整列が効きblockでは無効になる（Then）
         #expect(isVertical)
         #expect(isHorizontalVertical == false)
         #expect(supportsVerticalAlignment)
-        #expect(supportsAbsoluteAlignment == false)
+        #expect(supportsGridAlignment)
+        #expect(supportsBlockAlignment == false)
     }
 
-    /// 論理名（日本語）: 既定整列値解決テスト
-    /// 概要: 未指定時に OpenGraphite.css の既定値が補われることを検証します。
-    @Test("未指定時はOpenGraphite.cssの既定整列値が補われる")
-    func testResolvedDefaults() {
-        // コンディション：align-items と justify-content が未指定の状態を用意する（Given）
+    /// 論理名（日本語）: Computed整列値解決テスト
+    /// 概要: authored未指定時にOpenGraphite独自既定ではなくWebKit computed値を表示することを検証します。
+    @Test("未指定時はWebKit computed整列値を表示する")
+    func testResolvedComputedValues() {
+        // コンディション：authored値が未指定でcomputed値だけが解決された状態を用意する（Given）
         let unsetValue = ""
 
-        // 検証内容：縦並びと横並びで実効値を解決する（When）
-        let verticalAlignItems = InspectorAlignmentModel.resolvedAlignItems(unsetValue, layout: "vertical")
-        let horizontalAlignItems = InspectorAlignmentModel.resolvedAlignItems(unsetValue, layout: "horizontal")
-        let justifyContent = InspectorAlignmentModel.resolvedJustifyContent(unsetValue)
+        // 検証内容：WebKit由来のalign-itemsとjustify-contentを実効値として解決する（When）
+        let alignItems = InspectorAlignmentModel.resolvedAlignItems(unsetValue, computedValue: "normal")
+        let justifyContent = InspectorAlignmentModel.resolvedJustifyContent(unsetValue, computedValue: "space-evenly")
 
-        // 期待値：縦並びは stretch、横並びは center、主軸は flex-start になる（Then）
-        #expect(verticalAlignItems == "stretch")
-        #expect(horizontalAlignItems == "center")
-        #expect(justifyContent == "flex-start")
+        // 期待値：runtimeが実際に描画しているcomputed値をそのまま返す（Then）
+        #expect(alignItems == "normal")
+        #expect(justifyContent == "space-evenly")
     }
 
     /// 論理名（日本語）: 指定済み整列値保持テスト
@@ -54,8 +55,11 @@ struct InspectorAlignmentModelTests {
         let justifyContent = "space-between"
 
         // 検証内容：実効値を解決する（When）
-        let resolvedAlignItems = InspectorAlignmentModel.resolvedAlignItems(alignItems, layout: "vertical")
-        let resolvedJustifyContent = InspectorAlignmentModel.resolvedJustifyContent(justifyContent)
+        let resolvedAlignItems = InspectorAlignmentModel.resolvedAlignItems(alignItems, computedValue: "normal")
+        let resolvedJustifyContent = InspectorAlignmentModel.resolvedJustifyContent(
+            justifyContent,
+            computedValue: "normal"
+        )
 
         // 期待値：指定した値がそのまま返る（Then）
         #expect(resolvedAlignItems == "flex-end")

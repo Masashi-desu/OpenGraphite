@@ -6,6 +6,58 @@ import Testing
 /// 概要: page と `.ogp` 注釈の境界 union、および筆圧対応線幅の決定的な計算を確認します。
 @Suite("キャンバススクリーンショットレンダラー関連のテストスイート")
 struct OpenGraphiteScreenshotRendererTests {
+    /// 論理名（日本語）: 単一スクリーンショット対象参照解決テスト
+    /// 概要: `screenshot page` がpageとcomponentの表示ID・内部IDを同じ契約で解決することを確認します。
+    @Test("page screenshotはpageとcomponentの表示IDを解決する")
+    func testScreenshotPageResolvesPageAndComponentDisplayIDs() throws {
+        // コンディション：表示IDと内部IDが異なるpage・componentを持つprojectを用意する（Given）
+        let page = OpenGraphitePage(
+            id: "landing",
+            internalID: "page-landing",
+            path: "landing.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 320, height: 240)
+        )
+        let component = OpenGraphitePage(
+            id: "state-card",
+            internalID: "component-state-card",
+            path: "_components/state-card.html",
+            canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 320, height: 240)
+        )
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Screenshot References",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            chapters: [
+                OpenGraphiteChapter(id: "pages", internalID: "chapter-pages", pages: [page])
+            ],
+            collections: [
+                OpenGraphiteComponentCollection(
+                    id: "components",
+                    internalID: "collection-components",
+                    components: [component]
+                )
+            ]
+        )
+
+        // 検証内容：pageとcomponentを表示IDおよび内部IDから解決する（When）
+        let renderer = OpenGraphiteScreenshotRenderer()
+        let pageByDisplayID = renderer.screenshotPage(in: project, matching: "landing")
+        let pageByInternalID = renderer.screenshotPage(in: project, matching: "page-landing")
+        let componentByDisplayID = renderer.screenshotPage(in: project, matching: "state-card")
+        let componentByInternalID = renderer.screenshotPage(
+            in: project,
+            matching: "component-state-card"
+        )
+
+        // 期待値：CLI文面どおりどちらのsegmentも両ID形式で同じentryへ解決される（Then）
+        #expect(pageByDisplayID?.internalID == "page-landing")
+        #expect(pageByInternalID?.id == "landing")
+        #expect(componentByDisplayID?.internalID == "component-state-card")
+        #expect(componentByInternalID?.id == "state-card")
+    }
+
     /// 論理名（日本語）: 既定キャンバスChapter選択テスト
     /// 概要: selector 省略時に Sidebar で非表示の Chapter を飛ばし、全件非表示なら暗黙選択しないことを確認します。
     @Test("canvas screenshotの既定対象は先頭の表示中Chapterにする")

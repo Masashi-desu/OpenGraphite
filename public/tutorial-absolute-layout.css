@@ -1,14 +1,143 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  absolutestage,
+  accentcircle,
+  controlitem,
+  controllabel,
+  controlrail,
+  controlvalue,
+  coordinatebadge,
+  coordinatetext,
+  floatingcard,
+  floatingindex,
+  floatingtext,
+  floatingtitle,
+  originmarker,
+  overlaycard,
+  overlaylabel,
+  overlaytext,
+  practicepanel,
+  practicetext,
+  practicetitle,
+  railnote,
+  railtitle,
+  stagegrid,
+  stagelabel,
+  steplabel,
+  tutorialabsolute,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle,
+  workspace
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  absolutestage,
+  accentcircle,
+  controlitem,
+  controlrail,
+  coordinatebadge,
+  floatingcard,
+  originmarker,
+  overlaycard,
+  practicepanel,
+  stagegrid,
+  tutorialabsolute,
+  tutorialheader,
+  workspace
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  controllabel,
+  controlvalue,
+  coordinatetext,
+  floatingindex,
+  floatingtext,
+  floatingtitle,
+  overlaylabel,
+  overlaytext,
+  practicetext,
+  practicetitle,
+  railnote,
+  railtitle,
+  stagelabel,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  controllabel,
+  controlvalue,
+  coordinatetext,
+  floatingindex,
+  floatingtext,
+  floatingtitle,
+  overlaylabel,
+  overlaytext,
+  practicetext,
+  practicetitle,
+  railnote,
+  railtitle,
+  stagelabel,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutabsroot003"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0b0c10;
   color: #f5f6f8;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutabsroot003"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutabsheader03"] {
+  display: flex;
+  flex-direction: column;
   max-width: 860px;
   gap: 12px;
 }
@@ -39,12 +168,16 @@
 }
 
 [data-og-internal-id="tutabsworkspace"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   align-items: stretch;
 }
 
 [data-og-internal-id="tutabsrail003"] {
+  display: flex;
+  flex-direction: column;
   width: 260px;
   min-width: 260px;
   gap: 12px;
@@ -63,6 +196,8 @@
 [data-og-internal-id="tutabsctrlpos"],
 [data-og-internal-id="tutabsctrlsize"],
 [data-og-internal-id="tutabsctrllayer"] {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   padding: 14px;
   background: #191d23;
@@ -90,6 +225,8 @@
 }
 
 [data-og-internal-id="tutabsstage003"] {
+  display: block;
+  position: relative;
   flex: 1 1 auto;
   height: 520px;
   overflow: hidden;
@@ -132,6 +269,8 @@
 }
 
 [data-og-internal-id="tutabsfloatcard"] {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   left: 88px;
   top: 120px;
@@ -159,6 +298,9 @@
 }
 
 [data-og-internal-id="tutabscoord003"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   position: absolute;
   left: 88px;
   top: 368px;
@@ -178,6 +320,8 @@
 }
 
 [data-og-internal-id="tutabsoverlay03"] {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   left: auto;
   top: auto;
@@ -210,6 +354,8 @@
 }
 
 [data-og-internal-id="tutabspractice"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 20px;
   padding: 18px 22px;
@@ -230,4 +376,12 @@
   color: #c2cad1;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutabsworkspace"],
+  [data-og-internal-id="tutabscoord003"],
+  [data-og-internal-id="tutabspractice"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

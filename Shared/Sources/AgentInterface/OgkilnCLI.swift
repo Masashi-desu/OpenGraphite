@@ -127,6 +127,52 @@ struct OgkilnCLI {
             let result = try core.setDesignToken(name, value: "", projectURL: projectURL)
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
 
+        case ["locale-typography", "list"]:
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.localeTypography(
+                projectURL: projectURL,
+                pageID: try requiredPageID(in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
+
+        case ["locale-typography", "set"]:
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.setLocaleTypography(
+                projectURL: projectURL,
+                pageID: try requiredPageID(in: arguments),
+                locale: try optionalOption("--locale", in: arguments),
+                fontFamily: try requiredOption("--value", in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
+
+        case ["locale-typography", "remove"]:
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.setLocaleTypography(
+                projectURL: projectURL,
+                pageID: try requiredPageID(in: arguments),
+                locale: try optionalOption("--locale", in: arguments),
+                fontFamily: ""
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
+
         case ["project", "page"]:
             guard arguments.indices.contains(2) else { break }
             switch arguments[2] {
@@ -290,7 +336,11 @@ struct OgkilnCLI {
 
         case ["page", "graph"]:
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
-            let graph = try core.pageGraph(projectURL: projectURL, pageID: requiredPageID(in: arguments))
+            let graph = try core.pageGraph(
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                activeMediaQueries: try optionValues("--active-media", in: arguments)
+            )
             return try OgkilnOutput(object: graph, exitCode: graph.diagnostics.contains { $0.severity == .error } ? 1 : 0)
 
         case ["i18n", "inspect"]:
@@ -313,6 +363,25 @@ struct OgkilnCLI {
 
         default:
             break
+        }
+
+        if arguments.first == "migrate" {
+            let targetURL = try projectURL(
+                from: positional(arguments, at: 1, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let result = try core.migrateProject(
+                projectURL: targetURL,
+                targetVersion: try optionalOption("--target-version", in: arguments)
+                    ?? core.contract.migrationPolicy.targetVersion,
+                options: .standard,
+                proposalReference: try optionalOption("--proposal", in: arguments),
+                apply: hasFlag("--apply", in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
         }
 
         if arguments.first == "validate" {
@@ -378,21 +447,70 @@ struct OgkilnCLI {
 
         if arguments.count >= 2, arguments[0] == "node", arguments[1] == "query" {
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
+            let capabilities = try optionValues("--capability", in: arguments).map { value in
+                guard let capability = OpenGraphiteNodeCapability(rawValue: value) else {
+                    let allowed = OpenGraphiteNodeCapability.allCases
+                        .map(\.rawValue)
+                        .sorted()
+                        .joined(separator: ", ")
+                    throw OgkilnCLIError(
+                        message: "--capability \(value) は未対応です。次のいずれかを指定してください: \(allowed)",
+                        exitCode: 2
+                    )
+                }
+                return capability
+            }
             let query = OpenGraphiteNodeQuery(
                 idContains: try optionalOption("--id-contains", in: arguments),
                 type: try optionalOption("--type", in: arguments),
+                capabilities: capabilities,
                 role: try optionalOption("--role", in: arguments),
                 tag: try optionalOption("--tag", in: arguments),
                 textContains: try optionalOption("--text-contains", in: arguments)
             )
-            let result = try core.queryNodes(projectURL: projectURL, pageID: requiredPageID(in: arguments), query: query)
+            let result = try core.queryNodes(
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                query: query,
+                activeMediaQueries: try optionValues("--active-media", in: arguments)
+            )
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
+        }
+
+        if arguments.count >= 2, arguments[0] == "node", arguments[1] == "adopt" {
+            let projectURL = try projectURL(
+                from: positional(arguments, at: 2, description: ".ogp path or current"),
+                currentDirectory: currentDirectory
+            )
+            let scopeValue = try optionalOption("--scope", in: arguments) ?? OpenGraphiteNodeAdoptionScope.node.rawValue
+            guard let scope = OpenGraphiteNodeAdoptionScope(rawValue: scopeValue) else {
+                throw OgkilnCLIError(message: "--scope は node / subtree のいずれかを指定してください。", exitCode: 2)
+            }
+            let result = try core.adoptNode(
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                reference: try optionalOption("--reference", in: arguments),
+                selector: try optionalOption("--selector", in: arguments),
+                domPath: try optionalOption("--dom-path", in: arguments),
+                scope: scope,
+                displayID: try optionalOption("--display-id", in: arguments),
+                apply: hasFlag("--apply", in: arguments)
+            )
+            return try OgkilnOutput(
+                object: result,
+                exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0
+            )
         }
 
         if arguments.count >= 2, arguments[0] == "node", arguments[1] == "get" {
             let projectURL = try projectURL(from: positional(arguments, at: 2, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let id = try requiredOption("--id", in: arguments)
-            let result = try core.node(id: id, projectURL: projectURL, pageID: requiredPageID(in: arguments))
+            let result = try core.node(
+                id: id,
+                projectURL: projectURL,
+                pageID: requiredPageID(in: arguments),
+                activeMediaQueries: try optionValues("--active-media", in: arguments)
+            )
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
         }
 
@@ -406,7 +524,8 @@ struct OgkilnCLI {
                 value: value,
                 nodeID: id,
                 projectURL: projectURL,
-                pageID: requiredPageID(in: arguments)
+                pageID: requiredPageID(in: arguments),
+                activeMediaQueries: try optionValues("--active-media", in: arguments)
             )
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
         }
@@ -420,7 +539,8 @@ struct OgkilnCLI {
                 value: "",
                 nodeID: id,
                 projectURL: projectURL,
-                pageID: requiredPageID(in: arguments)
+                pageID: requiredPageID(in: arguments),
+                activeMediaQueries: try optionValues("--active-media", in: arguments)
             )
             return try OgkilnOutput(object: result, exitCode: result.diagnostics.contains { $0.severity == .error } ? 1 : 0)
         }
@@ -444,9 +564,8 @@ struct OgkilnCLI {
             let projectURL = try projectURL(from: positional(arguments, at: 3, description: ".ogp path or current"), currentDirectory: currentDirectory)
             let id = try requiredOption("--id", in: arguments)
             let name = try requiredOption("--name", in: arguments)
-            let result = try core.setAttribute(
+            let result = try core.removeAttribute(
                 name,
-                value: "",
                 nodeID: id,
                 projectURL: projectURL,
                 pageID: requiredPageID(in: arguments)
@@ -970,6 +1089,9 @@ struct OgkilnCLI {
       ogkiln design-token list <project.ogp|current> --json
       ogkiln design-token set <project.ogp|current> --name <css-custom-property> --value <css-value>
       ogkiln design-token remove <project.ogp|current> --name <css-custom-property>
+      ogkiln locale-typography list <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
+      ogkiln locale-typography set <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locale <default|BCP47>] --value <font-family>
+      ogkiln locale-typography remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locale <default|BCP47>]
       ogkiln project page add <project.ogp|current> --page-id <page-id> --path <html-path> [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--allow-duplicate-path]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-file <body.html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
       ogkiln project page create <project.ogp|current> --page-id <page-id> --path <html-path> --title <title> --body-html <body-html> [--lang <lang>] [--stylesheet <path>] [--overwrite]
@@ -981,22 +1103,25 @@ struct OgkilnCLI {
       ogkiln project component place <project.ogp|current> --component-id <component-id> [--name <name>] [--x <n>] [--y <n>] [--width <n>] [--height <n>] [--preview-mock <key=value>] [--preview-placement-mock <placement-id:key=value>]
       ogkiln project component document <project.ogp|current> --component-id <component-id> [--lang-source <literal|binding>] [--lang <lang>] [--lang-field <field>] [--dir-source <literal|auto|binding>] [--dir <ltr|rtl|auto>] [--dir-field <field>]
       ogkiln project component remove <project.ogp|current> --component-id <component-id> [--delete-file]
-      ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> --json
+      ogkiln page graph <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--active-media <condition>]... --json
       ogkiln i18n inspect <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locales <locale,locale>] --json
       ogkiln i18n recommend <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--locales <locale,locale>]
       ogkiln i18n resource set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --locale <locale> --key <i18n-key> --value <text>
       ogkiln i18n resource set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --locale <locale> --key <i18n-key> --text-file <text-file>
       ogkiln validate <project.ogp|current> [--json]
+      ogkiln migrate <project.ogp|current> [--target-version <version>] [--proposal <ogref-session:migration:...>] [--apply] --json
       ogkiln build <project.ogp|current> --output <dir>
       ogkiln screenshot canvas <project.ogp|current> --output <png> [--chapter-id <chapter-id>|--collection-id <collection-id>]
       ogkiln screenshot page <project.ogp|current> --page-id <page-id>|--component-id <component-id> --output <png> [--width <n>] [--height <n>] [--full-page]
       ogkiln screenshot node <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --output <png> [--width <n>] [--height <n>] [--padding <n>]
-      ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <type>] [--role <role>] [--tag <tag>] [--text-contains <text>] --json
-      ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --json
-      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property> --value <css-value>
-      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property>
-      ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr> --value <value>
-      ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <data-og-attr>
+      ogkiln node query <project.ogp|current> --page-id <page-id>|--component-id <component-id> [--id-contains <text>] [--type <legacy-data-og-type-hint>] [--capability <operation>]... [--role <role>] [--tag <tag>] [--text-contains <text>] [--active-media <condition>]... --json
+      ogkiln node adopt <project.ogp|current> --page-id <page-id>|--component-id <component-id> (--reference <node-reference>|--selector <safe-selector>|--dom-path <dom-path>) [--scope <node|subtree>] [--display-id <data-og-id>] [--apply]
+        --apply requires the proposal targetReference returned by dry-run with identical --scope/--display-id options.
+      ogkiln node get <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> [--active-media <condition>]... --json
+      ogkiln node style set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property> --value <css-value> [--active-media <condition>]...
+      ogkiln node style remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --var <css-property> [--active-media <condition>]...
+      ogkiln node attr set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <editable-html-attr> --value <value>
+      ogkiln node attr remove <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <editable-html-attr>
       ogkiln node icon set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --name <lucide-name> [--library lucide] [--source <inline|cdn|library>]
       ogkiln node icon insert <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <anchor-node-id> --position <before|after|prepend|append> --name <lucide-name> [--icon-id <data-og-id>] [--library lucide] [--source <inline|cdn|library>] [--width <css-length>] [--height <css-length>]
       ogkiln node text set <project.ogp|current> --page-id <page-id>|--component-id <component-id> --id <node-id> --value <text>

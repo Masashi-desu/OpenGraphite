@@ -152,7 +152,7 @@ struct OpenGraphiteIconTests {
     @Test("左カラムのアイコンを実装とデザインの工程に沿わせる")
     func testLeftColumnIconsFollowSourceOfTruthMeaning() {
         // コンディション：左カラムで使う代表的なアイコン記述子を取得する（Given）
-        let frameIcon = OpenGraphiteIcon.layerType("frame")
+        let frameIcon = OpenGraphiteIcon.layerPresentationHint(.container)
         let pageIcon = OpenGraphiteIcon.pageDocument
         let componentIcon = OpenGraphiteIcon.componentDocument
         let collectionIcon = OpenGraphiteIcon.collectionGroup
@@ -175,7 +175,7 @@ struct OpenGraphiteIconTests {
     @Test("icon primitiveをレイヤー上でアイコン表示する")
     func testLayerTypeIconUsesStar() {
         // コンディション：icon primitive のレイヤーアイコンを取得する（Given）
-        let icon = OpenGraphiteIcon.layerType("icon")
+        let icon = OpenGraphiteIcon.layerPresentationHint(.icon)
 
         // 検証内容：Lucide ID を確認する（When）
         let iconName = icon.name
@@ -198,7 +198,7 @@ struct OpenGraphiteIconTests {
             layout: nil,
             role: nil,
             componentID: "feature-card",
-            componentKind: "master",
+            isComponentMaster: true,
             cssVariables: [:],
             isHidden: false,
             isLocked: false,
@@ -233,6 +233,7 @@ struct OpenGraphiteIconTests {
             id: "home-card-title",
             tagName: "featuretitle",
             type: "text",
+            capabilities: [.editText],
             layout: nil,
             role: nil,
             sourceComponentID: "feature-card",

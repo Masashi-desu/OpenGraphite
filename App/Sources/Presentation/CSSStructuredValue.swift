@@ -316,6 +316,94 @@ struct CSSPairValue: Equatable {
     }
 }
 
+/// 論理名（日本語）: CSS個別scale値
+/// 概要: 標準`scale` propertyの2D値をX/Y軸へ展開し、関数値・3D値・keywordはraw値として損失なく保持します。
+///
+/// プロパティ:
+/// - `x`: 水平方向のscale値。
+/// - `y`: 垂直方向のscale値。
+/// - `rawValue`: 2軸入力へ安全に分解できない標準CSS値。
+struct CSSScaleValue: Equatable {
+    var x: String
+    var y: String
+    var rawValue: String
+
+    /// 論理名（日本語）: CSS個別scale値初期化関数
+    /// 処理概要: 軸値またはraw値をtrimして保持します。
+    ///
+    /// - Parameters:
+    ///   - x: 水平方向のscale値。
+    ///   - y: 垂直方向のscale値。
+    ///   - rawValue: 2軸入力へ安全に分解できない標準CSS値。
+    init(x: String = "", y: String = "", rawValue: String = "") {
+        self.x = x.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.y = y.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.rawValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 論理名（日本語）: CSS個別scale文字列初期化関数
+    /// 処理概要: 単純な1〜2個のnumber/percentageをX/Y軸へ展開し、それ以外はraw編集値として保持します。
+    ///
+    /// - Parameter cssString: 標準`scale` propertyのauthored値。
+    init(cssString: String) {
+        let normalizedValue = cssString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedValue.isEmpty else {
+            self.init()
+            return
+        }
+
+        let tokens = CSSValueTokenizer.splitWhitespace(normalizedValue)
+        guard (1...2).contains(tokens.count), tokens.allSatisfy(Self.isSimpleAxisValue) else {
+            self.init(rawValue: normalizedValue)
+            return
+        }
+
+        self.init(x: tokens[0], y: tokens.count == 1 ? tokens[0] : tokens[1])
+    }
+
+    /// 2軸フィールドで値を損なわず編集できる場合に`true`を返します。
+    var usesAxisFields: Bool {
+        rawValue.isEmpty
+    }
+
+    /// X/Y軸またはraw値を標準`scale` propertyの文字列へ直列化します。
+    var cssString: String {
+        let normalizedRawValue = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedRawValue.isEmpty {
+            return normalizedRawValue
+        }
+
+        let normalizedX = x.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedY = y.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedX.isEmpty || !normalizedY.isEmpty else { return "" }
+        return "\(normalizedX.isEmpty ? "1" : normalizedX) \(normalizedY.isEmpty ? "1" : normalizedY)"
+    }
+
+    /// 論理名（日本語）: 未変更scale直列化関数
+    /// 処理概要: Inspectorの編集状態がauthored値から変わっていない場合は1値表記や空白を含む元sourceを維持し、変更時だけ標準2軸値へ直列化します。
+    ///
+    /// - Parameter authoredValue: Inspectorを開いた時点の標準`scale`値。
+    /// - Returns: 未変更時はtrim済みauthored値、変更時は現在の編集状態を表すCSS値。
+    func cssString(preservingUnchanged authoredValue: String) -> String {
+        let normalizedAuthoredValue = authoredValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return self == CSSScaleValue(cssString: normalizedAuthoredValue)
+            ? normalizedAuthoredValue
+            : cssString
+    }
+
+    /// 論理名（日本語）: scale軸値判定関数
+    /// 処理概要: Inspectorの軸フィールドで安全に扱える単純なCSS numberまたはpercentageだけを受理します。
+    ///
+    /// - Parameter token: 判定するCSS token。
+    /// - Returns: 単純なnumber/percentageの場合は`true`。
+    private static func isSimpleAxisValue(_ token: String) -> Bool {
+        token.range(
+            of: #"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?%?$"#,
+            options: .regularExpression
+        ) != nil
+    }
+}
+
 /// 論理名（日本語）: CSS数値単位値
 /// 概要: `72px` や `1.6` などを数値部と単位部へ分けます。
 ///

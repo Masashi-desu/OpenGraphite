@@ -25,6 +25,7 @@ import Foundation
 /// - `mockState`: preview mock state カード。
 /// - `canvas`: canvas 配置カード。
 /// - `project`: project 概要カード。
+/// - `projectMigration`: Web contract migrationカード。
 /// - `designTokens`: design token カード。
 /// - `iconCDN`: icon CDN 依存性カード。
 /// - `localeResource`: locale resource カード。
@@ -51,6 +52,7 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
     case mockState
     case canvas
     case project
+    case projectMigration
     case designTokens
     case iconCDN
     case localeResource
@@ -65,25 +67,24 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
         switch key {
         case "align-items", "justify-content":
             return [.alignment]
-        case "gap", "padding", "margin", "flex":
+        case "display", "flex-direction", "grid-template-columns", "grid-template-rows", "grid-auto-flow",
+             "gap", "padding", "margin", "flex":
             return [.layout]
+        case "visibility":
+            return [.context, .layout]
         case "position", "left", "top", "right", "bottom", "z-index":
             return [.position]
         case "width", "height", "min-width", "min-height", "max-width":
             return [.dimensions]
-        case "color", "background", "border", "border-radius",
-             "--og-page-background", "--og-text-color", "--og-muted-color",
-             "--og-accent", "--og-accent-foreground":
+        case "color", "background", "border", "border-radius":
             return [.appearance]
-        case "font-family", "font-size", "font-weight", "line-height", "letter-spacing", "text-align":
+        case "font-family", "font-size", "font-weight", "line-height", "letter-spacing", "text-align", "overflow-wrap":
             return [.typography]
-        case "--og-font-family-default", "--og-font-family-ja", "--og-font-family-en", "--og-font-family-eng":
-            return [.localeTypography, .typography]
-        case "--og-object-fit":
+        case "object-fit":
             return [.media]
-        case "--og-stroke-width", "--og-icon-url":
+        case "stroke-width", "mask-image", "-webkit-mask-image":
             return [.icon]
-        case "box-shadow", "transform-origin", "--og-scale-x", "--og-scale-y":
+        case "box-shadow", "transform-origin", "scale":
             return [.effects]
         case "animation-name", "animation-duration", "animation-delay",
              "animation-timing-function", "animation-iteration-count",
@@ -114,14 +115,15 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
     /// 論理名（日本語）: 属性対応セクション取得関数
     /// 処理概要: 永続属性名から、Inspector 上で開くべきカードを返します。
     ///
-    /// - Parameter name: `data-og-*` などの属性名。
+    /// - Parameter name: 標準HTML属性または維持対象`data-og-*`属性名。
     /// - Returns: 関連する Inspector セクション ID。未対応の場合は空集合。
     static func sections(forAttributeName name: String) -> Set<InspectorSectionID> {
         switch name {
-        case "data-og-layout":
-            return [.layout]
-        case "data-og-role", "data-og-hidden", "data-og-locked":
+        case "hidden", "role", "data-og-locked", "href", "target", "rel", "download",
+             "value", "name", "type", "placeholder", "disabled", "checked", "selected", "aria-label":
             return [.context]
+        case "src", "alt":
+            return [.media]
         case "data-og-icon-library", "data-og-icon-name", "data-og-icon-source":
             return [.icon]
         default:
@@ -140,7 +142,9 @@ enum InspectorSectionID: String, Hashable, CaseIterable {
             return sections(forCSSKey: key)
         case let .setCSSVariables(_, values, _):
             return sections(forCSSKeys: values.keys)
-        case let .setAttribute(_, name, _, _):
+        case let .setAttribute(_, name, _, _, _):
+            return sections(forAttributeName: name)
+        case let .removeAttribute(_, name, _, _):
             return sections(forAttributeName: name)
         case .renameNodeID:
             return [.context]

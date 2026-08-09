@@ -116,7 +116,7 @@ enum OpenGraphiteIconMarkup {
                 library: normalizedLibrary,
                 name: normalizedName,
                 source: normalizedSource,
-                html: #"<span data-og-icon-mask="true" aria-hidden="true"></span>"#,
+                html: #"<span aria-hidden="true"></span>"#,
                 diagnostics: []
             )
         case "library":
@@ -188,22 +188,23 @@ enum OpenGraphiteIconMarkup {
         )
     }
 
-    /// 論理名（日本語）: アイコンCSS custom property生成関数
-    /// 処理概要: icon node の描画に必要な companion CSS custom property を metadata から生成します。
+    /// 論理名（日本語）: アイコンCSS宣言生成関数
+    /// 処理概要: icon node の実描画要素へ保存する標準 mask property を metadata から生成します。
     ///
     /// - Parameters:
     ///   - library: 正規化済み icon library。
     ///   - name: 正規化済み icon name。
     ///   - source: 正規化済み icon source。
-    /// - Returns: icon node に保存する CSS custom property。不要な場合は空辞書。
-    static func cssVariables(library: String, name: String, source: String) -> [String: String] {
+    /// - Returns: icon node の mask 描画要素へ保存する標準 CSS declaration。
+    static func renderingStyleDeclarations(library: String, name: String, source: String) -> [String: String] {
         guard normalizeLibrary(library) == "lucide",
               normalizeSource(source) == "cdn",
               isValidName(normalizeName(name))
         else {
-            return ["--og-icon-url": ""]
+            return ["mask-image": "", "-webkit-mask-image": ""]
         }
-        return ["--og-icon-url": "url('\(lucideStaticCDNBaseURL)/\(normalizeName(name)).svg')"]
+        let image = "url('\(lucideStaticCDNBaseURL)/\(normalizeName(name)).svg')"
+        return ["mask-image": image, "-webkit-mask-image": image]
     }
 
     /// 論理名（日本語）: アイコンIDベース正規化関数
@@ -246,7 +247,6 @@ enum OpenGraphiteIconMarkup {
         let attributes: [(name: String, value: String)] = [
             ("data-og-id", id),
             ("data-og-internal-id", internalID),
-            ("data-og-type", "icon"),
             ("data-og-icon-library", library),
             ("data-og-icon-name", name),
             ("data-og-icon-source", source)

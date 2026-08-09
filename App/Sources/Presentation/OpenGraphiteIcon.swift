@@ -227,6 +227,8 @@ extension OpenGraphiteIcon {
             return .lucide("frame", fallbackSystemName: "square.dashed")
         case .project:
             return .projectPanel
+        case .projectMigration:
+            return .lucide("file-diff", fallbackSystemName: "arrow.triangle.2.circlepath")
         case .designTokens:
             return .designTokenResource
         case .iconCDN:
@@ -280,45 +282,45 @@ extension OpenGraphiteIcon {
         }
     }
 
-    /// 論理名（日本語）: レイヤー種別アイコン生成関数
-    /// 処理概要: HTML node の `data-og-type` を Lucide 優先のアイコン記述子へ変換します。
+    /// 論理名（日本語）: レイヤー表示ヒントアイコン生成関数
+    /// 処理概要: DOM capabilityから導出済みの表示専用hintをLucide優先のアイコン記述子へ変換します。
     ///
-    /// - Parameter type: HTML node の `data-og-type`。
+    /// - Parameter hint: operation認可とは独立したノード表示hint。
     /// - Returns: レイヤー種別を表すアイコン記述子。
-    static func layerType(_ type: String) -> OpenGraphiteIcon {
-        switch type {
-        case "page":
+    static func layerPresentationHint(_ hint: OpenGraphiteNodePresentationHint) -> OpenGraphiteIcon {
+        switch hint {
+        case .page:
             return .lucide("file-code", fallbackSystemName: "doc.text")
-        case "frame":
+        case .container:
             return .lucide("code", fallbackSystemName: "chevron.left.forwardslash.chevron.right")
-        case "text":
+        case .text:
             return .lucide("type", fallbackSystemName: "textformat")
-        case "button":
+        case .control:
             return .lucide("square-mouse-pointer", fallbackSystemName: "button.programmable")
-        case "image":
+        case .media:
             return .lucide("image", fallbackSystemName: "photo")
-        case "icon":
+        case .icon:
             return .lucide("star", fallbackSystemName: "star")
-        default:
+        case .generic:
             return .lucide("code-xml", fallbackSystemName: "curlybraces")
         }
     }
 
     /// 論理名（日本語）: レイヤーノードアイコン生成関数
-    /// 処理概要: component master と component instance を優先し、それ以外は `data-og-type` からアイコンを決定します。
+    /// 処理概要: component masterとcomponent instanceを優先し、それ以外はDOM capabilityから得た表示hintでアイコンを決定します。
     ///
     /// - Parameter node: 左カラムの Layers に表示する OpenGraphite ノード。
     /// - Returns: ノードの意味を表すアイコン記述子。
     static func layerNode(_ node: OpenGraphiteNode) -> OpenGraphiteIcon {
-        if node.role == "component-placement" {
+        if node.tagName == "og-placement" {
             return .componentPlacement
         }
-        if node.componentKind == "master" {
+        if node.isComponentMaster {
             return .componentDocument
         }
         if node.tagName == "og-instance" || node.id == node.sourceInstanceID {
             return .componentInstance
         }
-        return .layerType(node.type)
+        return .layerPresentationHint(node.presentationHint)
     }
 }

@@ -239,8 +239,8 @@ private struct SidebarHistoryObjectPreview: View {
                 .fill(EditorColumnStyle.elevatedRowFill)
 
             switch kind {
-            case let .node(type):
-                nodePreview(type: type)
+            case let .node(hint):
+                nodePreview(hint: hint)
             case let .stickyNote(backgroundColor, text):
                 stickyNotePreview(backgroundColor: backgroundColor, text: text)
             case let .ink(color):
@@ -263,9 +263,9 @@ private struct SidebarHistoryObjectPreview: View {
     /// 論理名（日本語）: HTMLオブジェクト簡易プレビュー
     /// 処理概要: pageまたはnodeを表すミニカードと種別アイコンを描画します。
     ///
-    /// - Parameter type: `data-og-type`。
+    /// - Parameter hint: DOM capabilityから導出した表示専用hint。
     /// - Returns: HTMLオブジェクトの簡易プレビュー。
-    private func nodePreview(type: String) -> some View {
+    private func nodePreview(hint: OpenGraphiteNodePresentationHint) -> some View {
         ZStack(alignment: .bottomTrailing) {
             RoundedRectangle(cornerRadius: 3)
                 .fill(Color.primary.opacity(0.08))
@@ -279,7 +279,7 @@ private struct SidebarHistoryObjectPreview: View {
                     .padding(5)
                 }
 
-            OpenGraphiteIconView(icon: .layerType(type), size: 11)
+            OpenGraphiteIconView(icon: .layerPresentationHint(hint), size: 11)
                 .foregroundStyle(Color.accentColor)
                 .padding(3)
                 .background(.bar, in: RoundedRectangle(cornerRadius: 3))

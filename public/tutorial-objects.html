@@ -3,79 +3,133 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tutorial 01 — 基本オブジェクトとページ管理</title>
+    <title>Tutorial 01 — HTML semantics・Adopt・Source contract</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
     <link rel="stylesheet" href="./tutorial-objects.css">
   </head>
   <body>
-    <TutorialObjects data-og-id="tutorial-objects" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutobjroot01">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjheader01">
-        <HeaderCopy data-og-id="header-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjheadcopy">
-          <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutobjstep01">PAGES TUTORIAL · 01</StepLabel>
-          <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutobjtitle01">基本オブジェクトとページを扱う</TutorialTitle>
-          <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutobjlead001">Canvas 上のオブジェクトをクリックすると、Layers と Inspector が同じノードを示します。Page と Chapter の右クリックでは、ソースを守りながら表示範囲を整理できます。</TutorialLead>
+    <TutorialObjects data-og-id="tutorial-objects" data-og-internal-id="tutobjroot01">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutobjheader01">
+        <HeaderCopy data-og-id="header-copy" data-og-internal-id="tutobjheadcopy">
+          <StepLabel data-og-id="step-label" data-og-internal-id="tutobjstep01">PAGES TUTORIAL · 01</StepLabel>
+          <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutobjtitle01">HTML semantics・Adopt・Source contract</TutorialTitle>
+          <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutobjlead001">OpenGraphite は標準 tag、ARIA、DOM content、media 実体、computed CSS から操作ごとの capability を判定します。注釈のない標準 HTML もそのまま扱い、必要な node だけに stable identity を明示的に追加します。</TutorialLead>
         </HeaderCopy>
-        <GoalCard data-og-id="goal-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjgoal001">
-          <GoalLabel data-og-id="goal-label" data-og-type="text" data-og-internal-id="tutobjgoallbl">このセクションのゴール</GoalLabel>
-          <GoalText data-og-id="goal-text" data-og-type="text" data-og-internal-id="tutobjgoaltxt">選択と表示整理の安全な違いを理解する</GoalText>
+        <GoalCard data-og-id="goal-card" data-og-internal-id="tutobjgoal001">
+          <GoalLabel data-og-id="goal-label" data-og-internal-id="tutobjgoallbl">このセクションのゴール</GoalLabel>
+          <GoalText data-og-id="goal-text" data-og-internal-id="tutobjgoaltxt">標準 source、capability、明示 Adopt の役割を理解する</GoalText>
         </GoalCard>
       </TutorialHeader>
 
-      <LessonGrid data-og-id="lesson-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjgrid001">
-        <ObjectCard data-og-id="frame-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardfrm">
-          <ObjectNumber data-og-id="frame-object-number" data-og-type="text" data-og-internal-id="tutobjnumfrm">01 · FRAME</ObjectNumber>
-          <FrameDemo data-og-id="frame-demo" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjframedemo">
-            <FrameDemoLabel data-og-id="frame-demo-label" data-og-type="text" data-og-internal-id="tutobjfrmlabel">子オブジェクトをまとめる箱</FrameDemoLabel>
-            <FrameDemoChild data-og-id="frame-demo-child" data-og-type="frame" data-og-internal-id="tutobjfrmchild"></FrameDemoChild>
+      <LessonGrid data-og-id="lesson-grid" data-og-internal-id="tutobjgrid001">
+        <ObjectCard data-og-id="frame-object-card" data-og-internal-id="tutobjcardfrm">
+          <ObjectNumber class="capability-label" data-og-id="frame-object-number" data-og-internal-id="tutobjnumfrm">01 · CUSTOM CONTAINER</ObjectNumber>
+          <FrameDemo data-og-id="frame-demo" data-og-internal-id="tutobjframedemo">
+            <FrameDemoLabel data-og-id="frame-demo-label" data-og-internal-id="tutobjfrmlabel">children + computed flex が操作根拠</FrameDemoLabel>
+            <FrameDemoChild data-og-id="frame-demo-child" data-og-internal-id="tutobjfrmchild"></FrameDemoChild>
           </FrameDemo>
-          <ObjectHint data-og-id="frame-object-hint" data-og-type="text" data-og-internal-id="tutobjhintfrm">試す：選択して Padding、Gap、Layout を確認</ObjectHint>
+          <ObjectHint data-og-id="frame-object-hint" data-og-internal-id="tutobjhintfrm">receive-children · edit-layout · reorder-flow</ObjectHint>
         </ObjectCard>
 
-        <ObjectCard data-og-id="text-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardtxt">
-          <ObjectNumber data-og-id="text-object-number" data-og-type="text" data-og-internal-id="tutobjnumtext">02 · TEXT</ObjectNumber>
-          <TextDemo data-og-id="text-demo" data-og-type="text" data-og-internal-id="tutobjtextdemo">文字はダブルクリックして直接編集できます。</TextDemo>
-          <TextMeta data-og-id="text-meta" data-og-type="text" data-og-internal-id="tutobjtextmeta">TYPE / WEIGHT / LINE HEIGHT</TextMeta>
-          <ObjectHint data-og-id="text-object-hint" data-og-type="text" data-og-internal-id="tutobjhinttxt">試す：本文を書き換え、Font size を調整</ObjectHint>
+        <ObjectCard data-og-id="text-object-card" data-og-internal-id="tutobjcardtxt">
+          <ObjectNumber class="capability-label" data-og-id="text-object-number" data-og-internal-id="tutobjnumtext">02 · DIRECT TEXT</ObjectNumber>
+          <TextDemo data-og-id="text-demo" data-og-internal-id="tutobjtextdemo">文字はダブルクリックして直接編集できます。</TextDemo>
+          <TextMeta data-og-id="text-meta" data-og-internal-id="tutobjtextmeta">DOM TEXT · FONT · LINE HEIGHT</TextMeta>
+          <ObjectHint data-og-id="text-object-hint" data-og-internal-id="tutobjhinttxt">edit-text · custom elementにも同じ判定</ObjectHint>
         </ObjectCard>
 
-        <ObjectCard data-og-id="button-object-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjcardbtn">
-          <ObjectNumber data-og-id="button-object-number" data-og-type="text" data-og-internal-id="tutobjnumbtn0">03 · BUTTON</ObjectNumber>
-          <button data-og-id="button-demo" data-og-type="button" type="button" data-og-internal-id="tutobjbtndemo">Button object</button>
-          <ButtonCaption data-og-id="button-caption" data-og-type="text" data-og-internal-id="tutobjbtncaption">Frame とは異なる操作オブジェクト。内容は中央揃えが基本です。</ButtonCaption>
-          <ObjectHint data-og-id="button-object-hint" data-og-type="text" data-og-internal-id="tutobjhintbtn">試す：Background、Radius、Padding を変更</ObjectHint>
+        <ObjectCard data-og-id="button-object-card" data-og-internal-id="tutobjcardbtn">
+          <ObjectNumber class="capability-label" data-og-id="button-object-number" data-og-internal-id="tutobjnumbtn0">03 · NATIVE BUTTON</ObjectNumber>
+          <button data-og-id="button-demo" type="button" data-og-internal-id="tutobjbtndemo">Native button</button>
+          <ButtonCaption data-og-id="button-caption" data-og-internal-id="tutobjbtncaption">標準 button tag が control 操作の根拠です。direct text は同時に文字編集の根拠になります。</ButtonCaption>
+          <ObjectHint data-og-id="button-object-hint" data-og-internal-id="tutobjhintbtn">edit-control · edit-text · no type annotation</ObjectHint>
         </ObjectCard>
       </LessonGrid>
 
-      <PracticePanel data-og-id="practice-panel" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjpractice">
-        <PracticeIndex data-og-id="practice-index" data-og-type="text" data-og-internal-id="tutobjpracticei">TRY IT</PracticeIndex>
-        <PracticeSteps data-og-id="practice-steps" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjprsteps">
-          <PracticeStep data-og-id="practice-step-1" data-og-type="text" data-og-internal-id="tutobjprstep1">1. カードを選択</PracticeStep>
-          <PracticeStep data-og-id="practice-step-2" data-og-type="text" data-og-internal-id="tutobjprstep2">2. Layers で親子を確認</PracticeStep>
-          <PracticeStep data-og-id="practice-step-3" data-og-type="text" data-og-internal-id="tutobjprstep3">3. Inspector で値を1つ変更</PracticeStep>
+      <AdoptionPanel data-og-id="adoption-panel" data-og-internal-id="tutobjadopt001">
+        <AdoptionHeader data-og-id="adoption-header" data-og-internal-id="tutobjadopthead">
+          <AdoptionHeading data-og-id="adoption-heading" data-og-internal-id="tutobjadopttitl">PROGRESSIVE ADOPTION · 3つの状態が共存</AdoptionHeading>
+          <AdoptionHint data-og-id="adoption-hint" data-og-internal-id="tutobjadopthint">Inspect は読み取り専用。Adopt は dry-run の差分を確認してから適用。</AdoptionHint>
+        </AdoptionHeader>
+        <div class="adoption-grid">
+          <article id="plain-standard-card" class="adoption-card adoption-card--plain">
+            <span class="adoption-status">NO ANNOTATION · SESSION REF</span>
+            <h2>標準 HTML のまま</h2>
+            <p>既存の標準 <code>id</code> と安全な selector を優先して inspection します。ページを開く、または無編集で保存しても optional annotation は増えず、source は書き換わりません。</p>
+          </article>
+          <article id="partial-standard-card" class="adoption-card adoption-card--partial" data-og-id="partial-standard-card">
+            <span class="adoption-status">PARTIAL ANNOTATION · SESSION REF</span>
+            <h2>必要な情報だけ存在</h2>
+            <p><code>data-og-id</code> だけがある状態も有効です。不足している annotation は validation error ではなく、参照の安定性として区別されます。</p>
+          </article>
+          <AdoptedExample class="adoption-card adoption-card--complete" data-og-id="complete-adopted-card" data-og-internal-id="tutobjadoptfull">
+            <span class="adoption-status">COMPLETE ANNOTATION · STABLE REF</span>
+            <h2>明示 Adopt 済み</h2>
+            <p>安定した AI mutation が必要な node だけに optional ID を付与します。Adopt は dry-run、source diff、apply 後の stable reference を返します。</p>
+          </AdoptedExample>
+        </div>
+      </AdoptionPanel>
+
+      <SourceContractPanel data-og-id="source-contract-panel" data-og-internal-id="tutobjmigration">
+        <SourceContractHeader data-og-id="source-contract-header" data-og-internal-id="tutobjmighead">
+          <SourceContractHeading data-og-id="source-contract-heading" data-og-internal-id="tutobjmigtitl">CURRENT SOURCE CONTRACT · STANDARD HTML / CSS</SourceContractHeading>
+          <SourceContractHint data-og-id="source-contract-hint" data-og-internal-id="tutobjmighint">HTML は構造と内容、CSS は描画、optional annotation は identity・参照・binding・policy・provenance だけを担当します。</SourceContractHint>
+        </SourceContractHeader>
+        <SourceContractFlow class="source-contract-grid" data-og-id="source-contract-flow" data-og-internal-id="tutobjmigflow">
+          <SourceContractStep data-og-id="source-contract-source" data-og-internal-id="tutobjmigdry">
+            <SourceContractStepIndex data-og-id="source-contract-source-index" data-og-internal-id="tutobjmigdryidx">01 · SOURCE</SourceContractStepIndex>
+            <SourceContractStepTitle data-og-id="source-contract-source-title" data-og-internal-id="tutobjmigdrytit">標準 HTML / CSS を正本にする</SourceContractStepTitle>
+            <SourceContractStepText data-og-id="source-contract-source-text" data-og-internal-id="tutobjmigdrytxt">semantic tag と DOM content が構造を持ち、layout・color・type・media の値は標準 CSS property に保存します。OpenGraphite 専用の描画用IRは増やしません。</SourceContractStepText>
+          </SourceContractStep>
+          <SourceContractStep data-og-id="source-contract-identity" data-og-internal-id="tutobjmigapply">
+            <SourceContractStepIndex data-og-id="source-contract-identity-index" data-og-internal-id="tutobjmigappidx">02 · IDENTITY</SourceContractStepIndex>
+            <SourceContractStepTitle data-og-id="source-contract-identity-title" data-og-internal-id="tutobjmigapptit">必要な node だけ stable にする</SourceContractStepTitle>
+            <SourceContractStepText data-og-id="source-contract-identity-text" data-og-internal-id="tutobjmigapptxt">通常は既存 id・selector・DOM path で inspection します。長期の mutation 対象だけを Adopt し、optional identity の source diff を確認してから適用します。</SourceContractStepText>
+          </SourceContractStep>
+          <SourceContractStep data-og-id="source-contract-verify" data-og-internal-id="tutobjmigstandard">
+            <SourceContractStepIndex data-og-id="source-contract-verify-index" data-og-internal-id="tutobjmigstdidx">03 · VERIFY</SourceContractStepIndex>
+            <SourceContractStepTitle data-og-id="source-contract-verify-title" data-og-internal-id="tutobjmigstdtit">同じ source を検証して配布する</SourceContractStepTitle>
+            <SourceContractStepText data-og-id="source-contract-verify-text" data-og-internal-id="tutobjmigstdtxt">Canvas、CLI、MCP は登録済み Web source を共有します。validate・visual capture・build で確認し、preview state や editor-only metadata は配布HTMLへ混ぜません。</SourceContractStepText>
+          </SourceContractStep>
+        </SourceContractFlow>
+        <SourceContractCommand data-og-id="source-contract-command" data-og-internal-id="tutobjmigcmd">App · Canvas → Layers → Inspector
+CLI · ogkiln node query Project.ogp --page-id &lt;page&gt; --capability edit-text --json
+CLI · ogkiln validate Project.ogp --json · ogkiln build Project.ogp --output dist
+MCP · query_nodes → get_node → build_project
+App / CLI / MCP は同じ登録済み Web source と capability evidence を読みます。</SourceContractCommand>
+      </SourceContractPanel>
+
+      <PracticePanel data-og-id="practice-panel" data-og-internal-id="tutobjpractice">
+        <PracticeIndex data-og-id="practice-index" data-og-internal-id="tutobjpracticei">TRY IT</PracticeIndex>
+        <PracticeSteps data-og-id="practice-steps" data-og-internal-id="tutobjprsteps">
+          <PracticeStep data-og-id="practice-step-1" data-og-internal-id="tutobjprstep1">1. capability と evidence を確認</PracticeStep>
+          <PracticeStep data-og-id="practice-step-2" data-og-internal-id="tutobjprstep2">2. stable ref が必要な node だけ Adopt</PracticeStep>
+          <PracticeStep data-og-id="practice-step-3" data-og-internal-id="tutobjprstep3">3. HTML / CSS の役割と source を確認</PracticeStep>
+          <PracticeStep data-og-id="practice-step-4" data-og-internal-id="tutobjprstep4">4. 同じ project を validate / build</PracticeStep>
         </PracticeSteps>
       </PracticePanel>
 
-      <PageManagement data-og-id="page-management" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjpagemgmt">
-        <ManagementHeader data-og-id="management-header" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjmgmthead">
-          <ManagementLabel data-og-id="management-label" data-og-type="text" data-og-internal-id="tutobjmgmtlabel">PAGE &amp; CHAPTER · 右クリック</ManagementLabel>
-          <ManagementHint data-og-id="management-hint" data-og-type="text" data-og-internal-id="tutobjmgmthint">非表示は editor-only metadata、完全削除だけが source を削除</ManagementHint>
+      <PageManagement data-og-id="page-management" data-og-internal-id="tutobjpagemgmt">
+        <ManagementHeader data-og-id="management-header" data-og-internal-id="tutobjmgmthead">
+          <ManagementLabel data-og-id="management-label" data-og-internal-id="tutobjmgmtlabel">PAGE &amp; CHAPTER · 右クリック</ManagementLabel>
+          <ManagementHint data-og-id="management-hint" data-og-internal-id="tutobjmgmthint">非表示は editor-only metadata、完全削除だけが source を削除</ManagementHint>
         </ManagementHeader>
-        <ManagementActions data-og-id="management-actions" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutobjmgmtacts">
-          <ManagementCard data-og-id="hide-page-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjhidepage">
-            <ManagementType data-og-id="hide-page-type" data-og-type="text" data-og-internal-id="tutobjhideptype">PAGE · REVERSIBLE</ManagementType>
-            <ManagementTitle data-og-id="hide-page-title" data-og-type="text" data-og-internal-id="tutobjhideptitl">キャンバスから非表示</ManagementTitle>
-            <ManagementText data-og-id="hide-page-text" data-og-type="text" data-og-internal-id="tutobjhideptxt">SidebarとHTML/CSSは残ります。Pageを右クリックし「キャンバスに表示」で戻せます。</ManagementText>
+        <ManagementActions data-og-id="management-actions" data-og-internal-id="tutobjmgmtacts">
+          <ManagementCard data-og-id="hide-page-card" data-og-internal-id="tutobjhidepage">
+            <ManagementType data-og-id="hide-page-type" data-og-internal-id="tutobjhideptype">PAGE · REVERSIBLE</ManagementType>
+            <ManagementTitle data-og-id="hide-page-title" data-og-internal-id="tutobjhideptitl">キャンバスから非表示</ManagementTitle>
+            <ManagementText data-og-id="hide-page-text" data-og-internal-id="tutobjhideptxt">SidebarとHTML/CSSは残ります。Pageを右クリックし「キャンバスに表示」で戻せます。</ManagementText>
           </ManagementCard>
-          <ManagementCard data-og-id="delete-page-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjdeletepg">
-            <ManagementType data-og-id="delete-page-type" data-og-type="text" data-og-internal-id="tutobjdelpgtype">PAGE · DESTRUCTIVE</ManagementType>
-            <ManagementTitle data-og-id="delete-page-title" data-og-type="text" data-og-internal-id="tutobjdelpgtitle">完全に削除</ManagementTitle>
-            <ManagementText data-og-id="delete-page-text" data-og-type="text" data-og-internal-id="tutobjdelpgtxt">同じHTMLが .ogp 内の他配置で未使用のときだけ有効です。Page entry、HTML、同名CSSを削除します。</ManagementText>
+          <ManagementCard data-og-id="delete-page-card" data-og-internal-id="tutobjdeletepg">
+            <ManagementType data-og-id="delete-page-type" data-og-internal-id="tutobjdelpgtype">PAGE · DESTRUCTIVE</ManagementType>
+            <ManagementTitle data-og-id="delete-page-title" data-og-internal-id="tutobjdelpgtitle">完全に削除</ManagementTitle>
+            <ManagementText data-og-id="delete-page-text" data-og-internal-id="tutobjdelpgtxt">同じHTMLが .ogp 内の他配置で未使用のときだけ有効です。Page entry、HTML、同名CSSを削除します。</ManagementText>
           </ManagementCard>
-          <ManagementCard data-og-id="hide-chapter-card" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutobjhidechap">
-            <ManagementType data-og-id="hide-chapter-type" data-og-type="text" data-og-internal-id="tutobjhidectype">CHAPTER · PRESERVE</ManagementType>
-            <ManagementTitle data-og-id="hide-chapter-title" data-og-type="text" data-og-internal-id="tutobjhidectitle">一覧から非表示</ManagementTitle>
-            <ManagementText data-og-id="hide-chapter-text" data-og-type="text" data-og-internal-id="tutobjhidectxt">Chapter行の右クリックから隠します。Page、付箋、手書き、Guide、参照配置は .ogp に保持されます。</ManagementText>
+          <ManagementCard data-og-id="hide-chapter-card" data-og-internal-id="tutobjhidechap">
+            <ManagementType data-og-id="hide-chapter-type" data-og-internal-id="tutobjhidectype">CHAPTER · PRESERVE</ManagementType>
+            <ManagementTitle data-og-id="hide-chapter-title" data-og-internal-id="tutobjhidectitle">一覧から非表示</ManagementTitle>
+            <ManagementText data-og-id="hide-chapter-text" data-og-internal-id="tutobjhidectxt">Chapter行の右クリックから隠します。Page、付箋、手書き、Guide、参照配置は .ogp に保持されます。</ManagementText>
           </ManagementCard>
         </ManagementActions>
       </PageManagement>

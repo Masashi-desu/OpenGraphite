@@ -1,14 +1,225 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  componenttutorial,
+  legenddot,
+  legenditem,
+  legendtext,
+  modebadge,
+  og-placement,
+  placementheading,
+  placementlegend,
+  placementlesson,
+  placementrow,
+  placementtitle,
+  roweyebrow,
+  rowlabel,
+  rowtext,
+  rowtitle,
+  stateaction,
+  statebody,
+  stateloading,
+  tutorial-state-card,
+  stateicon,
+  stateidentity,
+  statemeta,
+  staterow,
+  statesummary,
+  statetitle,
+  statetop,
+  stateworkbench,
+  steplabel,
+  synctask,
+  tasklabel,
+  tasktext,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  componenttutorial,
+  legenddot,
+  legenditem,
+  og-placement,
+  placementheading,
+  placementlegend,
+  placementlesson,
+  placementrow,
+  rowlabel,
+  tutorial-state-card,
+  stateidentity,
+  staterow,
+  statetop,
+  stateworkbench,
+  synctask,
+  tutorialheader
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  legendtext,
+  modebadge,
+  placementtitle,
+  roweyebrow,
+  rowtext,
+  rowtitle,
+  statebody,
+  stateloading,
+  statemeta,
+  statesummary,
+  statetitle,
+  steplabel,
+  tasklabel,
+  tasktext,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  legendtext,
+  modebadge,
+  placementtitle,
+  roweyebrow,
+  rowtext,
+  rowtitle,
+  statebody,
+  stateloading,
+  statemeta,
+  statesummary,
+  statetitle,
+  steplabel,
+  tasklabel,
+  tasktext,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  stateaction
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  stateaction
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+:where(
+  stateicon
+) {
+  width: var(--size-icon);
+  height: var(--size-icon);
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+:where(
+  stateicon
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+:where(
+  stateicon
+) > :where(svg, img, i, span) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  flex: 0 0 auto;
+}
+
+:where(
+  stateicon
+) > svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke-width);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:where(
+  stateicon
+) > img {
+  object-fit: contain;
+}
+
+@media (max-width: 760px) {
+  :where(
+    stateaction
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="tutcmpstaroot"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0d0c11;
   color: #f6f4f8;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutcmpstaroot"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutcmpstahead"] {
+  display: flex;
+  flex-direction: column;
   max-width: 860px;
   gap: 12px;
 }
@@ -36,6 +247,9 @@
 }
 
 [data-og-internal-id="tutcmpstalegend"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   width: 100%;
   gap: 12px;
 }
@@ -43,6 +257,8 @@
 [data-og-internal-id="tutcmpstalegmas"],
 [data-og-internal-id="tutcmpstalegpla"],
 [data-og-internal-id="tutcmpstalegmod"] {
+  display: flex;
+  flex-direction: row;
   flex: 1 1 0;
   gap: 10px;
   padding: 12px 14px;
@@ -81,11 +297,15 @@
 }
 
 [data-og-internal-id="tutcmpstawork"] {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   gap: 18px;
 }
 
 [data-og-internal-id="tutcmpstamrow"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 28px;
   padding: 28px;
@@ -96,6 +316,8 @@
 }
 
 [data-og-internal-id="tutcmpstamrlbl"] {
+  display: flex;
+  flex-direction: column;
   width: 320px;
   min-width: 320px;
   gap: 10px;
@@ -113,6 +335,8 @@
 }
 
 [data-og-internal-id="tutcmpstatemst"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   max-width: 560px;
   gap: 18px;
@@ -124,6 +348,8 @@
 }
 
 [data-og-internal-id="tutcmpstatetop"] {
+  display: flex;
+  flex-direction: row;
   gap: 14px;
   align-items: center;
 }
@@ -133,10 +359,15 @@
   height: 42px;
   min-width: 42px;
   color: #c5a3ff;
-  --og-stroke-width: 1.7;
+}
+
+[data-og-internal-id="tutcmpstaicon"] > svg {
+  stroke-width: 1.7;
 }
 
 [data-og-internal-id="tutcmpstaident"] {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
 
@@ -157,6 +388,7 @@
 }
 
 [data-og-internal-id="tutcmpstasumm"] {
+  display: none;
   padding: 10px 12px;
   color: #e3d8eb;
   background: #2b2234;
@@ -175,14 +407,48 @@
   font-weight: 760;
 }
 
+[data-og-internal-id="tutcmpstaload"] {
+  display: none;
+  color: #e3d8eb;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+:host([variant~="collapsed"]) [part~="body"],
+:host([variant~="collapsed"]) [part~="action"] {
+  display: none;
+}
+
+:host([variant~="collapsed"]) [part~="summary"] {
+  display: block !important;
+}
+
+:host(.is-loading) [part~="header"],
+:host(.is-loading) [part~="body"],
+:host(.is-loading) [part~="summary"],
+:host(.is-loading) [part~="action"] {
+  visibility: hidden;
+}
+
+:host(.is-loading) [part~="loading"] {
+  display: block !important;
+  visibility: visible !important;
+}
+
 [data-og-internal-id="tutcmpstaprow"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   align-items: stretch;
 }
 
 [data-og-internal-id="tutcmpstaexpls"],
+[data-og-internal-id="tutcmpstaloadls"],
 [data-og-internal-id="tutcmpstacolls"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 390px;
   gap: 16px;
@@ -193,19 +459,24 @@
 }
 
 [data-og-internal-id="tutcmpstaexphead"],
+[data-og-internal-id="tutcmpstaloadhead"],
 [data-og-internal-id="tutcmpstacolhead"] {
+  display: flex;
+  flex-direction: row;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
 }
 
 [data-og-internal-id="tutcmpstaexptit"],
+[data-og-internal-id="tutcmpstaloadtit"],
 [data-og-internal-id="tutcmpstacoltit"] {
   font-size: 18px;
   font-weight: 760;
 }
 
 [data-og-internal-id="tutcmpstaexpbad"],
+[data-og-internal-id="tutcmpstaloadbad"],
 [data-og-internal-id="tutcmpstacolbad"] {
   color: #909aa3;
   font-family: var(--font-family-mono);
@@ -213,7 +484,10 @@
 }
 
 [data-og-internal-id="tutcmpstaexppl"],
+[data-og-internal-id="tutcmpstaloadpl"],
 [data-og-internal-id="tutcmpstacolpl"] {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-height: 290px;
   padding: 18px;
@@ -228,6 +502,8 @@
 }
 
 [data-og-internal-id="tutcmpstasync"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   padding: 18px 22px;
@@ -241,4 +517,28 @@
   color: #d0c6d6;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutcmpstaroot"] {
+    padding: 24px;
+  }
+
+  [data-og-internal-id="tutcmpstalegend"],
+  [data-og-internal-id="tutcmpstalegmas"],
+  [data-og-internal-id="tutcmpstalegpla"],
+  [data-og-internal-id="tutcmpstalegmod"],
+  [data-og-internal-id="tutcmpstamrow"],
+  [data-og-internal-id="tutcmpstatetop"],
+  [data-og-internal-id="tutcmpstaprow"],
+  [data-og-internal-id="tutcmpstaexphead"],
+  [data-og-internal-id="tutcmpstacolhead"],
+  [data-og-internal-id="tutcmpstasync"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-og-internal-id="tutcmpstamrlbl"] {
+    width: 100%;
+    min-width: 0;
+  }
 }

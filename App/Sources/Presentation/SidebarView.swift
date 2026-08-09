@@ -2634,7 +2634,9 @@ private struct LayerRow: View {
         .highPriorityGesture(
             TapGesture(count: 2)
                 .onEnded {
-                    beginNameEdit()
+                    if row.node.hasStableReference {
+                        beginNameEdit()
+                    }
                 }
         )
         .onTapGesture {
@@ -2672,7 +2674,14 @@ private struct LayerRow: View {
     }
 
     private var detailText: String {
-        [row.node.tagName, row.node.detailLine]
+        var parts = [row.node.tagName, row.node.detailLine]
+        if row.node.annotationStatus != .complete {
+            parts.append(row.node.annotationStatus.rawValue)
+        }
+        if row.node.referenceStability == .session {
+            parts.append("session")
+        }
+        return parts
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
     }

@@ -1,14 +1,136 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  aligncard,
+  canvasdiagram,
+  cardindex,
+  cardline,
+  diagramcaption,
+  guidemarker,
+  guidesteps,
+  guideworkspace,
+  horizontalguide,
+  leftruler,
+  settingchip,
+  settingdot,
+  settingsstrip,
+  settingtext,
+  stepcard,
+  stepindex,
+  steplabel,
+  steptext,
+  steptitle,
+  topruler,
+  trylabel,
+  trypanel,
+  trytext,
+  tutorialguides,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle,
+  verticalguide
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  aligncard,
+  canvasdiagram,
+  cardline,
+  guidemarker,
+  guidesteps,
+  guideworkspace,
+  horizontalguide,
+  leftruler,
+  settingchip,
+  settingdot,
+  settingsstrip,
+  stepcard,
+  topruler,
+  trypanel,
+  tutorialguides,
+  tutorialheader,
+  verticalguide
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  cardindex,
+  diagramcaption,
+  settingtext,
+  stepindex,
+  steplabel,
+  steptext,
+  steptitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  cardindex,
+  diagramcaption,
+  settingtext,
+  stepindex,
+  steplabel,
+  steptext,
+  steptitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutgdroot009"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #090d14;
   color: #f4f7fb;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutgdroot009"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutgdheader09"] {
+  display: flex;
+  flex-direction: column;
   max-width: 850px;
   gap: 12px;
 }
@@ -38,6 +160,8 @@
 }
 
 [data-og-internal-id="tutgdworkspace"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   min-height: 520px;
   gap: 18px;
@@ -45,6 +169,8 @@
 }
 
 [data-og-internal-id="tutgddiagram9"] {
+  display: block;
+  position: relative;
   flex: 1 1 0;
   min-height: 520px;
   overflow: hidden;
@@ -110,6 +236,8 @@
 
 [data-og-internal-id="tutgdcarda009"],
 [data-og-internal-id="tutgdcardb009"] {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   width: 180px;
   height: 150px;
@@ -157,6 +285,8 @@
 }
 
 [data-og-internal-id="tutgdsteps009"] {
+  display: flex;
+  flex-direction: column;
   width: 410px;
   min-width: 410px;
   gap: 12px;
@@ -165,6 +295,8 @@
 [data-og-internal-id="tutgdstepcard1"],
 [data-og-internal-id="tutgdstepcard2"],
 [data-og-internal-id="tutgdstepcard3"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   gap: 7px;
   padding: 19px;
@@ -189,6 +321,8 @@
 }
 
 [data-og-internal-id="tutgdsettings9"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 10px;
   align-items: stretch;
@@ -197,6 +331,8 @@
 [data-og-internal-id="tutgdrulerchip"],
 [data-og-internal-id="tutgdguidechip"],
 [data-og-internal-id="tutgdgridchip0"] {
+  display: flex;
+  flex-direction: row;
   flex: 1 1 0;
   gap: 10px;
   padding: 13px 15px;
@@ -225,6 +361,8 @@
 }
 
 [data-og-internal-id="tutgdtrypanel9"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 22px;
   padding: 18px 22px;
@@ -238,4 +376,24 @@
   color: #d1e5f7;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutgdroot009"] {
+    padding: 24px;
+  }
+
+  [data-og-internal-id="tutgdworkspace"],
+  [data-og-internal-id="tutgdsettings9"],
+  [data-og-internal-id="tutgdrulerchip"],
+  [data-og-internal-id="tutgdguidechip"],
+  [data-og-internal-id="tutgdgridchip0"],
+  [data-og-internal-id="tutgdtrypanel9"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-og-internal-id="tutgdsteps009"] {
+    width: 100%;
+    min-width: 0;
+  }
 }

@@ -1,12 +1,150 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  [data-og-internal-id="60447086753d"],
+  [data-og-internal-id="b991bf4b9a72"],
+  [data-og-internal-id="downloadsprima20260613"],
+  [data-og-internal-id="downloadssecond20260613"],
+  [data-og-internal-id="f6d325d312e5"],
+  actionrow,
+  buttonlabel,
+  commandblock,
+  downloadintro,
+  downloadsviewportframe,
+  eyebrowtext,
+  installstepsanchor,
+  leadtext,
+  navlabel,
+  og-instance,
+  opengraphitepage,
+  pagetitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  actionrow,
+  downloadintro,
+  downloadsviewportframe,
+  installstepsanchor,
+  og-instance,
+  opengraphitepage
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  buttonlabel,
+  commandblock,
+  eyebrowtext,
+  leadtext,
+  navlabel,
+  pagetitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  buttonlabel,
+  commandblock,
+  eyebrowtext,
+  leadtext,
+  navlabel,
+  pagetitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  [data-og-internal-id="60447086753d"],
+  [data-og-internal-id="b991bf4b9a72"],
+  [data-og-internal-id="downloadsprima20260613"],
+  [data-og-internal-id="downloadssecond20260613"],
+  [data-og-internal-id="f6d325d312e5"]
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  [data-og-internal-id="60447086753d"],
+  [data-og-internal-id="b991bf4b9a72"],
+  [data-og-internal-id="downloadsprima20260613"],
+  [data-og-internal-id="downloadssecond20260613"],
+  [data-og-internal-id="f6d325d312e5"]
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+@media (max-width: 760px) {
+  :where(
+    [data-og-internal-id="60447086753d"],
+    [data-og-internal-id="b991bf4b9a72"],
+    [data-og-internal-id="downloadsprima20260613"],
+    [data-og-internal-id="downloadssecond20260613"],
+    [data-og-internal-id="f6d325d312e5"]
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="a40992e00b6c"] {
+  display: flex;
+  flex-direction: column;
   gap:0;
   padding:0 var(--space-page-inset) var(--space-page-bottom);
   background:var(--color-canvas);
   color:var(--color-text);
-  --og-font-family-default:var(--font-family-ui);
-  --og-font-family-ja:var(--font-family-ja);
-  --og-font-family-eng:var(--font-family-eng);
+  font-family:var(--font-family-ui);
+  overflow-wrap:break-word;
   min-height:100vh;
+}
+
+[data-og-internal-id="a40992e00b6c"]:lang(ja) {
+  font-family:var(--font-family-ja);
+}
+
+[data-og-internal-id="a40992e00b6c"]:lang(en),
+[data-og-internal-id="a40992e00b6c"]:lang(eng) {
+  font-family:var(--font-family-eng);
 }
 
 [data-og-internal-id="60447086753d"] {
@@ -46,6 +184,8 @@
 }
 
 [data-og-internal-id="c6d8b2e4a119"] {
+  display: flex;
+  flex-direction: column;
   width:min(100%,var(--size-page-max));
   margin:0 auto;
   min-height:calc(100vh - var(--size-header-offset));
@@ -55,6 +195,8 @@
 }
 
 [data-og-internal-id="407e00b97947"] {
+  display: flex;
+  flex-direction: column;
   width:100%;
   margin:0;
   gap:var(--space-lg);
@@ -88,6 +230,8 @@
 }
 
 [data-og-internal-id="downloadsactions20260613"] {
+  display: flex;
+  flex-direction: row;
   gap:var(--space-compact);
   align-items:flex-start;
   padding:var(--space-2xs) 0 0;
@@ -182,21 +326,6 @@
   overflow-wrap:anywhere;
 }
 
-[data-og-internal-id="f5006a99d3f7"] > [data-og-generated="true"] {
-  width:100%;
-  margin:0;
-}
-
-[data-og-internal-id="5f12745d7a10"] > [data-og-generated="true"] {
-  width:100%;
-  margin:0;
-}
-
-[data-og-internal-id="downloadsample20260613"] > [data-og-generated="true"] {
-  width:100%;
-  margin:0;
-}
-
 [data-og-id="repository-section"][data-og-internal-id] {
   width:100%;
   margin:0;
@@ -210,6 +339,13 @@
 [data-og-id="sample-section"][data-og-internal-id] {
   width:100%;
   margin:0;
+}
+
+@media (max-width: 760px) {
+  [data-og-internal-id="downloadsactions20260613"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 @media (max-width: 760px) {

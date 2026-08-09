@@ -9,41 +9,45 @@
     <link rel="stylesheet" href="./tutorial-motion.css">
   </head>
   <body>
-    <TutorialMotion data-og-id="tutorial-motion" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutmotroot006">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotheader06">
-        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutmotstep006">PAGES TUTORIAL · 06</StepLabel>
-        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutmottitle06">Motion と状態を確認する</TutorialTitle>
-        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutmotlead006">Animation は CSS のまま保存されます。Hidden と Locked はオブジェクトの永続状態です。Canvas と Layers の両方で変化を確認します。</TutorialLead>
+    <TutorialMotion data-og-id="tutorial-motion" data-og-internal-id="tutmotroot006">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutmotheader06">
+        <StepLabel data-og-id="step-label" data-og-internal-id="tutmotstep006">PAGES TUTORIAL · 06</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutmottitle06">Motion と状態を確認する</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutmotlead006">Animation と反転は標準 CSS のまま保存されます。左右・上下 flip と transform の合成、標準 hidden と編集用 Locked の永続状態を Canvas と Layers で確認します。</TutorialLead>
       </TutorialHeader>
 
-      <MotionGrid data-og-id="motion-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmotgrid006">
-        <MotionLesson data-og-id="animation-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotanimles">
-          <LessonIndex data-og-id="animation-index" data-og-type="text" data-og-internal-id="tutmotanimidx">A · ANIMATION</LessonIndex>
-          <AnimationStage data-og-id="animation-stage" data-og-type="frame" data-og-layout="absolute" data-og-internal-id="tutmotanimstage">
-            <MotionTrack data-og-id="motion-track" data-og-type="frame" data-og-internal-id="tutmottrack006"></MotionTrack>
-            <MotionObject data-og-id="motion-object" data-og-type="frame" data-og-internal-id="tutmotobject06"></MotionObject>
-            <StartLabel data-og-id="start-label" data-og-type="text" data-og-internal-id="tutmotstart006">START</StartLabel>
-            <EndLabel data-og-id="end-label" data-og-type="text" data-og-internal-id="tutmotend0006">END</EndLabel>
+      <MotionGrid data-og-id="motion-grid" data-og-internal-id="tutmotgrid006">
+        <MotionLesson data-og-id="animation-lesson" data-og-internal-id="tutmotanimles">
+          <LessonIndex data-og-id="animation-index" data-og-internal-id="tutmotanimidx">A · ANIMATION</LessonIndex>
+          <AnimationStage data-og-id="animation-stage" data-og-internal-id="tutmotanimstage">
+            <MotionTrack data-og-id="motion-track" data-og-internal-id="tutmottrack006"></MotionTrack>
+            <MotionObject data-og-id="motion-object" data-og-internal-id="tutmotobject06"></MotionObject>
+            <StartLabel data-og-id="start-label" data-og-internal-id="tutmotstart006">START</StartLabel>
+            <EndLabel data-og-id="end-label" data-og-internal-id="tutmotend0006">END</EndLabel>
           </AnimationStage>
-          <PropertyCode data-og-id="animation-code" data-og-type="text" data-og-internal-id="tutmotanimcode">animation: tutorial-slide 2.4s ease-in-out infinite alternate;</PropertyCode>
-          <LessonTask data-og-id="animation-task" data-og-type="text" data-og-internal-id="tutmotanimtask">TRY：Duration、Timing、Play state を Inspector で変更</LessonTask>
+          <PropertyCode data-og-id="animation-code" data-og-internal-id="tutmotanimcode">animation: tutorial-slide 2.4s ease-in-out infinite alternate;</PropertyCode>
+          <TransformDemo data-og-id="transform-demo" data-og-internal-id="tutmotfliprow6">
+            <FlipSample data-og-id="horizontal-flip" data-og-internal-id="tutmothflip006"><FlipGlyph data-og-id="horizontal-flip-glyph" data-og-internal-id="tutmothglyph06">➜</FlipGlyph><FlipLabel data-og-id="horizontal-flip-label" data-og-internal-id="tutmothlabel06">scale: -1 1</FlipLabel></FlipSample>
+            <FlipSample data-og-id="vertical-flip" data-og-internal-id="tutmotvflip006"><FlipGlyph data-og-id="vertical-flip-glyph" data-og-internal-id="tutmotvglyph06">➜</FlipGlyph><FlipLabel data-og-id="vertical-flip-label" data-og-internal-id="tutmotvlabel06">scale: 1 -1</FlipLabel></FlipSample>
+          </TransformDemo>
+          <LessonTask data-og-id="animation-task" data-og-internal-id="tutmotanimtask">TRY：Duration、Timing、Play state を Inspector で変更</LessonTask>
         </MotionLesson>
 
-        <MotionLesson data-og-id="state-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotstateles">
-          <LessonIndex data-og-id="state-index" data-og-type="text" data-og-internal-id="tutmotstateidx">B · STATE</LessonIndex>
-          <StateStack data-og-id="state-stack" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotstack006">
-            <StateCard data-og-id="normal-state-card" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmotnormal06"><StateDot data-og-id="normal-state-dot" data-og-type="frame" data-og-internal-id="tutmotnormdot6"></StateDot><StateCopy data-og-id="normal-state-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotnormcopy"><StateTitle data-og-id="normal-state-title" data-og-type="text" data-og-internal-id="tutmotnormtit6">Normal</StateTitle><StateText data-og-id="normal-state-text" data-og-type="text" data-og-internal-id="tutmotnormtext">選択・編集できる通常状態</StateText></StateCopy></StateCard>
-            <StateCard data-og-id="locked-state-card" data-og-type="frame" data-og-layout="horizontal" data-og-locked="true" data-og-internal-id="tutmotlocked06"><StateDot data-og-id="locked-state-dot" data-og-type="frame" data-og-internal-id="tutmotlockdot6"></StateDot><StateCopy data-og-id="locked-state-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmotlockcopy"><StateTitle data-og-id="locked-state-title" data-og-type="text" data-og-internal-id="tutmotlocktit6">Locked</StateTitle><StateText data-og-id="locked-state-text" data-og-type="text" data-og-internal-id="tutmotlocktext">誤編集を防ぐロック状態</StateText></StateCopy></StateCard>
-            <StateCard data-og-id="hidden-state-card" data-og-type="frame" data-og-layout="horizontal" data-og-hidden="true" data-og-internal-id="tutmothidden06"><StateDot data-og-id="hidden-state-dot" data-og-type="frame" data-og-internal-id="tuthiddendot06"></StateDot><StateCopy data-og-id="hidden-state-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tuthiddencopy6"><StateTitle data-og-id="hidden-state-title" data-og-type="text" data-og-internal-id="tuthiddentitle">Hidden</StateTitle><StateText data-og-id="hidden-state-text" data-og-type="text" data-og-internal-id="tuthiddentext6">Layers から表示を戻せます</StateText></StateCopy></StateCard>
-            <HiddenPlaceholder data-og-id="hidden-placeholder" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmotplace006"><PlaceholderIcon data-og-id="placeholder-icon" data-og-type="text" data-og-internal-id="tutmotplaceico">◌</PlaceholderIcon><PlaceholderText data-og-id="placeholder-text" data-og-type="text" data-og-internal-id="tutmotplacetxt">ここに Hidden カードがあります。Layers で目のアイコンを切り替えて表示してください。</PlaceholderText></HiddenPlaceholder>
+        <MotionLesson data-og-id="state-lesson" data-og-internal-id="tutmotstateles">
+          <LessonIndex data-og-id="state-index" data-og-internal-id="tutmotstateidx">B · STATE</LessonIndex>
+          <StateStack data-og-id="state-stack" data-og-internal-id="tutmotstack006">
+            <StateCard data-og-id="normal-state-card" data-og-internal-id="tutmotnormal06"><StateDot data-og-id="normal-state-dot" data-og-internal-id="tutmotnormdot6"></StateDot><StateCopy data-og-id="normal-state-copy" data-og-internal-id="tutmotnormcopy"><StateTitle data-og-id="normal-state-title" data-og-internal-id="tutmotnormtit6">Normal</StateTitle><StateText data-og-id="normal-state-text" data-og-internal-id="tutmotnormtext">選択・編集できる通常状態</StateText></StateCopy></StateCard>
+            <StateCard data-og-id="locked-state-card" data-og-locked="true" data-og-internal-id="tutmotlocked06"><StateDot data-og-id="locked-state-dot" data-og-internal-id="tutmotlockdot6"></StateDot><StateCopy data-og-id="locked-state-copy" data-og-internal-id="tutmotlockcopy"><StateTitle data-og-id="locked-state-title" data-og-internal-id="tutmotlocktit6">Locked</StateTitle><StateText data-og-id="locked-state-text" data-og-internal-id="tutmotlocktext">誤編集を防ぐロック状態</StateText></StateCopy></StateCard>
+            <StateCard data-og-id="hidden-state-card" hidden data-og-internal-id="tutmothidden06"><StateDot data-og-id="hidden-state-dot" data-og-internal-id="tuthiddendot06"></StateDot><StateCopy data-og-id="hidden-state-copy" data-og-internal-id="tuthiddencopy6"><StateTitle data-og-id="hidden-state-title" data-og-internal-id="tuthiddentitle">Hidden</StateTitle><StateText data-og-id="hidden-state-text" data-og-internal-id="tuthiddentext6">Layers から表示を戻せます</StateText></StateCopy></StateCard>
+            <HiddenPlaceholder data-og-id="hidden-placeholder" data-og-internal-id="tutmotplace006"><PlaceholderIcon data-og-id="placeholder-icon" data-og-internal-id="tutmotplaceico">◌</PlaceholderIcon><PlaceholderText data-og-id="placeholder-text" data-og-internal-id="tutmotplacetxt">ここに Hidden カードがあります。Layers で目のアイコンを切り替えて表示してください。</PlaceholderText></HiddenPlaceholder>
           </StateStack>
-          <LessonTask data-og-id="state-task" data-og-type="text" data-og-internal-id="tutmotstatetask">TRY：Locked を解除し、Hidden を表示する</LessonTask>
+          <LessonTask data-og-id="state-task" data-og-internal-id="tutmotstatetask">TRY：Locked を解除し、Hidden を表示する</LessonTask>
         </MotionLesson>
       </MotionGrid>
 
-      <SourceNote data-og-id="source-note" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmotsource06">
-        <SourceLabel data-og-id="source-label" data-og-type="text" data-og-internal-id="tutmotsrclabel">SOURCE</SourceLabel>
-        <SourceText data-og-id="source-text" data-og-type="text" data-og-internal-id="tutmotsrctext">Motion の値は tutorial-motion.css、Hidden / Locked は tutorial-motion.html の data-og-* 属性に保存されます。</SourceText>
+      <SourceNote data-og-id="source-note" data-og-internal-id="tutmotsource06">
+        <SourceLabel data-og-id="source-label" data-og-internal-id="tutmotsrclabel">SOURCE</SourceLabel>
+        <SourceText data-og-id="source-text" data-og-internal-id="tutmotsrctext">Animation と永続 flip は tutorial-motion.css の標準 animation / scale / rotate / transform に保存されます。drag / reorder の移動は session-only の translate / Web Animations API で、source へ保存されません。Hidden は tutorial-motion.html の標準 hidden、Locked は編集 policy metadata です。</SourceText>
       </SourceNote>
     </TutorialMotion>
   </body>

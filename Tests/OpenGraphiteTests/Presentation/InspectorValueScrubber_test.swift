@@ -136,6 +136,7 @@ struct InspectorValueScrubberTests {
         let marginProfile = InspectorScrubProfile.forCSSKey("margin")
         let lineHeightProfile = InspectorScrubProfile.forCSSKey("line-height")
         let transformOriginProfile = InspectorScrubProfile.forCSSKey("transform-origin")
+        let scaleProfile = InspectorScrubProfile.forCSSKey("scale")
         let zIndexProfile = InspectorScrubProfile.forCSSKey("z-index")
 
         // 検証内容：解決された設定を確認する（When）
@@ -143,6 +144,8 @@ struct InspectorValueScrubberTests {
         let marginAllowsNegative = marginProfile.allowsNegative
         let lineHeightStep = lineHeightProfile.step
         let transformOriginAllowsNegative = transformOriginProfile.allowsNegative
+        let scaleStep = scaleProfile.step
+        let scaleFallbackUnit = scaleProfile.fallbackUnit
         let zIndexFallbackUnit = zIndexProfile.fallbackUnit
 
         // 期待値：padding は負値不可、margin と transform-origin は負値可、line-height は小数粒度、z-index は単位なし（Then）
@@ -150,6 +153,8 @@ struct InspectorValueScrubberTests {
         #expect(marginAllowsNegative)
         #expect(lineHeightStep == 0.05)
         #expect(transformOriginAllowsNegative)
+        #expect(scaleStep == 0.05)
+        #expect(scaleFallbackUnit.isEmpty)
         #expect(zIndexFallbackUnit.isEmpty)
     }
 }

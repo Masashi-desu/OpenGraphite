@@ -1,14 +1,190 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  [data-og-internal-id="tutlayactiona1"],
+  [data-og-internal-id="tutlayactiona2"],
+  [data-og-internal-id="tutlayactionb1"],
+  [data-og-internal-id="tutlayactionb2"],
+  carddot,
+  cardrow,
+  cardstack,
+  cardtext,
+  layoutcomparison,
+  layoutlesson,
+  lessonheading,
+  lessonhint,
+  lessonindex,
+  lessontitle,
+  metriccard,
+  metriclabel,
+  metricvalue,
+  minicard,
+  nestedcopy,
+  nesteddescription,
+  nestedlesson,
+  nestedtask,
+  nestedtitle,
+  productactions,
+  productbadge,
+  productcard,
+  productcopy,
+  productrow,
+  producttitle,
+  steplabel,
+  tutorialautolayout,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  carddot,
+  cardrow,
+  cardstack,
+  layoutcomparison,
+  layoutlesson,
+  lessonheading,
+  metriccard,
+  minicard,
+  nestedcopy,
+  nestedlesson,
+  productactions,
+  productcard,
+  productrow,
+  tutorialautolayout,
+  tutorialheader
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  cardtext,
+  lessonhint,
+  lessonindex,
+  lessontitle,
+  metriclabel,
+  metricvalue,
+  nesteddescription,
+  nestedtask,
+  nestedtitle,
+  productbadge,
+  productcopy,
+  producttitle,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  cardtext,
+  lessonhint,
+  lessonindex,
+  lessontitle,
+  metriclabel,
+  metricvalue,
+  nesteddescription,
+  nestedtask,
+  nestedtitle,
+  productbadge,
+  productcopy,
+  producttitle,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  [data-og-internal-id="tutlayactiona1"],
+  [data-og-internal-id="tutlayactiona2"],
+  [data-og-internal-id="tutlayactionb1"],
+  [data-og-internal-id="tutlayactionb2"]
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  [data-og-internal-id="tutlayactiona1"],
+  [data-og-internal-id="tutlayactiona2"],
+  [data-og-internal-id="tutlayactionb1"],
+  [data-og-internal-id="tutlayactionb2"]
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+@media (max-width: 760px) {
+  :where(
+    [data-og-internal-id="tutlayactiona1"],
+    [data-og-internal-id="tutlayactiona2"],
+    [data-og-internal-id="tutlayactionb1"],
+    [data-og-internal-id="tutlayactionb2"]
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="tutlayroot001"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 32px;
   background: #0a0d10;
   color: #f4f7f8;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutlayroot001"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutlayheader01"] {
+  display: flex;
+  flex-direction: column;
   max-width: 860px;
   gap: 12px;
 }
@@ -39,6 +215,8 @@
 }
 
 [data-og-internal-id="tutlaycompare2"] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   width: 100%;
   gap: 18px;
   align-items: stretch;
@@ -46,6 +224,8 @@
 
 [data-og-internal-id="tutlayvertical"],
 [data-og-internal-id="tutlayhorizont"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 390px;
   gap: 20px;
@@ -57,6 +237,8 @@
 
 [data-og-internal-id="tutlayvhead002"],
 [data-og-internal-id="tutlayhhead002"] {
+  display: flex;
+  flex-direction: row;
   gap: 10px;
   align-items: center;
 }
@@ -68,12 +250,16 @@
 }
 
 [data-og-internal-id="tutlayvstack02"] {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
 [data-og-internal-id="tutlayvcard201"],
 [data-og-internal-id="tutlayvcard202"],
 [data-og-internal-id="tutlayvcard203"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   padding: 16px;
@@ -101,6 +287,8 @@
 }
 
 [data-og-internal-id="tutlayhrow0002"] {
+  display: flex;
+  flex-direction: row;
   min-height: 190px;
   gap: 12px;
   align-items: stretch;
@@ -109,6 +297,8 @@
 [data-og-internal-id="tutlaymetric21"],
 [data-og-internal-id="tutlaymetric22"],
 [data-og-internal-id="tutlaymetric23"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   gap: 10px;
   padding: 18px 14px;
@@ -147,6 +337,8 @@
 }
 
 [data-og-internal-id="tutlaynested02"] {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
   width: 100%;
   gap: 28px;
   padding: 28px;
@@ -158,9 +350,11 @@
 }
 
 [data-og-internal-id="tutlaynestcopy"] {
-  width: 34%;
-  gap: 12px;
-  justify-content: center;
+  display: block;
+}
+
+[data-og-internal-id="tutlaynestcopy"] > * + * {
+  margin-top: 12px;
 }
 
 [data-og-internal-id="tutlayntitle02"] {
@@ -186,6 +380,8 @@
 }
 
 [data-og-internal-id="tutlayproducts2"] {
+  display: flex;
+  flex-direction: row;
   flex: 1 1 auto;
   gap: 14px;
   align-items: stretch;
@@ -193,6 +389,8 @@
 
 [data-og-internal-id="tutlayproducta"],
 [data-og-internal-id="tutlayproductb"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 260px;
   gap: 12px;
@@ -217,6 +415,9 @@
 
 [data-og-internal-id="tutlayactions2a"],
 [data-og-internal-id="tutlayactions2b"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   margin: auto 0 0;
   gap: 8px;
 }
@@ -243,4 +444,23 @@
   border-radius: 6px;
   font-size: 13px;
   font-weight: 650;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutlayvhead002"],
+  [data-og-internal-id="tutlayvcard201"],
+  [data-og-internal-id="tutlayvcard202"],
+  [data-og-internal-id="tutlayvcard203"],
+  [data-og-internal-id="tutlayhhead002"],
+  [data-og-internal-id="tutlayhrow0002"],
+  [data-og-internal-id="tutlayproducts2"],
+  [data-og-internal-id="tutlayactions2a"],
+  [data-og-internal-id="tutlayactions2b"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-og-internal-id="tutlaycompare2"],
+  [data-og-internal-id="tutlaynested02"] {
+    grid-template-columns: 1fr;
+  }
 }

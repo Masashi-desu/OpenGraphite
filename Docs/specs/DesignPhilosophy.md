@@ -6,6 +6,12 @@ OpenGraphite は、Web 標準ファイルを編集可能な正本として扱う
 
 Web 標準の source files が公開成果物の正本です。通常の page DOM は HTML が担い、共通描画は CSS、参照展開は必要に応じて runtime または build、キャンバス配置、preview state、公開成果物に含めない協業用注釈は project metadata が担います。
 
+OpenGraphite は HTML / CSS / Web Components / project runtime が既に表している描画や振る舞いへ、独自属性による別の「正しさ」を追加しません。DOM semantics、CSS cascade、computed style、Custom Elements、`template` / `slot` / `part`、通常の host attribute が公開成果物の挙動を決め、Canvas、Layers、Inspector、CLI、MCP はその同じ実装を読み取る薄い編集面として動作します。
+
+OpenGraphite annotation を持たない HTML も通常の Web resource として扱います。`data-og-id` / `data-og-internal-id` は AI と人が長期に同じ node を指す必要がある場合だけ付与する optional identity であり、resource の open、preview、inspection、無編集保存を adoption とみなしません。既存の標準 `id` や安全な selector で十分な場合はそれを優先し、永続的な agent reference が必要になった時だけ dry-run と source diff を確認できる明示 adoption を行います。
+
+同じ原則を旧 Web contract からの移行にも適用します。新規 project と生成 resource は現行 Web contract の標準 HTML / CSS を直接作り、旧 source の互換読み取りを通常の open、inspection、validation、build、無編集保存と混ぜません。移行は project 単位の明示 dry-run で全差分を確認し、同じ source snapshot に束縛された proposal だけを atomic apply します。変換不能な値や stale proposal が一つでもあれば source を変更せず、compatibility reader は機械可読 contract の削除条件をすべて満たすまで migration 入力に限定して維持します。
+
 `OpenGraphite.app` が表示している source files と、ブラウザで表示する HTML/CSS/JS は同じリポジトリ内の Web 標準ファイルです。編集結果は独自デザイン IR へ複製せず、開いている source files へ直接反映されます。
 
 component 参照を使う場合、Pages の source HTML は軽い参照を保持できます。小規模なプロジェクトは runtime で表示時に展開し、性能や SEO を重視する場合は build で静的 HTML を生成できます。これは `.fig` や `.pen` のような別正本を作るものではなく、Web 標準 source files から決定的に生成される配布形態です。
@@ -30,15 +36,17 @@ OpenGraphite app の中では、読み込み済み project / HTML / resource か
 
 OpenGraphite は、意味、編集情報、デザイン値、描画規則、project metadata を分離します。
 
-- タグ名は、人間が読める意味やコンポーネント名を担う。
-- `data-og-*` は、エディタが安全に解釈する構造、種別、参照を担う。
-- HTML と同名の companion CSS は、編集可能なデザイン値を担う。
-- `OpenGraphite.css` は、app 内描画とブラウザ描画を一致させる共有規則を担う。
+- 標準 HTML の tag、attribute、ARIA、DOM content は、意味と操作 capability の根拠を担う。
+- node は単一typeへ分類せず、project root、native / custom element、link、direct text、children、media / SVG / mask、ARIA、computed displayのevidenceから操作ごとのcapabilityを複数持てる。legacy type hintは意味や描画を上書きしない。
+- 標準 CSS source は authored value、selector、cascade、responsive / state scope、書き戻し provenance を担い、WebKit computed style は現在の描画値を担う。
+- Custom Elements、`template`、`slot`、`part`、host attribute と project runtime は component の構造と振る舞いを担う。
+- `data-og-id` / `data-og-internal-id` は optional な協業 identity、`data-og-component` と source internal ID は標準 DOM だけから復元できない component / node reference を担う。
+- その他の永続 `data-og-*` は、標準 Web から復元できない binding、編集 policy、resource provenance に限定する。
+- `OpenGraphite.css` は OpenGraphite annotation のない resource に描画既定値を強制せず、project token と標準 Web から復元できない限定的な affordance だけを共有する。legacy compatibility readerやglobal hidden ruleの責務を配布CSSへ持たせない。
 - `.ogp` は、source files の複製ではなく、プロジェクト解決、一覧、キャンバス配置、preview metadata、Chapter / Collection 単位の協業用注釈を担う。
+- legacy Web contract は通常読込で暗黙変換せず、dry-run、全 resource diff、snapshot-bound proposal、atomic apply を持つ明示 project migration だけで標準 source へ移す。
 
-HTML には構造と参照のパラメータだけを残します。`data-og-role` や `data-og-variant` のうち純粋に見た目を選ぶ値は companion CSS の selector で表し、`component-placement` のように editor / runtime が参照として解釈する値だけを HTML に残します。
-
-class 名は OpenGraphite の編集正本にしません。class は Web 実装上の補助として使えますが、OpenGraphite が編集対象として信頼する主な契約は `data-og-*` と companion CSS 上の node-scoped CSS declaration です。
+class、標準 `id`、tag selector、attribute selector は通常の authored CSS として同等に読み取ります。OpenGraphite は特定 selector 形式を主要な正本へ昇格させず、selector の specificity、source order、inheritance、`!important`、at-rule scope を保持したまま、既存 declaration または安全な新規 rule へ最小差分で書き戻します。
 
 詳細な属性、CSS 値、runtime、build、preview mock、text resource の境界は [SourceOfTruthContract.md](SourceOfTruthContract.md) に定義します。
 
@@ -62,14 +70,14 @@ component instance は master の構造を共有し、差分は明示された s
 
 OpenGraphite は HTML を特殊なキャンバス形式へ変換してから描画しません。WebKit が source HTML / CSS / JS を描画し、OpenGraphite は選択、レイヤー抽出、インスペクタ編集、保存を担当します。
 
-描画規則は class ではなく `data-og-*` と標準 CSS property を中心に記述します。ページ固有の見た目は同名 companion CSS に置き、app 内描画とブラウザ描画の差分は、できるだけ CSS と runtime contract 側で説明できるようにします。
+描画規則は標準 CSS property と project-authored selector を中心に記述します。ページ固有の見た目は同名 companion CSS または page が通常参照する stylesheet に置き、app 内描画とブラウザ描画の差分は CSS と project runtime から説明できるようにします。computed style は描画結果の観測値であり、書き戻し先は source AST 上の declaration provenance から別に決定します。
 
 ## Editor Principle
 
 OpenGraphite のエディタは、source files の上に編集体験を重ねる薄いレイヤーです。
 
 - `WKWebView` で対象 source を直接表示する。
-- `[data-og-id]` を持つ node を Layers に反映する。
+- 通常の DOM node を Layers に反映し、annotation の有無と reference stability を区別する。
 - 選択状態を Canvas、Layers、Inspector で同期する。
 - app 内編集は永続化前に cache へ反映し、同じ値を表示するすべての経路へ即時同期する。
 - Inspector の design value 編集を companion CSS へ、構造や参照の編集を HTML へ反映する。
@@ -92,8 +100,8 @@ OpenGraphite のエディタは、source files の上に編集体験を重ねる
 実装判断で迷った場合は、次の順で優先します。
 
 1. 編集後の source files が、そのまま Web 成果物として読めるか。
-2. デザイン値が同名 companion CSS の標準 CSS property として明示されているか。
-3. エディタ用の構造・参照メタデータが `data-og-*` として source HTML 上に保持されているか。
+2. 描画と振る舞いが標準 HTML / CSS / Web Components / project runtime から決まり、OpenGraphite 固有の描画正本を増やしていないか。
+3. OpenGraphite metadata は、optional identity、component / node reference、binding / policy / provenance のように標準 Web から復元できない情報だけか。
 4. `.ogp` が source の複製ではなく、プロジェクト管理情報に留まっているか。
 5. app 内で同じ値を表示する複数経路が、永続化前の cache 現在値で同期しているか。
 6. 公開リポジトリへ置いてもユーザー固有情報を含まないか。

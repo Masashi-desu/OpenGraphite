@@ -1,14 +1,148 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  bodytext,
+  columnheading,
+  columntask,
+  displaytext,
+  headlinetext,
+  metatext,
+  propertychip,
+  propertyrow,
+  samplecopy,
+  sampletag,
+  sampletitle,
+  spacebar,
+  spacebars,
+  steplabel,
+  stylecolumn,
+  stylematrix,
+  surfacesample,
+  tokencopy,
+  tokendescription,
+  tokenlabel,
+  tokenlesson,
+  tokenname,
+  tokensample,
+  tokensamples,
+  tokenswatch,
+  tokentitle,
+  tutorialappearance,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle,
+  typespecimen
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  propertyrow,
+  spacebar,
+  spacebars,
+  stylecolumn,
+  stylematrix,
+  surfacesample,
+  tokencopy,
+  tokenlesson,
+  tokensample,
+  tokensamples,
+  tokenswatch,
+  tutorialappearance,
+  tutorialheader,
+  typespecimen
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  bodytext,
+  columnheading,
+  columntask,
+  displaytext,
+  headlinetext,
+  metatext,
+  propertychip,
+  samplecopy,
+  sampletag,
+  sampletitle,
+  steplabel,
+  tokendescription,
+  tokenlabel,
+  tokenname,
+  tokentitle,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  bodytext,
+  columnheading,
+  columntask,
+  displaytext,
+  headlinetext,
+  metatext,
+  propertychip,
+  samplecopy,
+  sampletag,
+  sampletitle,
+  steplabel,
+  tokendescription,
+  tokenlabel,
+  tokenname,
+  tokentitle,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutstyroot004"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 32px;
   background: #0a0c0f;
   color: #f5f7f8;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutstyroot004"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutstyheader04"] {
+  display: flex;
+  flex-direction: column;
   max-width: 860px;
   gap: 12px;
 }
@@ -38,6 +172,8 @@
 }
 
 [data-og-internal-id="tutstymatrix04"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   align-items: stretch;
@@ -45,6 +181,8 @@
 
 [data-og-internal-id="tutstyappear04"],
 [data-og-internal-id="tutstytype004"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 490px;
   gap: 18px;
@@ -55,6 +193,8 @@
 }
 
 [data-og-internal-id="tutstysurface4"] {
+  display: flex;
+  flex-direction: column;
   min-height: 275px;
   gap: 14px;
   padding: 28px;
@@ -78,6 +218,8 @@
 }
 
 [data-og-internal-id="tutstyapprow04"] {
+  display: flex;
+  flex-direction: row;
   gap: 8px;
   align-items: stretch;
 }
@@ -97,6 +239,8 @@
 }
 
 [data-og-internal-id="tutstytypespec"] {
+  display: flex;
+  flex-direction: column;
   min-height: 340px;
   gap: 14px;
   padding: 28px;
@@ -147,6 +291,8 @@
 }
 
 [data-og-internal-id="tutstytoken04"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 28px;
   padding: 26px;
@@ -157,6 +303,8 @@
 }
 
 [data-og-internal-id="tutstytokcopy4"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   gap: 10px;
 }
@@ -174,11 +322,16 @@
 }
 
 [data-og-internal-id="tutstytoksamps"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   gap: 12px;
 }
 
 [data-og-internal-id="tutstytokcolor"],
 [data-og-internal-id="tutstytokspace"] {
+  display: flex;
+  flex-direction: column;
   width: 180px;
   min-height: 125px;
   gap: 12px;
@@ -204,6 +357,8 @@
 }
 
 [data-og-internal-id="tutstyspbars04"] {
+  display: flex;
+  flex-direction: row;
   height: 36px;
   gap: 8px;
   align-items: flex-end;
@@ -228,4 +383,14 @@
   height: 36px;
   background: #c5a3ff;
   border-radius: 3px;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutstymatrix04"],
+  [data-og-internal-id="tutstyapprow04"],
+  [data-og-internal-id="tutstytoken04"],
+  [data-og-internal-id="tutstytoksamps"],
+  [data-og-internal-id="tutstyspbars04"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

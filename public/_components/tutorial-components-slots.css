@@ -1,14 +1,170 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  avatarinitial,
+  componenttutorial,
+  diagramarrow,
+  diagramindex,
+  diagramstep,
+  diagramtext,
+  diagramtitle,
+  inspectortask,
+  inspectortitle,
+  masterworkbench,
+  profileaction,
+  profileavatar,
+  profilebio,
+  tutorial-profile-card,
+  profileidentity,
+  profilename,
+  profilerole,
+  profiletop,
+  slotdiagram,
+  slotinspector,
+  slotkind,
+  slotname,
+  slotrow,
+  steplabel,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  componenttutorial,
+  diagramstep,
+  masterworkbench,
+  profileavatar,
+  tutorial-profile-card,
+  profileidentity,
+  profiletop,
+  slotdiagram,
+  slotinspector,
+  slotrow,
+  tutorialheader
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  avatarinitial,
+  diagramarrow,
+  diagramindex,
+  diagramtext,
+  diagramtitle,
+  inspectortask,
+  inspectortitle,
+  profilebio,
+  profilename,
+  profilerole,
+  slotkind,
+  slotname,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  avatarinitial,
+  diagramarrow,
+  diagramindex,
+  diagramtext,
+  diagramtitle,
+  inspectortask,
+  inspectortitle,
+  profilebio,
+  profilename,
+  profilerole,
+  slotkind,
+  slotname,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  profileaction
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  profileaction
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+@media (max-width: 760px) {
+  :where(
+    profileaction
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="tutcmpsltroot"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0b0d0c;
   color: #f5f7f5;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutcmpsltroot"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutcmpslthead"] {
+  display: flex;
+  flex-direction: column;
   max-width: 860px;
   gap: 12px;
 }
@@ -35,6 +191,8 @@
 }
 
 [data-og-internal-id="tutcmpsltdiag"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   align-items: center;
@@ -43,6 +201,8 @@
 [data-og-internal-id="tutcmpsltdmstr"],
 [data-og-internal-id="tutcmpsltdslot"],
 [data-og-internal-id="tutcmpsltdinst"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 110px;
   gap: 6px;
@@ -83,6 +243,8 @@
 }
 
 [data-og-internal-id="tutcmpsltwork"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 24px;
   padding: 30px;
@@ -93,6 +255,8 @@
 }
 
 [data-og-internal-id="tutcmpprofmst"] {
+  display: flex;
+  flex-direction: column;
   width: 480px;
   min-width: 480px;
   min-height: 430px;
@@ -105,11 +269,15 @@
 }
 
 [data-og-internal-id="tutcmpproftop"] {
+  display: flex;
+  flex-direction: row;
   gap: 16px;
   align-items: center;
 }
 
 [data-og-internal-id="tutcmpprofava"] {
+  display: flex;
+  flex-direction: row;
   width: 72px;
   height: 72px;
   min-width: 72px;
@@ -126,6 +294,8 @@
 }
 
 [data-og-internal-id="tutcmpprofident"] {
+  display: flex;
+  flex-direction: column;
   gap: 5px;
 }
 
@@ -158,6 +328,8 @@
 }
 
 [data-og-internal-id="tutcmpsltinspect"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   gap: 10px;
 }
@@ -167,6 +339,8 @@
 [data-og-internal-id="tutcmpsltrowrol"],
 [data-og-internal-id="tutcmpsltrowbio"],
 [data-og-internal-id="tutcmpsltrowact"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   padding: 12px 14px;
@@ -205,4 +379,27 @@
   border-radius: 6px;
   font-size: 13px;
   line-height: 1.55;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutcmpsltroot"] {
+    padding: 24px;
+  }
+
+  [data-og-internal-id="tutcmpsltdiag"],
+  [data-og-internal-id="tutcmpsltwork"],
+  [data-og-internal-id="tutcmpproftop"],
+  [data-og-internal-id="tutcmpprofava"],
+  [data-og-internal-id="tutcmpsltrowava"],
+  [data-og-internal-id="tutcmpsltrownam"],
+  [data-og-internal-id="tutcmpsltrowrol"],
+  [data-og-internal-id="tutcmpsltrowbio"],
+  [data-og-internal-id="tutcmpsltrowact"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-og-internal-id="tutcmpprofmst"] {
+    width: 100%;
+    min-width: 0;
+  }
 }

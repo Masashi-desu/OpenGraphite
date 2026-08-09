@@ -1,7 +1,7 @@
 # Responsive Media Query Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
@@ -20,7 +20,7 @@
 
 ## 草案（判断材料）
 
-- 保存形: companion CSS に標準 `@media (min-width: ...)` / `(max-width: ...)` block を置き、その中に同じ `[data-og-internal-id="..."]` rule を持つ。独自 IR は作らない。
+- 保存形: companion CSS に標準 `@media (min-width: ...)` / `(max-width: ...)` block を置き、その中では既存の authored selector を維持する。OpenGraphite annotation がある node は `[data-og-internal-id="..."]` を利用できるが必須とせず、未注釈 node は既存の標準 `id` / class / custom-element selector、または明示 adopt 後の安定 selector を使う。独自 IR は作らない。
 - breakpoint preset: デザイン値ではなく editor preview metadata として `.ogp` に置く案（Project Metadata Principle と整合）。CSS 側に非標準表現（@custom-media 等）を持ち込まない。
 - viewport preview: 既存の `project page place --allow-duplicate-path` + 配置名（Desktop / Mobile）を viewport preview として位置づけ、placement の canvas 幅と active media の対応規則を決める。
 - CLI: `node style set --media '(max-width: 768px)'` のような media 条件指定。graph の `cssVariables` に media scope をどう表現するか（base と override の区別）。

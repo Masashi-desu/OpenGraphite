@@ -1,4 +1,37 @@
 const fallbackLocale = "ja";
+const fallbackHTMLByElement = new WeakMap();
+const translatedElements = new Set();
+
+function fallbackHTMLFor(element) {
+  if (!fallbackHTMLByElement.has(element)) {
+    fallbackHTMLByElement.set(element, element.innerHTML);
+    translatedElements.add(element);
+  }
+  return fallbackHTMLByElement.get(element) || "";
+}
+
+function setFallbackHTML(element, html) {
+  fallbackHTMLByElement.set(element, String(html || ""));
+  translatedElements.add(element);
+}
+
+function suspendTranslations() {
+  const states = [];
+  translatedElements.forEach((element) => {
+    if (!element.isConnected) { return; }
+    states.push({ element, runtimeHTML: element.innerHTML });
+    element.innerHTML = fallbackHTMLFor(element);
+  });
+  return states;
+}
+
+function resumeTranslations(states) {
+  (Array.isArray(states) ? states : []).forEach((state) => {
+    if (state.element && state.element.isConnected) {
+      state.element.innerHTML = state.runtimeHTML;
+    }
+  });
+}
 
 function previewField(name) {
   const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
@@ -98,18 +131,20 @@ async function applyI18n() {
   elementsIncludingTemplateContent(document.documentElement).forEach((element) => {
     const key = element.getAttribute("data-i18n-key");
     if (!key) { return; }
-    if (!element.hasAttribute("data-og-runtime-fallback-html")) {
-      element.setAttribute("data-og-runtime-fallback-html", element.innerHTML);
-    }
-    const fallbackHTML = element.getAttribute("data-og-runtime-fallback-html") || "";
+    const fallbackHTML = fallbackHTMLFor(element);
     const variantHTML = variantAttribute ? element.getAttribute(variantAttribute) : null;
     const value = Object.prototype.hasOwnProperty.call(resources, key) ? resources[key] : variantHTML !== null ? variantHTML : fallbackHTML;
     element.innerHTML = typeof value === "string" ? value : fallbackHTML;
   });
 }
 
-window.OpenGraphiteI18n = { apply: applyI18n };
+window.OpenGraphiteI18n = {
+  apply: applyI18n,
+  fallbackHTMLFor,
+  setFallbackHTML,
+  suspend: suspendTranslations,
+  resume: resumeTranslations
+};
 
 document.addEventListener("DOMContentLoaded", () => { applyI18n(); });
 document.addEventListener("opengraphite:components-ready", () => { applyI18n(); });
-document.addEventListener("opengraphite:serialize-complete", () => { applyI18n(); });

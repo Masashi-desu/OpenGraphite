@@ -1,53 +1,59 @@
 import SwiftUI
 
 /// 論理名（日本語）: インスペクター整列モデル
-/// 概要: `data-og-layout` の方向を踏まえ、`align-items` と `justify-content` が主軸と交差軸のどちらに効くかを判断します。
+/// 概要: WebKit computed `display` / `flex-direction`から導出したlayoutを踏まえ、標準CSS整列の軸と適用可否を判断します。
 ///
 /// 定義内容:
 /// - `isVerticalLayout(_:)`: layout 値が縦並びかどうか。
 /// - `supportsAlignment(_:)`: layout 値が flex 整列を効かせられるかどうか。
-/// - `resolvedAlignItems(_:layout:)`: 未指定時に効いている `align-items` の既定値。
-/// - `resolvedJustifyContent(_:)`: 未指定時に効いている `justify-content` の既定値。
+/// - `resolvedAlignItems(_:computedValue:)`: authored未指定時のcomputed `align-items`。
+/// - `resolvedJustifyContent(_:computedValue:)`: authored未指定時のcomputed `justify-content`。
 enum InspectorAlignmentModel {
     /// 論理名（日本語）: 縦並び判定関数
-    /// 処理概要: `data-og-layout` が縦並びかどうかを返します。
+    /// 処理概要: computed flex方向から導出済みのlayoutが縦並びかどうかを返します。
     ///
-    /// - Parameter layout: `data-og-layout` の値。
+    /// - Parameter layout: WebKit computed styleから導出したlayout分類。
     /// - Returns: 縦並びの場合は true。
     static func isVerticalLayout(_ layout: String) -> Bool {
         layout.trimmingCharacters(in: .whitespacesAndNewlines) != "horizontal"
     }
 
     /// 論理名（日本語）: 整列適用可否判定関数
-    /// 処理概要: `absolute` レイアウトは flex ではないため整列が効かないことを判定します。
+    /// 処理概要: 現在のcomputed formatting contextがflexまたはgridの場合だけ整列が効くと判定します。
     ///
-    /// - Parameter layout: `data-og-layout` の値。
+    /// - Parameter layout: WebKit computed styleから導出したlayout分類。
     /// - Returns: 整列指定が描画へ反映される場合は true。
     static func supportsAlignment(_ layout: String) -> Bool {
-        layout.trimmingCharacters(in: .whitespacesAndNewlines) != "absolute"
+        ["vertical", "horizontal", "grid"].contains(
+            layout.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        )
     }
 
     /// 論理名（日本語）: 実効align-items解決関数
-    /// 処理概要: 未指定時に OpenGraphite.css が与える既定値を補って交差軸の指定を返します。
+    /// 処理概要: authored値を優先し、未指定時はWebKit computed値を返します。
     ///
     /// - Parameters:
     ///   - value: `align-items` の CSS 値。
-    ///   - layout: `data-og-layout` の値。
+    ///   - computedValue: WebKit computed `align-items`。
     /// - Returns: 実際に効いている `align-items` の値。
-    static func resolvedAlignItems(_ value: String, layout: String) -> String {
+    static func resolvedAlignItems(_ value: String, computedValue: String) -> String {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedValue.isEmpty else { return normalizedValue }
-        return isVerticalLayout(layout) ? "stretch" : "center"
+        return computedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// 論理名（日本語）: 実効justify-content解決関数
-    /// 処理概要: 未指定時に OpenGraphite.css が与える既定値を補って主軸の指定を返します。
+    /// 処理概要: authored値を優先し、未指定時はWebKit computed値を返します。
     ///
-    /// - Parameter value: `justify-content` の CSS 値。
+    /// - Parameters:
+    ///   - value: authored `justify-content` の CSS 値。
+    ///   - computedValue: WebKit computed `justify-content`。
     /// - Returns: 実際に効いている `justify-content` の値。
-    static func resolvedJustifyContent(_ value: String) -> String {
+    static func resolvedJustifyContent(_ value: String, computedValue: String) -> String {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalizedValue.isEmpty ? "flex-start" : normalizedValue
+        return normalizedValue.isEmpty
+            ? computedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            : normalizedValue
     }
 }
 
@@ -203,7 +209,7 @@ enum InspectorAlignmentAxisOptions {
 }
 
 /// 論理名（日本語）: インスペクターレイアウトモードタイル
-/// 概要: `data-og-layout` を、子要素の並び方をアイコンとして描いた選択タイルで切り替えます。
+/// 概要: 標準`display` / `flex-direction`を、子要素の並び方を示す選択タイルで切り替えます。
 ///
 /// プロパティ:
 /// - `value`: 現在の layout 値。
@@ -212,7 +218,7 @@ struct InspectorLayoutModeTiles: View {
     var value: String
     var onChange: (String) -> Void
 
-    private let modes = ["vertical", "horizontal", "absolute"]
+    private let modes = ["vertical", "horizontal", "grid", "block"]
 
     var body: some View {
         HStack(spacing: 6) {
@@ -259,14 +265,14 @@ struct InspectorLayoutModeTiles: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("data-og-layout: \(mode)")
+        .help("標準CSSレイアウト: \(mode)")
         .accessibilityLabel(mode)
         .accessibilityValue(isSelected ? "selected" : "")
     }
 }
 
 /// 論理名（日本語）: インスペクターレイアウトアイコン
-/// 概要: 縦並び、横並び、絶対配置それぞれの子要素の並び方を、選択タイル用の小さなアイコンとして描きます。
+/// 概要: flex縦横、grid、標準block flowの子要素の並び方を選択タイル用アイコンとして描きます。
 ///
 /// プロパティ:
 /// - `mode`: 描画対象の layout 値。
@@ -280,7 +286,7 @@ struct InspectorLayoutGlyph: View {
             RoundedRectangle(cornerRadius: 3)
                 .strokeBorder(
                     strokeColor,
-                    style: StrokeStyle(lineWidth: 1, dash: mode == "absolute" ? [2, 2] : [])
+                    style: StrokeStyle(lineWidth: 1, dash: mode == "block" ? [2, 2] : [])
                 )
 
             content
@@ -299,13 +305,16 @@ struct InspectorLayoutGlyph: View {
                 bar(width: 4, height: nil)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        case "absolute":
-            ZStack(alignment: .topLeading) {
-                Color.clear
-                bar(width: 9, height: 6)
-                    .offset(x: 1, y: 1)
-                bar(width: 7, height: 5)
-                    .offset(x: 12, y: 8)
+        case "grid":
+            Grid(horizontalSpacing: 2, verticalSpacing: 2) {
+                GridRow {
+                    bar(width: 7, height: 5)
+                    bar(width: 7, height: 5)
+                }
+                GridRow {
+                    bar(width: 7, height: 5)
+                    bar(width: 7, height: 5)
+                }
             }
         default:
             VStack(spacing: 2) {

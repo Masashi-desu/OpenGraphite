@@ -140,7 +140,7 @@
           "orientation" : "vertical"
         },
         {
-          "position" : 2860,
+          "position" : 3760,
           "internalID" : "tutguidehorizontal09",
           "orientation" : "horizontal"
         }
@@ -154,8 +154,8 @@
             "y" : 0,
             "width" : 1180,
             "x" : 0,
-            "name" : "01 · Objects & Pages",
-            "height" : 1080
+            "name" : "01 · Semantics, Adoption & Source",
+            "height" : 1980
           }
         },
         {
@@ -167,7 +167,7 @@
             "x" : 1260,
             "y" : 0,
             "width" : 1180,
-            "name" : "02 · Auto Layout"
+            "name" : "02 · Standard CSS Layout"
           }
         },
         {
@@ -188,7 +188,7 @@
             "height" : 1080,
             "x" : 0,
             "name" : "04 · Appearance & Type",
-            "y" : 1160,
+            "y" : 2060,
             "width" : 1180
           },
           "id" : "tutorial-appearance",
@@ -198,8 +198,8 @@
           "path" : "tutorial-media-icons.html",
           "canvas" : {
             "x" : 1260,
-            "name" : "05 · Media & Icons",
-            "y" : 1160,
+            "name" : "05 · Standard Media & Icons",
+            "y" : 2060,
             "width" : 1180,
             "height" : 1040
           },
@@ -210,8 +210,8 @@
           "id" : "tutorial-motion",
           "internalID" : "tutpagemotion01",
           "canvas" : {
-            "name" : "06 · Motion & State",
-            "y" : 1160,
+            "name" : "06 · Motion, Flip & State",
+            "y" : 2060,
             "x" : 2520,
             "height" : 1020,
             "width" : 1180
@@ -223,7 +223,7 @@
           "internalID" : "tutpageinstance",
           "canvas" : {
             "name" : "07 · Component Instances",
-            "y" : 2320,
+            "y" : 3220,
             "width" : 1180,
             "height" : 1160,
             "x" : 0
@@ -238,7 +238,7 @@
             "height" : 1080,
             "width" : 1180,
             "name" : "08 · Sticky Notes",
-            "y" : 2320
+            "y" : 3220
           },
           "path" : "tutorial-sticky-notes.html"
         },
@@ -251,7 +251,7 @@
             "width" : 1180,
             "height" : 1080,
             "x" : 2520,
-            "y" : 2320
+            "y" : 3220
           }
         },
         {
@@ -262,7 +262,7 @@
             "height" : 1080,
             "x" : 0,
             "width" : 1180,
-            "y" : 3560,
+            "y" : 4460,
             "name" : "10 · Stylus Ink"
           }
         }
@@ -273,7 +273,7 @@
           "internalID" : "tutstylusink10",
           "frame" : {
             "height" : 230,
-            "y" : 3990,
+            "y" : 4890,
             "x" : 610,
             "width" : 430
           },
@@ -390,7 +390,7 @@
           "frame" : {
             "x" : 2070,
             "width" : 280,
-            "y" : 2740,
+            "y" : 3640,
             "height" : 180
           },
           "textColor" : "#231F14",
@@ -419,10 +419,10 @@
             "previewContext" : {
               "placementMocks" : {
                 "docsnavcollapsedplacement" : {
-                  "placementMode" : "collapsed"
+                  "host.variant" : "collapsible collapsed"
                 },
                 "67a2e12dbed8" : {
-                  "codeViewerMode" : "preview",
+                  "host.variant" : "preview",
                   "selectedLanguage" : "ja"
                 }
               },
@@ -478,7 +478,21 @@
             "x" : 2520,
             "width" : 1180,
             "height" : 1280,
-            "y" : 0
+            "y" : 0,
+            "previewContext" : {
+              "placementMocks" : {
+                "tutcmpstaexppl" : {
+                  "host.variant" : "expanded"
+                },
+                "tutcmpstaloadpl" : {
+                  "host.aria-busy" : "true",
+                  "host.class" : "is-loading"
+                },
+                "tutcmpstacolpl" : {
+                  "host.variant" : "collapsed"
+                }
+              }
+            }
           }
         }
       ],

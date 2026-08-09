@@ -1,13 +1,13 @@
 # Link Navigation Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
 ## 目的
 
-`data-og-type="button"` は「ボタンまたはリンク型」とされるが、`href` の編集契約、ページ間リンクの表現、破損リンクの validation、build 時の扱いが未定義。マルチページサイトの成果物として必要なリンク契約を確定し、spec 化する。
+標準 `a[href]`、native control、ARIA と DOM capability からリンク / action を判定する方針に対して、`href` の編集契約、ページ間リンクの表現、破損リンクの validation、build 時の扱いが未定義。マルチページサイトの成果物として必要なリンク契約を確定し、spec 化する。
 
 ## スコープ
 

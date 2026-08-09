@@ -21,7 +21,7 @@ struct EditorStoreTests {
                 "layout": "horizontal",
                 "role": "component-placement",
                 "componentID": "site-header",
-                "componentKind": "",
+                "componentMaster": false,
                 "sourceComponentID": "site-header",
                 "sourceInstanceID": "header-instance",
                 "sourceNodeInternalID": "source-node",
@@ -54,6 +54,311 @@ struct EditorStoreTests {
         #expect(store.nodes[0].i18nKey == "home.hero.title")
         #expect(store.nodes[0].cssVariables["gap"] == "32px")
         #expect(store.nodes[0].isLocked == true)
+    }
+
+    /// 論理名（日本語）: Optional annotation payload取り込みテスト
+    /// 概要: `data-og-type`を含むannotationがなくてもsession referenceとsource locatorからLayers / Inspector nodeを生成できることを確認します。
+    @Test("未注釈DOM payloadをsession nodeとして取り込める")
+    func testIngestNodePayloadCreatesUnannotatedSessionNode() throws {
+        // コンディション：標準idとsource locatorだけを持つ未注釈HTML node payloadを用意する（Given）
+        let store = EditorStore()
+        let sessionReference = "ogref-session:node:document:path:content"
+        store.ingestNodePayload([
+            [
+                "id": sessionReference,
+                "authoredID": "",
+                "standardID": "article",
+                "internalID": "",
+                "reference": sessionReference,
+                "annotationStatus": "none",
+                "referenceStability": "session",
+                "locator": [
+                    "documentURL": "file:///tmp/article.html",
+                    "selector": "#article",
+                    "domPath": "html > body > main",
+                    "sourceRange": ["start": 42, "end": 108],
+                    "contentHash": "content"
+                ],
+                "parentReference": NSNull(),
+                "tagName": "main",
+                "capabilities": ["edit-layout", "receive-children"],
+                "capabilityEvidence": [
+                    "isProjectResourceRoot": true,
+                    "resolvedDisplay": "block"
+                ],
+                "cssVariables": ["display": "block"],
+                "hidden": false,
+                "locked": false,
+                "depth": 0
+            ]
+        ])
+
+        // 検証内容：Storeがpayloadを選択可能なnodeへ変換する（When）
+        store.selectNode(id: sessionReference)
+        let node = try #require(store.selectedNode)
+        let locator = try #require(node.locator)
+
+        // 期待値：標準idが表示名になり、type不要のread-only session nodeとlocatorが保持される（Then）
+        #expect(node.id == sessionReference)
+        #expect(node.displayID == "article")
+        #expect(node.legacyTypeHint == nil)
+        #expect(node.supports(.editLayout))
+        #expect(node.supports(.receiveChildren))
+        #expect(node.detailLine == "main")
+        #expect(node.annotationStatus == .none)
+        #expect(node.referenceStability == .session)
+        #expect(node.reference == sessionReference)
+        #expect(!node.hasStableReference)
+        #expect(locator.selector == "#article")
+        #expect(locator.domPath == "html > body > main")
+        #expect(locator.sourceStart == 42)
+        #expect(locator.sourceEnd == 108)
+    }
+
+    /// 論理名（日本語）: Layers即時公開と正本索引cacheテスト
+    /// 概要: 軽量Web payloadを先に表示し、source graphをbackgroundで補完した後は同一revisionの索引を再構築しないことを確認します。
+    @Test("Layersを即時表示して同一revisionの正本索引を再利用する")
+    func testLayerPayloadPublishesBeforeSourceEnrichmentAndReusesRevisionCache() async throws {
+        // コンディション：stable internal IDを持つ標準HTML pageと軽量Layers payloadを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <main id="root" data-og-internal-id="root-node">
+            <section id="card" data-og-internal-id="card-node">Card</section>
+          </main>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let lightweightPayload: [[String: Any]] = [
+            [
+                "id": "card-browser",
+                "standardID": "card",
+                "internalID": "card-node",
+                "reference": "ogref:node:card-node",
+                "tagName": "section",
+                "hidden": false,
+                "locked": false,
+                "depth": 1,
+                "activeMediaQueries": []
+            ]
+        ]
+
+        // 検証内容：軽量payloadを受信して即時状態を確認し、background補完後に同じpayloadをもう一度取り込む（When）
+        store.ingestNodePayload(lightweightPayload)
+        let immediateNode = try #require(store.nodes.first)
+        #expect(immediateNode.attributes.isEmpty)
+        #expect(store.nodeSourceIndexBuildCount == 1)
+        await store.waitForNodeSourceEnrichment()
+        let enrichedNode = try #require(store.nodes.first)
+        store.ingestNodePayload(lightweightPayload)
+        await store.waitForNodeSourceEnrichment()
+
+        // 期待値：Layers行はgraph完了前から存在し、補完後はsource属性/capabilityを持ち、同一revisionの再構築は起きない（Then）
+        #expect(enrichedNode.attributes["id"] == "card")
+        #expect(enrichedNode.internalID == "card-node")
+        #expect(!enrichedNode.capabilities.isEmpty)
+        #expect(store.nodes.first?.attributes["id"] == "card")
+        #expect(store.nodeSourceIndexBuildCount == 1)
+    }
+
+    /// 論理名（日本語）: Source/WebKit capability安全側mergeテスト
+    /// 概要: runtime payloadがsourceで拒否されたcapabilityや未authored属性を主張しても、Appが権限を拡大せずsource属性だけを編集baselineに使うことを確認します。
+    @Test("source-backed nodeはcapability共通部分とauthored属性だけを採用する")
+    func testSourceBackedNodeUsesCapabilityIntersectionAndSourceAttributes() async throws {
+        // コンディション：constrained table rowと空href hyperlinkを持つprojectへ過剰capability/runtime属性payloadを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html>
+        <html><body><main id="root" data-og-internal-id="root-node"><table><tbody><tr id="row" data-og-internal-id="row-node"><td>Cell</td></tr></tbody></table><a id="link" href="/authored" data-og-internal-id="link-node">Link</a></main></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let graph = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+        let sourceRow = try #require(graph.nodes.first { $0.internalID == "row-node" })
+        let sourceLink = try #require(graph.nodes.first { $0.internalID == "link-node" })
+        let excessiveCapabilities = OpenGraphiteNodeCapability.allCases.map(\.rawValue)
+        let unsafeEvidence: [String: Any] = [
+            "isProjectResourceRoot": false,
+            "isNativeControl": true,
+            "isCustomElement": true,
+            "isLink": true,
+            "hasDirectText": true,
+            "hasElementChildren": true,
+            "hasMediaContent": true,
+            "hasSVGContent": true,
+            "hasMaskContent": true,
+            "ariaRole": "button",
+            "resolvedDisplay": "block"
+        ]
+        let payload: [[String: Any]] = [
+            Self.browserPayload(
+                id: "row-browser",
+                sourceNode: sourceRow,
+                capabilities: excessiveCapabilities,
+                evidence: unsafeEvidence,
+                attributes: ["href": "/runtime", "src": "runtime.png"],
+                role: "button",
+                hidden: true,
+                locked: true
+            ),
+            Self.browserPayload(
+                id: "link-browser",
+                sourceNode: sourceLink,
+                capabilities: excessiveCapabilities,
+                evidence: unsafeEvidence,
+                attributes: ["href": "/runtime", "target": "_blank"],
+                role: "button",
+                hidden: true,
+                locked: true
+            )
+        ]
+
+        // 検証内容：payloadをsource graphへmergeし、rowへの不正hrefとlinkへの正当href編集を順に試す（When）
+        await store.ingestNodePayloadAndWait(payload)
+        store.selectNode(id: "row-browser")
+        let row = try #require(store.selectedNode)
+        store.updateNodeAttribute(name: "href", value: "/forbidden")
+        let afterRejectedEdit = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.selectNode(id: "link-browser")
+        let link = try #require(store.selectedNode)
+        store.updateNodeAttribute(name: "href", value: "/saved")
+        let afterLinkEdit = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：rowの拒否capability/runtime属性は復活せず、linkはauthored値だけをbaselineに最小更新する（Then）
+        #expect(row.capabilities == Set(sourceRow.capabilities))
+        #expect(!row.supports(.receiveChildren))
+        #expect(!row.supports(.group))
+        #expect(row.attributes["href"] == nil)
+        #expect(row.attributes["src"] == nil)
+        #expect(row.role == nil)
+        #expect(!row.hasHiddenAttribute)
+        #expect(!row.isLocked)
+        #expect(afterRejectedEdit == originalHTML)
+        #expect(link.capabilities == Set(sourceLink.capabilities))
+        #expect(link.attributes["href"] == "/authored")
+        #expect(link.attributes["target"] == nil)
+        #expect(link.role == nil)
+        #expect(afterLinkEdit == originalHTML.replacingOccurrences(of: "href=\"/authored\"", with: "href=\"/saved\""))
+    }
+
+    /// 論理名（日本語）: 空値属性設定と明示削除テスト
+    /// 概要: missing属性への空文字設定とpresent-empty属性tokenの削除を別operationとして保存し、Undo/Redoでもsource byte表現を復元することを確認します。
+    @Test("alt空値設定と属性削除をpresence intentで区別する")
+    func testEmptyAttributeSetAndExplicitRemovalPreservePresenceIntent() throws {
+        // コンディション：altを持たず未知属性とsingle-quote srcを持つstable img nodeを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body><main data-og-internal-id="root-node"><img id="hero" data-vendor=/a/b src='hero.png' data-og-internal-id="hero-node"></main></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNode = try #require(
+            try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+                .nodes.first { $0.internalID == "hero-node" }
+        )
+        store.ingestNodePayload([
+            Self.browserPayload(
+                id: "hero",
+                sourceNode: sourceNode,
+                capabilities: sourceNode.capabilities.map(\.rawValue),
+                evidence: Self.capabilityEvidencePayload(sourceNode.capabilityEvidence),
+                attributes: sourceNode.attributes,
+                role: "",
+                hidden: false,
+                locked: false
+            )
+        ])
+        store.selectNode(id: "hero")
+
+        // 検証内容：missing altを空値で追加し、明示削除後にUndo/Redoする（When）
+        store.updateNodeAttribute(name: "alt", value: "")
+        let emptyAltHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let emptyAltNode = try #require(store.selectedNode)
+        store.removeNodeAttribute(name: "alt")
+        let removedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.undoDocumentChange()
+        let undoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.redoDocumentChange()
+        let redoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：emptyとabsentを区別し、対象token以外のquote/trivia/未知属性byteを保持する（Then）
+        let expectedEmptyHTML = originalHTML.replacingOccurrences(
+            of: " data-og-internal-id=\"hero-node\">",
+            with: " data-og-internal-id=\"hero-node\" alt=\"\">"
+        )
+        #expect(emptyAltHTML == expectedEmptyHTML)
+        #expect(emptyAltNode.hasAuthoredAttribute(named: "alt"))
+        #expect(emptyAltNode.attributes["alt"] == "")
+        #expect(removedHTML == originalHTML)
+        #expect(undoHTML == expectedEmptyHTML)
+        #expect(redoHTML == originalHTML)
+        #expect(emptyAltHTML.contains("data-vendor=/a/b src='hero.png'"))
+    }
+
+    /// 論理名（日本語）: 属性値stale preconditionテスト
+    /// 概要: 属性presenceが同じでも外部変更されたsemantic値を古いInspector baselineで上書きしないことを確認します。
+    @Test("外部変更された属性値をstale setで上書きしない")
+    func testAttributeSetRejectsStaleValueWithSamePresence() throws {
+        // コンディション：authored alt値を取り込んだ後、同じ属性tokenを外部processが別値へ更新する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body><main data-og-internal-id="root-node"><img id="hero" alt="old" src="hero.png" data-og-internal-id="hero-node"></main></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNode = try #require(
+            try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+                .nodes.first { $0.internalID == "hero-node" }
+        )
+        store.ingestNodePayload([
+            Self.browserPayload(
+                id: "hero",
+                sourceNode: sourceNode,
+                capabilities: sourceNode.capabilities.map(\.rawValue),
+                evidence: Self.capabilityEvidencePayload(sourceNode.capabilityEvidence),
+                attributes: sourceNode.attributes,
+                role: "",
+                hidden: false,
+                locked: false
+            )
+        ])
+        store.selectNode(id: "hero")
+        let externallyChangedHTML = originalHTML.replacingOccurrences(of: "alt=\"old\"", with: "alt=\"external\"")
+        try externallyChangedHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+
+        // 検証内容：古いold baselineのまま新値を保存しようとする（When）
+        store.updateNodeAttribute(name: "alt", value: "new")
+        let finalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：presenceだけでなくsemantic値不一致を検出し、外部sourceをbyte単位で保持する（Then）
+        #expect(finalHTML == externallyChangedHTML)
+        #expect(store.lastError != nil)
+        #expect(store.attributeMutation == nil)
     }
 
     /// 論理名（日本語）: 親Timeline文脈解決テスト
@@ -189,7 +494,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: Placement内部ノード編集テスト
     /// 概要: placement clone 内の node を選択した場合、表示専用 ID を維持しつつ正本 component node を更新することを確認します。
     @Test("placement内部nodeの編集は参照元component nodeへ保存する")
-    func testPlacementGeneratedNodeEditsSourceComponentNode() throws {
+    func testPlacementGeneratedNodeEditsSourceComponentNode() async throws {
         // コンディション：参照元 node を持つ HTML と、placement clone の payload を用意する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -197,7 +502,7 @@ struct EditorStoreTests {
         <!doctype html>
         <html><body>
           <CodeViewer data-og-id="codeviewer" data-og-internal-id="hrbifdygbcig" data-og-type="frame"></CodeViewer>
-          <og-placement data-og-id="placement-code-viewer-preview" data-og-internal-id="placement-node" data-og-type="frame" data-og-role="component-placement" data-og-source-component-internal-id="component-main" data-og-source-node-internal-id="hrbifdygbcig"></og-placement>
+          <og-placement data-og-id="placement-code-viewer-preview" data-og-internal-id="placement-node" data-og-type="frame" data-og-source-component-internal-id="component-main" data-og-source-node-internal-id="hrbifdygbcig"></og-placement>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         try fixture.writeCompanionCSS(
@@ -211,7 +516,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "codeviewer",
                 "internalID": "hrbifdygbcig",
@@ -242,6 +547,7 @@ struct EditorStoreTests {
                 "depth": 1
             ]
         ])
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
         // 検証内容：placement clone 内 node を選択して CSS declaration を更新する（When）
         store.selectNode(id: placementSelectionID)
@@ -253,7 +559,8 @@ struct EditorStoreTests {
         #expect(store.selectedNode?.editTargetNodeID == "codeviewer")
         #expect(store.selectedNode?.isPlacementGenerated == true)
         #expect(store.lastError == nil)
-        #expect(store.cssMutation?.nodeID == placementSelectionID)
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
         #expect(!diskHTML.contains("gap"))
@@ -270,12 +577,11 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-          <LeadText
+          <lead-text
             data-og-id="hero-lead"
             data-og-internal-id="lead-node"
-            data-og-type="text"
             data-og-text-source="binding"
-            data-i18n-key="home.hero.lead">日本語 fallback</LeadText>
+            data-i18n-key="home.hero.lead">日本語 fallback</lead-text>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
@@ -286,8 +592,20 @@ struct EditorStoreTests {
             [
                 "id": "hero-lead",
                 "internalID": "lead-node",
-                "tagName": "leadtext",
-                "type": "text",
+                "tagName": "lead-text",
+                "capabilities": [OpenGraphiteNodeCapability.editText.rawValue],
+                "capabilityEvidence": [
+                    "isProjectResourceRoot": false,
+                    "isNativeControl": false,
+                    "isCustomElement": true,
+                    "isLink": false,
+                    "hasDirectText": true,
+                    "hasElementChildren": false,
+                    "hasMediaContent": false,
+                    "hasSVGContent": false,
+                    "hasMaskContent": false,
+                    "resolvedDisplay": "inline"
+                ],
                 "textContent": "English active",
                 "fallbackTextContent": "日本語 fallback",
                 "textSource": "binding",
@@ -555,9 +873,9 @@ struct EditorStoreTests {
     }
 
     /// 論理名（日本語）: Sidebar Layers同時選択CSS保存テスト
-    /// 概要: 同時選択中の Inspector 相当 CSS 更新が各 node の companion CSS と WebView mutation に分配されることを検証します。
+    /// 概要: 同時選択中のInspector相当CSS更新が各nodeのcompanion CSSへ分配され、表示をsourceから再読み込みすることを検証します。
     @Test("Sidebar Layers同時選択中のCSS更新は各nodeへ保存する")
-    func testUpdateCSSVariableAppliesToSelectedLayerNodes() throws {
+    func testUpdateCSSVariableAppliesToSelectedLayerNodes() async throws {
         // コンディション：2つの frame node を持つ HTML と companion CSS を用意し、Sidebar Layers で同時選択する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -582,22 +900,23 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             ["id": "hero", "internalID": "hero-node", "tagName": "hero", "type": "frame", "cssVariables": ["gap": "8px"], "depth": 0],
             ["id": "card", "internalID": "card-node", "tagName": "card", "type": "frame", "cssVariables": ["gap": "12px"], "depth": 0]
         ])
         store.selectNode(id: "hero")
         store.selectNodeRange(to: "card", visibleNodeIDs: ["hero", "card"])
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
         // 検証内容：Inspector 相当で gap を同じ値へ更新する（When）
         store.updateCSSVariable(key: "gap", value: "24px")
         let diskCSS = try fixture.readCompanionCSS()
 
-        // 期待値：両 node の CSS と WebView batch mutation に更新値が反映される（Then）
+        // 期待値：両nodeのCSSを保存し、inline batch mutationを残さず1回再読み込みする（Then）
         #expect(store.nodes.first(where: { $0.id == "hero" })?.cssVariables["gap"] == "24px")
         #expect(store.nodes.first(where: { $0.id == "card" })?.cssVariables["gap"] == "24px")
-        #expect(store.cssVariablesBatchMutation?.nodeValues["hero"] == ["gap": "24px"])
-        #expect(store.cssVariablesBatchMutation?.nodeValues["card"] == ["gap": "24px"])
+        #expect(store.cssVariablesBatchMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
         #expect(diskCSS.contains(#"[data-og-internal-id="hero-node"]"#))
         #expect(diskCSS.contains(#"[data-og-internal-id="card-node"]"#))
         #expect(diskCSS.components(separatedBy: "gap: 24px;").count == 3)
@@ -961,7 +1280,9 @@ struct EditorStoreTests {
         #expect(FileManager.default.fileExists(atPath: addedHTMLURL.path))
         #expect(FileManager.default.fileExists(atPath: addedCompanionCSSURL.path))
         #expect(addedHTML.contains("<title>page-1.html</title>"))
-        #expect(addedHTML.contains(#"data-og-id="page-1-root""#))
+        #expect(addedHTML.contains(#"<main id="page-1-root""#))
+        #expect(addedHTML.contains(#"data-og-internal-id=""#))
+        #expect(!addedHTML.contains("data-og-type"))
         #expect(addedCSS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         #expect(store.selectedCanvasSegment == .pages)
         #expect(store.lastError == nil)
@@ -975,7 +1296,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: 新規Page root色保存テスト
     /// 概要: 新規追加した page の初期 companion CSS が空でも、ユーザー操作で page root の色だけを保存できることを検証します。
     @Test("新規Page rootはユーザー操作でcolorを保存できる")
-    func testAddedPageRootPersistsColorByUserOperation() throws {
+    func testAddedPageRootPersistsColorByUserOperation() async throws {
         // コンディション：空 Chapter へ新規 page を追加し、生成直後の companion CSS が空であることを確認する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -987,33 +1308,36 @@ struct EditorStoreTests {
         let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
         let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
         let rootNode = try #require(
-            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.type == "page" }
+            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.tagName == "main" }
         )
         let initialCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
         #expect(initialCSS.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
         // 検証内容：Inspector 相当の操作で page root の color を更新する（When）
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
-                "id": rootNode.id,
+                "id": rootNode.internalID,
                 "internalID": rootNode.internalID,
                 "tagName": rootNode.tagName,
-                "type": rootNode.type,
+                "legacyTypeHint": rootNode.legacyTypeHint ?? "",
+                "capabilities": rootNode.capabilities.map(\.rawValue),
+                "capabilityEvidence": Self.capabilityEvidencePayload(rootNode.capabilityEvidence),
+                "attributes": rootNode.attributes,
                 "layout": rootNode.layout ?? "",
                 "cssVariables": ["color": "rgb(244, 246, 247)"],
                 "depth": rootNode.depth
             ]
         ])
-        store.selectNode(id: rootNode.id)
+        store.selectNode(id: rootNode.internalID)
+        let initialReloadToken = store.reloadToken(for: addedHTMLURL)
         store.updateCSSVariable(key: "color", value: "#123456")
         store.updateCSSVariable(key: "color", value: "#654321")
 
         // 期待値：ユーザーが指定した color だけが companion CSS に保存される（Then）
         let updatedCSS = try String(contentsOf: addedCompanionCSSURL, encoding: .utf8)
         #expect(store.nodes.first?.cssVariables["color"] == "#654321")
-        #expect(store.cssMutation?.nodeID == rootNode.id)
-        #expect(store.cssMutation?.key == "color")
-        #expect(store.cssMutation?.value == "#654321")
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: addedHTMLURL) == initialReloadToken + 2)
         #expect(updatedCSS.contains("color: #654321;"))
         #expect(!updatedCSS.contains("color: #123456;"))
         #expect(!updatedCSS.contains("background:"))
@@ -1024,7 +1348,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: 新規Page root CSSパラメータ保存テスト
     /// 概要: 新規追加した page root で、Inspector に表示される主要 CSS declaration を初期 CSS なしで保存できることを検証します。
     @Test("新規Page rootはInspectorの主要CSSパラメータを保存できる")
-    func testAddedPageRootPersistsInspectorCSSParametersByUserOperation() throws {
+    func testAddedPageRootPersistsInspectorCSSParametersByUserOperation() async throws {
         // コンディション：空 Chapter へ新規 page を追加し、表示由来の既定 CSS 値を payload として取り込む（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -1036,7 +1360,7 @@ struct EditorStoreTests {
         let addedCompanionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: addedHTMLURL)
         let addedHTML = try String(contentsOf: addedHTMLURL, encoding: .utf8)
         let rootNode = try #require(
-            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.type == "page" }
+            OpenGraphiteHTMLDocument(html: addedHTML).nodes().first { $0.tagName == "main" }
         )
         let cases: [(key: String, displayedValue: String, savedValue: String)] = [
             ("align-items", "stretch", "center"),
@@ -1061,8 +1385,7 @@ struct EditorStoreTests {
             ("background", "transparent", "#101820"),
             ("box-shadow", "none", "0 2px 8px rgba(0,0,0,0.2)"),
             ("transform-origin", "center center", "left top"),
-            ("--og-scale-x", "1", "1.2"),
-            ("--og-scale-y", "1", "0.8"),
+            ("scale", "1 1", "1.2 0.8"),
             ("animation-name", "none", "fade-in"),
             ("animation-duration", "0s", "300ms"),
             ("animation-delay", "0s", "50ms"),
@@ -1086,18 +1409,22 @@ struct EditorStoreTests {
             ("view-timeline", "none", "--page-view y")
         ]
         let displayedVariables = Dictionary(uniqueKeysWithValues: cases.map { ($0.key, $0.displayedValue) })
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
-                "id": rootNode.id,
+                "id": rootNode.internalID,
                 "internalID": rootNode.internalID,
                 "tagName": rootNode.tagName,
-                "type": rootNode.type,
+                "legacyTypeHint": rootNode.legacyTypeHint ?? "",
+                "capabilities": rootNode.capabilities.map(\.rawValue),
+                "capabilityEvidence": Self.capabilityEvidencePayload(rootNode.capabilityEvidence),
+                "attributes": rootNode.attributes,
                 "layout": rootNode.layout ?? "",
                 "cssVariables": displayedVariables,
                 "depth": rootNode.depth
             ]
         ])
-        store.selectNode(id: rootNode.id)
+        store.selectNode(id: rootNode.internalID)
+        let initialReloadToken = store.reloadToken(for: addedHTMLURL)
 
         // 検証内容：Inspector 相当の操作で各 CSS declaration を順に更新する（When）
         for item in cases {
@@ -1110,9 +1437,8 @@ struct EditorStoreTests {
             #expect(store.nodes.first?.cssVariables[item.key] == item.savedValue)
             #expect(updatedCSS.contains("\(item.key): \(item.savedValue);"))
         }
-        #expect(store.cssMutation?.nodeID == rootNode.id)
-        #expect(store.cssMutation?.key == cases.last?.key)
-        #expect(store.cssMutation?.value == cases.last?.savedValue)
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: addedHTMLURL) == initialReloadToken + cases.count)
         #expect(store.lastError == nil)
     }
 
@@ -2832,10 +3158,10 @@ struct EditorStoreTests {
     }
 
     /// 論理名（日本語）: CSS宣言更新テスト
-    /// 概要: 選択中ノードの CSS declaration 更新と mutation 発行を検証します。
-    @Test("CSS宣言更新でノードとmutationを更新する")
-    func testUpdateCSSVariableMutatesSelectedNode() throws {
-        // コンディション：内部 ID 付き HTML node を持つ一時プロジェクトを開く
+    /// 概要: 選択中ノードのCSS declarationをsourceへ保存し、WebViewを再読み込みすることを検証します。
+    @Test("CSS宣言更新でノードとsource reloadを更新する")
+    func testUpdateCSSVariableMutatesSelectedNode() async throws {
+        // コンディション：内部ID付きHTML nodeを持つ一時プロジェクトを開く（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
@@ -2852,7 +3178,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "hero",
                 "internalID": "hero-node",
@@ -2863,15 +3189,15 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "hero")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
-        // 検証内容：CSS declaration を空白付きの値で更新する
+        // 検証内容：CSS declaration を空白付きの値で更新する（When）
         store.updateCSSVariable(key: "gap", value: " 32px ")
 
-        // 期待値：値は trim され、WebView 反映用 mutation が発行される
+        // 期待値：値はtrimしてsourceへ保存し、inline previewを残さずWebViewを再読み込みする（Then）
         #expect(store.nodes[0].cssVariables["gap"] == "32px")
-        #expect(store.cssMutation?.nodeID == "hero")
-        #expect(store.cssMutation?.key == "gap")
-        #expect(store.cssMutation?.value == "32px")
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
         #expect(!diskHTML.contains("gap"))
@@ -2887,7 +3213,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><head><title>Fixture</title></head><body><Title data-og-id="title" data-og-internal-id="title-node" data-og-type="text">OpenGraphite</Title></body></html>
+        <html><head><title>Fixture</title></head><body><h1 data-og-id="title" data-og-internal-id="title-node">OpenGraphite</h1></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
@@ -2896,8 +3222,8 @@ struct EditorStoreTests {
             [
                 "id": "title",
                 "internalID": "title-node",
-                "tagName": "title",
-                "type": "text",
+                "tagName": "h1",
+                "capabilities": [OpenGraphiteNodeCapability.editLayout.rawValue],
                 "cssVariables": [String: String](),
                 "depth": 0
             ]
@@ -2919,88 +3245,130 @@ struct EditorStoreTests {
         #expect(!diskHTML.contains("font-family"))
         #expect(diskCSS.contains("font-family: \"Roboto\", sans-serif;"))
         #expect(diskHTML.contains("<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=Roboto&amp;display=swap\">"))
-        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 2)
     }
 
-    /// 論理名（日本語）: ページルートlocaleフォント候補適用テスト
-    /// 概要: Page Inspector の locale font-family 編集でページ root CSS custom property と stylesheet link が保存されることを検証します。
-    @Test("ページルートのlocaleフォント候補適用でCSS custom propertyとstylesheetを保存する")
-    func testApplyPageRootLocaleFontCandidatePersistsCSSVariableAndStylesheet() throws {
-        // コンディション：head と page root node を持つ一時プロジェクトを開く
+    /// 論理名（日本語）: 標準locale typography編集テスト
+    /// 概要: Page InspectorがShared core経由でroot `font-family`と任意BCP 47 `:lang()`を最小差分保存することを検証します。
+    @Test("標準locale typographyをselector scope保持で保存してWebViewを再読み込みする")
+    func testLocaleTypographyPersistsStandardRulesAndStylesheet() throws {
+        // コンディション：標準ID root、default / locale / element overrideと未移行legacy helperを持つpageを開く（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><head><title>Fixture</title></head><body><OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page"></OpenGraphitePage></body></html>
+        <html lang="fr-CA"><head><title>Fixture</title></head><body>
+          <main id="page" data-og-id="page" data-og-internal-id="page-node" data-og-type="page">
+            <h1 id="title" data-og-id="title" data-og-internal-id="title-node" data-og-type="text">Title</h1>
+          </main>
+        </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         try fixture.writeCompanionCSS(
             """
-            [data-og-internal-id="page-node"] {
-              --og-font-family-default: system-ui, sans-serif;
+            #page {
+              font-family: system-ui, sans-serif;
+              --og-font-family-default: "Legacy Default", fantasy;
+            }
+
+            #page:lang("fr-CA") {
+              font-family: "Merriweather", serif !important;
+            }
+
+            #title {
+              font-family: Georgia, serif;
             }
             """
         )
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
+        let initialTypography = try #require(store.selectedLocaleTypography)
         let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
-        // 検証内容：動的 locale suffix を持つ font-family custom property を直接保存する
-        store.updateSelectedPageRootCSSVariable(key: "--og-font-family-fr", value: " \"Merriweather\", serif ")
-
-        // 期待値：動的 locale custom property が契約で拒否されず、page root の mutation として保存される
-        #expect(store.selectedPageRootCSSVariables["--og-font-family-fr"] == "\"Merriweather\", serif")
-        #expect(store.cssMutation?.nodeID == "page")
-        #expect(store.cssMutation?.key == "--og-font-family-fr")
-        #expect(store.cssMutation?.value == "\"Merriweather\", serif")
+        // 検証内容：default、既存locale、任意localeを更新し、同値の再適用とfont候補選択も行う（When）
+        store.updateSelectedLocaleTypography(locale: nil, fontFamily: "ui-sans-serif, sans-serif")
+        store.updateSelectedLocaleTypography(locale: "fr-ca", fontFamily: "\"Merriweather Sans\", serif")
+        store.updateSelectedLocaleTypography(locale: "sr_Latn_RS", fontFamily: "\"Noto Sans\", sans-serif")
+        let reloadTokenAfterStandardEdits = store.reloadToken(for: fixture.htmlURL)
+        store.updateSelectedLocaleTypography(locale: "sr-Latn-RS", fontFamily: "\"Noto Sans\", sans-serif")
 
         let candidate = try #require(
             OpenGraphiteFontLibrary.filteredCandidates(for: .external, query: "noto sans jp")
                 .first { $0.familyName == "Noto Sans JP" }
         )
-
-        // 検証内容：Google Fonts 候補を日本語 locale font-family として適用する
-        store.applySelectedPageRootFontCandidate(variableKey: "--og-font-family-ja", candidate: candidate)
+        store.applySelectedLocaleFontCandidate(locale: "ja", candidate: candidate)
         let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
         let diskCSS = try fixture.readCompanionCSS()
+        let updatedTypography = try #require(store.selectedLocaleTypography)
 
-        // 期待値：page root の locale CSS custom property と head の stylesheet link が保存される
-        #expect(store.selectedPageRootCSSVariables["--og-font-family-ja"] == "\"Noto Sans JP\", sans-serif")
-        #expect(!diskHTML.contains("--og-font-family-fr"))
-        #expect(!diskHTML.contains("--og-font-family-ja"))
-        #expect(diskCSS.contains("--og-font-family-fr: \"Merriweather\", serif;"))
-        #expect(diskCSS.contains("--og-font-family-ja: \"Noto Sans JP\", sans-serif;"))
+        // 期待値：既存root selector scopeと!importantを保ち、任意localeを標準:lang()で追加する（Then）
+        #expect(initialTypography.rootSelector == "#page")
+        #expect(initialTypography.declarations.contains {
+            $0.locale == "default" && $0.property == "font-family" && $0.value == "system-ui, sans-serif"
+        })
+        #expect(initialTypography.declarations.contains {
+            $0.locale == "fr-CA" && $0.selector == "#page:lang(\"fr-CA\")" && $0.important
+        })
+        #expect(updatedTypography.rootSelector == "#page")
+        #expect(updatedTypography.declarations.contains {
+            $0.locale == "sr-Latn-RS" && $0.selector == "#page:lang(\"sr-Latn-RS\")"
+                && $0.value == "\"Noto Sans\", sans-serif"
+        })
+        #expect(updatedTypography.declarations.contains {
+            $0.locale == "ja" && $0.value == "\"Noto Sans JP\", sans-serif"
+        })
+        #expect(diskCSS.contains("font-family: ui-sans-serif, sans-serif;"))
+        #expect(diskCSS.contains("#page:lang(\"fr-CA\")"))
+        #expect(diskCSS.contains("font-family: \"Merriweather Sans\", serif !important;"))
+        #expect(diskCSS.contains("#page:lang(\"sr-Latn-RS\")"))
+        #expect(diskCSS.contains("#page:lang(\"ja\")"))
+        #expect(diskCSS.contains("--og-font-family-default: \"Legacy Default\", fantasy;"))
+        #expect(diskCSS.contains("#title {\n  font-family: Georgia, serif;"))
+        #expect(!diskHTML.contains("--og-font-family"))
         #expect(diskHTML.contains("https://fonts.googleapis.com/css2?family=Noto+Sans+JP&amp;display=swap"))
-        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(reloadTokenAfterStandardEdits == initialReloadToken + 3)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 5)
+        #expect(store.cssMutation == nil)
     }
 
     /// 論理名（日本語）: Inspectorテキストfallback更新テスト
     /// 概要: binding text node の Inspector 更新が HTML 正本の fallback を保存し、WebView 反映 mutation を発行することを検証します。
     @Test("Inspectorのtext更新でfallbackとmutationを更新する")
-    func testUpdateNodeTextContentPersistsFallbackAndMutation() throws {
+    func testUpdateNodeTextContentPersistsFallbackAndMutation() async throws {
         // コンディション：binding text node を持つ一時プロジェクトを開く
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
         <html><body>
-          <LeadText
+          <lead-text
             data-og-id="hero-lead"
             data-og-internal-id="lead-node"
-            data-og-type="text"
             data-og-text-source="binding"
-            data-i18n-key="home.hero.lead">日本語 fallback</LeadText>
+            data-i18n-key="home.hero.lead">日本語 fallback</lead-text>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "hero-lead",
                 "internalID": "lead-node",
-                "tagName": "leadtext",
-                "type": "text",
+                "tagName": "lead-text",
+                "capabilities": [OpenGraphiteNodeCapability.editText.rawValue],
+                "capabilityEvidence": [
+                    "isProjectResourceRoot": false,
+                    "isNativeControl": false,
+                    "isCustomElement": true,
+                    "isLink": false,
+                    "hasDirectText": true,
+                    "hasElementChildren": false,
+                    "hasMediaContent": false,
+                    "hasSVGContent": false,
+                    "hasMaskContent": false,
+                    "resolvedDisplay": "inline"
+                ],
                 "textContent": "English active",
                 "fallbackTextContent": "DOM fallback",
                 "cssVariables": [String: String](),
@@ -3027,7 +3395,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: Inspectorテキストlive反映非永続化テスト
     /// 概要: Inspector 入力中の text 反映は app 内 cache と WebView mutation に留まり、確定保存まで HTML を更新しないことを検証します。
     @Test("Inspectorのtext live反映は確定までHTMLへ保存しない")
-    func testPreviewNodeTextContentDoesNotPersistUntilCommit() throws {
+    func testPreviewNodeTextContentDoesNotPersistUntilCommit() async throws {
         // コンディション：literal text node を持つ一時プロジェクトを開く（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -3040,7 +3408,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "lead",
                 "internalID": "lead-node",
@@ -3089,8 +3457,20 @@ struct EditorStoreTests {
             [
                 "id": "hero-lead",
                 "internalID": "lead-node",
-                "tagName": "leadtext",
-                "type": "text",
+                "tagName": "lead-text",
+                "capabilities": [OpenGraphiteNodeCapability.editText.rawValue],
+                "capabilityEvidence": [
+                    "isProjectResourceRoot": false,
+                    "isNativeControl": false,
+                    "isCustomElement": true,
+                    "isLink": false,
+                    "hasDirectText": true,
+                    "hasElementChildren": false,
+                    "hasMediaContent": false,
+                    "hasSVGContent": false,
+                    "hasMaskContent": false,
+                    "resolvedDisplay": "inline"
+                ],
                 "textContent": "Active text",
                 "fallbackTextContent": "Fallback text",
                 "textSource": "binding",
@@ -3100,6 +3480,7 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "hero-lead")
+        #expect(store.selectedNode?.supports(.editText) == true)
 
         // 検証内容：WebView の contenteditable 入力中 payload を取り込む（When）
         store.ingestTextEditingPayload([
@@ -3433,7 +3814,7 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-          <Stack data-og-id="stack" data-og-internal-id="stack-node" data-og-type="frame" data-og-layout="vertical">
+          <Stack data-og-id="stack" data-og-internal-id="stack-node" data-og-type="frame" style="display:flex; flex-direction:column;">
             <First data-og-id="first" data-og-internal-id="first-node" data-og-type="frame">First</First>
             <Second data-og-id="second" data-og-internal-id="second-node" data-og-type="frame">Second</Second>
             <Third data-og-id="third" data-og-internal-id="third-node" data-og-type="frame">Third</Third>
@@ -3477,7 +3858,7 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="vertical"></OpenGraphitePage>
+          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" style="display:flex; flex-direction:column;"></OpenGraphitePage>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
@@ -3485,7 +3866,7 @@ struct EditorStoreTests {
         let page = try #require(store.loadedProject?.project.allPages.first)
         let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
         let frameHTML = """
-        <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical" style="gap: 0; padding: 0; position: absolute; left: 12px; top: 24px; width: 160px; height: 90px;"></OpenGraphiteFrame>
+        <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" style="display: flex; flex-direction: column; gap: 0; padding: 0; position: absolute; left: 12px; top: 24px; width: 160px; height: 90px;"></OpenGraphiteFrame>
         """
 
         // 検証内容：WebView bridge 由来の insertHTML payload を保存する（When）
@@ -3521,20 +3902,20 @@ struct EditorStoreTests {
         #expect(diskCSS.contains("height: 90px;"))
     }
 
-    /// 論理名（日本語）: Absolute layout flow化時の子位置宣言削除テスト
-    /// 概要: 親 layout を absolute から vertical へ変更した際、直下 child の position / inset 宣言だけが削除されることを確認します。
-    @Test("absoluteからflowへ戻すと直下childの位置宣言を削除する")
-    func testLayoutChangeFromAbsoluteToFlowRemovesDirectChildPositionDeclarations() throws {
-        // コンディション：absolute page の直下 child と nested child に位置宣言を持つ一時プロジェクトを開く（Given）
+    /// 論理名（日本語）: 親標準layout変更時の子位置宣言保持テスト
+    /// 概要: 親の標準displayをflowへ変更しても、各childが所有するposition/inset宣言とlegacy inputを暗黙変更しないことを確認します。
+    @Test("親を標準flowへ変更してもchildごとのpositionを保持する")
+    func testStandardLayoutChangePreservesPerChildPositionDeclarations() throws {
+        // コンディション：legacy layout inputとabsolute配置childが共存する一時プロジェクトを開く（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
         <html><body>
           <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="absolute">
-            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical"></OpenGraphiteFrame>
-            <Wrapper data-og-id="wrapper" data-og-internal-id="wrapper-node" data-og-type="frame" data-og-layout="vertical">
-              <Nested data-og-id="nested" data-og-internal-id="nested-node" data-og-type="frame" data-og-layout="vertical"></Nested>
+            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame"></OpenGraphiteFrame>
+            <Wrapper data-og-id="wrapper" data-og-internal-id="wrapper-node" data-og-type="frame">
+              <Nested data-og-id="nested" data-og-internal-id="nested-node" data-og-type="frame"></Nested>
             </Wrapper>
           </OpenGraphitePage>
         </body></html>
@@ -3568,15 +3949,14 @@ struct EditorStoreTests {
         store.openProject(at: fixture.projectURL)
         let page = try selectFirstPage(in: store)
 
-        // 検証内容：WebView bridge 由来の layout 変更 payload を保存する（When）
+        // 検証内容：WebView bridge由来の標準display/flex-direction変更payloadを保存する（When）
         let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
         let result = store.applyHTMLObjectEditPayload(
             [
-                "operation": "setAttribute",
+                "operation": "setCSSVariables",
                 "nodeInternalID": "page-node",
-                "name": "data-og-layout",
-                "value": "vertical",
-                "previousValue": "absolute"
+                "values": ["display": "flex", "flex-direction": "column"],
+                "previousValues": ["display": "", "flex-direction": ""]
             ],
             target: target
         )
@@ -3585,36 +3965,39 @@ struct EditorStoreTests {
         let frameCSS = cssDocument.cssVariables(forNodeInternalID: "frame-node")
         let wrapperCSS = cssDocument.cssVariables(forNodeInternalID: "wrapper-node")
         let nestedCSS = cssDocument.cssVariables(forNodeInternalID: "nested-node")
+        let pageCSS = cssDocument.cssVariables(forNodeInternalID: "page-node")
 
-        // 期待値：親は vertical へ変わり、直下 child の位置宣言だけが削除される（Then）
+        // 期待値：親だけが標準flowになり、legacy属性と全childのposition/insetはbyte-preservingに残る（Then）
         #expect(result.updated == true)
         #expect(result.requiresReload == true)
-        #expect(diskHTML.contains(#"data-og-layout="vertical""#))
-        #expect(frameCSS["position"] == nil)
-        #expect(frameCSS["left"] == nil)
-        #expect(frameCSS["top"] == nil)
+        #expect(diskHTML.contains(#"data-og-layout="absolute""#))
+        #expect(pageCSS["display"] == "flex")
+        #expect(pageCSS["flex-direction"] == "column")
+        #expect(frameCSS["position"] == "absolute")
+        #expect(frameCSS["left"] == "12px")
+        #expect(frameCSS["top"] == "24px")
         #expect(frameCSS["width"] == "160px")
-        #expect(wrapperCSS["position"] == nil)
-        #expect(wrapperCSS["left"] == nil)
-        #expect(wrapperCSS["top"] == nil)
+        #expect(wrapperCSS["position"] == "absolute")
+        #expect(wrapperCSS["left"] == "40px")
+        #expect(wrapperCSS["top"] == "50px")
         #expect(wrapperCSS["width"] == "320px")
         #expect(nestedCSS["position"] == "absolute")
         #expect(nestedCSS["left"] == "4px")
         #expect(nestedCSS["top"] == "8px")
     }
 
-    /// 論理名（日本語）: Inspector layout flow化時のcache同期テスト
-    /// 概要: Inspector から親 layout を absolute から horizontal へ変更した際、直下 child の cache と再読み込み要求が同期することを確認します。
-    @Test("Inspectorでabsoluteからflowへ戻すとchild cacheも追従する")
-    func testInspectorLayoutChangeFromAbsoluteToFlowUpdatesChildCache() throws {
-        // コンディション：absolute page と直下 child の位置宣言を app 内 cache へ取り込む（Given）
+    /// 論理名（日本語）: Inspector標準layout編集cache分離テスト
+    /// 概要: Inspectorのauthored display更新とWebKit computed layoutを分離し、child位置cacheを変更しないことを確認します。
+    @Test("Inspectorの標準layout編集はcomputed値とchild positionを混同しない")
+    func testInspectorStandardLayoutEditKeepsComputedStateAndChildPosition() async throws {
+        // コンディション：computed block親とabsolute childのauthored declarationをApp cacheへ取り込む（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
         <html><body>
-          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page" data-og-layout="absolute">
-            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame" data-og-layout="vertical"></OpenGraphiteFrame>
+          <OpenGraphitePage data-og-id="page" data-og-internal-id="page-node" data-og-type="page">
+            <OpenGraphiteFrame data-og-id="frame" data-og-internal-id="frame-node" data-og-type="frame"></OpenGraphiteFrame>
           </OpenGraphitePage>
         </body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
@@ -3631,13 +4014,14 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "page",
                 "internalID": "page-node",
                 "tagName": "opengraphitepage",
                 "type": "page",
-                "layout": "absolute",
+                "layout": "block",
+                "computedStyle": ["display": "block", "position": "static", "visibility": "visible"],
                 "cssVariables": [String: String](),
                 "depth": 0
             ],
@@ -3646,7 +4030,8 @@ struct EditorStoreTests {
                 "internalID": "frame-node",
                 "tagName": "opengraphiteframe",
                 "type": "frame",
-                "layout": "vertical",
+                "layout": "block",
+                "computedStyle": ["display": "block", "position": "absolute", "visibility": "visible"],
                 "cssVariables": [
                     "position": "absolute",
                     "left": "12px",
@@ -3657,31 +4042,396 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "page")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
 
-        // 検証内容：Inspector 相当の属性更新で horizontal へ切り替える（When）
-        store.updateNodeAttribute(name: "data-og-layout", value: "horizontal")
+        // 検証内容：Inspector相当の標準CSS編集でhorizontal flexへ切り替える（When）
+        store.updateSelectedNodeLayout(mode: "horizontal")
         let cssDocument = OpenGraphiteCompanionCSSDocument(css: try fixture.readCompanionCSS())
         let frameCSS = cssDocument.cssVariables(forNodeInternalID: "frame-node")
         let cachedFrame = try #require(store.nodes.first { $0.id == "frame" })
 
-        // 期待値：直下 child の位置宣言が正本と cache から消え、WebView 再同期要求が出る（Then）
-        #expect(store.nodes.first { $0.id == "page" }?.layout == "horizontal")
-        #expect(frameCSS["position"] == nil)
-        #expect(frameCSS["left"] == nil)
-        #expect(frameCSS["top"] == nil)
+        let cachedPage = try #require(store.nodes.first { $0.id == "page" })
+
+        // 期待値：authored値だけを更新してcomputed layoutは再収集までblockのまま、child positionとsourceは保持される（Then）
+        #expect(cachedPage.layout == "block")
+        #expect(cachedPage.computedStyle.display == "block")
+        #expect(cachedPage.cssVariables["display"] == "flex")
+        #expect(cachedPage.cssVariables["flex-direction"] == "row")
+        #expect(frameCSS["position"] == "absolute")
+        #expect(frameCSS["left"] == "12px")
+        #expect(frameCSS["top"] == "24px")
         #expect(frameCSS["width"] == "160px")
-        #expect(cachedFrame.cssVariables["position"] == nil)
-        #expect(cachedFrame.cssVariables["left"] == nil)
-        #expect(cachedFrame.cssVariables["top"] == nil)
+        #expect(cachedFrame.cssVariables["position"] == "absolute")
+        #expect(cachedFrame.cssVariables["left"] == "12px")
+        #expect(cachedFrame.cssVariables["top"] == "24px")
         #expect(cachedFrame.cssVariables["width"] == "160px")
-        #expect(store.attributeMutation == nil)
-        #expect(store.documentReplacementRequest?.selectedNodeID == "page")
+        #expect(store.cssVariablesMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(store.documentReplacementRequest == nil)
+    }
+
+    /// 論理名（日本語）: Responsive project CSS winner編集テスト
+    /// 概要: WebKitがmatchしたproject CSS media winnerを同じat-rule scopeのcompanion overrideへ保存し、base viewportのproject winnerを保つことを確認します。
+    @Test("Inspectorはactive project CSS winnerをmedia scoped companion overrideで編集する")
+    func testInspectorUpdatesOnlyActiveMediaLayoutWinner() async throws {
+        // コンディション：base blockとactive media内horizontal flexが同じnodeへ適用されるprojectを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html><html><body>
+          <main id="responsive" data-og-id="responsive" data-og-internal-id="responsive-node"></main>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let projectCSS = """
+        #responsive {
+          display: block;
+          flex-direction: column;
+        }
+
+        @media (max-width: 500px) {
+          #responsive {
+            display: flex;
+            flex-direction: row;
+          }
+        }
+        """
+        let projectCSSURL = fixture.rootURL.appendingPathComponent("CSS/OpenGraphite.css")
+        try FileManager.default.createDirectory(
+            at: projectCSSURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try projectCSS.write(to: projectCSSURL, atomically: true, encoding: .utf8)
+        let originalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "responsive",
+                "standardID": "responsive",
+                "internalID": "responsive-node",
+                "tagName": "main",
+                "type": "",
+                "layout": "horizontal",
+                "computedStyle": [
+                    "display": "flex",
+                    "flexDirection": "row",
+                    "position": "static",
+                    "visibility": "visible"
+                ],
+                "activeMediaQueries": ["(max-width: 500px)"],
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "responsive")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：layout tile相当でmobile active mediaをgridへ変更してproject-aware保存経路を実行する（When）
+        store.updateSelectedNodeLayout(mode: "grid")
+        let updatedCompanionCSS = try fixture.readCompanionCSS()
+        let unchangedProjectCSS = try String(contentsOf: projectCSSURL, encoding: .utf8)
+        let unchangedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let node = try #require(store.nodes.first { $0.id == "responsive" })
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let baseGraph = try core.pageGraph(projectURL: fixture.projectURL, pageID: page.internalID)
+        let mobileGraph = try core.pageGraph(
+            projectURL: fixture.projectURL,
+            pageID: page.internalID,
+            activeMediaQueries: ["(max-width: 500px)"]
+        )
+        let baseResponsiveLayout = baseGraph.nodes.filter { $0.attributes["id"] == "responsive" }.first?.layout
+        let mobileResponsiveLayout = mobileGraph.nodes.filter { $0.attributes["id"] == "responsive" }.first?.layout
+
+        // 期待値：project CSS/HTMLを不変に保ち、mobileだけgrid、base viewportはblockとなるreload専用保存になる（Then）
+        #expect(unchangedProjectCSS == projectCSS)
+        #expect(unchangedHTML == originalHTML)
+        #expect(updatedCompanionCSS.contains("#responsive"))
+        #expect(updatedCompanionCSS.contains("@media (max-width: 500px)"))
+        #expect(updatedCompanionCSS.contains("display: grid;"))
+        #expect(!updatedCompanionCSS.contains("flex-direction"))
+        #expect(node.layout == "horizontal")
+        #expect(node.computedStyle.display == "flex")
+        #expect(node.cssVariables["display"] == "grid")
+        #expect(baseResponsiveLayout == "block")
+        #expect(mobileResponsiveLayout == "grid")
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+    }
+
+    /// 論理名（日本語）: Standard hidden属性最小差分テスト
+    /// 概要: source intentの標準hiddenだけを明示toggleし、legacy属性と未知属性を暗黙変更しないことを確認します。
+    @Test("standard hidden toggleはsource-aware最小差分でlegacy inputを保持する")
+    func testStandardHiddenTogglePreservesLegacyAndUnknownAttributes() throws {
+        // コンディション：bare hidden、legacy hidden metadata、未知属性と不規則triviaが共存するnodeを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body>
+          <main data-vendor='/keep' hidden  data-og-hidden="true" data-og-id="target" data-og-internal-id="target-node">Target</main>
+        </body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+
+        // 検証内容：WebCanvas toggleと同じ標準hidden remove/add payloadを順に保存する（When）
+        let removal = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setAttribute",
+                "removeAttribute": true,
+                "nodeInternalID": "target-node",
+                "name": "hidden",
+                "value": "",
+                "previousValue": "",
+                "previousAttributePresent": true
+            ],
+            target: target
+        )
+        let removedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let addition = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setAttribute",
+                "nodeInternalID": "target-node",
+                "name": "hidden",
+                "value": "hidden",
+                "previousValue": "",
+                "previousAttributePresent": false
+            ],
+            target: target
+        )
+        let addedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：標準hiddenだけが変化し、legacy/未知属性と周辺source表現は保持される（Then）
+        #expect(removal.updated)
+        #expect(!removedHTML.contains(" hidden  data-og-hidden"))
+        #expect(removedHTML.contains("data-vendor='/keep'"))
+        #expect(removedHTML.contains("data-og-hidden=\"true\""))
+        #expect(addition.updated)
+        #expect(addedHTML.contains("hidden=\"hidden\""))
+        #expect(addedHTML.contains("data-vendor='/keep'"))
+        #expect(addedHTML.contains("data-og-hidden=\"true\""))
+    }
+
+    /// 論理名（日本語）: Standard hidden存在baseline履歴テスト
+    /// 概要: mixed-case until-foundとbare hiddenを値ではなく属性存在で競合判定し、最小差分をUndo/Redoできることを確認します。
+    @Test("mixed-case until-foundとbare hidden toggleは最小差分でundo redoできる")
+    func testStandardHiddenToggleUsesPresenceBaselineAndSupportsHistory() async throws {
+        // コンディション：値付きmixed-case hiddenとbare hiddenを不規則なtrivia付きで持つ2 nodeを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body>
+          <main data-vendor=/keep HiDdEn = 'UnTiL-FoUnD' data-og-id="until" data-og-internal-id="until-node">Until</main>
+          <section data-vendor="bare" hidden  data-og-id="bare" data-og-internal-id="bare-node">Bare</section>
+        </body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "until",
+                "internalID": "until-node",
+                "tagName": "main",
+                "type": "",
+                "layout": "block",
+                "cssVariables": [String: String](),
+                "hasHiddenAttribute": true,
+                "depth": 0
+            ],
+            [
+                "id": "bare",
+                "internalID": "bare-node",
+                "tagName": "section",
+                "type": "",
+                "layout": "block",
+                "cssVariables": [String: String](),
+                "hasHiddenAttribute": true,
+                "depth": 0
+            ]
+        ])
+
+        // 検証内容：until-foundをInspector経路で解除してUndo/Redoし、続けてbare hiddenも解除してUndo/Redoする（When）
+        store.selectNode(id: "until")
+        store.removeNodeAttribute(name: "hidden")
+        let untilRemovedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.undoDocumentChange()
+        let untilUndoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.redoDocumentChange()
+        let untilRedoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        store.selectNode(id: "bare")
+        store.removeNodeAttribute(name: "hidden")
+        let bothRemovedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.undoDocumentChange()
+        let bareUndoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        store.redoDocumentChange()
+        let bareRedoHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：until-foundのsemantic値に関係なく存在baselineが一致し、対象tokenだけを除去する（Then）
+        let expectedUntilRemovedHTML = originalHTML.replacingOccurrences(
+            of: " HiDdEn = 'UnTiL-FoUnD'",
+            with: ""
+        )
+        #expect(untilRemovedHTML == expectedUntilRemovedHTML)
+        #expect(untilUndoHTML == originalHTML)
+        #expect(untilRedoHTML == expectedUntilRemovedHTML)
+
+        // 期待値：bare属性も空値とabsentを区別して解除され、各履歴snapshotをbyte単位で復元する（Then）
+        let expectedBothRemovedHTML = expectedUntilRemovedHTML.replacingOccurrences(of: " hidden", with: "")
+        #expect(bothRemovedHTML == expectedBothRemovedHTML)
+        #expect(bareUndoHTML == expectedUntilRemovedHTML)
+        #expect(bareRedoHTML == expectedBothRemovedHTML)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 不完全CSS provenance編集拒否テスト
+    /// 概要: 読み取り不能stylesheetを含むnodeはcomputed inspectionを維持しつつCSS set/removeをno-writeで拒否し、標準属性編集は許可します。
+    @Test("不完全CSS provenance nodeはstyle変更だけをno-writeで拒否する")
+    func testIncompleteCSSProvenanceRejectsStyleMutationsButAllowsAttributes() async throws {
+        // コンディション：WebKitが読み取り不能sheetを報告したstable nodeとauthored companion CSSを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body>
+          <main id="target" data-og-id="target" data-og-internal-id="target-node">Target</main>
+        </body></html>
+        """
+        let originalCSS = """
+        #target {
+          display: grid;
+          color: rgb(1, 2, 3);
+        }
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(originalCSS)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "target",
+                "standardID": "target",
+                "internalID": "target-node",
+                "tagName": "main",
+                "type": "",
+                "layout": "grid",
+                "computedStyle": [
+                    "display": "grid",
+                    "flexDirection": "row",
+                    "position": "static",
+                    "visibility": "visible"
+                ],
+                "unreadableStyleSheetCount": 1,
+                "cssVariables": ["display": "grid", "color": "rgb(1, 2, 3)"],
+                "hasHiddenAttribute": false,
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "target")
+
+        // 検証内容：Inspector set/removeとWebCanvas payload経路でCSS変更を試し、その後standard hiddenだけを追加する（When）
+        store.updateCSSVariable(key: "display", value: "flex")
+        store.updateCSSVariable(key: "color", value: "")
+        let payloadResult = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setCSSVariables",
+                "nodeInternalID": "target-node",
+                "values": ["position": "absolute"],
+                "previousValues": ["position": ""]
+            ],
+            target: target
+        )
+        let htmlAfterCSSAttempts = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let cssAfterCSSAttempts = try fixture.readCompanionCSS()
+        let inspectedNode = try #require(store.selectedNode)
+        let cssError = store.lastError
+        store.updateNodeAttribute(name: "hidden", value: "hidden")
+        let htmlAfterAttributeEdit = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：computed値と不完全provenance statusはinspection可能なまま全CSS経路が明示失敗し、source bytesを変えない（Then）
+        #expect(inspectedNode.computedStyle.display == "grid")
+        #expect(inspectedNode.hasIncompleteCSSProvenance)
+        #expect(!payloadResult.updated)
+        #expect(cssError?.contains("stylesheet") == true)
+        #expect(htmlAfterCSSAttempts == originalHTML)
+        #expect(cssAfterCSSAttempts == originalCSS)
+        #expect(store.cssMutation == nil)
+        #expect(store.cssVariablesMutation == nil)
+
+        // 期待値：CSS provenanceに依存しない標準hidden source intentは別経路で最小追加できる（Then）
+        #expect(htmlAfterAttributeEdit == originalHTML.replacingOccurrences(
+            of: " data-og-internal-id=\"target-node\"",
+            with: " data-og-internal-id=\"target-node\" hidden=\"hidden\""
+        ))
+        #expect(try fixture.readCompanionCSS() == originalCSS)
+    }
+
+    /// 論理名（日本語）: Shared source provenance統合テスト
+    /// 概要: WebKit payloadが読取不能sheetを報告しない場合も、Shared source graphの不完全statusをOR統合してCSS保存を拒否します。
+    @Test("Shared sourceが不完全なnodeはWebKit報告がなくてもCSS編集を拒否する")
+    func testSourceIncompleteCSSProvenanceIsMergedWithoutWebKitReport() async throws {
+        // コンディション：headless source resolverだけが読めない外部stylesheetと、読み取り可能なcompanion CSSを持つnodeを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><head>
+          <link rel="stylesheet" href="https://cdn.example.test/unknown.css">
+        </head><body>
+          <main id="target" data-og-id="target" data-og-internal-id="target-node">Target</main>
+        </body></html>
+        """
+        let originalCSS = "#target { display: block; }\n"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(originalCSS)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "target",
+                "standardID": "target",
+                "internalID": "target-node",
+                "tagName": "main",
+                "type": "",
+                "computedStyle": [
+                    "display": "block",
+                    "position": "static",
+                    "visibility": "visible"
+                ],
+                "unreadableStyleSheetCount": 0,
+                "cssVariables": ["display": "block"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "target")
+        let mergedNode = try #require(store.selectedNode)
+
+        // 検証内容：WebKit由来countが0のまま標準displayを更新しようとする（When）
+        store.updateCSSVariable(key: "display", value: "grid")
+        let finalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let finalCSS = try fixture.readCompanionCSS()
+
+        // 期待値：Shared source statusがnodeへOR統合され、computed inspectionを保ったままsourceはno-writeになる（Then）
+        #expect(mergedNode.hasIncompleteCSSProvenance)
+        #expect(mergedNode.computedStyle.display == "block")
+        #expect(finalHTML == originalHTML)
+        #expect(finalCSS == originalCSS)
+        #expect(store.cssMutation == nil)
+        #expect(store.lastError?.contains("stylesheet") == true)
     }
 
     /// 論理名（日本語）: 同時編集競合拒否テスト
     /// 概要: agent 相当の同一 node 更新が先に入った場合、Inspector 保存で上書きしないことを検証します。
     @Test("同一nodeが外部更新済みならobject editで上書きしない")
-    func testObjectEditRejectsConflictingNodeUpdate() throws {
+    func testObjectEditRejectsConflictingNodeUpdate() async throws {
         // コンディション：Store が把握した CSS 値と、ディスク上の最新 CSS 値がずれている状態を作る
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -3699,7 +4449,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "hero",
                 "internalID": "hero-node",
@@ -3732,7 +4482,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: 同時CSS削除競合拒否テスト
     /// 概要: agent 相当の同一 CSS declaration 削除が先に入った場合、Inspector 保存で復元上書きしないことを検証します。
     @Test("同一CSS declarationが外部削除済みならobject editで上書きしない")
-    func testObjectEditRejectsConflictingCSSDeletion() throws {
+    func testObjectEditRejectsConflictingCSSDeletion() async throws {
         // コンディション：Store が把握した CSS declaration を、別経路の編集で削除済みにする
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -3750,7 +4500,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "hero",
                 "internalID": "hero-node",
@@ -3824,7 +4574,7 @@ struct EditorStoreTests {
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
-        <html><body><MainTitle data-og-id="title" data-og-internal-id="title-node" data-og-type="text" data-og-role="title">Title</MainTitle></body></html>
+        <html><body><MainTitle data-og-id="title" data-og-internal-id="title-node" data-og-type="text" role="title">Title</MainTitle></body></html>
         """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
@@ -3841,8 +4591,8 @@ struct EditorStoreTests {
         ])
         store.selectNode(id: "title")
 
-        // 検証内容：同じ role を空白付きで再適用する
-        store.updateNodeAttribute(name: "data-og-role", value: " title ")
+        // 検証内容：同じ role を同じauthored値で再適用する
+        store.updateNodeAttribute(name: "role", value: "title")
 
         // 期待値：属性は変わらず、WebView 反映用 mutation も発行されない
         #expect(store.nodes[0].role == "title")
@@ -3954,7 +4704,7 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-        <SiteHeader data-og-id="site-header" data-og-internal-id="site-header-node" data-og-type="frame" data-og-component="site-header" data-og-component-kind="master"></SiteHeader>
+        <site-header data-og-id="site-header" data-og-internal-id="site-header-node" data-og-component="site-header"><template></template></site-header>
         </body></html>
         """.write(to: componentURL, atomically: true, encoding: .utf8)
         let project = OpenGraphiteProject(
@@ -4010,16 +4760,16 @@ struct EditorStoreTests {
     }
 
     /// 論理名（日本語）: アイコンInspector更新テスト
-    /// 概要: Store の icon 更新が metadata と保存済み描画 HTML を同時に更新し、置換要求を発行することを検証します。
+    /// 概要: Storeのicon更新がprovenance metadata、標準mask描画HTML/CSS、置換要求を同時に更新することを検証します。
     @Test("Storeのicon更新はHTML置換要求を発行する")
-    func testUpdateIconPersistsMarkupAndRequestsReplacement() throws {
+    func testUpdateIconPersistsMarkupAndRequestsReplacement() async throws {
         // コンディション：icon node を含む一時プロジェクトを開く（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
         <!doctype html>
         <html><body>
-          <Icon data-og-id="decorative-icon" data-og-internal-id="decorative-icon-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
+          <Icon data-og-id="decorative-icon" data-og-internal-id="decorative-icon-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline" style="--og-icon-url:url('legacy.svg');">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
           </Icon>
         </body></html>
@@ -4027,7 +4777,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "decorative-icon",
                 "internalID": "decorative-icon-node",
@@ -4050,18 +4800,390 @@ struct EditorStoreTests {
         #expect(store.nodes[0].iconName == "star")
         #expect(store.nodes[0].iconSource == "cdn")
         #expect(diskHTML.contains("data-og-icon-name=\"star\""))
-        #expect(diskHTML.contains("data-og-icon-mask=\"true\""))
+        #expect(diskHTML.contains("<span aria-hidden=\"true\"></span>"))
+        #expect(!diskHTML.contains("data-og-icon-mask"))
+        #expect(diskHTML.contains("--og-icon-url:url('legacy.svg')"))
         #expect(!diskHTML.contains("https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg"))
-        #expect(diskCSS.contains("--og-icon-url: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(diskCSS.contains("[data-og-internal-id=\"decorative-icon-node\"] > span"))
+        #expect(diskCSS.contains("\n  mask-image: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(diskCSS.contains("\n  -webkit-mask-image: url('https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/star.svg');"))
+        #expect(!diskCSS.contains("--og-icon-url"))
         #expect(store.documentReplacementRequest?.html == diskHTML)
         #expect(store.documentReplacementRequest?.selectedNodeID == "decorative-icon")
     }
 
+    /// 論理名（日本語）: 描画実体標準CSS編集テスト
+    /// 概要: wrapper選択時にShared graphとWebCanvas computed payloadを統合し、media/SVG/mask実体のcascade winnerだけを標準propertyで編集することを検証します。
+    @Test("wrapperからmedia/icon実体の標準CSSを最小差分編集する")
+    func testUpdateRelatedStyleDeclarationsUsesRenderingTargetProvenance() async throws {
+        // コンディション：標準id/cascadeを持つmedia、SVG、mask実体と未移行legacy inputを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let authoredHTML = """
+        <!doctype html>
+        <html><body>
+          <MediaFrame id="media-wrapper" data-og-id="media" data-og-internal-id="media-node" data-og-type="image">
+            <img id="hero-image" src="hero.png" alt="Hero">
+          </MediaFrame>
+          <InlineIcon id="inline-icon" data-og-id="inline-icon" data-og-internal-id="inline-icon-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="circle" data-og-icon-source="inline">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle></svg>
+          </InlineIcon>
+          <MaskIcon id="mask-icon" data-og-id="mask-icon" data-og-internal-id="mask-icon-node" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="star" data-og-icon-source="cdn">
+            <span id="mask-glyph" data-og-icon-mask="true" aria-hidden="true"></span>
+          </MaskIcon>
+        </body></html>
+        """
+        try authoredHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            /* preserve media cascade */
+            MediaFrame > img {
+              object-fit: contain;
+            }
+
+            #hero-image {
+              object-fit: cover !important;
+            }
+
+            #inline-icon > svg {
+              stroke-width: 1.5;
+            }
+
+            #mask-glyph {
+              -webkit-mask-image: url('https://cdn.example.test/icons/old.svg');
+              mask-image: url('https://cdn.example.test/icons/old.svg');
+            }
+
+            [data-og-internal-id="media-node"] {
+              --og-object-fit: legacy-contain;
+            }
+
+            [data-og-internal-id="inline-icon-node"] {
+              --og-stroke-width: 9;
+            }
+
+            [data-og-internal-id="mask-icon-node"] {
+              --og-icon-url: url('legacy-mask.svg');
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "media",
+                "internalID": "media-node",
+                "tagName": "mediaframe",
+                "type": "image",
+                "renderingTargets": [[
+                    "kind": "media",
+                    "tagName": "img",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > img",
+                    "targetStandardID": "hero-image",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": ["object-fit": "cover"]
+                ]],
+                "depth": 0
+            ],
+            [
+                "id": "inline-icon",
+                "internalID": "inline-icon-node",
+                "tagName": "inlineicon",
+                "type": "icon",
+                "iconLibrary": "lucide",
+                "iconName": "circle",
+                "iconSource": "inline",
+                "renderingTargets": [[
+                    "kind": "svg",
+                    "tagName": "svg",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > svg",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": ["stroke-width": "1.5px"]
+                ]],
+                "depth": 0
+            ],
+            [
+                "id": "mask-icon",
+                "internalID": "mask-icon-node",
+                "tagName": "maskicon",
+                "type": "icon",
+                "iconLibrary": "lucide",
+                "iconName": "star",
+                "iconSource": "cdn",
+                "renderingTargets": [[
+                    "kind": "mask",
+                    "tagName": "span",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > span",
+                    "targetStandardID": "mask-glyph",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": [
+                        "mask-image": "url(\"https://cdn.example.test/icons/old.svg\")",
+                        "-webkit-mask-image": "url(\"https://cdn.example.test/icons/old.svg\")"
+                    ]
+                ]],
+                "depth": 0
+            ]
+        ])
+        let initialMediaTarget = try #require(store.nodes[0].renderTarget(for: "object-fit"))
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：各wrapperを選択して実体の標準propertyを更新する（When）
+        store.selectNode(id: "media")
+        store.updateRelatedStyleDeclaration(property: "object-fit", value: "scale-down")
+        store.selectNode(id: "inline-icon")
+        store.updateRelatedStyleDeclaration(property: "stroke-width", value: "3")
+        store.selectNode(id: "mask-icon")
+        store.updateRelatedStyleDeclaration(
+            property: "mask-image",
+            value: "url('https://cdn.example.test/icons/new.svg')"
+        )
+        store.updateRelatedStyleDeclaration(
+            property: "-webkit-mask-image",
+            value: "url('https://cdn.example.test/icons/new.svg')"
+        )
+        let diskHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let diskCSS = try fixture.readCompanionCSS()
+
+        // 期待値：winnerのselector/scopeを保つ最小差分となり、computed graph/reloadは同期するがlegacy inputやchild annotationは暗黙変換しない（Then）
+        #expect(initialMediaTarget.writeSelector == "#hero-image")
+        #expect(initialMediaTarget.authoredValue == "cover")
+        #expect(initialMediaTarget.computedValue == "cover")
+        #expect(initialMediaTarget.winnerTrace?.selector == "#hero-image")
+        #expect(diskCSS.contains("/* preserve media cascade */"))
+        #expect(diskCSS.contains("object-fit: contain;"))
+        #expect(diskCSS.contains("object-fit: scale-down !important;"))
+        #expect(diskCSS.contains("stroke-width: 3;"))
+        #expect(diskCSS.contains("\n  mask-image: url('https://cdn.example.test/icons/new.svg');"))
+        #expect(diskCSS.contains("\n  -webkit-mask-image: url('https://cdn.example.test/icons/new.svg');"))
+        #expect(diskCSS.contains("--og-object-fit: legacy-contain;"))
+        #expect(diskCSS.contains("--og-stroke-width: 9;"))
+        #expect(diskCSS.contains("--og-icon-url: url('legacy-mask.svg');"))
+        #expect(diskHTML == authoredHTML)
+        #expect(diskHTML.contains("data-og-icon-mask=\"true\""))
+        #expect(!diskHTML.contains("data-og-internal-id=\"\""))
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 4)
+        #expect(store.cssMutation == nil)
+
+        // 検証内容：最後のvendor mask編集を履歴から取り消し、同じ変更をやり直す（When）
+        store.undoDocumentChange()
+        let undoCSS = try fixture.readCompanionCSS()
+        store.redoDocumentChange()
+        let redoCSS = try fixture.readCompanionCSS()
+
+        // 期待値：HTML snapshotを変えず、companion CSSの対象宣言だけが履歴前後で復元される（Then）
+        #expect(undoCSS.contains("\n  -webkit-mask-image: url('https://cdn.example.test/icons/old.svg');"))
+        #expect(undoCSS.contains("\n  mask-image: url('https://cdn.example.test/icons/new.svg');"))
+        #expect(redoCSS.contains("\n  -webkit-mask-image: url('https://cdn.example.test/icons/new.svg');"))
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == authoredHTML)
+    }
+
+    /// 論理名（日本語）: Responsive project描画実体CSS編集テスト
+    /// 概要: active media内のproject `object-fit` winnerをproject-aware経路でcompanion overrideへ保存・削除します。
+    @Test("responsive project object-fit winnerをmedia scoped companionで編集する")
+    func testUpdateRelatedStyleDeclarationUsesProjectActiveMediaContext() async throws {
+        // コンディション：project CSSのbase/mediaに異なるobject-fitを持つ未注釈img wrapperをmobile条件で表示する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let authoredHTML = """
+        <!doctype html><html><body>
+          <figure id="media-wrapper" data-og-id="media" data-og-internal-id="media-node">
+            <img id="hero-image" src="hero.png" alt="Hero">
+          </figure>
+        </body></html>
+        """
+        let projectCSS = """
+        #hero-image {
+          object-fit: contain;
+        }
+
+        @media (max-width: 500px) {
+          #hero-image {
+            object-fit: cover;
+          }
+        }
+        """
+        try authoredHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let projectCSSURL = fixture.rootURL.appendingPathComponent("CSS/OpenGraphite.css")
+        try projectCSS.write(to: projectCSSURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "media",
+                "standardID": "media-wrapper",
+                "internalID": "media-node",
+                "tagName": "figure",
+                "type": "",
+                "computedStyle": [
+                    "display": "block",
+                    "position": "static",
+                    "visibility": "visible"
+                ],
+                "activeMediaQueries": ["(max-width: 500px)"],
+                "renderingTargets": [[
+                    "kind": "media",
+                    "tagName": "img",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > img",
+                    "targetStandardID": "hero-image",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": ["object-fit": "cover"]
+                ]],
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "media")
+        let initialTarget = try #require(store.selectedNode?.renderTarget(for: "object-fit"))
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：mobile winnerをscale-downへ上書きし、そのcompanion winnerを同じproject-aware経路で削除する（When）
+        store.updateRelatedStyleDeclaration(property: "object-fit", value: "scale-down")
+        let overriddenCompanionCSS = try fixture.readCompanionCSS()
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let overriddenMobileGraph = try core.pageGraph(
+            projectURL: fixture.projectURL,
+            pageID: page.internalID,
+            activeMediaQueries: ["(max-width: 500px)"]
+        )
+        let overriddenTarget = overriddenMobileGraph.nodes
+            .first { $0.internalID == "media-node" }?
+            .renderingTargets.first { $0.kind == "media" }
+        store.updateRelatedStyleDeclaration(property: "object-fit", value: "")
+        let removedCompanionCSS = try fixture.readCompanionCSS()
+        let baseGraph = try core.pageGraph(projectURL: fixture.projectURL, pageID: page.internalID)
+        let restoredMobileGraph = try core.pageGraph(
+            projectURL: fixture.projectURL,
+            pageID: page.internalID,
+            activeMediaQueries: ["(max-width: 500px)"]
+        )
+        let baseTarget = baseGraph.nodes
+            .first { $0.internalID == "media-node" }?
+            .renderingTargets.first { $0.kind == "media" }
+        let restoredMobileTarget = restoredMobileGraph.nodes
+            .first { $0.internalID == "media-node" }?
+            .renderingTargets.first { $0.kind == "media" }
+
+        // 期待値：project/HTMLは不変で、overrideは同じmedia scopeだけに存在し、削除後はviewport別project winnerへ戻る（Then）
+        #expect(initialTarget.authoredValue == "cover")
+        #expect(initialTarget.computedValue == "cover")
+        #expect(overriddenCompanionCSS.contains("@media (max-width: 500px)"))
+        #expect(overriddenCompanionCSS.contains("#hero-image"))
+        #expect(overriddenCompanionCSS.contains("object-fit: scale-down;"))
+        #expect(overriddenTarget?.authoredValues["object-fit"] == "scale-down")
+        #expect(!removedCompanionCSS.contains("object-fit: scale-down"))
+        #expect(baseTarget?.resolvedValues["object-fit"] == "contain")
+        #expect(restoredMobileTarget?.resolvedValues["object-fit"] == "cover")
+        #expect(try String(contentsOf: projectCSSURL, encoding: .utf8) == projectCSS)
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == authoredHTML)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 2)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 描画実体標準CSS同時選択編集テスト
+    /// 概要: 複数wrapperの標準property編集を実体selectorへ保存し、wrapper DOM mutationではなく単一reloadで反映することを検証します。
+    @Test("同時選択したmedia wrapperのobject-fitは実体へ保存してreloadする")
+    func testUpdateRelatedStyleDeclarationsForMultipleSelectionReloadsCanvas() async throws {
+        // コンディション：異なる標準idのimg実体を持つ2つのwrapperとcompanion CSSを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let authoredHTML = """
+        <!doctype html>
+        <html><body>
+          <MediaFrame data-og-id="hero" data-og-internal-id="hero-node" data-og-type="image"><img id="hero-image" src="hero.png" alt="Hero"></MediaFrame>
+          <MediaFrame data-og-id="card" data-og-internal-id="card-node" data-og-type="image"><img id="card-image" src="card.png" alt="Card"></MediaFrame>
+        </body></html>
+        """
+        try authoredHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(
+            """
+            #hero-image {
+              object-fit: cover;
+            }
+
+            #card-image {
+              object-fit: contain;
+            }
+            """
+        )
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "hero",
+                "internalID": "hero-node",
+                "tagName": "mediaframe",
+                "type": "image",
+                "renderingTargets": [[
+                    "kind": "media",
+                    "tagName": "img",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > img",
+                    "targetStandardID": "hero-image",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": ["object-fit": "cover"]
+                ]],
+                "depth": 0
+            ],
+            [
+                "id": "card",
+                "internalID": "card-node",
+                "tagName": "mediaframe",
+                "type": "image",
+                "renderingTargets": [[
+                    "kind": "media",
+                    "tagName": "img",
+                    "relation": "direct-child",
+                    "relationSelector": ":scope > img",
+                    "targetStandardID": "card-image",
+                    "targetInternalID": "",
+                    "authoredInlineValues": [String: String](),
+                    "computedValues": ["object-fit": "contain"]
+                ]],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "hero")
+        store.selectNodeRange(to: "card", visibleNodeIDs: ["hero", "card"])
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        #expect(store.selectedNodeIDs == Set(["hero", "card"]))
+        #expect(store.selectedLayerNodes.count == 2)
+        #expect(store.nodes.allSatisfy { $0.renderTarget(for: "object-fit") != nil })
+
+        // 検証内容：同時選択状態から標準object-fitを一括更新する（When）
+        store.updateCSSVariable(key: "object-fit", value: "scale-down")
+        let diskCSS = try fixture.readCompanionCSS()
+
+        // 期待値：両img selectorとrender target cacheを更新し、wrapper mutationを発行せず一度だけreloadする（Then）
+        #expect(diskCSS.components(separatedBy: "object-fit: scale-down;").count == 3)
+        #expect(store.nodes.first { $0.id == "hero" }?.renderTarget(for: "object-fit")?.authoredValue == "scale-down")
+        #expect(store.nodes.first { $0.id == "card" }?.renderTarget(for: "object-fit")?.authoredValue == "scale-down")
+        #expect(store.cssVariablesBatchMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == authoredHTML)
+        #expect(store.canUndo)
+        #expect(store.lastError == nil)
+    }
+
     /// 論理名（日本語）: 複合CSS宣言更新テスト
     /// 概要: CSS shorthand や関数値を分解せず、HTML 正本へ戻す値としてそのまま保持することを検証します。
-    @Test("複合CSS値をStoreで正規化しすぎずmutationへ渡せる")
-    func testUpdateCSSVariablePreservesStructuredCSSValues() throws {
-        // コンディション：選択中ノードと、Inspector UI が parse / edit / serialize する CSS 値を用意する
+    @Test("複合CSS値をStoreで正規化しすぎずsourceへ保存できる")
+    func testUpdateCSSVariablePreservesStructuredCSSValues() async throws {
+        // コンディション：選択中ノードと、Inspector UIがparse / edit / serializeするCSS値を用意する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
@@ -4071,7 +5193,7 @@ struct EditorStoreTests {
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
         _ = try selectFirstPage(in: store)
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "preview-card",
                 "internalID": "preview-node",
@@ -4082,6 +5204,7 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "preview-card")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
         let cases: [(key: String, value: String)] = [
             ("width", "min(100%,560px)"),
             ("padding", "14px 20px"),
@@ -4102,16 +5225,210 @@ struct EditorStoreTests {
             ("view-timeline-inset", "20% 80%")
         ]
 
-        // 検証内容：各 CSS 値を Store に適用する
+        // 検証内容：各CSS値をStoreに適用する（When）
         for item in cases {
             store.updateCSSVariable(key: item.key, value: item.value)
 
-            // 期待値：Store は CSS 値を分解・独自正規化せず、そのまま mutation とノード状態へ保持する
+            // 期待値：Store は CSS 値を分解・独自正規化せず、そのままノード状態へ保持する（Then）
             #expect(store.nodes[0].cssVariables[item.key] == item.value)
-            #expect(store.cssMutation?.nodeID == "preview-card")
-            #expect(store.cssMutation?.key == item.key)
-            #expect(store.cssMutation?.value == item.value)
+            #expect(store.cssMutation == nil)
         }
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + cases.count)
+    }
+
+    /// 論理名（日本語）: 標準scale履歴保存テスト
+    /// 概要: Inspectorの標準`scale`編集が!importantと既存transform/rotateをbyte-exactに保ち、undo/redoできることを検証します。
+    @Test("標準scale編集はimportantとtransform構成を保ってundo redoできる")
+    func testStandardScaleEditPreservesTransformCompositionAcrossUndoRedo() async throws {
+        // コンディション：scale、transform、rotateを同じ外部ruleに持ち、runtime DOMだけ異なるscaleへ変更された単一選択nodeを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body><Card data-og-id="card" data-og-internal-id="card-node" data-og-type="frame"></Card></body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let initialCSS = """
+        [data-og-internal-id="card-node"] {
+          transform: translateX(7px) rotate(3deg);
+          rotate: 11deg;
+          scale: 1.25 0.8 !important;
+        }
+        """
+        let editedCSS = initialCSS.replacingOccurrences(
+            of: "scale: 1.25 0.8 !important;",
+            with: "scale: -1.25 0.8 !important;"
+        )
+        try fixture.writeCompanionCSS(initialCSS)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "card",
+                "internalID": "card-node",
+                "tagName": "card",
+                "type": "frame",
+                "cssVariables": ["scale": "9 9"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "card")
+        let initialAuthoredScale = store.selectedNode?.cssVariables["scale"]
+
+        // 検証内容：X軸反転相当の標準scaleを書き込み、undo後にredoする（When）
+        store.updateCSSVariable(key: "scale", value: "-1.25 0.8")
+        let updatedCSS = try fixture.readCompanionCSS()
+        let reloadTokenAfterEdit = store.reloadToken(for: fixture.htmlURL)
+        let emittedInlineMutation = store.cssMutation
+        store.undoDocumentChange()
+        let undoCSS = try fixture.readCompanionCSS()
+        store.redoDocumentChange()
+        let redoCSS = try fixture.readCompanionCSS()
+
+        // 期待値：scale値だけが変わり、priorityと既存transform/rotateのsource bytesを全履歴状態で保つ（Then）
+        #expect(updatedCSS == editedCSS)
+        #expect(undoCSS == initialCSS)
+        #expect(redoCSS == editedCSS)
+        #expect(reloadTokenAfterEdit == initialReloadToken + 1)
+        #expect(emittedInlineMutation == nil)
+        #expect(initialAuthoredScale == "1.25 0.8")
+        #expect(store.nodes.first?.cssVariables["scale"] == "-1.25 0.8")
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 標準scale bridge再同期テスト
+    /// 概要: flip bridgeが一時的に付けるinline `scale`を後続serializationへ残さず、companion/inlineのsource winnerだけを保存して再読み込みを要求することを検証します。
+    @Test("標準scaleのbridge編集はsourceだけを最小差分保存してWebViewを再同期する")
+    func testStandardScaleBridgeEditReloadsAfterCompanionAndInlineSourceUpdates() throws {
+        // コンディション：companion CSS winnerとinline winnerを持ち、他のtransform family宣言も含む2 nodeを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let authoredHTML = """
+        <!doctype html>
+        <html><body>
+          <CompanionCard data-og-id="companion" data-og-internal-id="companion-node" data-og-type="frame"></CompanionCard>
+          <InlineCard data-og-id="inline" data-og-internal-id="inline-node" data-og-type="frame" style="transform:translateX(3px); scale : 1 1 /* keep */ !important ; rotate:7deg;"></InlineCard>
+        </body></html>
+        """
+        let initialCSS = """
+        [data-og-internal-id="companion-node"] {
+          transform: skewX(2deg);
+          scale: 1.25 0.8 !important;
+          rotate: -4deg;
+        }
+        """
+        try authoredHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try fixture.writeCompanionCSS(initialCSS)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let page = try selectFirstPage(in: store)
+        let target = try #require(store.htmlSyncTarget(for: page, segment: .pages))
+
+        // 検証内容：WebCanvas flipと同じ単項payloadでcompanion winnerとinline winnerを順に更新する（When）
+        let companionResult = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setCSSVariable",
+                "nodeInternalID": "companion-node",
+                "key": "scale",
+                "value": "-1.25 0.8",
+                "previousValue": "1.25 0.8"
+            ],
+            target: target
+        )
+        let htmlAfterCompanionEdit = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let inlineResult = store.applyHTMLObjectEditPayload(
+            [
+                "operation": "setCSSVariable",
+                "nodeInternalID": "inline-node",
+                "key": "scale",
+                "value": "1 -1",
+                "previousValue": "1 1"
+            ],
+            target: target
+        )
+        let finalHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        let finalCSS = try fixture.readCompanionCSS()
+
+        // 期待値：どちらもreload契約でDOMの一時inline previewを破棄し、各source winnerのvalueだけを更新する（Then）
+        #expect(companionResult.updated)
+        #expect(companionResult.requiresReload)
+        #expect(inlineResult.updated)
+        #expect(inlineResult.requiresReload)
+        #expect(htmlAfterCompanionEdit == authoredHTML)
+        #expect(finalHTML == authoredHTML.replacingOccurrences(of: "scale : 1 1", with: "scale : 1 -1"))
+        #expect(finalCSS == initialCSS.replacingOccurrences(of: "scale: 1.25 0.8", with: "scale: -1.25 0.8"))
+        #expect(finalHTML.contains("transform:translateX(3px)"))
+        #expect(finalHTML.contains("/* keep */ !important"))
+        #expect(finalHTML.contains("rotate:7deg"))
+        #expect(finalCSS.contains("transform: skewX(2deg)"))
+        #expect(finalCSS.contains("rotate: -4deg"))
+    }
+
+    /// 論理名（日本語）: 複数選択標準scale保存テスト
+    /// 概要: 複数選択Inspectorから単一の標準`scale`値を各nodeへ保存し、他のtransform family宣言を変更しないことを検証します。
+    @Test("複数選択nodeへ標準scaleを一括保存できる")
+    func testMultipleSelectionPersistsStandardScaleWithoutTouchingTransforms() async throws {
+        // コンディション：異なるscaleとtransformを持つ兄弟nodeを複数選択する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <First data-og-id="first" data-og-internal-id="first-node" data-og-type="frame"></First>
+          <Second data-og-id="second" data-og-internal-id="second-node" data-og-type="frame"></Second>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let initialCSS = """
+        [data-og-internal-id="first-node"] {
+          transform: rotate(2deg);
+          scale: 1 1;
+        }
+
+        [data-og-internal-id="second-node"] {
+          rotate: -4deg;
+          scale: 0.9 1.1;
+        }
+        """
+        try fixture.writeCompanionCSS(initialCSS)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "first",
+                "internalID": "first-node",
+                "tagName": "first",
+                "type": "frame",
+                "cssVariables": ["scale": "1 1", "transform": "rotate(2deg)"],
+                "depth": 0
+            ],
+            [
+                "id": "second",
+                "internalID": "second-node",
+                "tagName": "second",
+                "type": "frame",
+                "cssVariables": ["scale": "0.9 1.1", "rotate": "-4deg"],
+                "depth": 0
+            ]
+        ])
+        store.selectNode(id: "first")
+        store.selectNodeRange(to: "second", visibleNodeIDs: ["first", "second"])
+
+        // 検証内容：Inspector相当の一括編集でpercentageの標準scaleを設定する（When）
+        store.updateCSSVariable(key: "scale", value: "90% -110%")
+        let updatedCSS = try fixture.readCompanionCSS()
+
+        // 期待値：両scaleだけが変わり、既存transform/rotate bytesとbatch mutationを保持する（Then）
+        let expectedCSS = initialCSS
+            .replacingOccurrences(of: "scale: 1 1;", with: "scale: 90% -110%;")
+            .replacingOccurrences(of: "scale: 0.9 1.1;", with: "scale: 90% -110%;")
+        #expect(updatedCSS == expectedCSS)
+        #expect(store.nodes.allSatisfy { $0.cssVariables["scale"] == "90% -110%" })
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(store.cssVariablesBatchMutation == nil)
+        #expect(store.lastError == nil)
     }
 
     /// 論理名（日本語）: 同期履歴ディスク反映テスト
@@ -4168,7 +5485,11 @@ struct EditorStoreTests {
                 "id": "hero-copy",
                 "internalID": "hero-copy-node",
                 "tagName": "h1",
-                "type": "text",
+                "capabilities": ["edit-layout", "edit-text"],
+                "capabilityEvidence": [
+                    "hasDirectText": true,
+                    "resolvedDisplay": "block"
+                ],
                 "cssVariables": [String: String](),
                 "depth": 1
             ]
@@ -4189,7 +5510,7 @@ struct EditorStoreTests {
         #expect(undoableItem.actionName == "HTMLを編集")
         #expect(undoableItem.timestamp >= recordedAfter)
         #expect(undoableItem.state == .undoable)
-        #expect(undoableItem.previewKind == .node(type: "text"))
+        #expect(undoableItem.previewKind == .node(hint: .text))
         #expect(redoableItem.id == undoableItem.id)
         #expect(redoableItem.state == .redoable)
         #expect(restoredItem.id == undoableItem.id)
@@ -4444,11 +5765,63 @@ struct EditorStoreTests {
         #expect(store.statusMessage == "CSS / Components の外部変更を表示へ同期しました。")
     }
 
-    /// 論理名（日本語）: 未適用編集との競合テスト
-    /// 概要: 未適用 mutation がある場合に外部 HTML 変更で WebView を破壊的に置換しないことを検証します。
+    /// 論理名（日本語）: Imported CSS外部変更同期テスト
+    /// 概要: 複数token relから到達するlocal CSS `@import` graphをcycle-safeに監視し、実import変更だけをCanvas再読込へ反映します。
+    @Test("local CSS importの外部変更でreload tokenを更新する")
+    func testRefreshImportedCSSDependencyUpdatesReloadToken() throws {
+        // コンディション：stylesheet複数token link、comment/string内decoy、循環するlocal import graphを持つpageを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let stylesURL = fixture.publicURL.appendingPathComponent("styles", isDirectory: true)
+        let nestedURL = stylesURL.appendingPathComponent("nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedURL, withIntermediateDirectories: true)
+        let baseCSSURL = stylesURL.appendingPathComponent("base.css")
+        let themeCSSURL = nestedURL.appendingPathComponent("theme.css")
+        let ignoredCSSURL = stylesURL.appendingPathComponent("ignored.css")
+        let originalHTML = """
+        <!doctype html><html><head>
+          <link rel="stylesheet preload" href="styles/base.css">
+        </head><body><main id="target">Target</main></body></html>
+        """
+        let originalBaseCSS = """
+        /* @import "./ignored.css"; */
+        #target::before { content: "@import './ignored.css'"; }
+        @import "./nested/theme.css" screen;
+        """
+        let originalThemeCSS = """
+        @import "../base.css";
+        #target { display: grid; }
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        try originalBaseCSS.write(to: baseCSSURL, atomically: true, encoding: .utf8)
+        try originalThemeCSS.write(to: themeCSSURL, atomically: true, encoding: .utf8)
+        try "#target { color: red; }\n".write(to: ignoredCSSURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：decoy CSS通知を無視した後、実import themeを外部変更してdependency callback相当を実行する（When）
+        store.refreshProjectDependencyFromDiskIfChanged(at: ignoredCSSURL)
+        let tokenAfterDecoy = store.reloadToken(for: fixture.htmlURL)
+        let updatedThemeCSS = originalThemeCSS.replacingOccurrences(of: "display: grid", with: "display: flex")
+        try updatedThemeCSS.write(to: themeCSSURL, atomically: true, encoding: .utf8)
+        store.refreshProjectDependencyFromDiskIfChanged(at: themeCSSURL)
+
+        // 期待値：comment/string内importは監視せず、cycle内の実theme変更だけがsource不変のCanvas reloadを一度要求する（Then）
+        #expect(tokenAfterDecoy == initialReloadToken)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(try String(contentsOf: fixture.htmlURL, encoding: .utf8) == originalHTML)
+        #expect(try String(contentsOf: baseCSSURL, encoding: .utf8) == originalBaseCSS)
+        #expect(try String(contentsOf: themeCSSURL, encoding: .utf8) == updatedThemeCSS)
+        #expect(store.statusMessage == "CSS / Components の外部変更を表示へ同期しました。")
+    }
+
+    /// 論理名（日本語）: 未適用属性編集との競合テスト
+    /// 概要: 未適用の属性mutationがある場合に外部HTML変更でWebViewを破壊的に置換しないことを検証します。
     @Test("未適用編集がある場合は外部HTML変更同期を保留する")
     func testRefreshSelectedPageFromDiskDefersWhenMutationIsPending() throws {
-        // コンディション：未適用 CSS mutation を持つストアで外部変更を発生させる
+        // コンディション：未適用の属性mutationを持つストアで外部変更を発生させる（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
         try """
@@ -4476,19 +5849,19 @@ struct EditorStoreTests {
             ]
         ])
         store.selectNode(id: "title")
-        store.updateCSSVariable(key: "gap", value: "16px")
+        store.updateNodeAttribute(name: "role", value: "button")
         try "<!doctype html>\n<html><body>external</body></html>".write(
             to: fixture.htmlURL,
             atomically: true,
             encoding: .utf8
         )
 
-        // 検証内容：外部変更同期を実行する
+        // 検証内容：外部変更同期を実行する（When）
         store.refreshSelectedPageFromDiskIfChanged()
 
-        // 期待値：未適用 mutation が優先され、置換要求は作られない
+        // 期待値：未適用mutationが優先され、置換要求は作られない（Then）
         #expect(store.documentReplacementRequest == nil)
-        #expect(store.cssMutation?.value == "16px")
+        #expect(store.attributeMutation?.value == "button")
         #expect(store.statusMessage.contains("自動同期を保留"))
     }
 
@@ -4672,6 +6045,1013 @@ struct EditorStoreTests {
         #expect(payload["html"] as? String == "<Hero></Hero>")
     }
 
+    /// 論理名（日本語）: App暗黙migration禁止テスト
+    /// 概要: legacy HTML/manifest inputを含むProjectのopen/loadと同一HTML同期が、明示PreviewなしにWeb sourceやannotationを変更しないことを確認します。
+    @Test("Appはopenと無編集saveで暗黙migrationしない")
+    func testProjectMigrationDoesNotRunDuringOpenOrUneditedSave() throws {
+        // コンディション：legacy属性/preview field、既存optional identity、未注釈標準nodeを持つProjectを用意する（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        let before = try fixture.sourceSnapshot()
+        let originalHTML = try String(contentsOf: fixture.homeHTMLURL, encoding: .utf8)
+        let store = EditorStore()
+
+        // 検証内容：Projectを開き、同じHTMLを無編集のまま同期保存する（When）
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.syncCurrentHTML(originalHTML)
+        let after = try fixture.sourceSnapshot()
+        let contract = OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        let targetVersion = contract.migrationPolicy.targetVersion
+
+        // 期待値：全source bytesとoptional annotationは不変で、migrationは未確認状態のまま開始されない（Then）
+        #expect(after == before)
+        #expect(originalHTML.contains("data-og-internal-id=\"kept-article\""))
+        #expect(originalHTML.contains("<p>Standard child</p>"))
+        #expect(contract.version == "0.1.0")
+        #expect(targetVersion == "1.0.0")
+        #expect(store.projectMigrationStatus == .notChecked(targetVersion: targetVersion))
+        #expect(store.projectMigrationPreview == nil)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: App migration dry-run/cancelテスト
+    /// 概要: Project InspectorのPreviewがmulti-file diffを返してもsourceを書かず、Cancelがproposal stateだけを破棄することを確認します。
+    @Test("App migrationのdry-runとcancelはsourceを書き換えない")
+    func testProjectMigrationDryRunAndCancelAreNoWrite() throws {
+        // コンディション：manifestの既知legacy preview fieldと2つのpageに既知legacy runtime属性を持つProjectを開く（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        let before = try fixture.sourceSnapshot()
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：Project migrationをdry-runして差分を確認後、confirmationをキャンセルする（When）
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+        let afterDryRun = try fixture.sourceSnapshot()
+        store.cancelProjectMigrationPreview()
+        let afterCancel = try fixture.sourceSnapshot()
+
+        // 期待値：root相対path順のmanifest/2ページ差分とapply専用proposalを得るが、dry-run/cancel後も全source bytesは不変である（Then）
+        #expect(preview.changed)
+        #expect(preview.sourceContractVersion == "0.1.0")
+        #expect(preview.targetContractVersion == "1.0.0")
+        #expect(preview.proposalReference?.isEmpty == false)
+        #expect(preview.canApply)
+        #expect(preview.diffs.map(\.path) == [
+            "Project.ogp",
+            "public/index.html",
+            "public/locked/secondary.html"
+        ])
+        #expect(preview.diffs.allSatisfy { !$0.unifiedDiff.isEmpty })
+        #expect(afterDryRun == before)
+        #expect(afterCancel == before)
+        #expect(store.projectMigrationPreview == nil)
+        #expect(store.projectMigrationStatus == .changesAvailable(
+            sourceVersion: preview.sourceContractVersion,
+            targetVersion: preview.targetContractVersion,
+            fileCount: preview.diffs.count
+        ))
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: App stale migration proposalテスト
+    /// 概要: dry-run後に1 sourceだけ外部変更された場合、確認済みproposalを全体no-writeで拒否し、stale sheetを保持することを確認します。
+    @Test("App migrationはstale proposalを全体no-writeで表示する")
+    func testProjectMigrationStaleProposalKeepsEverySourceUnchanged() throws {
+        // コンディション：2ページのdry-run proposalを作成後、片方のsourceだけを外部更新する（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+        let externallyModified = try String(contentsOf: fixture.secondaryHTMLURL, encoding: .utf8)
+            .replacingOccurrences(of: "Secondary child", with: "Externally changed child")
+        try externallyModified.write(to: fixture.secondaryHTMLURL, atomically: true, encoding: .utf8)
+        let beforeApply = try fixture.sourceSnapshot()
+
+        // 検証内容：外部変更前のproposalを明示Applyする（When）
+        store.applyProjectMigrationPreview()
+        let afterApply = try fixture.sourceSnapshot()
+        let stalePreview = try #require(store.projectMigrationPreview)
+
+        // 期待値：全sourceはApply直前bytesを保ち、stale diagnosticと再Preview可能なsheetが表示される（Then）
+        #expect(afterApply == beforeApply)
+        #expect(stalePreview.isStale)
+        #expect(!stalePreview.canApply)
+        #expect(stalePreview.diagnostics.contains { $0.code == "stale-migration-proposal" })
+        #expect(store.projectMigrationStatus == .stale(targetVersion: preview.targetContractVersion))
+        #expect(store.lastError != nil)
+    }
+
+    /// 論理名（日本語）: App migration未適用DOM同期保留テスト
+    /// 概要: WebViewへ未適用のdocument replacementがある間は、確認済みproposalを実行せずsourceとPreviewを保持することを確認します。
+    @Test("App migrationは未適用のDOM同期がある間Applyを保留する")
+    func testProjectMigrationWaitsForPendingDocumentReplacement() throws {
+        // コンディション：migration proposal確認後、選択pageの外部変更を未適用document replacementとして保留する（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+        let externallyModified = try String(contentsOf: fixture.homeHTMLURL, encoding: .utf8)
+            .replacingOccurrences(of: "Standard child", with: "Pending canvas sync")
+        try externallyModified.write(to: fixture.homeHTMLURL, atomically: true, encoding: .utf8)
+        store.refreshSelectedPageFromDiskIfChanged()
+        let pendingRequest = try #require(store.documentReplacementRequest)
+        let beforeApply = try fixture.sourceSnapshot()
+
+        // 検証内容：未適用document replacementを残したまま確認済みmigrationをApplyする（When）
+        store.applyProjectMigrationPreview()
+        let afterApply = try fixture.sourceSnapshot()
+        let applyError = store.lastError
+        store.cancelProjectMigrationPreview()
+        store.previewProjectMigration()
+        let afterRefreshRequest = try fixture.sourceSnapshot()
+
+        // 期待値：Core apply/dry-runを開始せず全source・未適用要求を保持し、Canvas同期完了後の再実行を案内する（Then）
+        #expect(afterApply == beforeApply)
+        #expect(afterRefreshRequest == beforeApply)
+        #expect(applyError == "未適用の編集があるため、Project migrationのApplyを保留しました。")
+        #expect(store.projectMigrationPreview == nil)
+        #expect(store.documentReplacementRequest == pendingRequest)
+        #expect(preview.diagnostics.contains { $0.code == "stale-migration-proposal" } == false)
+        #expect(store.lastError == "未適用の編集があるため、Project migrationのPreviewを保留しました。")
+    }
+
+    /// 論理名（日本語）: App migration preview field衝突テスト
+    /// 概要: legacy fieldと変換先の標準host fieldが異なる値で共存する場合、blocking errorを表示して全sourceを変更しないことを確認します。
+    @Test("App migrationはpreview field衝突をatomic no-writeで拒否する")
+    func testProjectMigrationRejectsConflictingPreviewFieldsWithoutWriting() throws {
+        // コンディション：legacy codeViewerModeと異なるhost.variantが同じplacementに共存するProjectを用意する（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        try fixture.addConflictingHostVariant()
+        let before = try fixture.sourceSnapshot()
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+
+        // 検証内容：Project migrationをdry-runし、blocking Previewに対してApply処理も要求する（When）
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+        let afterDryRun = try fixture.sourceSnapshot()
+        store.applyProjectMigrationPreview()
+        let afterApplyRequest = try fixture.sourceSnapshot()
+
+        // 期待値：衝突diagnosticでApply不能となり、dry-runとApply要求のどちらも全source bytesを書き換えない（Then）
+        #expect(preview.diagnostics.contains {
+            $0.severity == .error && $0.code == "legacy-preview-context-conflict"
+        })
+        #expect(!preview.changed)
+        #expect(preview.proposalReference == nil)
+        #expect(preview.diffs.isEmpty)
+        #expect(!preview.canApply)
+        #expect(afterDryRun == before)
+        #expect(afterApplyRequest == before)
+        if case .failed(let targetVersion, _) = store.projectMigrationStatus {
+            #expect(targetVersion == "1.0.0")
+        } else {
+            Issue.record("Project migration statusがfailedではありません。")
+        }
+        #expect(store.lastError != nil)
+    }
+
+    /// 論理名（日本語）: App migration適用後refreshテスト
+    /// 概要: 確認済みproposalのatomic apply後、legacy runtime属性とpreview fieldを変換し、optional identity・未注釈標準HTMLとApp表示更新を維持します。
+    @Test("App migrationは明示apply後に標準sourceとProject表示をrefreshする")
+    func testProjectMigrationApplyPreservesOptionalAnnotationsAndRefreshesProject() throws {
+        // コンディション：既知legacy属性/preview fieldとoptional/未注釈nodeが共存するProjectを表示する（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer { fixture.cleanUp() }
+        let before = try fixture.sourceSnapshot()
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let homeReloadBefore = store.reloadToken(for: fixture.homeHTMLURL)
+        let secondaryReloadBefore = store.reloadToken(for: fixture.secondaryHTMLURL)
+        let componentReloadBefore = store.reloadToken(for: fixture.componentHTMLURL)
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+
+        // 検証内容：dry-runで確認したproposalを明示Applyする（When）
+        store.applyProjectMigrationPreview()
+        let homeHTML = try String(contentsOf: fixture.homeHTMLURL, encoding: .utf8)
+        let secondaryHTML = try String(contentsOf: fixture.secondaryHTMLURL, encoding: .utf8)
+        let after = try fixture.sourceSnapshot()
+        let placementMocks = store.loadedProject?.project.collections.first?.components.first?
+            .canvas.previewContext.placementMocks["fixture-placement"]
+        let collapsedPlacementMocks = store.loadedProject?.project.collections.first?.components.first?
+            .canvas.previewContext.placementMocks["fixture-collapsed-placement"]
+
+        // 期待値：legacy stateを標準host stateへ変換し、DOM/optional identityを維持してsheetを閉じ、manifest/dependency/page表示を再読込する（Then）
+        #expect(!homeHTML.contains("data-og-selected"))
+        #expect(!secondaryHTML.contains("data-og-editing"))
+        #expect(homeHTML.contains("data-og-internal-id=\"kept-article\""))
+        #expect(homeHTML.contains("<p>Standard child</p>"))
+        #expect(!homeHTML.contains("<p data-og-"))
+        #expect(secondaryHTML.contains("<span>Secondary child</span>"))
+        #expect(after["Project.ogp"] != before["Project.ogp"])
+        #expect(placementMocks?["host.variant"] == "preview")
+        #expect(placementMocks?["selectedLanguage"] == "ja")
+        #expect(placementMocks?["codeViewerMode"] == nil)
+        #expect(collapsedPlacementMocks?["host.variant"] == "collapsible collapsed")
+        #expect(collapsedPlacementMocks?["customState"] == "kept")
+        #expect(collapsedPlacementMocks?["placementMode"] == nil)
+        #expect(after["OpenGraphite.contract.json"] == before["OpenGraphite.contract.json"])
+        #expect(after["CSS/OpenGraphite.css"] == before["CSS/OpenGraphite.css"])
+        #expect(after["public/components.html"] == before["public/components.html"])
+        #expect(after["public/index.css"] == before["public/index.css"])
+        #expect(after["public/locked/secondary.css"] == before["public/locked/secondary.css"])
+        #expect(after["public/components.css"] == before["public/components.css"])
+        #expect(store.projectMigrationPreview == nil)
+        #expect(store.projectMigrationStatus == .applied(
+            version: preview.targetContractVersion,
+            fileCount: preview.diffs.count
+        ))
+        #expect(store.documentReplacementRequest?.pageURL == fixture.homeHTMLURL)
+        #expect(store.reloadToken(for: fixture.homeHTMLURL) > homeReloadBefore)
+        #expect(store.reloadToken(for: fixture.secondaryHTMLURL) > secondaryReloadBefore)
+        #expect(store.reloadToken(for: fixture.componentHTMLURL) > componentReloadBefore)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: App migration部分失敗rollbackテスト
+    /// 概要: multi-file applyの途中で書込不能sourceがある場合、先行候補を含む全sourceを適用前bytesへ戻して失敗sheetを保持します。
+    @Test("App migrationは部分書込失敗をrollbackして全sourceを保持する")
+    func testProjectMigrationPartialWriteFailureRollsBackEverySource() throws {
+        // コンディション：manifestと2ページのproposal作成後、path順で後方のHTMLだけをuser immutableにする（Given）
+        let fixture = try EditorStoreMigrationFixture()
+        defer {
+            try? fixture.setSecondaryHTMLImmutable(false)
+            fixture.cleanUp()
+        }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        store.previewProjectMigration()
+        let preview = try #require(store.projectMigrationPreview)
+        let beforeApply = try fixture.sourceSnapshot()
+        try fixture.setSecondaryHTMLImmutable(true)
+
+        // 検証内容：確認済みmulti-file proposalを明示Applyし、完了後にfixtureのimmutable flagを解除する（When）
+        store.applyProjectMigrationPreview()
+        try fixture.setSecondaryHTMLImmutable(false)
+        let afterApply = try fixture.sourceSnapshot()
+        let failurePreview = try #require(store.projectMigrationPreview)
+
+        // 期待値：migration-write-failedを表示し、先行pageを含む全source bytesがtransaction前状態へrollbackされる（Then）
+        #expect(afterApply == beforeApply)
+        #expect(failurePreview.diagnostics.contains { $0.code == "migration-write-failed" })
+        #expect(!failurePreview.canApply)
+        if case .failed(let targetVersion, _) = store.projectMigrationStatus {
+            #expect(targetVersion == preview.targetContractVersion)
+        } else {
+            Issue.record("Project migration statusがfailedではありません。")
+        }
+        #expect(store.lastError != nil)
+    }
+
+    /// 論理名（日本語）: App明示adoption dry-run/applyテスト
+    /// 概要: 標準id selectorで未注釈nodeをdry-runし、確認済みapply専用proposal tokenだけでapplyして最小annotationを追加することを確認します。
+    @Test("App adoptionはdry-run差分確認後だけ標準id nodeを明示適用する")
+    func testNodeAdoptionUsesDryRunProposalAndMinimalAnnotation() throws {
+        // コンディション：標準idを持つがOpenGraphite annotationを持たないpageを開く（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html>
+        <html><body><main id="article"><h1>Standard</h1></main></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let graph = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+        let sourceNode = try #require(graph.nodes.first { $0.tagName == "main" })
+        store.ingestNodePayload([
+            [
+                "id": sourceNode.reference,
+                "authoredID": sourceNode.id,
+                "standardID": sourceNode.attributes["id"] ?? "",
+                "internalID": sourceNode.internalID,
+                "reference": sourceNode.reference,
+                "annotationStatus": sourceNode.annotationStatus.rawValue,
+                "referenceStability": sourceNode.referenceStability.rawValue,
+                "locator": [
+                    "documentURL": sourceNode.locator.documentURL,
+                    "selector": sourceNode.locator.selector ?? "",
+                    "domPath": sourceNode.locator.domPath,
+                    "sourceRange": [
+                        "start": sourceNode.locator.sourceRange.start,
+                        "end": sourceNode.locator.sourceRange.end
+                    ],
+                    "contentHash": sourceNode.locator.contentHash
+                ],
+                "tagName": sourceNode.tagName,
+                "legacyTypeHint": sourceNode.legacyTypeHint ?? "",
+                "capabilities": sourceNode.capabilities.map(\.rawValue),
+                "capabilityEvidence": Self.capabilityEvidencePayload(sourceNode.capabilityEvidence),
+                "attributes": sourceNode.attributes,
+                "cssVariables": sourceNode.cssVariables,
+                "hidden": false,
+                "locked": false,
+                "depth": sourceNode.depth
+            ]
+        ])
+        store.selectNode(id: sourceNode.reference)
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+
+        // 検証内容：node adoptionをdry-runし、表示された差分を明示applyする（When）
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：dry-runはsourceを保持し、標準id selectorで解決したapply専用proposal tokenとinternal-idだけの差分を返す（Then）
+        #expect(htmlAfterDryRun == originalHTML)
+        #expect(preview.changed)
+        #expect(preview.reference?.hasPrefix("ogref-session:adoption:") == true)
+        #expect(preview.selector == nil)
+        #expect(preview.domPath == nil)
+        #expect(preview.unifiedDiff.contains("data-og-internal-id"))
+        #expect(!preview.unifiedDiff.contains("data-og-id="))
+
+        let externallyModifiedHTML = originalHTML.replacingOccurrences(
+            of: "Standard",
+            with: "Externally changed"
+        )
+        try externallyModifiedHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        store.applyNodeAdoptionPreview()
+        let htmlAfterStaleApply = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(htmlAfterStaleApply == externallyModifiedHTML)
+        #expect(store.nodeAdoptionPreview != nil)
+        #expect(store.lastError != nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken)
+
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        store.previewSelectedNodeAdoption(scope: .node)
+        #expect(store.nodeAdoptionPreview?.reference?.hasPrefix("ogref-session:adoption:") == true)
+        store.applyNodeAdoptionPreview()
+        let appliedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(appliedHTML.contains("<main id=\"article\" data-og-internal-id="))
+        #expect(!appliedHTML.contains("data-og-id="))
+        #expect(store.nodeAdoptionPreview == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 部分注釈stable node adoptionテスト
+    /// 概要: internal IDだけを持つnodeをproject typed referenceで表示し、dry-run proposal tokenを経ても不要なdisplay annotationを追加しないことを確認します。
+    @Test("App adoptionはpartial stable nodeにもdry-run proposalを要求する")
+    func testNodeAdoptionUsesProposalReferenceForPartiallyAnnotatedStableNode() async throws {
+        // コンディション：internal IDだけを持つ部分注釈nodeをproject page graphから取り込む（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html>
+        <html><body><main data-og-internal-id="partial-main"><h1>Partial</h1></main></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNode = try #require(
+            try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+                .nodes
+                .first { $0.internalID == "partial-main" }
+        )
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "browser-partial-main",
+                "authoredID": "",
+                "standardID": "",
+                "internalID": sourceNode.internalID,
+                "reference": "ogref-dom:node:partial-main",
+                "annotationStatus": "partial",
+                "referenceStability": "stable",
+                "locator": [
+                    "documentURL": sourceNode.locator.documentURL,
+                    "selector": sourceNode.locator.selector ?? "",
+                    "domPath": sourceNode.locator.domPath,
+                    "sourceRange": [
+                        "start": sourceNode.locator.sourceRange.start,
+                        "end": sourceNode.locator.sourceRange.end
+                    ],
+                    "contentHash": sourceNode.locator.contentHash
+                ],
+                "tagName": sourceNode.tagName,
+                "legacyTypeHint": sourceNode.legacyTypeHint ?? "",
+                "capabilities": sourceNode.capabilities.map(\.rawValue),
+                "capabilityEvidence": Self.capabilityEvidencePayload(sourceNode.capabilityEvidence),
+                "attributes": sourceNode.attributes,
+                "cssVariables": sourceNode.cssVariables,
+                "hidden": false,
+                "locked": false,
+                "depth": sourceNode.depth
+            ]
+        ])
+        store.selectNode(id: "browser-partial-main")
+        let inspectedNode = try #require(store.selectedNode)
+
+        // 検証内容：project typed referenceを使ってdry-runし、返却されたapply専用proposal tokenだけでapplyする（When）
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：通常表示はtyped stable ref、apply targetはdocumentとparameterを固定したproposal tokenになり、既にstableなnodeへdisplay annotationを重複追加しない（Then）
+        #expect(inspectedNode.reference.hasPrefix("ogref:node:"))
+        #expect(inspectedNode.referenceStability == .stable)
+        #expect(htmlAfterDryRun == originalHTML)
+        #expect(!preview.changed)
+        #expect(preview.reference?.hasPrefix("ogref-session:adoption:") == true)
+        #expect(preview.selector == nil)
+        #expect(preview.domPath == nil)
+        #expect(preview.unifiedDiff.isEmpty)
+
+        store.applyNodeAdoptionPreview()
+        let appliedHTML = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+        #expect(appliedHTML == originalHTML)
+        #expect(appliedHTML.contains("data-og-internal-id=\"partial-main\""))
+        #expect(!appliedHTML.contains("data-og-id="))
+        #expect(store.nodeAdoptionPreview == nil)
+        #expect(store.lastError == nil)
+    }
+
+    /// 論理名（日本語）: 重複internal ID source mergeテスト
+    /// 概要: WebKit payloadがstableと見なしても、Shared source graphの重複診断に従いDOM pathごとのsession referenceへ補正することを確認します。
+    @Test("重複internal IDはDOM pathで別session nodeへmergeする")
+    func testDuplicateInternalIDsMergeByDOMPathAsSessionReferences() async throws {
+        // コンディション：同じinternal IDを持つ2つのsource nodeと、誤ってstableとされたWeb payloadを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        try """
+        <!doctype html>
+        <html><body>
+          <div id="first" data-og-internal-id="duplicate">First</div>
+          <div id="second" data-og-internal-id="duplicate">Second</div>
+        </body></html>
+        """.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNodes = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+            .nodes
+            .filter { $0.tagName == "div" }
+        #expect(sourceNodes.count == 2)
+        #expect(sourceNodes.allSatisfy { $0.referenceStability == .session })
+        let payload = sourceNodes.enumerated().map { index, node -> [String: Any] in
+            [
+                "id": "browser-\(index)",
+                "authoredID": "",
+                "standardID": node.attributes["id"] ?? "",
+                "internalID": "duplicate",
+                "reference": "ogref-dom:node:duplicate",
+                "annotationStatus": "partial",
+                "referenceStability": "stable",
+                "locator": [
+                    "documentURL": node.locator.documentURL,
+                    "selector": node.locator.selector ?? "",
+                    "domPath": node.locator.domPath,
+                    "sourceRange": [
+                        "start": node.locator.sourceRange.start,
+                        "end": node.locator.sourceRange.end
+                    ],
+                    "contentHash": node.locator.contentHash
+                ],
+                "tagName": "div",
+                "type": "",
+                "cssVariables": [String: String](),
+                "depth": node.depth
+            ]
+        }
+
+        // 検証内容：WebCanvas payloadをStoreへ取り込む（When）
+        await store.ingestNodePayloadAndWait(payload)
+
+        // 期待値：重複internal ID索引を使わず、各DOM pathのShared session referenceが別々に保持される（Then）
+        #expect(store.nodes.count == 2)
+        #expect(store.nodes.allSatisfy { $0.referenceStability == .session })
+        #expect(store.nodes.map(\.reference) == sourceNodes.map(\.reference))
+        #expect(Set(store.nodes.map(\.reference)).count == 2)
+        for node in store.nodes {
+            #expect(
+                store.nodeReferenceID(forNodeID: node.id, nodeInternalID: node.internalID) == node.reference
+            )
+        }
+    }
+
+    /// 論理名（日本語）: Browser implicit DOM source mergeテスト
+    /// 概要: 省略可能なHTML document tagとtable containerをWebKitが補完しても、未注釈nodeをauthored source locatorへ結びます。
+    @Test("WebKitが補完したhtml body tbodyを越えて未注釈nodeをsourceへmergeする")
+    func testImplicitBrowserDOMContainersMergeToAuthoredSourceLocator() async throws {
+        // コンディション：html / body / tbodyを正当に省略したtableと、WebKit補完後のpayload pathを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = "<!doctype html><main><table><tr><td>Cell</td></tr></table></main>"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let graph = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+        let sourceCell = try #require(graph.nodes.first { $0.tagName == "td" })
+        let browserContainerDOMPath = "html:nth-of-type(1) > body:nth-of-type(1) > main:nth-of-type(1) > table:nth-of-type(1) > tbody:nth-of-type(1)"
+        let browserDOMPath = "html:nth-of-type(1) > body:nth-of-type(1) > main:nth-of-type(1) > table:nth-of-type(1) > tbody:nth-of-type(1) > tr:nth-of-type(1) > td:nth-of-type(1)"
+        let browserContainerReference = "ogref-session:node:webkit:implicit-tbody"
+        let browserReference = "ogref-session:node:webkit:cell:revision"
+
+        // 検証内容：browser生成containerとauthored cellを取り込み、containerのadoptionを試してからcellをdry-runする（When）
+        await store.ingestNodePayloadAndWait([
+            Self.unannotatedBrowserNodePayload(
+                id: browserContainerReference,
+                standardID: "",
+                selector: "",
+                domPath: browserContainerDOMPath,
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "tbody"
+            ),
+            [
+                "id": browserReference,
+                "authoredID": "",
+                "standardID": "",
+                "internalID": "",
+                "reference": browserReference,
+                "annotationStatus": "none",
+                "referenceStability": "session",
+                "locator": [
+                    "documentURL": fixture.htmlURL.standardizedFileURL.absoluteString,
+                    "domPath": browserDOMPath,
+                    "sourceRange": ["start": -1, "end": -1],
+                    "contentHash": "webkit-outer-html"
+                ],
+                "tagName": "td",
+                "type": "",
+                "cssVariables": [String: String](),
+                "hidden": false,
+                "locked": false,
+                "depth": 4
+            ]
+        ])
+        store.selectNode(id: browserContainerReference)
+        let inspectedContainer = try #require(store.selectedNode)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let containerPreview = store.nodeAdoptionPreview
+        let htmlAfterContainerAttempt = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        store.selectNode(id: browserReference)
+        let inspectedCell = try #require(store.selectedNode)
+        let sourceLocator = try #require(inspectedCell.locator)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：browser-only tbodyはinspection-onlyで、cellにはShared source range/hash/parentが採用されdry-runも原文を変更しない（Then）
+        #expect(inspectedContainer.tagName == "tbody")
+        #expect(inspectedContainer.referenceStability == .session)
+        #expect(inspectedContainer.locator?.sourceStart == -1)
+        #expect(!inspectedContainer.canAdoptIdentity)
+        #expect(containerPreview == nil)
+        #expect(htmlAfterContainerAttempt == originalHTML)
+        #expect(sourceCell.locator.domPath == "main:nth-of-type(1) > table:nth-of-type(1) > tr:nth-of-type(1) > td:nth-of-type(1)")
+        #expect(inspectedCell.reference == sourceCell.reference)
+        #expect(inspectedCell.referenceStability == .session)
+        #expect(inspectedCell.parentReference == sourceCell.parentReference)
+        #expect(sourceLocator.domPath == sourceCell.locator.domPath)
+        #expect(sourceLocator.sourceStart == sourceCell.locator.sourceRange.start)
+        #expect(sourceLocator.sourceEnd == sourceCell.locator.sourceRange.end)
+        #expect(sourceLocator.contentHash == sourceCell.locator.contentHash)
+        #expect(preview.changed)
+        #expect(preview.reference?.hasPrefix("ogref-session:adoption:") == true)
+        #expect(preview.unifiedDiff.contains("data-og-internal-id"))
+        #expect(htmlAfterDryRun == originalHTML)
+    }
+
+    /// 論理名（日本語）: Browser implicit colgroup source mergeテスト
+    /// 概要: WebKitが補完した`colgroup`はinspection-onlyに保ち、authored `col`だけをShared source locatorへ結びます。
+    @Test("WebKitが補完したcolgroupを越えてauthored colをsourceへmergeする")
+    func testImplicitBrowserColumnGroupMergesAuthoredColumnToSourceLocator() async throws {
+        // コンディション：colgroupを省略したtable sourceと、WebKit補完後のcolgroup / col payloadを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = "<!doctype html><table><col><tr><td>Cell</td></tr></table>"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceColumn = try #require(
+            try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+                .nodes
+                .first { $0.tagName == "col" }
+        )
+        let browserColumnGroupReference = "ogref-session:node:webkit:implicit-colgroup"
+        let browserColumnReference = "ogref-session:node:webkit:authored-col"
+        let browserColumnGroupPath = "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > colgroup:nth-of-type(1)"
+        let browserColumnPath = browserColumnGroupPath + " > col:nth-of-type(1)"
+
+        // 検証内容：browser生成colgroupと、その配下へ移されたauthored colをStoreへ取り込む（When）
+        await store.ingestNodePayloadAndWait([
+            Self.unannotatedBrowserNodePayload(
+                id: browserColumnGroupReference,
+                standardID: "",
+                selector: "",
+                domPath: browserColumnGroupPath,
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "colgroup"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: browserColumnReference,
+                standardID: "",
+                selector: "",
+                domPath: browserColumnPath,
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "col"
+            )
+        ])
+        let inspectedColumnGroup = try #require(
+            store.nodes.first { $0.id == browserColumnGroupReference }
+        )
+        store.selectNode(id: browserColumnReference)
+        let inspectedColumn = try #require(store.selectedNode)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：implicit colgroupはadopt不可で、authored colにはsource range/hashが戻りdry-runも原文を変更しない（Then）
+        #expect(!inspectedColumnGroup.canAdoptIdentity)
+        #expect(inspectedColumnGroup.locator?.sourceStart == -1)
+        #expect(sourceColumn.locator.domPath == "table:nth-of-type(1) > col:nth-of-type(1)")
+        #expect(inspectedColumn.reference == sourceColumn.reference)
+        #expect(inspectedColumn.locator?.domPath == sourceColumn.locator.domPath)
+        #expect(inspectedColumn.locator?.sourceStart == sourceColumn.locator.sourceRange.start)
+        #expect(inspectedColumn.canAdoptIdentity)
+        #expect(preview.changed)
+        #expect(preview.unifiedDiff.contains("data-og-internal-id"))
+        #expect(htmlAfterDryRun == originalHTML)
+    }
+
+    /// 論理名（日本語）: Browser implicit document container source mergeテスト
+    /// 概要: `head` / `body`を省略したsource nodeをWebKitが各containerへ配置してもShared locatorへ結びます。
+    @Test("WebKitが補完したhead bodyを越えてauthored nodeをsourceへmergeする")
+    func testImplicitBrowserHeadAndBodyMergeToAuthoredSourceLocators() async throws {
+        // コンディション：body開始前後に同tag metadataを置き、head/bodyを省略した標準HTMLを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = "<!doctype html><html><style>.head{color:red}</style><title>Page</title><main>Main</main><style>.body{color:blue}</style></html>"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNodes = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference).nodes
+        let sourceTitle = try #require(sourceNodes.first { $0.tagName == "title" })
+        let sourceMain = try #require(sourceNodes.first { $0.tagName == "main" })
+        let sourceStyles = sourceNodes.filter { $0.tagName == "style" }
+        let sourceHeadStyle = try #require(sourceStyles.first)
+        let sourceBodyStyle = try #require(sourceStyles.last)
+        let browserHeadStyleReference = "ogref-session:node:webkit:implicit-head-style"
+        let browserTitleReference = "ogref-session:node:webkit:implicit-head-title"
+        let browserMainReference = "ogref-session:node:webkit:implicit-body-main"
+        let browserBodyStyleReference = "ogref-session:node:webkit:implicit-body-style"
+
+        // 検証内容：WebKit補完後のhead/titleとbody/main pathを持つpayloadを取り込む（When）
+        await store.ingestNodePayloadAndWait([
+            Self.unannotatedBrowserNodePayload(
+                id: browserHeadStyleReference,
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > head:nth-of-type(1) > style:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "style"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: browserTitleReference,
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > head:nth-of-type(1) > title:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "title"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: browserMainReference,
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > main:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "main"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: browserBodyStyleReference,
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > style:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "style"
+            )
+        ])
+        let inspectedHeadStyle = try #require(store.nodes.first { $0.id == browserHeadStyleReference })
+        let inspectedTitle = try #require(store.nodes.first { $0.id == browserTitleReference })
+        let inspectedMain = try #require(store.nodes.first { $0.id == browserMainReference })
+        let inspectedBodyStyle = try #require(store.nodes.first { $0.id == browserBodyStyleReference })
+        store.selectNode(id: browserHeadStyleReference)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let headPreview = try #require(store.nodeAdoptionPreview)
+        store.selectNode(id: browserBodyStyleReference)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let bodyPreview = try #require(store.nodeAdoptionPreview)
+        let afterInspection = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：head/body双方のbrowser nodeへsource reference/rangeが戻り、inspectionだけではsourceを変更しない（Then）
+        #expect(sourceTitle.locator.domPath == "html:nth-of-type(1) > title:nth-of-type(1)")
+        #expect(sourceMain.locator.domPath == "html:nth-of-type(1) > main:nth-of-type(1)")
+        #expect(sourceHeadStyle.locator.domPath == "html:nth-of-type(1) > style:nth-of-type(1)")
+        #expect(sourceBodyStyle.locator.domPath == "html:nth-of-type(1) > style:nth-of-type(2)")
+        #expect(inspectedHeadStyle.reference == sourceHeadStyle.reference)
+        #expect(inspectedHeadStyle.locator?.sourceStart == sourceHeadStyle.locator.sourceRange.start)
+        #expect(inspectedTitle.reference == sourceTitle.reference)
+        #expect(inspectedTitle.locator?.sourceStart == sourceTitle.locator.sourceRange.start)
+        #expect(inspectedMain.reference == sourceMain.reference)
+        #expect(inspectedMain.locator?.sourceStart == sourceMain.locator.sourceRange.start)
+        #expect(inspectedBodyStyle.reference == sourceBodyStyle.reference)
+        #expect(inspectedBodyStyle.locator?.sourceStart == sourceBodyStyle.locator.sourceRange.start)
+        #expect(inspectedHeadStyle.reference != inspectedBodyStyle.reference)
+        #expect(headPreview.reference != bodyPreview.reference)
+        #expect(headPreview.changed && bodyPreview.changed)
+        #expect(afterInspection == originalHTML)
+    }
+
+    /// 論理名（日本語）: Implicit / authored table container順序投影テスト
+    /// 概要: implicit/authored `tbody` / `colgroup`のbrowser sibling indexをsource順に投影し、selectorなしnodeを正しく結びます。
+    @Test("implicitとauthored table groupをsource順browser pathでmergeしてadoptできる")
+    func testImplicitAndAuthoredTableGroupsProjectBrowserSiblingIndexes() async throws {
+        // コンディション：direct/authored colとtrを同じtableに置き、全nodeをsafe selectorなしにする（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = """
+        <!doctype html><html><body><table>
+          <col><colgroup><col></colgroup>
+          <tr><td>Implicit</td></tr>
+          <tbody><tr><td>Authored</td></tr></tbody>
+        </table></body></html>
+        """
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNodes = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference).nodes
+        let sourceColumnGroup = try #require(sourceNodes.first { $0.tagName == "colgroup" })
+        let sourceTableBody = try #require(sourceNodes.first { $0.tagName == "tbody" })
+        let sourceColumns = sourceNodes.filter { $0.tagName == "col" }
+        let sourceCells = sourceNodes.filter { $0.tagName == "td" }
+        let directColumnSource = try #require(sourceColumns.first)
+        let authoredColumnSource = try #require(sourceColumns.last)
+        let directCellSource = try #require(sourceCells.first)
+        let authoredCellSource = try #require(sourceCells.last)
+
+        // 検証内容：WebKitでimplicit groupが先に数えられたbrowser pathをselectorなしで取り込む（When）
+        await store.ingestNodePayloadAndWait([
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-implicit-column-group",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > colgroup:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "colgroup"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-direct-column",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > colgroup:nth-of-type(1) > col:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "col"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-authored-column",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > colgroup:nth-of-type(2) > col:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "col"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-implicit-table-body",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > tbody:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "tbody"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-direct-cell",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > tbody:nth-of-type(1) > tr:nth-of-type(1) > td:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "td"
+            ),
+            Self.unannotatedBrowserNodePayload(
+                id: "browser-authored-cell",
+                standardID: "",
+                selector: "",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > table:nth-of-type(1) > tbody:nth-of-type(2) > tr:nth-of-type(1) > td:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "td"
+            )
+        ])
+        let implicitColumnGroup = try #require(
+            store.nodes.first { $0.id == "browser-implicit-column-group" }
+        )
+        let directColumn = try #require(store.nodes.first { $0.id == "browser-direct-column" })
+        let authoredColumn = try #require(store.nodes.first { $0.id == "browser-authored-column" })
+        let implicitTableBody = try #require(
+            store.nodes.first { $0.id == "browser-implicit-table-body" }
+        )
+        let directCell = try #require(store.nodes.first { $0.id == "browser-direct-cell" })
+        let authoredCell = try #require(store.nodes.first { $0.id == "browser-authored-cell" })
+        store.selectNode(id: "browser-implicit-table-body")
+        store.previewSelectedNodeAdoption(scope: .node)
+        let implicitPreview = store.nodeAdoptionPreview
+        store.selectNode(id: "browser-direct-column")
+        store.previewSelectedNodeAdoption(scope: .node)
+        let columnPreview = try #require(store.nodeAdoptionPreview)
+        store.selectNode(id: "browser-direct-cell")
+        store.previewSelectedNodeAdoption(scope: .node)
+        let cellPreview = try #require(store.nodeAdoptionPreview)
+        let afterDryRuns = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：implicit groupを含むbrowser indexごとに正しいsource rangeへ戻り、direct col/trもdry-run可能で無書込となる（Then）
+        #expect(sourceColumns.allSatisfy { $0.locator.selector == nil })
+        #expect(sourceCells.allSatisfy { $0.locator.selector == nil })
+        #expect(sourceColumnGroup.locator.domPath.hasSuffix("colgroup:nth-of-type(1)"))
+        #expect(sourceTableBody.locator.domPath.hasSuffix("tbody:nth-of-type(1)"))
+        #expect(!implicitColumnGroup.canAdoptIdentity)
+        #expect(!implicitTableBody.canAdoptIdentity)
+        #expect(implicitColumnGroup.locator?.sourceStart == -1)
+        #expect(implicitTableBody.locator?.sourceStart == -1)
+        #expect(implicitColumnGroup.reference != sourceColumnGroup.reference)
+        #expect(implicitTableBody.reference != sourceTableBody.reference)
+        #expect(implicitPreview == nil)
+        #expect(directColumn.reference == directColumnSource.reference)
+        #expect(authoredColumn.reference == authoredColumnSource.reference)
+        #expect(directCell.reference == directCellSource.reference)
+        #expect(authoredCell.reference == authoredCellSource.reference)
+        #expect(directColumn.locator?.sourceStart == directColumnSource.locator.sourceRange.start)
+        #expect(authoredColumn.locator?.sourceStart == authoredColumnSource.locator.sourceRange.start)
+        #expect(directCell.locator?.sourceStart == directCellSource.locator.sourceRange.start)
+        #expect(authoredCell.locator?.sourceStart == authoredCellSource.locator.sourceRange.start)
+        #expect(Set([directColumn.reference, authoredColumn.reference]).count == 2)
+        #expect(Set([directCell.reference, authoredCell.reference]).count == 2)
+        #expect(columnPreview.changed && cellPreview.changed)
+        #expect(columnPreview.reference != cellPreview.reference)
+        #expect(afterDryRuns == originalHTML)
+    }
+
+    /// 論理名（日本語）: Character reference標準ID source mergeテスト
+    /// 概要: HTML character referenceを含む標準IDをWebKitと同じDOM値へ復号し、安全なselectorでsource locatorへmergeできることを確認します。
+    @Test("character referenceを含む標準IDをdecoded selectorでmergeしてadopt previewできる")
+    func testCharacterReferenceStandardIDMergesWithDecodedBrowserSelector() async throws {
+        // コンディション：numeric character referenceで空白を表した標準IDと、WebKitが復号したselector payloadを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = "<!doctype html><main id=\"hero&#32;card\">Hero</main>"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let sourceNode = try #require(
+            try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+                .nodes
+                .first { $0.tagName == "main" }
+        )
+        let browserReference = "ogref-session:node:webkit:entity-standard-id"
+
+        // 検証内容：WebKitのdecoded ID / selectorを持つ未注釈payloadを取り込み、adoptionをdry-runする（When）
+        await store.ingestNodePayloadAndWait([
+            Self.unannotatedBrowserNodePayload(
+                id: browserReference,
+                standardID: "hero card",
+                selector: "[id=\"hero card\"]",
+                domPath: "html:nth-of-type(1) > body:nth-of-type(1) > main:nth-of-type(1)",
+                documentURL: fixture.htmlURL.standardizedFileURL.absoluteString,
+                tagName: "main"
+            )
+        ])
+        store.selectNode(id: browserReference)
+        let inspectedNode = try #require(store.selectedNode)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：decoded標準IDがShared sourceと一致し、既存selectorを再利用してinternal IDだけを提案しsourceは未変更になる（Then）
+        #expect(sourceNode.attributes["id"] == "hero card")
+        #expect(sourceNode.locator.selector == "[id=\"hero card\"]")
+        #expect(inspectedNode.reference == sourceNode.reference)
+        #expect(inspectedNode.standardID == "hero card")
+        #expect(inspectedNode.locator?.sourceStart == sourceNode.locator.sourceRange.start)
+        #expect(inspectedNode.canAdoptIdentity)
+        #expect(preview.changed)
+        #expect(preview.unifiedDiff.contains("data-og-internal-id"))
+        #expect(!preview.unifiedDiff.contains("data-og-id="))
+        #expect(htmlAfterDryRun == originalHTML)
+    }
+
+    /// 論理名（日本語）: Optional end tag App source mergeテスト
+    /// 概要: 終了`li`を省略した標準HTMLでもbrowser sibling pathからShared source locatorを取得し、adoption dry-runを行えることを確認します。
+    @Test("optional li end tagをbrowser sibling pathでmergeしてadopt previewできる")
+    func testOptionalListItemEndTagsMergeAndPreviewAdoption() async throws {
+        // コンディション：2つのliの終了tagを標準HTMLの規則で省略したpageを用意する（Given）
+        let fixture = try EditorStoreHistoryFixture()
+        defer { fixture.cleanUp() }
+        let originalHTML = "<!doctype html><html><body><ul><li>First<li>Second</ul></body></html>"
+        try originalHTML.write(to: fixture.htmlURL, atomically: true, encoding: .utf8)
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        _ = try selectFirstPage(in: store)
+        let pageReference = try #require(store.selectedPageReferenceID())
+        let core = OpenGraphiteAgentCore(
+            contract: OpenGraphiteContract.loadDefault(startingAt: fixture.projectURL)
+        )
+        let listItems = try core.pageGraph(projectURL: fixture.projectURL, pageID: pageReference)
+            .nodes
+            .filter { $0.tagName == "li" }
+        let secondSource = try #require(listItems.last)
+        let browserReference = "ogref-session:node:webkit:second-li"
+        let browserDOMPath = "html:nth-of-type(1) > body:nth-of-type(1) > ul:nth-of-type(1) > li:nth-of-type(2)"
+
+        // 検証内容：browserで2番目のsiblingとなったli payloadを取り込み、adoptionをdry-runする（When）
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": browserReference,
+                "authoredID": "",
+                "standardID": "",
+                "internalID": "",
+                "reference": browserReference,
+                "annotationStatus": "none",
+                "referenceStability": "session",
+                "locator": [
+                    "documentURL": fixture.htmlURL.standardizedFileURL.absoluteString,
+                    "domPath": browserDOMPath,
+                    "sourceRange": ["start": -1, "end": -1],
+                    "contentHash": "webkit-second-li"
+                ],
+                "tagName": "li",
+                "type": "",
+                "cssVariables": [String: String](),
+                "hidden": false,
+                "locked": false,
+                "depth": 1
+            ]
+        ])
+        store.selectNode(id: browserReference)
+        let inspectedItem = try #require(store.selectedNode)
+        store.previewSelectedNodeAdoption(scope: .node)
+        let preview = try #require(store.nodeAdoptionPreview)
+        let htmlAfterDryRun = try String(contentsOf: fixture.htmlURL, encoding: .utf8)
+
+        // 期待値：2つのliはsibling pathを持ち、選択nodeは正確なsource range/hashでdry-runされ、source bytesは不変である（Then）
+        #expect(listItems.count == 2)
+        #expect(listItems.map(\.locator.domPath).allSatisfy { !$0.contains("li:nth-of-type(1) > li") })
+        #expect(secondSource.locator.domPath == browserDOMPath)
+        #expect(inspectedItem.reference == secondSource.reference)
+        #expect(inspectedItem.locator?.sourceStart == secondSource.locator.sourceRange.start)
+        #expect(inspectedItem.locator?.sourceEnd == secondSource.locator.sourceRange.end)
+        #expect(preview.changed)
+        #expect(preview.unifiedDiff.contains("data-og-internal-id"))
+        #expect(htmlAfterDryRun == originalHTML)
+    }
+
     /// 論理名（日本語）: コンポーネント継承元解決テスト
     /// 概要: 選択中 instance の継承元 master を Inspector 用情報へ解決し、component canvas へ移動できることを確認します。
     @Test("instance選択から継承元componentへ移動できる")
@@ -4685,7 +7065,7 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-        <FeatureCard data-og-id="feature-card-master" data-og-type="frame" data-og-component="feature-card" data-og-component-kind="master"></FeatureCard>
+        <feature-card data-og-id="feature-card-master" data-og-component="feature-card"><template></template></feature-card>
         </body></html>
         """.write(to: componentURL, atomically: true, encoding: .utf8)
         let project = OpenGraphiteProject(
@@ -4743,7 +7123,7 @@ struct EditorStoreTests {
     /// 論理名（日本語）: Runtime展開Component CSS同期テスト
     /// 概要: ページ上の runtime 展開済み component node が、component source CSS を Inspector 表示値と保存先として使うことを確認します。
     @Test("展開component nodeはsource CSSをInspector値と保存先に使う")
-    func testGeneratedComponentNodeUsesComponentSourceCSS() throws {
+    func testGeneratedComponentNodeUsesComponentSourceCSS() async throws {
         // コンディション：component master と page instance を持つ一時プロジェクトを用意する（Given）
         let fixture = try EditorStoreHistoryFixture()
         defer { fixture.cleanUp() }
@@ -4753,7 +7133,7 @@ struct EditorStoreTests {
         try """
         <!doctype html>
         <html><body>
-        <SiteHeader data-og-id="site-header-master" data-og-type="frame" data-og-layout="horizontal" data-og-component="site-header" data-og-component-kind="master" data-og-internal-id="site-header-node"></SiteHeader>
+        <site-header data-og-id="site-header-master" data-og-component="site-header" data-og-internal-id="site-header-node"><template></template></site-header>
         </body></html>
         """.write(to: componentURL, atomically: true, encoding: .utf8)
         try """
@@ -4763,6 +7143,12 @@ struct EditorStoreTests {
           padding: 24px 0 18px;
           background: #08090a;
           z-index: 30;
+        }
+
+        @media (min-width: 500px) {
+          [data-og-internal-id="site-header-node"] {
+            top: 24px;
+          }
         }
         """.write(
             to: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: componentURL),
@@ -4801,10 +7187,23 @@ struct EditorStoreTests {
         try JSONEncoder().encode(project).write(to: fixture.projectURL)
         let store = EditorStore()
         store.openProject(at: fixture.projectURL)
+        let componentPage = try #require(store.loadedProject?.project.collections.first?.components.first)
+        store.selectComponentPage(internalID: componentPage.internalID)
+        await store.ingestNodePayloadAndWait([
+            [
+                "id": "site-header-master",
+                "internalID": "site-header-node",
+                "tagName": "siteheader",
+                "activeMediaQueries": [String](),
+                "cssVariables": [String: String](),
+                "depth": 0
+            ]
+        ])
+        store.selectPagesSegment()
         _ = try selectFirstPage(in: store)
 
         // 検証内容：runtime 展開後の component node payload を取り込み、CSS を更新する（When）
-        store.ingestNodePayload([
+        await store.ingestNodePayloadAndWait([
             [
                 "id": "site-header",
                 "internalID": "site-header-node",
@@ -4813,11 +7212,14 @@ struct EditorStoreTests {
                 "layout": "horizontal",
                 "sourceComponentID": "site-header",
                 "sourceInstanceID": "site-header",
+                "activeMediaQueries": ["(min-width: 500px)"],
                 "cssVariables": [String: String](),
                 "depth": 1
             ]
         ])
         store.selectNode(id: "site-header")
+        let initialReloadToken = store.reloadToken(for: fixture.htmlURL)
+        let activeSourceTop = store.selectedNode?.cssVariables["top"]
         store.updateCSSVariable(key: "top", value: "12px")
 
         // 期待値：Inspector 用 node は component CSS を表示し、編集結果も component companion CSS へ保存される（Then）
@@ -4829,9 +7231,13 @@ struct EditorStoreTests {
         #expect(selectedNode.cssVariables["position"] == "sticky")
         #expect(selectedNode.cssVariables["background"] == "#08090a")
         #expect(selectedNode.cssVariables["z-index"] == "30")
+        #expect(activeSourceTop == "24px")
         #expect(store.selectedNode?.cssVariables["top"] == "12px")
+        #expect(componentCSS.contains("top: 0;"))
         #expect(componentCSS.contains("top: 12px;"))
-        #expect(store.cssMutation?.pageURL == fixture.htmlURL)
+        #expect(!componentCSS.contains("top: 24px;"))
+        #expect(store.cssMutation == nil)
+        #expect(store.reloadToken(for: fixture.htmlURL) == initialReloadToken + 1)
         #expect(!FileManager.default.fileExists(atPath: OpenGraphiteCompanionCSSDocument.companionURL(forHTMLURL: fixture.htmlURL).path))
         #expect(store.lastError == nil)
     }
@@ -4998,6 +7404,125 @@ struct EditorStoreTests {
         #expect(componentReferenceID == "ogref:component:\(componentCollection.internalID):\(componentPage.internalID)")
     }
 
+    /// 論理名（日本語）: 未注釈browser node payload生成関数
+    /// 処理概要: source mergeテスト用に、safe selectorとbrowser DOM pathを持つ最小WebCanvas payloadを生成します。
+    ///
+    /// - Parameters:
+    ///   - id: WebCanvas session selection key。
+    ///   - standardID: authored標準`id`。
+    ///   - selector: WebKitが確認した一意なsafe selector。
+    ///   - domPath: WebKit補完後のDOM path。
+    ///   - documentURL: 対象resource URL。
+    ///   - tagName: 対象の標準tag名。
+    /// - Returns: `ingestNodePayload` へ渡す辞書。
+    private static func unannotatedBrowserNodePayload(
+        id: String,
+        standardID: String,
+        selector: String,
+        domPath: String,
+        documentURL: String,
+        tagName: String
+    ) -> [String: Any] {
+        [
+            "id": id,
+            "authoredID": "",
+            "standardID": standardID,
+            "internalID": "",
+            "reference": id.hasPrefix("ogref-session:") ? id : "ogref-session:node:webkit:\(id)",
+            "annotationStatus": "none",
+            "referenceStability": "session",
+            "locator": [
+                "documentURL": documentURL,
+                "selector": selector,
+                "domPath": domPath,
+                "sourceRange": ["start": -1, "end": -1],
+                "contentHash": "webkit-\(id)"
+            ],
+            "tagName": tagName,
+            "cssVariables": [String: String](),
+            "hidden": false,
+            "locked": false,
+            "depth": 3
+        ]
+    }
+
+    /// 論理名（日本語）: Capability evidence payload変換関数
+    /// 処理概要: Shared nodeの標準DOM evidenceをWebCanvas payloadと同じ辞書表現へ変換します。
+    ///
+    /// - Parameter evidence: Shared inspectionが返したcapability evidence。
+    /// - Returns: `ingestNodePayload`へ渡す辞書。
+    private static func capabilityEvidencePayload(
+        _ evidence: OpenGraphiteNodeCapabilityEvidence
+    ) -> [String: Any] {
+        [
+            "isProjectResourceRoot": evidence.isProjectResourceRoot,
+            "isNativeControl": evidence.isNativeControl,
+            "isCustomElement": evidence.isCustomElement,
+            "isLink": evidence.isLink,
+            "hasDirectText": evidence.hasDirectText,
+            "hasElementChildren": evidence.hasElementChildren,
+            "hasMediaContent": evidence.hasMediaContent,
+            "hasSVGContent": evidence.hasSVGContent,
+            "hasMaskContent": evidence.hasMaskContent,
+            "ariaRole": evidence.ariaRole ?? "",
+            "resolvedDisplay": evidence.resolvedDisplay ?? ""
+        ]
+    }
+
+    /// 論理名（日本語）: Source対応WebCanvas payload生成関数
+    /// 処理概要: Shared source nodeへ意図的なruntime capability/evidence/属性差を重ねる安全側mergeテスト用payloadを生成します。
+    ///
+    /// - Parameters:
+    ///   - id: WebCanvas selection key。
+    ///   - sourceNode: locatorとstable internal IDを供給するShared node。
+    ///   - capabilities: WebCanvasが主張するcapability raw value一覧。
+    ///   - evidence: WebCanvasが主張するsemantic evidence。
+    ///   - attributes: WebCanvas runtime属性辞書。
+    ///   - role: WebCanvas runtime role。
+    ///   - hidden: WebCanvas runtime hidden属性状態。
+    ///   - locked: WebCanvas runtime lock状態。
+    /// - Returns: `ingestNodePayload`へ渡す辞書。
+    private static func browserPayload(
+        id: String,
+        sourceNode: OpenGraphiteAgentNode,
+        capabilities: [String],
+        evidence: [String: Any],
+        attributes: [String: String],
+        role: String,
+        hidden: Bool,
+        locked: Bool
+    ) -> [String: Any] {
+        [
+            "id": id,
+            "authoredID": sourceNode.id,
+            "standardID": sourceNode.attributes["id"] ?? "",
+            "internalID": sourceNode.internalID,
+            "reference": sourceNode.reference,
+            "annotationStatus": sourceNode.annotationStatus.rawValue,
+            "referenceStability": sourceNode.referenceStability.rawValue,
+            "locator": [
+                "documentURL": sourceNode.locator.documentURL,
+                "selector": sourceNode.locator.selector ?? "",
+                "domPath": sourceNode.locator.domPath,
+                "sourceRange": [
+                    "start": sourceNode.locator.sourceRange.start,
+                    "end": sourceNode.locator.sourceRange.end
+                ],
+                "contentHash": sourceNode.locator.contentHash
+            ],
+            "tagName": sourceNode.tagName,
+            "capabilities": capabilities,
+            "capabilityEvidence": evidence,
+            "attributes": attributes,
+            "role": role,
+            "computedStyle": ["display": evidence["resolvedDisplay"] as? String ?? "block"],
+            "cssVariables": sourceNode.cssVariables,
+            "hasHiddenAttribute": hidden,
+            "locked": locked,
+            "depth": sourceNode.depth
+        ]
+    }
+
     /// 論理名（日本語）: 先頭ページ選択ヘルパー
     /// 概要: page 編集系テストで、Chapter 初期表示とは別に明示的な HTML カード選択を作ります。
     ///
@@ -5020,6 +7545,18 @@ struct EditorStoreTests {
     }
 }
 
+@MainActor
+private extension EditorStore {
+    /// 論理名（日本語）: テスト用ノードpayload補完待機関数
+    /// 処理概要: 軽量Layers payloadを取り込み、background source graphの補完完了まで待機します。
+    ///
+    /// - Parameter payload: DOMから収集されたノード辞書の配列。
+    func ingestNodePayloadAndWait(_ payload: [[String: Any]]) async {
+        ingestNodePayload(payload)
+        await waitForNodeSourceEnrichment()
+    }
+}
+
 /// 論理名（日本語）: エディターストア履歴テストfixture
 /// 概要: 一時ディレクトリに `.ogp` と HTML を作成し、同期履歴テスト用のプロジェクトを提供します。
 private struct EditorStoreHistoryFixture {
@@ -5038,6 +7575,12 @@ private struct EditorStoreHistoryFixture {
         htmlURL = publicURL.appendingPathComponent("index.html")
 
         try FileManager.default.createDirectory(at: publicURL, withIntermediateDirectories: true)
+        let cssLibraryURL = rootURL.appendingPathComponent("CSS/OpenGraphite.css")
+        try FileManager.default.createDirectory(
+            at: cssLibraryURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try "".write(to: cssLibraryURL, atomically: true, encoding: .utf8)
         try "<!doctype html>\n<html><body>initial</body></html>".write(
             to: htmlURL,
             atomically: true,
@@ -5102,6 +7645,219 @@ private struct EditorStoreHistoryFixture {
     /// 論理名（日本語）: fixture削除関数
     /// 処理概要: テストで作成した一時ディレクトリを削除します。
     func cleanUp() {
+        try? FileManager.default.removeItem(at: rootURL)
+    }
+}
+
+/// 論理名（日本語）: Project migration統合テストfixture
+/// 概要: legacy Web contract、preview field、複数page/component、companion CSSを持つ一時Projectとsource snapshotを提供します。
+private struct EditorStoreMigrationFixture {
+    let rootURL: URL
+    let publicURL: URL
+    let secondaryDirectoryURL: URL
+    let projectURL: URL
+    let contractURL: URL
+    let cssLibraryURL: URL
+    let homeHTMLURL: URL
+    let homeCSSURL: URL
+    let secondaryHTMLURL: URL
+    let secondaryCSSURL: URL
+    let componentHTMLURL: URL
+    let componentCSSURL: URL
+
+    /// 論理名（日本語）: Project migration fixture初期化関数
+    /// 処理概要: Web contract 0.1.0、既知legacy runtime属性/preview fieldを持つ複数source Projectを一時領域へ作成します。
+    init() throws {
+        rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenGraphiteEditorStoreMigration-\(UUID().uuidString)")
+        publicURL = rootURL.appendingPathComponent("public", isDirectory: true)
+        secondaryDirectoryURL = publicURL.appendingPathComponent("locked", isDirectory: true)
+        projectURL = rootURL.appendingPathComponent("Project.ogp")
+        contractURL = rootURL.appendingPathComponent("OpenGraphite.contract.json")
+        cssLibraryURL = rootURL.appendingPathComponent("CSS/OpenGraphite.css")
+        homeHTMLURL = publicURL.appendingPathComponent("index.html")
+        homeCSSURL = publicURL.appendingPathComponent("index.css")
+        secondaryHTMLURL = secondaryDirectoryURL.appendingPathComponent("secondary.html")
+        secondaryCSSURL = secondaryDirectoryURL.appendingPathComponent("secondary.css")
+        componentHTMLURL = publicURL.appendingPathComponent("components.html")
+        componentCSSURL = publicURL.appendingPathComponent("components.css")
+
+        try FileManager.default.createDirectory(at: secondaryDirectoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: cssLibraryURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        let homeHTML = """
+        <!doctype html>
+        <html>
+        <body>
+          <main id="home">
+            <article data-og-internal-id="kept-article" data-og-selected="true">
+              <p>Standard child</p>
+            </article>
+          </main>
+        </body>
+        </html>
+        """
+        let secondaryHTML = """
+        <!doctype html>
+        <html>
+        <body>
+          <aside class="secondary" data-og-editing="true">
+            <span>Secondary child</span>
+          </aside>
+        </body>
+        </html>
+        """
+        let componentHTML = """
+        <!doctype html>
+        <html>
+        <body>
+          <fixture-card data-og-component="fixture-card" data-og-internal-id="fixture-source">
+            <span>Component source</span>
+          </fixture-card>
+          <og-placement
+            data-og-internal-id="fixture-placement"
+            data-og-source-component-internal-id="fixture-component"
+            data-og-source-node-internal-id="fixture-source"
+          ></og-placement>
+          <og-placement
+            data-og-internal-id="fixture-collapsed-placement"
+            data-og-source-component-internal-id="fixture-component"
+            data-og-source-node-internal-id="fixture-source"
+          ></og-placement>
+        </body>
+        </html>
+        """
+        try homeHTML.write(to: homeHTMLURL, atomically: true, encoding: .utf8)
+        try secondaryHTML.write(to: secondaryHTMLURL, atomically: true, encoding: .utf8)
+        try componentHTML.write(to: componentHTMLURL, atomically: true, encoding: .utf8)
+        try ":root { --fixture-accent: #336699; }\n".write(
+            to: cssLibraryURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "#home { display: block; }\n".write(to: homeCSSURL, atomically: true, encoding: .utf8)
+        try ".secondary { display: block; }\n".write(
+            to: secondaryCSSURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "fixture-card { display: block; }\n".write(
+            to: componentCSSURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        var legacyContract = OpenGraphiteContract.builtIn
+        legacyContract.version = "0.1.0"
+        let contractData = try JSONEncoder().encode(legacyContract)
+        try contractData.write(to: contractURL)
+
+        let project = OpenGraphiteProject(
+            version: "1",
+            name: "Migration Fixture",
+            repositoryRoot: nil,
+            htmlRoot: "public",
+            cssLibrary: "CSS/OpenGraphite.css",
+            pages: [
+                OpenGraphitePage(
+                    id: "home",
+                    path: "index.html",
+                    canvas: OpenGraphiteCanvas(x: 0, y: 0, width: 800, height: 600)
+                ),
+                OpenGraphitePage(
+                    id: "secondary",
+                    path: "locked/secondary.html",
+                    canvas: OpenGraphiteCanvas(x: 840, y: 0, width: 800, height: 600)
+                )
+            ],
+            collections: [
+                OpenGraphiteComponentCollection(
+                    id: "components",
+                    internalID: "fixture-collection",
+                    components: [
+                        OpenGraphitePage(
+                            id: "fixture-component",
+                            internalID: "fixture-component",
+                            path: "components.html",
+                            canvas: OpenGraphiteCanvas(
+                                x: 0,
+                                y: 0,
+                                width: 800,
+                                height: 600,
+                                previewContext: OpenGraphitePreviewContext(
+                                    fieldMocks: ["selectedLanguage": "ja"],
+                                    placementMocks: [
+                                        "fixture-placement": [
+                                            "codeViewerMode": "preview",
+                                            "selectedLanguage": "ja"
+                                        ],
+                                        "fixture-collapsed-placement": [
+                                            "placementMode": "collapsed",
+                                            "customState": "kept"
+                                        ]
+                                    ]
+                                )
+                            )
+                        )
+                    ]
+                )
+            ]
+        )
+        let projectData = try JSONEncoder().encode(project)
+        try projectData.write(to: projectURL)
+    }
+
+    /// 論理名（日本語）: Project migration source snapshot取得関数
+    /// 処理概要: migration前後で暗黙変更や部分書込を検出するため、fixtureの全source bytesを相対path別に読み込みます。
+    ///
+    /// - Returns: Project root相対pathをkey、file bytesをvalueとする辞書。
+    func sourceSnapshot() throws -> [String: Data] {
+        let sourceURLs = [
+            "Project.ogp": projectURL,
+            "OpenGraphite.contract.json": contractURL,
+            "CSS/OpenGraphite.css": cssLibraryURL,
+            "public/index.html": homeHTMLURL,
+            "public/index.css": homeCSSURL,
+            "public/locked/secondary.html": secondaryHTMLURL,
+            "public/locked/secondary.css": secondaryCSSURL,
+            "public/components.html": componentHTMLURL,
+            "public/components.css": componentCSSURL
+        ]
+        return try sourceURLs.reduce(into: [String: Data]()) { snapshot, entry in
+            snapshot[entry.key] = try Data(contentsOf: entry.value)
+        }
+    }
+
+    /// 論理名（日本語）: Legacy/標準preview field衝突追加関数
+    /// 処理概要: codeViewerModeの変換先と異なるhost.variantを同じplacement mockへ追加し、blocking migration fixtureを作ります。
+    func addConflictingHostVariant() throws {
+        let data = try Data(contentsOf: projectURL)
+        var project = try JSONDecoder().decode(OpenGraphiteProject.self, from: data)
+        project.collections[0].components[0].canvas.previewContext
+            .placementMocks["fixture-placement", default: [:]]["host.variant"] = "code"
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(project).write(to: projectURL, options: .atomic)
+    }
+
+    /// 論理名（日本語）: 後方page immutable設定関数
+    /// 処理概要: stagingを許可したままpath順で後方のcommitだけを失敗させ、先行commitのrollbackを再現します。
+    ///
+    /// - Parameter immutable: 2番目のHTMLをuser immutableにする場合は`true`。
+    func setSecondaryHTMLImmutable(_ immutable: Bool) throws {
+        try FileManager.default.setAttributes(
+            [.immutable: immutable],
+            ofItemAtPath: secondaryHTMLURL.path
+        )
+    }
+
+    /// 論理名（日本語）: Project migration fixture削除関数
+    /// 処理概要: HTMLのimmutable flagを解除してからテスト用一時Projectを削除します。
+    func cleanUp() {
+        try? setSecondaryHTMLImmutable(false)
         try? FileManager.default.removeItem(at: rootURL)
     }
 }

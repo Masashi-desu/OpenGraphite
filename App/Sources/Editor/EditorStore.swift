@@ -66,13 +66,13 @@ enum EditorHistoryItemState: Equatable {
 /// 概要: 左サイドバーの履歴行で、編集対象を小さな図として識別するための表示情報です。
 ///
 /// 定義内容:
-/// - `node`: HTML オブジェクトまたは page と、その `data-og-type`。
+/// - `node`: HTMLオブジェクトまたはpageと、DOM capabilityから導出した表示専用hint。
 /// - `stickyNote`: 背景色と本文を持つ付箋。
 /// - `ink`: 代表色を持つ手書き。
 /// - `guide`: 水平または垂直ガイド。
 /// - `reference`: HTML オブジェクト参照配置。
 enum EditorHistoryPreviewKind: Equatable {
-    case node(type: String)
+    case node(hint: OpenGraphiteNodePresentationHint)
     case stickyNote(backgroundColor: String, text: String)
     case ink(color: String)
     case guide(orientation: OpenGraphiteCanvasGuideOrientation)
@@ -98,6 +98,447 @@ struct EditorHistoryListItem: Equatable, Identifiable {
     var state: EditorHistoryItemState
 }
 
+/// 論理名（日本語）: キャンバス参照非同期解決状態
+/// 概要: SwiftUI描画とHTML参照解決を分離し、placeholder、解決済み対象、利用者向けエラーを表します。
+///
+/// 定義内容:
+/// - `idle`: 解決task開始前。
+/// - `loading`: backgroundでHTML参照を解決中。
+/// - `resolved`: 現在のproject / page revisionに対する解決済み対象。
+/// - `failed`: 現在のrevisionで参照を解決できない状態。
+enum OpenGraphiteCanvasReferenceResolutionState: Equatable {
+    case idle
+    case loading
+    case resolved(OpenGraphiteResolvedCanvasReference)
+    case failed(String)
+
+    /// 論理名（日本語）: 解決済み参照取得関数
+    /// 処理概要: 現在状態が解決済みの場合だけCanvas表示対象を返します。
+    ///
+    /// - Returns: 解決済み参照。未解決・読込中・失敗時は`nil`。
+    var target: OpenGraphiteResolvedCanvasReference? {
+        guard case let .resolved(target) = self else { return nil }
+        return target
+    }
+
+    /// 論理名（日本語）: 参照解決エラー取得関数
+    /// 処理概要: 解決失敗状態に保持した利用者向けメッセージを返します。
+    ///
+    /// - Returns: 解決失敗メッセージ。失敗以外は`nil`。
+    var errorMessage: String? {
+        guard case let .failed(message) = self else { return nil }
+        return message
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照解決キャッシュkey
+/// 概要: project instance、typed参照ID、HTML URL、page reload tokenを束縛してstaleな解決結果を再利用しないようにします。
+///
+/// プロパティ:
+/// - `projectID`: 読み込み済みproject instance ID。
+/// - `referenceID`: 正規化済みtyped参照ID。
+/// - `pageURL`: 参照元HTML URL。
+/// - `reloadToken`: HTML変更ごとに進むrevision token。
+private struct CanvasReferenceResolutionCacheKey: Hashable {
+    var projectID: UUID
+    var referenceID: String
+    var pageURL: URL
+    var reloadToken: Int
+}
+
+/// 論理名（日本語）: ノード正本索引キャッシュkey
+/// 概要: 表示中page、media condition、参照component、各source revisionを束縛し、staleな正本graphをLayersへ再利用しないようにします。
+///
+/// プロパティ:
+/// - `projectID`: 読み込み済みproject instance。単独HTMLでは空文字列。
+/// - `targetURL`: 表示中HTML URL。
+/// - `pageReferenceID`: Shared graphへ渡すpage/component参照ID。
+/// - `targetReloadToken`: 表示中HTMLと依存sourceのrevision token。
+/// - `activeMediaQueries`: WebKitでmatchしたauthored media condition。
+/// - `referencedComponentIDs`: runtime nodeが実際に参照するcomponent ID。
+/// - `referencedSourceNodeIDs`: runtime nodeが実際に参照するsource internal ID。
+/// - `componentRevisions`: 登録component pageごとのreload revision。
+private struct NodeSourceIndexCacheKey: Hashable, @unchecked Sendable {
+    var projectID: String
+    var targetURL: URL
+    var pageReferenceID: String
+    var targetReloadToken: Int
+    var activeMediaQueries: [String]
+    var referencedComponentIDs: [String]
+    var referencedSourceNodeIDs: [String]
+    var componentRevisions: [String]
+}
+
+/// 論理名（日本語）: Component正本索引候補
+/// 概要: runtime payloadが参照したcomponentだけをbackground graph化するための登録page情報です。
+///
+/// プロパティ:
+/// - `pageReferenceID`: Shared graphへ渡すcomponent page参照ID。
+/// - `htmlURL`: component master HTML URL。
+private struct NodeSourceIndexComponent: Hashable, @unchecked Sendable {
+    var pageReferenceID: String
+    var htmlURL: URL
+}
+
+/// 論理名（日本語）: ノード正本索引リクエスト
+/// 概要: MainActorから切り離してShared source graphを構築するために必要なimmutable入力を保持します。
+///
+/// プロパティ:
+/// - `key`: revisionを含むcache key。
+/// - `projectURL`: `.ogp` URL。単独HTMLでは`nil`。
+/// - `projectRootURL`: contractとresource解決の開始URL。
+/// - `targetHTMLURL`: 表示中HTML URL。
+/// - `components`: 登録component page候補。
+private struct NodeSourceIndexRequest: @unchecked Sendable {
+    var key: NodeSourceIndexCacheKey
+    var projectURL: URL?
+    var projectRootURL: URL
+    var targetHTMLURL: URL
+    var components: [NodeSourceIndexComponent]
+}
+
+/// 論理名（日本語）: 現在HTML正本ノード索引
+/// 概要: annotation済みnodeはinternal ID、未注釈nodeはsafe selectorとbrowser投影済みDOM pathでWebCanvas payloadへ結びます。
+///
+/// プロパティ:
+/// - `byInternalID`: pageと実参照componentの一意なinternal ID索引。
+/// - `bySelector`: 現在page内の一意なsafe selector索引。
+/// - `byBrowserDOMPath`: 現在page内のbrowser-equivalent DOM path索引。
+private struct CurrentSourceNodeIndexes: @unchecked Sendable {
+    var byInternalID: [String: OpenGraphiteAgentNode]
+    var bySelector: [String: OpenGraphiteAgentNode]
+    var byBrowserDOMPath: [String: OpenGraphiteAgentNode]
+
+    static let empty = CurrentSourceNodeIndexes(
+        byInternalID: [:],
+        bySelector: [:],
+        byBrowserDOMPath: [:]
+    )
+}
+
+/// 論理名（日本語）: ノード正本索引background builder
+/// 概要: 表示中pageとruntime payloadが実参照するcomponentだけをShared graph化し、MainActorへimmutable索引を返します。
+private enum OpenGraphiteNodeSourceIndexBuilder {
+    /// 論理名（日本語）: ノード正本索引生成関数
+    /// 処理概要: page graphと必要なcomponent graphをbackgroundで構築し、selectorとbrowser DOM pathの衝突を除外します。
+    ///
+    /// - Parameter request: project、target、media、参照componentを固定した入力。
+    /// - Returns: WebCanvas payloadのsource provenance補完に使う索引。
+    static func build(_ request: NodeSourceIndexRequest) -> CurrentSourceNodeIndexes {
+        guard let html = try? String(contentsOf: request.targetHTMLURL, encoding: .utf8) else {
+            return .empty
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: request.projectRootURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        var byInternalID = componentNodes(
+            request: request,
+            contract: contract,
+            core: core
+        )
+        var bySelector: [String: OpenGraphiteAgentNode] = [:]
+        var ambiguousSelectors: Set<String> = []
+        var byBrowserDOMPath: [String: OpenGraphiteAgentNode] = [:]
+        var ambiguousBrowserDOMPaths: Set<String> = []
+        let currentNodes: [OpenGraphiteAgentNode]
+        if let projectURL = request.projectURL,
+           !request.key.pageReferenceID.isEmpty,
+           let graph = try? core.pageGraph(
+               projectURL: projectURL,
+               pageID: request.key.pageReferenceID,
+               activeMediaQueries: request.key.activeMediaQueries
+           ) {
+            currentNodes = graph.nodes
+        } else {
+            let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: request.targetHTMLURL)
+            currentNodes = OpenGraphiteHTMLDocument(html: html).nodes(
+                companionCSS: companionCSS,
+                activeMediaQueries: request.key.activeMediaQueries,
+                contract: contract,
+                documentURL: request.targetHTMLURL.standardizedFileURL.absoluteString
+            )
+        }
+
+        let internalIDCounts = Dictionary(
+            grouping: currentNodes.filter { !$0.internalID.isEmpty },
+            by: \.internalID
+        ).mapValues(\.count)
+        currentNodes.forEach { node in
+            if !node.internalID.isEmpty, internalIDCounts[node.internalID] == 1 {
+                byInternalID[node.internalID] = node
+            } else if !node.internalID.isEmpty {
+                byInternalID.removeValue(forKey: node.internalID)
+            }
+            if let selector = node.locator.selector, !selector.isEmpty {
+                insertUnique(
+                    node,
+                    key: selector,
+                    into: &bySelector,
+                    ambiguousKeys: &ambiguousSelectors
+                )
+            }
+        }
+        let browserPaths = browserDOMPathsBySourceDOMPath(for: currentNodes)
+        currentNodes.forEach { node in
+            guard let browserPath = browserPaths[node.locator.domPath] else { return }
+            insertUnique(
+                node,
+                key: browserPath,
+                into: &byBrowserDOMPath,
+                ambiguousKeys: &ambiguousBrowserDOMPaths
+            )
+        }
+        return CurrentSourceNodeIndexes(
+            byInternalID: byInternalID,
+            bySelector: bySelector,
+            byBrowserDOMPath: byBrowserDOMPath
+        )
+    }
+
+    /// runtime payloadが参照したcomponentを含む登録pageだけをgraph化します。
+    private static func componentNodes(
+        request: NodeSourceIndexRequest,
+        contract: OpenGraphiteContract,
+        core: OpenGraphiteAgentCore
+    ) -> [String: OpenGraphiteAgentNode] {
+        guard let projectURL = request.projectURL,
+              !request.key.referencedComponentIDs.isEmpty || !request.key.referencedSourceNodeIDs.isEmpty
+        else { return [:] }
+        var result: [String: OpenGraphiteAgentNode] = [:]
+        for component in request.components where component.htmlURL.standardizedFileURL != request.targetHTMLURL.standardizedFileURL {
+            guard let html = try? String(contentsOf: component.htmlURL, encoding: .utf8) else { continue }
+            let isReferenced = request.key.referencedComponentIDs.contains { html.contains($0) }
+                || request.key.referencedSourceNodeIDs.contains { html.contains($0) }
+            guard isReferenced else { continue }
+            let nodes: [OpenGraphiteAgentNode]
+            if let graph = try? core.pageGraph(
+                projectURL: projectURL,
+                pageID: component.pageReferenceID,
+                activeMediaQueries: request.key.activeMediaQueries
+            ) {
+                nodes = graph.nodes
+            } else {
+                let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: component.htmlURL)
+                nodes = OpenGraphiteHTMLDocument(html: html).nodes(
+                    companionCSS: companionCSS,
+                    activeMediaQueries: request.key.activeMediaQueries,
+                    contract: contract,
+                    documentURL: component.htmlURL.standardizedFileURL.absoluteString
+                )
+            }
+            nodes.forEach { node in
+                guard !node.internalID.isEmpty, node.referenceStability == .stable else { return }
+                result[node.internalID] = node
+            }
+        }
+        return result
+    }
+
+    /// source DOM pathをbrowserのimplicit container込みpathへ投影します。
+    private static func browserDOMPathsBySourceDOMPath(
+        for nodes: [OpenGraphiteAgentNode]
+    ) -> [String: String] {
+        var sourceIndexByDOMPath: [String: Int] = [:]
+        var sourceNodes: [OpenGraphiteCSSDOMSourceNode] = []
+        for node in nodes {
+            let sourceDOMPath = node.locator.domPath
+            let segments = sourceDOMPath.components(separatedBy: " > ")
+            let parentDOMPath = segments.count > 1
+                ? segments.dropLast().joined(separator: " > ")
+                : ""
+            let parentIndex = parentDOMPath.isEmpty ? nil : sourceIndexByDOMPath[parentDOMPath]
+            let sourceIndex = sourceNodes.count
+            sourceNodes.append(
+                OpenGraphiteCSSDOMSourceNode(
+                    element: OpenGraphiteCSSDOMElement(
+                        tagName: node.tagName,
+                        attributes: node.attributes
+                    ),
+                    parentIndex: parentIndex
+                )
+            )
+            if !sourceDOMPath.isEmpty {
+                sourceIndexByDOMPath[sourceDOMPath] = sourceIndex
+            }
+        }
+
+        let projection = OpenGraphiteCSSDOMProjection.browserDocument(from: sourceNodes)
+        var result: [String: String] = [:]
+        for sourceIndex in sourceNodes.indices {
+            guard nodes.indices.contains(sourceIndex),
+                  let projectedIndex = projection.projectedIndexBySourceIndex[sourceIndex]
+            else { continue }
+            let element = projection.nodes[projectedIndex].element
+            let browserSegments = ([element] + element.ancestors).reversed().map {
+                "\($0.tagName):nth-of-type(\($0.typeIndex))"
+            }
+            result[nodes[sourceIndex].locator.domPath] = browserSegments.joined(separator: " > ")
+        }
+        return result
+    }
+
+    /// 同じselector/pathが複数nodeへ衝突する場合は誤mergeを避けて索引から除外します。
+    private static func insertUnique(
+        _ node: OpenGraphiteAgentNode,
+        key: String,
+        into index: inout [String: OpenGraphiteAgentNode],
+        ambiguousKeys: inout Set<String>
+    ) {
+        guard !key.isEmpty, !ambiguousKeys.contains(key) else { return }
+        if let existing = index[key], existing.reference != node.reference {
+            index.removeValue(forKey: key)
+            ambiguousKeys.insert(key)
+            return
+        }
+        index[key] = node
+    }
+}
+
+/// 論理名（日本語）: Node adoption確認プレビュー
+/// 概要: 未注釈または部分注釈nodeへoptional identityを追加するdry-run結果と、target・document revision・scope・display IDを束縛した明示apply専用proposal tokenを保持します。
+///
+/// プロパティ:
+/// - `id`: confirmation sheetを識別する一意な値。
+/// - `nodeID`: WebCanvas session内の選択ID。
+/// - `displayName`: UI表示用node名。
+/// - `scope`: node単体またはsubtree。
+/// - `reference`: dry-runが返したtarget locator、document content hash、正規化済みscope / display ID固定のapply専用proposal token。
+/// - `selector`: dry-run解決後のapplyでは常に`nil`。
+/// - `domPath`: dry-run解決後のapplyでは常に`nil`。
+/// - `displayID`: ユーザーが明示指定した場合だけ渡すoptional display ID。通常は`nil`。
+/// - `path`: dry-run対象HTML path。
+/// - `changed`: candidate sourceに差分があるか。
+/// - `unifiedDiff`: 適用前に確認するsource diff。
+/// - `diagnostics`: dry-run diagnostics。
+struct OpenGraphiteNodeAdoptionPreview: Equatable, Identifiable {
+    var id: UUID
+    var nodeID: String
+    var displayName: String
+    var scope: OpenGraphiteNodeAdoptionScope
+    var reference: String?
+    var selector: String?
+    var domPath: String?
+    var displayID: String?
+    var path: String
+    var changed: Bool
+    var unifiedDiff: String
+    var diagnostics: [OpenGraphiteDiagnostic]
+}
+
+/// 論理名（日本語）: Project migration状態
+/// 概要: Project Inspectorで、明示migrationの未確認・差分あり・最新・適用済み・stale・失敗状態を表示します。
+///
+/// 定義内容:
+/// - `unavailable`: project未読込でmigrationを開始できない状態。
+/// - `notChecked`: sourceを走査しておらず、明示dry-run待ちの状態。
+/// - `changesAvailable`: dry-runで適用候補差分が見つかった状態。
+/// - `upToDate`: dry-runで変更不要と確認できた状態。
+/// - `applied`: 確認済みproposalを適用して表示を再読込した状態。
+/// - `stale`: dry-run後にsourceが変わり、proposalを再作成する必要がある状態。
+/// - `failed`: migration transactionを適用できなかった状態。
+enum OpenGraphiteProjectMigrationStatus: Equatable {
+    case unavailable
+    case notChecked(targetVersion: String)
+    case changesAvailable(sourceVersion: String, targetVersion: String, fileCount: Int)
+    case upToDate(version: String)
+    case applied(version: String, fileCount: Int)
+    case stale(targetVersion: String)
+    case failed(targetVersion: String, message: String)
+
+    /// 論理名（日本語）: Migration状態ラベル
+    /// 処理概要: Inspectorのstatus行に表示する短い状態名を返します。
+    var label: String {
+        switch self {
+        case .unavailable:
+            return "Unavailable"
+        case .notChecked:
+            return "Not checked"
+        case .changesAvailable:
+            return "Changes available"
+        case .upToDate:
+            return "Up to date"
+        case .applied:
+            return "Applied"
+        case .stale:
+            return "Preview stale"
+        case .failed:
+            return "Failed"
+        }
+    }
+
+    /// 論理名（日本語）: Migration対象version
+    /// 処理概要: 状態が保持するtarget Web contract versionを返します。
+    var targetVersion: String? {
+        switch self {
+        case .unavailable:
+            return nil
+        case .notChecked(let targetVersion),
+             .changesAvailable(_, let targetVersion, _),
+             .stale(let targetVersion),
+             .failed(let targetVersion, _):
+            return targetVersion
+        case .upToDate(let version), .applied(let version, _):
+            return version
+        }
+    }
+
+    /// 論理名（日本語）: Migration状態詳細
+    /// 処理概要: 明示操作の次の手順または結果をInspector向けの説明文として返します。
+    var detail: String {
+        switch self {
+        case .unavailable:
+            return "Projectを開くとmigrationを確認できます。"
+        case .notChecked:
+            return "Sourceは未走査です。Preview Migrationで差分を確認してください。"
+        case .changesAvailable(_, _, let fileCount):
+            return "\(fileCount) source file(s)に確認待ちの差分があります。"
+        case .upToDate:
+            return "標準Web contractへの変更はありません。"
+        case .applied(_, let fileCount):
+            return "\(fileCount) source file(s)を更新し、Project表示を再読込しました。"
+        case .stale:
+            return "Sourceがdry-run後に変わりました。Previewを更新してください。"
+        case .failed(_, let message):
+            return message
+        }
+    }
+}
+
+/// 論理名（日本語）: Project migration確認プレビュー
+/// 概要: Project全体のdry-run結果、multi-file diff、apply専用proposal、stale/diagnostic状態をconfirmation sheetへ渡します。
+///
+/// プロパティ:
+/// - `id`: confirmation sheetを識別する一意な値。
+/// - `sourceContractVersion`: migration入力として判定されたWeb contract version。
+/// - `targetContractVersion`: 明示apply後のWeb contract version。
+/// - `proposalReference`: source hash・target・optionsを束縛したapply専用proposal token。
+/// - `changed`: candidate sourceに差分があるか。
+/// - `diffs`: path順のmulti-file source差分。
+/// - `diagnostics`: dry-runまたはapplyのdiagnostics。
+struct OpenGraphiteProjectMigrationPreview: Equatable, Identifiable {
+    var id: UUID
+    var sourceContractVersion: String
+    var targetContractVersion: String
+    var proposalReference: String?
+    var changed: Bool
+    var diffs: [OpenGraphiteSourceDiff]
+    var diagnostics: [OpenGraphiteDiagnostic]
+
+    /// 論理名（日本語）: Stale proposal判定
+    /// 処理概要: Shared coreのmachine-readable diagnosticから再dry-runが必要かを判定します。
+    var isStale: Bool {
+        diagnostics.contains { $0.code == "stale-migration-proposal" }
+    }
+
+    /// 論理名（日本語）: Migration適用可否
+    /// 処理概要: 差分とproposalがあり、errorまたはstale diagnosticがない場合だけ明示Applyを許可します。
+    var canApply: Bool {
+        changed
+            && !(proposalReference?.isEmpty ?? true)
+            && !isStale
+            && !diagnostics.contains { $0.severity == .error }
+    }
+}
+
 /// 論理名（日本語）: エディター状態ストア
 /// 概要: 読み込み済みプロジェクト、Pages/Components 選択、DOM ノード一覧、Inspector 変更要求を保持するメイン状態管理クラスです。
 ///
@@ -117,7 +558,7 @@ struct EditorHistoryListItem: Equatable, Identifiable {
 /// - `selectedCanvasReferenceID`: 選択中のキャンバス直下オブジェクト参照配置 ID。
 /// - `selectedCanvasReferenceTarget`: 選択中参照が解決したHTMLカードとnode。
 /// - `nodes`: WebView から抽出された編集ノード一覧。
-/// - `selectedNodeID`: 選択中ノード ID。通常は `data-og-id`、placement clone 内では表示専用の合成 ID。
+/// - `selectedNodeID`: 選択中ノードのWebCanvas selection key。annotation済みID、session reference、placement clone用合成IDを区別します。
 /// - `selectedNodeIDs`: Sidebar Layers 上で同時選択されている node ID 一覧。
 /// - `zoom`: キャンバス表示倍率。
 /// - `activeTool`: キャンバス上の選択ツール。
@@ -133,6 +574,11 @@ struct EditorHistoryListItem: Equatable, Identifiable {
 /// - `textMutation`: WebView へ反映待ちの text content 変更。
 /// - `documentReplacementRequest`: undo/redo で WebView へ適用する HTML 置換要求。
 /// - `inspectorSectionOpenRequest`: Preview 側編集に応じて Inspector カードを開く one-shot 要求。
+/// - `nodeAdoptionPreview`: 明示adoptのdry-run差分を確認するsheet state。
+/// - `projectMigrationStatus`: Project Inspectorへ表示する明示migration状態。
+/// - `projectMigrationPreview`: Project全体のdry-run差分を確認するsheet state。
+/// - `canvasReferenceResolutionCache`: project / page revisionごとの非同期Canvas Object Reference解決状態。
+/// - `nodeSourceIndexBuildCount`: 同一revisionの正本graph cache再利用を回帰テストで確認する構築回数。
 @MainActor
 final class EditorStore: ObservableObject {
     @Published private(set) var loadedProject: LoadedOpenGraphiteProject?
@@ -165,6 +611,12 @@ final class EditorStore: ObservableObject {
             if nodes.isEmpty {
                 cssVariableBaselinesByInternalID = [:]
                 selectionOverlayFrame = nil
+                nodeSourceIndexTask?.cancel()
+                nodeSourceIndexTask = nil
+                nodeSourceIndexTaskKey = nil
+                latestNodeSourceIndexKey = nil
+                latestLayerNodePayload = []
+                nodeDetailPayloadsByID = [:]
             }
         }
     }
@@ -176,6 +628,7 @@ final class EditorStore: ObservableObject {
             }
             synchronizeLayerNodeSelectionForPrimarySelection()
             inspectorSectionOpenRequest = nil
+            nodeAdoptionPreview = nil
             selectionOverlayFrame = nil
             nodeDragPreview = nil
         }
@@ -197,12 +650,25 @@ final class EditorStore: ObservableObject {
     @Published private(set) var textMutation: NodeTextContentMutation?
     @Published private(set) var documentReplacementRequest: DocumentReplacementRequest?
     @Published private(set) var inspectorSectionOpenRequest: InspectorSectionOpenRequest?
+    @Published var nodeAdoptionPreview: OpenGraphiteNodeAdoptionPreview?
+    @Published private(set) var projectMigrationStatus: OpenGraphiteProjectMigrationStatus = .unavailable
+    @Published var projectMigrationPreview: OpenGraphiteProjectMigrationPreview?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published private(set) var historyItems: [EditorHistoryListItem] = []
     @Published private(set) var pageReloadTokensByURL: [URL: Int] = [:]
     @Published private(set) var staticFlowLinksByPageInternalID: [String: [OpenGraphiteStaticFlowLink]] = [:]
     @Published private(set) var staticFlowLinksByPageURL: [URL: [OpenGraphiteStaticFlowLink]] = [:]
+    @Published private var canvasReferenceResolutionCache: [
+        CanvasReferenceResolutionCacheKey: OpenGraphiteCanvasReferenceResolutionState
+    ] = [:]
+    private var nodeSourceIndexCache: [NodeSourceIndexCacheKey: CurrentSourceNodeIndexes] = [:]
+    private var nodeSourceIndexTask: Task<Void, Never>?
+    private var nodeSourceIndexTaskKey: NodeSourceIndexCacheKey?
+    private var latestNodeSourceIndexKey: NodeSourceIndexCacheKey?
+    private var latestLayerNodePayload: [[String: Any]] = []
+    private var nodeDetailPayloadsByID: [String: [String: Any]] = [:]
+    private(set) var nodeSourceIndexBuildCount = 0
 
     private let loader: ProjectLoader
     private let projectCreator: ProjectCreator
@@ -219,6 +685,7 @@ final class EditorStore: ObservableObject {
     @Published private var stagedCanvasAnnotationTextDrafts: [String: StagedCanvasAnnotationTextDraft] = [:]
     private var lastKnownPageHTMLByURL: [URL: String] = [:]
     private var cssVariableBaselinesByInternalID: [String: [String: String]] = [:]
+    private var activeMediaQueriesByHTMLURL: [URL: [String]] = [:]
     private var selectedNodeSelectionAnchorID: String?
     private var isApplyingNodeRangeSelection = false
     private var isApplyingCanvasAnnotationMultiSelection = false
@@ -226,7 +693,14 @@ final class EditorStore: ObservableObject {
     private var dependencyChangeMonitorsByURL: [URL: OpenGraphiteFileChangeMonitor] = [:]
     private let projectChangeMonitor = OpenGraphiteFileChangeMonitor()
     private var monitoredProjectURL: URL?
-    private static let absoluteLayoutChildPositionCSSKeys = ["position", "left", "top", "right", "bottom"]
+    private static let relatedStyleProperties: Set<String> = [
+        "object-fit",
+        "stroke-width",
+        "mask-image",
+        "-webkit-mask-image"
+    ]
+    /// Source-aware 編集で DOM runtime 値より authored source を優先する標準 CSS property 群。
+    private static let sourceAuthoritativeStyleProperties: Set<String> = ["scale"]
     private static var isRunningTests: Bool {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     }
@@ -252,6 +726,7 @@ final class EditorStore: ObservableObject {
     }
 
     deinit {
+        nodeSourceIndexTask?.cancel()
         for monitor in pageChangeMonitorsByURL.values {
             monitor.cancel()
         }
@@ -426,21 +901,17 @@ final class EditorStore: ObservableObject {
         return try? core.inspectI18n(projectURL: loadedProject.fileURL, pageID: pageID)
     }
 
-    var selectedPageRootCSSVariables: [String: String] {
-        guard let target = currentHTMLSyncTarget(),
-              let html = readHTMLFromDisk(at: target.htmlURL)
+    /// 論理名（日本語）: 選択HTML locale typography
+    /// 概要: Shared coreからpage / component rootの標準`font-family`と`:lang()`宣言を取得します。
+    var selectedLocaleTypography: OpenGraphiteLocaleTypographyListResult? {
+        guard let loadedProject,
+              let pageID = selectedPageReferenceID()
         else {
-            return [:]
+            return nil
         }
-        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
-        guard let rootNode = Self.pageRootNode(
-            in: html,
-            companionCSS: try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL),
-            contract: contract
-        ) else {
-            return [:]
-        }
-        return rootNode.cssVariables
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        return try? core.localeTypography(projectURL: loadedProject.fileURL, pageID: pageID)
     }
 
     var projectI18nRuntimeInspection: OpenGraphiteI18nRuntimeInspection? {
@@ -845,8 +1316,9 @@ final class EditorStore: ObservableObject {
             from: htmlURL.deletingLastPathComponent(),
             to: loadedProject.cssURL
         )
+        let rootNodeInternalID = UUID().uuidString.lowercased()
         let bodyHTML = """
-            <OpenGraphitePage data-og-id="\(pageID)-root" data-og-type="page" data-og-layout="vertical"></OpenGraphitePage>
+            <main id="\(pageID)-root" data-og-internal-id="\(rootNodeInternalID)" style="display: flex; flex-direction: column;"></main>
         """
         let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
         let core = OpenGraphiteAgentCore(contract: contract)
@@ -1352,7 +1824,7 @@ final class EditorStore: ObservableObject {
     /// 論理名（日本語）: ノード複合参照ID生成関数
     /// 処理概要: 選択中 HTML 文脈と node 内部 ID から `.ogp` 内で一意な agent 向け参照 ID を作ります。
     ///
-    /// - Parameter nodeID: 参照する DOM node の `data-og-id`。
+    /// - Parameter nodeID: 参照するDOM nodeのWebCanvas selection key。
     /// - Parameter nodeInternalID: 参照する DOM node の `data-og-internal-id`。
     /// - Returns: `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>` 形式の参照 ID。
     func nodeReferenceID(forNodeID nodeID: String) -> String? {
@@ -1363,16 +1835,25 @@ final class EditorStore: ObservableObject {
     /// 処理概要: 選択中 HTML 文脈と明示された node 内部 ID から `.ogp` 内で一意な agent 向け参照 ID を作ります。
     ///
     /// - Parameters:
-    ///   - nodeID: 参照する DOM node の `data-og-id`。
+    ///   - nodeID: 参照するDOM nodeのWebCanvas selection key。
     ///   - nodeInternalID: 参照する DOM node の `data-og-internal-id`。
     /// - Returns: Pages は `ogref:node:<chapterInternalID>:<pageInternalID>:<nodeInternalID>`、Components は `ogref:component-node:<collectionInternalID>:<componentInternalID>:<nodeInternalID>`。
     func nodeReferenceID(forNodeID nodeID: String, nodeInternalID: String?) -> String? {
         guard !nodeID.isEmpty, let page = selectedPage else { return nil }
         let pageInternalID = page.internalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let inspectedNode = nodes.first { $0.id == nodeID || $0.editTargetNodeID == nodeID }
         let resolvedNodeInternalID = nodeInternalID?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? nodes.first { $0.id == nodeID }?.internalID
+            ?? inspectedNode?.internalID
             ?? ""
-        guard !pageInternalID.isEmpty, !resolvedNodeInternalID.isEmpty else { return nil }
+        guard !pageInternalID.isEmpty else { return nil }
+        if inspectedNode?.referenceStability == .session,
+           let sessionReference = inspectedNode?.reference.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionReference.isEmpty {
+            return sessionReference
+        }
+        guard !resolvedNodeInternalID.isEmpty else {
+            return nil
+        }
 
         let syncTarget = currentHTMLSyncTarget()
         switch selectedDocumentSegment {
@@ -1401,7 +1882,7 @@ final class EditorStore: ObservableObject {
     /// 処理概要: OpenGraphite 内貼り付けとテキスト欄 ID 貼り付けの両方で使う node 参照情報を作ります。
     ///
     /// - Parameters:
-    ///   - nodeID: 参照する DOM node の `data-og-id`。
+    ///   - nodeID: 参照するDOM nodeのWebCanvas selection key。
     ///   - nodeInternalID: 参照する DOM node の `data-og-internal-id`。
     ///   - html: OpenGraphite 内貼り付け用の HTML subtree。
     /// - Returns: pasteboard 専用 JSON に変換できる辞書。
@@ -1413,7 +1894,7 @@ final class EditorStore: ObservableObject {
     /// 処理概要: 明示された node 内部 ID を含む pasteboard 専用 JSON payload を作ります。
     ///
     /// - Parameters:
-    ///   - nodeID: 参照する DOM node の `data-og-id`。
+    ///   - nodeID: 参照するDOM nodeのWebCanvas selection key。
     ///   - nodeInternalID: 参照する DOM node の `data-og-internal-id`。
     ///   - html: OpenGraphite 内貼り付け用の HTML subtree。
     /// - Returns: pasteboard 専用 JSON に変換できる辞書。
@@ -1422,8 +1903,9 @@ final class EditorStore: ObservableObject {
         nodeInternalID: String?,
         html: String
     ) -> [String: Any]? {
+        let inspectedNode = nodes.first { $0.id == nodeID || $0.editTargetNodeID == nodeID }
         let resolvedNodeInternalID = nodeInternalID?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? nodes.first { $0.id == nodeID }?.internalID
+            ?? inspectedNode?.internalID
             ?? ""
         guard let referenceID = nodeReferenceID(forNodeID: nodeID, nodeInternalID: resolvedNodeInternalID),
               let page = selectedPage
@@ -1441,8 +1923,23 @@ final class EditorStore: ObservableObject {
             "path": page.path,
             "nodeID": nodeID,
             "nodeInternalID": resolvedNodeInternalID,
+            "annotationStatus": inspectedNode?.annotationStatus.rawValue ?? "partial",
+            "referenceStability": inspectedNode?.referenceStability.rawValue ?? "stable",
             "html": html
         ]
+
+        if let locator = inspectedNode?.locator {
+            var locatorPayload: [String: Any] = [
+                "documentURL": locator.documentURL,
+                "domPath": locator.domPath,
+                "sourceRange": ["start": locator.sourceStart, "end": locator.sourceEnd],
+                "contentHash": locator.contentHash
+            ]
+            if let selector = locator.selector {
+                locatorPayload["selector"] = selector
+            }
+            payload["locator"] = locatorPayload
+        }
 
         if let projectURL = loadedProject?.fileURL.path {
             payload["projectURL"] = projectURL
@@ -1478,6 +1975,295 @@ final class EditorStore: ObservableObject {
         }
 
         return payload
+    }
+
+    /// 論理名（日本語）: Project migration dry-run関数
+    /// 処理概要: ユーザーの明示操作時だけShared coreをdry-runし、sourceを書かずにmulti-file diffとapply専用proposalを公開します。
+    func previewProjectMigration() {
+        guard let loadedProject else { return }
+        guard cssMutation == nil,
+              cssVariablesMutation == nil,
+              cssVariablesBatchMutation == nil,
+              attributeMutation == nil,
+              textMutation == nil,
+              documentReplacementRequest == nil
+        else {
+            lastError = "未適用の編集があるため、Project migrationのPreviewを保留しました。"
+            statusMessage = "Canvasへの編集反映が完了してからProject migrationを再実行してください。"
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.migrateProject(
+                projectURL: loadedProject.fileURL,
+                targetVersion: contract.migrationPolicy.targetVersion,
+                options: .standard
+            )
+            projectMigrationPreview = Self.projectMigrationPreview(from: result)
+            if let error = result.diagnostics.first(where: { $0.severity == .error }) {
+                projectMigrationStatus = result.diagnostics.contains { $0.code == "stale-migration-proposal" }
+                    ? .stale(targetVersion: result.targetContractVersion)
+                    : .failed(targetVersion: result.targetContractVersion, message: error.message)
+                lastError = error.message
+                statusMessage = "Project migrationのPreviewを作成できませんでした。"
+            } else if result.changed {
+                projectMigrationStatus = .changesAvailable(
+                    sourceVersion: result.sourceContractVersion,
+                    targetVersion: result.targetContractVersion,
+                    fileCount: result.diffs.count
+                )
+                lastError = nil
+                statusMessage = "Project migration差分をdry-runしました。Applyするまでsourceは変更されません。"
+            } else {
+                projectMigrationStatus = .upToDate(version: result.targetContractVersion)
+                lastError = nil
+                statusMessage = "ProjectはWeb contract \(result.targetContractVersion)に対応済みです。"
+            }
+        } catch {
+            projectMigrationStatus = .failed(
+                targetVersion: contract.migrationPolicy.targetVersion,
+                message: error.localizedDescription
+            )
+            lastError = "Project migrationのdry-runに失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Project migration明示適用関数
+    /// 処理概要: confirmation sheetで確認したproposalをShared coreのatomic applyへ渡し、成功時だけmanifest・dependency・全page表示を再読込します。
+    func applyProjectMigrationPreview() {
+        guard let preview = projectMigrationPreview,
+              let loadedProject,
+              preview.canApply,
+              let proposalReference = preview.proposalReference,
+              !proposalReference.isEmpty
+        else {
+            return
+        }
+        guard cssMutation == nil,
+              cssVariablesMutation == nil,
+              cssVariablesBatchMutation == nil,
+              attributeMutation == nil,
+              textMutation == nil,
+              documentReplacementRequest == nil
+        else {
+            lastError = "未適用の編集があるため、Project migrationのApplyを保留しました。"
+            statusMessage = "Canvasへの編集反映が完了してからProject migrationを再実行してください。"
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        let pageURLs = loadedProject.project.allPages.map { loadedProject.htmlURL(for: $0) }
+        do {
+            let result = try core.migrateProject(
+                projectURL: loadedProject.fileURL,
+                targetVersion: preview.targetContractVersion,
+                options: .standard,
+                proposalReference: proposalReference,
+                apply: true
+            )
+            let hasError = result.diagnostics.contains { $0.severity == .error }
+            guard !hasError, result.applied || !result.changed else {
+                projectMigrationPreview = Self.projectMigrationPreview(
+                    from: result,
+                    fallbackProposalReference: proposalReference
+                )
+                if result.diagnostics.contains(where: { $0.code == "stale-migration-proposal" }) {
+                    projectMigrationStatus = .stale(targetVersion: result.targetContractVersion)
+                } else {
+                    let message = result.diagnostics.first(where: { $0.severity == .error })?.message
+                        ?? "Project migrationを適用できませんでした。"
+                    projectMigrationStatus = .failed(
+                        targetVersion: result.targetContractVersion,
+                        message: message
+                    )
+                }
+                lastError = result.diagnostics.first(where: { $0.severity == .error })?.message
+                    ?? "Project migrationを適用できませんでした。"
+                statusMessage = result.diagnostics.contains(where: { $0.code == "stale-migration-proposal" })
+                    ? "Sourceが変更されたため、Project migrationのPreviewを更新してください。"
+                    : "Project migrationを適用できませんでした。"
+                return
+            }
+
+            projectMigrationPreview = nil
+            for pageURL in pageURLs {
+                refreshPageFromDiskIfChanged(at: pageURL)
+            }
+            refreshProjectManifestFromDiskIfChanged()
+            refreshProjectDependenciesFromDisk()
+            projectMigrationStatus = result.applied
+                ? .applied(version: result.targetContractVersion, fileCount: result.diffs.count)
+                : .upToDate(version: result.targetContractVersion)
+            lastError = nil
+            statusMessage = result.applied
+                ? "Web contract \(result.targetContractVersion) migrationを適用し、Project表示を再読込しました。"
+                : "ProjectはWeb contract \(result.targetContractVersion)に対応済みです。"
+        } catch {
+            projectMigrationStatus = .failed(
+                targetVersion: preview.targetContractVersion,
+                message: error.localizedDescription
+            )
+            lastError = "Project migrationの適用に失敗しました: \(error.localizedDescription)"
+            statusMessage = "Project migrationを適用できませんでした。"
+        }
+    }
+
+    /// 論理名（日本語）: Project migration確認取消関数
+    /// 処理概要: dry-run結果だけを破棄し、sourceと確認済みstatusを変更せずconfirmation sheetを閉じます。
+    func cancelProjectMigrationPreview() {
+        projectMigrationPreview = nil
+    }
+
+    /// 論理名（日本語）: Project migrationプレビュー変換関数
+    /// 処理概要: Shared resultをApp sheet stateへ変換し、apply失敗応答がproposalを省略した場合は確認済みtokenを保持します。
+    ///
+    /// - Parameters:
+    ///   - result: Shared coreが返したdry-runまたはapply結果。
+    ///   - fallbackProposalReference: apply失敗時に保持する確認済みproposal token。
+    /// - Returns: Project migration confirmation sheet state。
+    private static func projectMigrationPreview(
+        from result: OpenGraphiteProjectMigrationResult,
+        fallbackProposalReference: String? = nil
+    ) -> OpenGraphiteProjectMigrationPreview {
+        OpenGraphiteProjectMigrationPreview(
+            id: UUID(),
+            sourceContractVersion: result.sourceContractVersion,
+            targetContractVersion: result.targetContractVersion,
+            proposalReference: result.proposalReference ?? fallbackProposalReference,
+            changed: result.changed,
+            diffs: result.diffs,
+            diagnostics: result.diagnostics
+        )
+    }
+
+    /// 論理名（日本語）: 選択Node adoption dry-run関数
+    /// 処理概要: sourceを変更せず、既存のsafe authored selectorまたはDOM pathで対象を解決し、optional identity追加差分とapply条件を束縛したproposal tokenをconfirmation sheetへ公開します。
+    ///
+    /// - Parameter scope: 選択nodeだけ、またはそのsubtree全体。
+    func previewSelectedNodeAdoption(scope: OpenGraphiteNodeAdoptionScope) {
+        guard let loadedProject,
+              let pageID = selectedPageReferenceID(),
+              let node = selectedNode,
+              node.canAdoptIdentity,
+              let locator = node.locator
+        else {
+            return
+        }
+
+        let target = adoptionTarget(for: node, locator: locator)
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.adoptNode(
+                projectURL: loadedProject.fileURL,
+                pageID: pageID,
+                reference: target.reference,
+                selector: target.selector,
+                domPath: target.domPath,
+                scope: scope,
+                displayID: nil,
+                apply: false
+            )
+            nodeAdoptionPreview = OpenGraphiteNodeAdoptionPreview(
+                id: UUID(),
+                nodeID: node.id,
+                displayName: node.displayID,
+                scope: scope,
+                reference: result.targetReference,
+                selector: nil,
+                domPath: nil,
+                displayID: nil,
+                path: result.path,
+                changed: result.changed,
+                unifiedDiff: result.diff?.unifiedDiff ?? "",
+                diagnostics: result.diagnostics
+            )
+            lastError = nil
+            statusMessage = "\(node.displayID) のadoption差分をdry-runしました。"
+        } catch {
+            lastError = "Node adoptionのdry-runに失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Node adoption明示適用関数
+    /// 処理概要: confirmation sheetで確認済みのtarget・document revision・scope・display ID固定proposal tokenをShared coreへ渡し、成功時に対象WebCanvasを再読み込みします。
+    func applyNodeAdoptionPreview() {
+        guard let preview = nodeAdoptionPreview,
+              let loadedProject,
+              let pageID = selectedPageReferenceID(),
+              let target = currentHTMLSyncTarget()
+        else {
+            return
+        }
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.adoptNode(
+                projectURL: loadedProject.fileURL,
+                pageID: pageID,
+                reference: preview.reference,
+                selector: preview.selector,
+                domPath: preview.domPath,
+                scope: preview.scope,
+                displayID: preview.displayID,
+                apply: true
+            )
+            let hasError = result.diagnostics.contains { $0.severity == .error }
+            guard !hasError, result.applied || !result.changed else {
+                nodeAdoptionPreview = OpenGraphiteNodeAdoptionPreview(
+                    id: UUID(),
+                    nodeID: preview.nodeID,
+                    displayName: preview.displayName,
+                    scope: preview.scope,
+                    reference: preview.reference,
+                    selector: preview.selector,
+                    domPath: preview.domPath,
+                    displayID: preview.displayID,
+                    path: result.path,
+                    changed: result.changed,
+                    unifiedDiff: result.diff?.unifiedDiff ?? preview.unifiedDiff,
+                    diagnostics: result.diagnostics
+                )
+                lastError = result.diagnostics.first(where: { $0.severity == .error })?.message
+                    ?? "Node adoptionを適用できませんでした。"
+                return
+            }
+            nodeAdoptionPreview = nil
+            incrementReloadToken(for: target.htmlURL)
+            lastError = nil
+            statusMessage = result.applied
+                ? "\(preview.displayName) をstable referenceへadoptしました。"
+                : "\(preview.displayName) は既にadopt済みです。"
+        } catch {
+            lastError = "Node adoptionの適用に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    /// 論理名（日本語）: Node adoption確認取消関数
+    /// 処理概要: dry-run結果を破棄し、sourceを変更せずconfirmation sheetを閉じます。
+    func cancelNodeAdoptionPreview() {
+        nodeAdoptionPreview = nil
+    }
+
+    /// 論理名（日本語）: Node adoption target選択関数
+    /// 処理概要: stable referenceを最優先し、未注釈nodeでは既存のsafe authored selector、最後にDOM pathを選び、target指定を必ず1つにします。
+    ///
+    /// - Parameters:
+    ///   - node: adoption対象のinspection node。
+    ///   - locator: source locator。
+    /// - Returns: Shared coreへ渡す排他的target指定。
+    private func adoptionTarget(
+        for node: OpenGraphiteNode,
+        locator: OpenGraphiteNodeSourceLocator
+    ) -> (reference: String?, selector: String?, domPath: String?) {
+        if node.referenceStability == .stable, !node.reference.isEmpty {
+            return (node.reference, nil, nil)
+        }
+        if let selector = locator.selector, !selector.isEmpty {
+            return (nil, selector, nil)
+        }
+        return (nil, nil, locator.domPath)
     }
 
     /// 論理名（日本語）: ページ再読み込みトークン取得関数
@@ -1560,6 +2346,21 @@ final class EditorStore: ObservableObject {
             attributeMutation = nil
             textMutation = nil
             documentReplacementRequest = nil
+            nodeAdoptionPreview = nil
+            projectMigrationPreview = nil
+            projectMigrationStatus = .notChecked(
+                targetVersion: OpenGraphiteContract.loadDefault(startingAt: project.fileURL)
+                    .migrationPolicy.targetVersion
+            )
+            canvasReferenceResolutionCache = [:]
+            nodeSourceIndexTask?.cancel()
+            nodeSourceIndexTask = nil
+            nodeSourceIndexTaskKey = nil
+            latestNodeSourceIndexKey = nil
+            latestLayerNodePayload = []
+            nodeDetailPayloadsByID = [:]
+            nodeSourceIndexCache = [:]
+            nodeSourceIndexBuildCount = 0
             syncHistories = [:]
             editorUndoStack = []
             editorRedoStack = []
@@ -1840,7 +2641,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ノード選択関数
-    /// 処理概要: Layers、Canvas、Context Menu から渡された `data-og-id` を選択状態として保存します。
+    /// 処理概要: Layers、Canvas、Context Menu から渡されたannotation非依存のWebCanvas selection keyを保存します。
     ///
     /// - Parameter id: 選択するノード ID。placement clone 内では表示専用の合成 ID、選択解除時は `nil`。
     func selectNode(id: String?) {
@@ -2157,7 +2958,7 @@ final class EditorStore: ObservableObject {
               !id.isEmpty,
               id == selectedNodeID,
               let index = nodes.firstIndex(where: { $0.id == id }),
-              nodes[index].type == "text"
+              nodes[index].supports(.editText)
         else {
             return
         }
@@ -2174,7 +2975,7 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: コンポーネント継承元解決関数
-    /// 処理概要: 選択ノードの `data-og-component` または `data-og-source-component` から project 内の master 配置を解決します。
+    /// 処理概要: 選択ノードの `data-og-component` または runtime-private component metadata から project 内の master 配置を解決します。
     ///
     /// - Parameter node: 継承元を調べる OpenGraphite ノード。
     /// - Returns: project 内で見つかった component master の表示情報。未解決の場合は `nil`。
@@ -2756,7 +3557,136 @@ final class EditorStore: ObservableObject {
         guard let loadedProject else {
             throw OpenGraphiteCanvasReferenceResolutionError.missingContainer
         }
-        return try OpenGraphiteCanvasReferenceResolver.resolve(referenceID, in: loadedProject)
+        let context = try canvasReferenceResolutionContext(
+            for: referenceID,
+            in: loadedProject
+        )
+        if case let .resolved(target) = canvasReferenceResolutionCache[context.key] {
+            return target
+        }
+        let target = try OpenGraphiteCanvasReferenceResolver.resolve(context.source)
+        canvasReferenceResolutionCache[context.key] = .resolved(target)
+        return target
+    }
+
+    /// 論理名（日本語）: キャンバス参照解決状態取得関数
+    /// 処理概要: 現在のproject / page revisionに対するキャッシュ済み状態を、HTML読み込みなしで返します。
+    ///
+    /// - Parameter referenceID: `ogref:node`または`ogref:component-node`。
+    /// - Returns: 未開始、読込中、解決済み、失敗のいずれか。
+    func canvasReferenceResolutionState(
+        for referenceID: String
+    ) -> OpenGraphiteCanvasReferenceResolutionState {
+        guard let loadedProject else {
+            return .failed(OpenGraphiteCanvasReferenceResolutionError.missingContainer.localizedDescription)
+        }
+        do {
+            let context = try canvasReferenceResolutionContext(
+                for: referenceID,
+                in: loadedProject
+            )
+            return canvasReferenceResolutionCache[context.key] ?? .idle
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// 論理名（日本語）: キャンバス参照解決revision ID取得関数
+    /// 処理概要: SwiftUI `task(id:)`がprojectまたはHTML revision変更時だけ再起動する安定IDを返します。
+    ///
+    /// - Parameter referenceID: 非同期解決対象のtyped参照ID。
+    /// - Returns: project instance、参照ID、page URL、reload tokenを含む文字列。
+    func canvasReferenceResolutionRequestID(for referenceID: String) -> String {
+        guard let loadedProject,
+              let context = try? canvasReferenceResolutionContext(
+                  for: referenceID,
+                  in: loadedProject
+              )
+        else {
+            return "unresolved|\(loadedProject?.id.uuidString ?? "no-project")|\(referenceID)"
+        }
+        return [
+            context.key.projectID.uuidString,
+            context.key.referenceID,
+            context.key.pageURL.absoluteString,
+            String(context.key.reloadToken)
+        ].joined(separator: "|")
+    }
+
+    /// 論理名（日本語）: キャンバス参照非同期準備関数
+    /// 処理概要: SwiftUIのメインスレッドを塞がずにHTMLを読み、軽量参照解決結果をrevisionキャッシュへ公開します。
+    ///
+    /// - Parameter referenceID: 非同期解決対象のtyped参照ID。
+    func prepareCanvasReferenceResolution(for referenceID: String) async {
+        guard let loadedProject else { return }
+        let context: (
+            source: OpenGraphiteCanvasReferenceResolutionSource,
+            key: CanvasReferenceResolutionCacheKey
+        )
+        do {
+            context = try canvasReferenceResolutionContext(
+                for: referenceID,
+                in: loadedProject
+            )
+        } catch {
+            return
+        }
+        switch canvasReferenceResolutionCache[context.key] {
+        case .loading?, .resolved?, .failed?:
+            return
+        case nil, .idle?:
+            break
+        }
+
+        canvasReferenceResolutionCache[context.key] = .loading
+        let result = await Task.detached(priority: .userInitiated) {
+            do {
+                return OpenGraphiteCanvasReferenceResolutionState.resolved(
+                    try OpenGraphiteCanvasReferenceResolver.resolve(context.source)
+                )
+            } catch {
+                return OpenGraphiteCanvasReferenceResolutionState.failed(error.localizedDescription)
+            }
+        }.value
+
+        guard let currentProject = self.loadedProject,
+              let currentContext = try? canvasReferenceResolutionContext(
+                  for: referenceID,
+                  in: currentProject
+              ),
+              currentContext.key == context.key
+        else {
+            return
+        }
+        canvasReferenceResolutionCache[context.key] = result
+    }
+
+    /// 論理名（日本語）: キャンバス参照解決context生成関数
+    /// 処理概要: manifestの軽量source解決とpage reload tokenから、background taskとキャッシュが共有するcontextを作ります。
+    ///
+    /// - Parameters:
+    ///   - referenceID: typed参照ID。
+    ///   - loadedProject: 解決対象のproject snapshot。
+    /// - Returns: manifest解決済みsourceとrevisionキャッシュkey。
+    /// - Throws: typed参照またはmanifest参照が不正な場合の解決エラー。
+    private func canvasReferenceResolutionContext(
+        for referenceID: String,
+        in loadedProject: LoadedOpenGraphiteProject
+    ) throws -> (
+        source: OpenGraphiteCanvasReferenceResolutionSource,
+        key: CanvasReferenceResolutionCacheKey
+    ) {
+        let source = try OpenGraphiteCanvasReferenceResolver.source(
+            referenceID,
+            in: loadedProject
+        )
+        let key = CanvasReferenceResolutionCacheKey(
+            projectID: loadedProject.id,
+            referenceID: source.referenceID,
+            pageURL: source.pageURL.standardizedFileURL,
+            reloadToken: reloadToken(for: source.pageURL)
+        )
+        return (source, key)
     }
 
     /// 論理名（日本語）: キャンバスオブジェクト参照追加関数
@@ -3913,29 +4843,225 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter payload: DOM から収集されたノード辞書の配列。
     func ingestNodePayload(_ payload: [[String: Any]]) {
-        let sourceNodes = sourceNodesByInternalIDForCurrentTarget()
+        let activeMediaQueries = Self.stringArray(payload.first?["activeMediaQueries"])
+        if let target = currentHTMLSyncTarget() {
+            let htmlURL = target.htmlURL.standardizedFileURL
+            activeMediaQueriesByHTMLURL[htmlURL] = activeMediaQueries
+        }
+        latestLayerNodePayload = payload
+        guard let request = nodeSourceIndexRequest(
+            payload: payload,
+            activeMediaQueries: activeMediaQueries
+        ) else {
+            latestNodeSourceIndexKey = nil
+            nodeDetailPayloadsByID = [:]
+            publishNodePayload(payload, sourceNodes: .empty)
+            return
+        }
+        if latestNodeSourceIndexKey != request.key {
+            nodeDetailPayloadsByID = [:]
+        }
+        latestNodeSourceIndexKey = request.key
+        if let cachedSourceNodes = nodeSourceIndexCache[request.key] {
+            publishNodePayload(payload, sourceNodes: cachedSourceNodes)
+            return
+        }
+        publishNodePayload(payload, sourceNodes: .empty)
+        scheduleNodeSourceIndexBuild(request)
+    }
+
+    /// 論理名（日本語）: 選択ノード詳細payload取り込み関数
+    /// 処理概要: Layers全体を再構築せず、選択された1 nodeのcomputed style、capability、text、render targetだけを既存行へ統合します。
+    ///
+    /// - Parameter payload: WebCanvasが選択nodeだけから収集した詳細辞書。
+    func ingestNodeDetailPayload(_ payload: [String: Any]) {
+        guard let id = payload["id"] as? String,
+              !id.isEmpty,
+              let index = nodes.firstIndex(where: { $0.id == id })
+        else { return }
+        nodeDetailPayloadsByID[id] = payload
+        if let sourceIndexKey = latestNodeSourceIndexKey,
+           nodeSourceIndexCache[sourceIndexKey] == nil {
+            return
+        }
+        let basePayload = latestLayerNodePayload.first { $0["id"] as? String == id } ?? payload
+        let mergedPayload = basePayload.merging(payload) { _, detail in detail }
+        let sourceNodes = latestNodeSourceIndexKey.flatMap { nodeSourceIndexCache[$0] } ?? .empty
+        let sourceNode = Self.sourceNode(for: mergedPayload, in: sourceNodes)
+        guard let node = Self.node(from: mergedPayload, sourceNode: sourceNode) else { return }
+        nodes[index] = node
+        updateCSSVariableBaseline(for: node, sourceNode: sourceNode)
+    }
+
+    /// 論理名（日本語）: ノード正本索引待機関数
+    /// 処理概要: 現在pageのbackground source enrichmentがあれば完了まで待ち、テストと明示検証で最終Inspector状態を観測可能にします。
+    func waitForNodeSourceEnrichment() async {
+        let task = nodeSourceIndexTask
+        await task?.value
+    }
+
+    /// Layers payloadへcache済み詳細と正本graphを統合して公開します。
+    private func publishNodePayload(
+        _ payload: [[String: Any]],
+        sourceNodes: CurrentSourceNodeIndexes
+    ) {
         var nextCSSVariableBaselines: [String: [String: String]] = [:]
         nodes = payload.compactMap { dictionary in
-            let internalID = dictionary["internalID"] as? String ?? ""
-            let sourceNode = sourceNodes[internalID]
+            let id = dictionary["id"] as? String ?? ""
+            let mergedDictionary = dictionary.merging(nodeDetailPayloadsByID[id] ?? [:]) { _, detail in detail }
+            let internalID = mergedDictionary["internalID"] as? String ?? ""
+            let sourceNode = Self.sourceNode(for: mergedDictionary, in: sourceNodes)
             if !internalID.isEmpty, let sourceNode {
-                nextCSSVariableBaselines[internalID] = sourceNode.cssVariables
+                var baseline = sourceNode.cssVariables
+                for target in sourceNode.renderingTargets {
+                    for (property, value) in target.authoredValues {
+                        baseline[property] = value
+                    }
+                }
+                nextCSSVariableBaselines[internalID] = baseline
             }
-            return Self.node(from: dictionary, sourceNode: sourceNode)
+            return Self.node(from: mergedDictionary, sourceNode: sourceNode)
         }
         cssVariableBaselinesByInternalID = nextCSSVariableBaselines
 
         synchronizeLayerNodeSelectionWithAvailableNodes()
     }
 
+    /// 1 nodeのsource-authored CSS baselineだけを更新します。
+    private func updateCSSVariableBaseline(
+        for node: OpenGraphiteNode,
+        sourceNode: OpenGraphiteAgentNode?
+    ) {
+        guard !node.internalID.isEmpty, let sourceNode else { return }
+        var baseline = sourceNode.cssVariables
+        for target in sourceNode.renderingTargets {
+            for (property, value) in target.authoredValues {
+                baseline[property] = value
+            }
+        }
+        cssVariableBaselinesByInternalID[node.internalID] = baseline
+    }
+
+    /// WebCanvas payloadのstable ID、safe selector、browser DOM path順で正本nodeを解決します。
+    private static func sourceNode(
+        for dictionary: [String: Any],
+        in indexes: CurrentSourceNodeIndexes
+    ) -> OpenGraphiteAgentNode? {
+        let internalID = dictionary["internalID"] as? String ?? ""
+        let webLocator = nodeSourceLocator(from: dictionary["locator"])
+        return (!internalID.isEmpty ? indexes.byInternalID[internalID] : nil)
+            ?? webLocator?.selector.flatMap { indexes.bySelector[$0] }
+            ?? webLocator.flatMap { indexes.byBrowserDOMPath[$0.domPath] }
+    }
+
+    /// 表示中page revisionと実参照componentからbackground source graph入力を作ります。
+    private func nodeSourceIndexRequest(
+        payload: [[String: Any]],
+        activeMediaQueries: [String]
+    ) -> NodeSourceIndexRequest? {
+        guard let target = currentHTMLSyncTarget() else { return nil }
+        let targetURL = target.htmlURL.standardizedFileURL
+        let referencedComponentIDs = Set(payload.compactMap { dictionary -> String? in
+            let value = (dictionary["sourceComponentID"] as? String ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }).sorted()
+        let referencedSourceNodeIDs = Set(payload.compactMap { dictionary -> String? in
+            let value = (dictionary["sourceNodeInternalID"] as? String ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }).sorted()
+        let components: [NodeSourceIndexComponent]
+        let componentRevisions: [String]
+        if let loadedProject {
+            var nextComponents: [NodeSourceIndexComponent] = []
+            var nextRevisions: [String] = []
+            for collection in loadedProject.project.collections {
+                for component in collection.components where !component.internalID.isEmpty {
+                    let pageReferenceID = OpenGraphiteReferenceID.component(
+                        collectionID: collection.internalID,
+                        componentID: component.internalID
+                    ).stringValue
+                    let htmlURL = loadedProject.htmlURL(for: component).standardizedFileURL
+                    nextComponents.append(
+                        NodeSourceIndexComponent(
+                            pageReferenceID: pageReferenceID,
+                            htmlURL: htmlURL
+                        )
+                    )
+                    nextRevisions.append("\(pageReferenceID):\(reloadToken(for: htmlURL))")
+                }
+            }
+            components = nextComponents.sorted { $0.pageReferenceID < $1.pageReferenceID }
+            componentRevisions = nextRevisions.sorted()
+        } else {
+            components = []
+            componentRevisions = []
+        }
+        let pageReferenceID = selectedPageReferenceID() ?? ""
+        let key = NodeSourceIndexCacheKey(
+            projectID: loadedProject?.id.uuidString ?? "",
+            targetURL: targetURL,
+            pageReferenceID: pageReferenceID,
+            targetReloadToken: reloadToken(for: targetURL),
+            activeMediaQueries: activeMediaQueries,
+            referencedComponentIDs: referencedComponentIDs,
+            referencedSourceNodeIDs: referencedSourceNodeIDs,
+            componentRevisions: componentRevisions
+        )
+        return NodeSourceIndexRequest(
+            key: key,
+            projectURL: loadedProject?.fileURL,
+            projectRootURL: projectRootURL ?? targetURL.deletingLastPathComponent(),
+            targetHTMLURL: targetURL,
+            components: components
+        )
+    }
+
+    /// cache missしたsource graphだけをMainActor外で構築し、最新payloadへ適用します。
+    private func scheduleNodeSourceIndexBuild(_ request: NodeSourceIndexRequest) {
+        guard nodeSourceIndexTaskKey != request.key else { return }
+        nodeSourceIndexTask?.cancel()
+        nodeSourceIndexTaskKey = request.key
+        nodeSourceIndexBuildCount += 1
+        nodeSourceIndexTask = Task { [weak self] in
+            let indexes = await Task.detached(priority: .userInitiated) {
+                OpenGraphiteNodeSourceIndexBuilder.build(request)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.nodeSourceIndexCache[request.key] = indexes
+            if self.nodeSourceIndexCache.count > 16 {
+                self.nodeSourceIndexCache = [request.key: indexes]
+            }
+            guard self.latestNodeSourceIndexKey == request.key else {
+                if self.nodeSourceIndexTaskKey == request.key {
+                    self.nodeSourceIndexTask = nil
+                    self.nodeSourceIndexTaskKey = nil
+                }
+                return
+            }
+            self.publishNodePayload(self.latestLayerNodePayload, sourceNodes: indexes)
+            if self.nodeSourceIndexTaskKey == request.key {
+                self.nodeSourceIndexTask = nil
+                self.nodeSourceIndexTaskKey = nil
+            }
+        }
+    }
+
     /// 論理名（日本語）: CSS宣言更新関数
-    /// 処理概要: 選択中ノードの編集対象 CSS declaration を更新し、WebView へ反映する mutation を発行します。
+    /// 処理概要: 選択中ノードの編集対象CSS declarationをsource-aware経路で保存し、WebViewを正本sourceから再読み込みします。
     ///
     /// - Parameters:
     ///   - key: 更新する CSS property または OpenGraphite 予約 custom property 名。
     ///   - value: Inspector から入力された値。前後空白は除去します。
     func updateCSSVariable(key: String, value: String) {
         let normalizedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        if selectedLayerNodes.count <= 1,
+           Self.relatedStyleProperties.contains(normalizedKey),
+           selectedNode?.renderTarget(for: normalizedKey) != nil {
+            updateRelatedStyleDeclaration(property: normalizedKey, value: value)
+            return
+        }
         if selectedLayerNodes.count > 1, !normalizedKey.isEmpty {
             let valuesByNodeID = Dictionary(
                 uniqueKeysWithValues: selectedLayerNodes.map { node in
@@ -3951,6 +5077,10 @@ final class EditorStore: ObservableObject {
               let displayTarget = currentHTMLSyncTarget(),
               let editTarget = cssEditTarget(for: selectedNode)
         else {
+            return
+        }
+        guard selectedNode.supports(.editLayout) else {
+            lastError = "選択中の標準HTML要素ではCSSレイアウトを編集できません。"
             return
         }
         guard !selectedNode.internalID.isEmpty else {
@@ -3979,7 +5109,8 @@ final class EditorStore: ObservableObject {
                 expectedOldValue: expectedOldValue
             )
         )
-        guard applyHTMLObjectEdit(edit).updated else { return }
+        let result = applyHTMLObjectEdit(edit)
+        guard result.updated else { return }
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
             if normalizedValue.isEmpty {
@@ -3989,19 +5120,93 @@ final class EditorStore: ObservableObject {
             }
         }
 
-        mutationSequence += 1
-        cssMutation = CSSVariableMutation(
-            sequence: mutationSequence,
-            pageURL: displayTarget.htmlURL,
-            nodeID: selectedNode.id,
-            key: normalizedKey,
-            value: normalizedValue
-        )
+        if result.requiresReload {
+            incrementReloadToken(for: displayTarget.htmlURL)
+        } else {
+            mutationSequence += 1
+            cssMutation = CSSVariableMutation(
+                sequence: mutationSequence,
+                pageURL: displayTarget.htmlURL,
+                nodeID: selectedNode.id,
+                key: normalizedKey,
+                value: normalizedValue
+            )
+        }
         statusMessage = "\(selectedNode.displayID) の \(normalizedKey) を更新しました。"
     }
 
+    /// 論理名（日本語）: 描画実体標準CSS宣言更新関数
+    /// 処理概要: 選択 wrapper の DOM relation と Shared の cascade provenance から実体 media / SVG / mask element を解決し、標準 CSS property を最小差分で保存します。
+    ///
+    /// - Parameters:
+    ///   - property: `object-fit`、`stroke-width`、`mask-image`、`-webkit-mask-image` のいずれか。
+    ///   - value: Inspector から入力された authored CSS value。空の場合は winner declaration を削除します。
+    func updateRelatedStyleDeclaration(property: String, value: String) {
+        let normalizedProperty = property.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.relatedStyleProperties.contains(normalizedProperty),
+              let selectedNodeID,
+              let selectedNode,
+              let renderTarget = selectedNode.renderTarget(for: normalizedProperty),
+              let displayTarget = currentHTMLSyncTarget(),
+              let editTarget = cssEditTarget(for: selectedNode),
+              !selectedNode.internalID.isEmpty
+        else {
+            return
+        }
+        let requiredCapability: OpenGraphiteNodeCapability = normalizedProperty == "object-fit"
+            ? .editMedia
+            : .editIcon
+        guard selectedNode.supports(.editLayout), selectedNode.supports(requiredCapability) else {
+            lastError = "選択中の標準HTML要素では描画実体のCSSを編集できません。"
+            return
+        }
+        guard renderTarget.authoredValue != normalizedValue else { return }
+        let expectedOldValue = expectedOldCSSVariableValue(
+            for: selectedNode,
+            key: normalizedProperty,
+            fallback: renderTarget.authoredValue
+        )
+        let edit = HTMLObjectEdit(
+            target: editTarget,
+            operation: .setCSSVariable(
+                nodeInternalID: selectedNode.internalID,
+                key: normalizedProperty,
+                value: normalizedValue,
+                expectedOldValue: expectedOldValue
+            )
+        )
+        let result = applyHTMLObjectEdit(edit)
+        guard result.updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            nodes[index].updateRenderTargetValue(property: normalizedProperty, value: normalizedValue)
+        }
+        incrementReloadToken(for: displayTarget.htmlURL)
+        statusMessage = "\(selectedNode.displayID) の \(renderTarget.targetLabel) にある \(normalizedProperty) を更新しました。"
+    }
+
+    /// 論理名（日本語）: 選択ノード標準レイアウト更新関数
+    /// 処理概要: legacy layout属性を変更せず、選択modeを標準`display` / `flex-direction` declarationへ変換して同一編集単位で保存します。
+    ///
+    /// - Parameter mode: `vertical`、`horizontal`、`grid`、`block`のいずれか。
+    func updateSelectedNodeLayout(mode: String) {
+        let values: [String: String]
+        switch mode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "horizontal":
+            values = ["display": "flex", "flex-direction": "row"]
+        case "grid":
+            values = ["display": "grid"]
+        case "block":
+            values = ["display": "block"]
+        default:
+            values = ["display": "flex", "flex-direction": "column"]
+        }
+        updateSelectedNodeCSSVariables(values: values)
+    }
+
     /// 論理名（日本語）: 選択ノード複数CSS宣言更新関数
-    /// 処理概要: 選択中ノードの複数 CSS declaration を一括更新し、WebView へまとめて反映する mutation を発行します。
+    /// 処理概要: 選択中ノードの複数CSS declarationを同一source-aware編集単位で保存し、WebViewを再読み込みします。
     ///
     /// - Parameter values: 更新する CSS property または OpenGraphite 予約 custom property 名と値の組。
     func updateSelectedNodeCSSVariables(values: [String: String]) {
@@ -4022,6 +5227,10 @@ final class EditorStore: ObservableObject {
         else {
             return
         }
+        guard selectedNode.supports(.editLayout) else {
+            lastError = "選択中の標準HTML要素ではCSSレイアウトを編集できません。"
+            return
+        }
         guard !selectedNode.internalID.isEmpty else {
             reportHTMLObjectEditConflict()
             return
@@ -4039,7 +5248,7 @@ final class EditorStore: ObservableObject {
         }
 
         let changedValues = normalizedValues.filter { key, value in
-            (nodes[index].cssVariables[key] ?? "") != value
+            Self.authoredCSSValue(for: key, in: nodes[index]) != value
         }
         guard !changedValues.isEmpty else { return }
 
@@ -4047,7 +5256,7 @@ final class EditorStore: ObservableObject {
             result[entry.key] = expectedOldCSSVariableValue(
                 for: selectedNode,
                 key: entry.key,
-                fallback: selectedNode.cssVariables[entry.key] ?? ""
+                fallback: Self.authoredCSSValue(for: entry.key, in: selectedNode)
             )
         }
         let edit = HTMLObjectEdit(
@@ -4058,33 +5267,49 @@ final class EditorStore: ObservableObject {
                 expectedOldValues: expectedOldValues
             )
         )
-        guard applyHTMLObjectEdit(edit).updated else { return }
+        let result = applyHTMLObjectEdit(edit)
+        guard result.updated else { return }
 
         for (key, value) in changedValues {
-            if value.isEmpty {
+            if Self.relatedStyleProperties.contains(key) {
+                nodes[index].updateRenderTargetValue(property: key, value: value)
+            } else if value.isEmpty {
                 nodes[index].cssVariables.removeValue(forKey: key)
             } else {
                 nodes[index].cssVariables[key] = value
             }
         }
 
-        mutationSequence += 1
-        cssVariablesMutation = CSSVariablesMutation(
-            sequence: mutationSequence,
-            pageURL: displayTarget.htmlURL,
-            nodeID: selectedNode.id,
-            values: changedValues
-        )
+        if result.requiresReload {
+            incrementReloadToken(for: displayTarget.htmlURL)
+        } else {
+            mutationSequence += 1
+            cssVariablesMutation = CSSVariablesMutation(
+                sequence: mutationSequence,
+                pageURL: displayTarget.htmlURL,
+                nodeID: selectedNode.id,
+                values: changedValues
+            )
+        }
         statusMessage = "\(selectedNode.displayID) のサイズを更新しました。"
     }
 
     /// 論理名（日本語）: 選択レイヤー群CSS宣言更新関数
-    /// 処理概要: 同時選択中ノードそれぞれの CSS declaration を保存し、WebView へ node ごとの mutation として反映します。
+    /// 処理概要: 同時選択中ノードそれぞれのCSS declarationを保存し、一時inline値を残さずWebViewを一度再読み込みします。
     ///
     /// - Parameter valuesByNodeID: ノード ID ごとの CSS property または OpenGraphite 予約 custom property 名と値の組。
     func updateSelectedLayerNodeCSSVariables(valuesByNodeID: [String: [String: String]]) {
         guard let displayTarget = currentHTMLSyncTarget() else { return }
+        guard selectedLayerNodes.allSatisfy({ $0.supports(.editLayout) }) else {
+            lastError = "選択中の標準HTML要素を含むためCSSレイアウトを一括編集できません。"
+            return
+        }
+        guard !selectedLayerNodes.contains(where: \.hasIncompleteCSSProvenance) else {
+            lastError = "一部stylesheetのsourceを読み取れないためCSSを変更できません。読み取り可能なsourceへ移してから再実行してください。"
+            return
+        }
         var changedValuesByNodeID: [String: [String: String]] = [:]
+        var requiresReload = false
 
         for node in selectedLayerNodes {
             guard let requestedValues = valuesByNodeID[node.id],
@@ -4106,7 +5331,7 @@ final class EditorStore: ObservableObject {
             }
 
             let changedValues = normalizedValues.filter { key, value in
-                (nodes[index].cssVariables[key] ?? "") != value
+                Self.authoredCSSValue(for: key, in: nodes[index]) != value
             }
             guard !changedValues.isEmpty else { continue }
 
@@ -4114,7 +5339,7 @@ final class EditorStore: ObservableObject {
                 result[entry.key] = expectedOldCSSVariableValue(
                     for: node,
                     key: entry.key,
-                    fallback: node.cssVariables[entry.key] ?? ""
+                    fallback: Self.authoredCSSValue(for: entry.key, in: node)
                 )
             }
             let edit = HTMLObjectEdit(
@@ -4125,10 +5350,14 @@ final class EditorStore: ObservableObject {
                     expectedOldValues: expectedOldValues
                 )
             )
-            guard applyHTMLObjectEdit(edit).updated else { continue }
+            let result = applyHTMLObjectEdit(edit)
+            guard result.updated else { continue }
+            requiresReload = requiresReload || result.requiresReload
 
             for (key, value) in changedValues {
-                if value.isEmpty {
+                if Self.relatedStyleProperties.contains(key) {
+                    nodes[index].updateRenderTargetValue(property: key, value: value)
+                } else if value.isEmpty {
                     nodes[index].cssVariables.removeValue(forKey: key)
                 } else {
                     nodes[index].cssVariables[key] = value
@@ -4138,72 +5367,27 @@ final class EditorStore: ObservableObject {
         }
 
         guard !changedValuesByNodeID.isEmpty else { return }
-        mutationSequence += 1
-        cssVariablesBatchMutation = CSSVariablesBatchMutation(
-            sequence: mutationSequence,
-            pageURL: displayTarget.htmlURL,
-            nodeValues: changedValuesByNodeID
-        )
+        if requiresReload {
+            incrementReloadToken(for: displayTarget.htmlURL)
+        } else {
+            mutationSequence += 1
+            cssVariablesBatchMutation = CSSVariablesBatchMutation(
+                sequence: mutationSequence,
+                pageURL: displayTarget.htmlURL,
+                nodeValues: changedValuesByNodeID
+            )
+        }
         statusMessage = "\(changedValuesByNodeID.count)個のオブジェクトを更新しました。"
     }
 
-    /// 論理名（日本語）: 選択ページルートCSS宣言更新関数
-    /// 処理概要: Page Inspector からページ root node の編集対象 CSS declaration を更新し、WebView へ反映する mutation を発行します。
+    /// 論理名（日本語）: 選択HTML locale typography更新関数
+    /// 処理概要: Shared coreを通じてrootの標準`font-family`または任意BCP 47 `:lang()` ruleを保存します。
     ///
     /// - Parameters:
-    ///   - key: 更新する CSS property または OpenGraphite 予約 custom property 名。
-    ///   - value: Inspector から入力された値。前後空白は除去します。
-    func updateSelectedPageRootCSSVariable(key: String, value: String) {
-        guard let target = currentHTMLSyncTarget(),
-              let diskHTML = readHTMLFromDisk(at: target.htmlURL)
-        else {
-            return
-        }
-        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
-        guard let rootNode = Self.pageRootNode(
-            in: diskHTML,
-            companionCSS: try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL),
-            contract: contract
-        ) else {
-            return
-        }
-        guard !rootNode.internalID.isEmpty else {
-            reportHTMLObjectEditConflict()
-            return
-        }
-
-        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expectedOldValue = rootNode.cssVariables[key] ?? ""
-        guard expectedOldValue != normalizedValue else { return }
-
-        let edit = HTMLObjectEdit(
-            target: target,
-            operation: .setCSSVariable(
-                nodeInternalID: rootNode.internalID,
-                key: key,
-                value: normalizedValue,
-                expectedOldValue: expectedOldValue
-            )
-        )
-        guard applyHTMLObjectEdit(edit).updated else { return }
-
-        if let index = nodes.firstIndex(where: { $0.internalID == rootNode.internalID }) {
-            if normalizedValue.isEmpty {
-                nodes[index].cssVariables.removeValue(forKey: key)
-            } else {
-                nodes[index].cssVariables[key] = normalizedValue
-            }
-        }
-
-        mutationSequence += 1
-        cssMutation = CSSVariableMutation(
-            sequence: mutationSequence,
-            pageURL: target.htmlURL,
-            nodeID: rootNode.id,
-            key: key,
-            value: normalizedValue
-        )
-        statusMessage = "Page root の \(key) を更新しました。"
+    ///   - locale: defaultでは`nil`、locale overrideではBCP 47 tag。
+    ///   - fontFamily: 標準`font-family`値。空の場合は宣言を削除します。
+    func updateSelectedLocaleTypography(locale: String?, fontFamily: String) {
+        _ = persistSelectedLocaleTypography(locale: locale, fontFamily: fontFamily)
     }
 
     /// 論理名（日本語）: フォント候補適用関数
@@ -4212,6 +5396,7 @@ final class EditorStore: ObservableObject {
     /// - Parameter candidate: フォントブラウザで選択された候補。
     func applyFontCandidate(_ candidate: OpenGraphiteFontCandidate) {
         guard selectedNode?.internalID.isEmpty == false,
+              selectedNode?.hasIncompleteCSSProvenance == false,
               let target = currentHTMLSyncTarget()
         else {
             return
@@ -4222,17 +5407,76 @@ final class EditorStore: ObservableObject {
         ensureFontStylesheet(for: candidate, target: target)
     }
 
-    /// 論理名（日本語）: 選択ページルートフォント候補適用関数
-    /// 処理概要: Page Inspector で選んだフォント候補を locale 用 CSS 変数へ保存し、必要な stylesheet link を追加します。
+    /// 論理名（日本語）: 選択HTML localeフォント候補適用関数
+    /// 処理概要: Page / Component Inspectorで選んだ候補を標準`font-family`へ保存し、必要なstylesheet linkを追加します。
     ///
     /// - Parameters:
-    ///   - variableKey: 保存先の locale font-family 変数名。
+    ///   - locale: defaultでは`nil`、locale overrideではBCP 47 tag。
     ///   - candidate: フォントブラウザで選択された候補。
-    func applySelectedPageRootFontCandidate(variableKey: String, candidate: OpenGraphiteFontCandidate) {
+    func applySelectedLocaleFontCandidate(locale: String?, candidate: OpenGraphiteFontCandidate) {
         guard let target = currentHTMLSyncTarget() else { return }
         let normalizedCSSFamily = candidate.cssFamily.trimmingCharacters(in: .whitespacesAndNewlines)
-        updateSelectedPageRootCSSVariable(key: variableKey, value: normalizedCSSFamily)
+        guard persistSelectedLocaleTypography(locale: locale, fontFamily: normalizedCSSFamily) else { return }
         ensureFontStylesheet(for: candidate, target: target)
+    }
+
+    /// 論理名（日本語）: 選択HTML locale typography保存関数
+    /// 処理概要: Shared coreのlossless CSS編集を実行し、companion CSS履歴とWebView reloadを同期します。
+    ///
+    /// - Parameters:
+    ///   - locale: defaultでは`nil`、locale overrideではBCP 47 tag。
+    ///   - fontFamily: 標準`font-family`値。空の場合は宣言を削除します。
+    /// - Returns: 入力が妥当でShared coreの保存経路を完了した場合は`true`。
+    @discardableResult
+    private func persistSelectedLocaleTypography(locale: String?, fontFamily: String) -> Bool {
+        guard let loadedProject,
+              let pageID = selectedPageReferenceID(),
+              let target = currentHTMLSyncTarget()
+        else {
+            return false
+        }
+
+        let previousCompanionCSS = companionCSSHistorySnapshot(for: target.htmlURL)
+        let contract = OpenGraphiteContract.loadDefault(startingAt: loadedProject.fileURL)
+        let core = OpenGraphiteAgentCore(contract: contract)
+        do {
+            let result = try core.setLocaleTypography(
+                projectURL: loadedProject.fileURL,
+                pageID: pageID,
+                locale: locale,
+                fontFamily: fontFamily
+            )
+            if let diagnostic = result.diagnostics.first(where: { $0.severity == .error }) {
+                lastError = diagnostic.message
+                return false
+            }
+
+            if result.updated {
+                let nextCompanionCSS = companionCSSHistorySnapshot(for: target.htmlURL)
+                if previousCompanionCSS != nextCompanionCSS {
+                    recordDocumentHistory(
+                        projectURL: loadedProject.fileURL,
+                        pageURL: target.htmlURL,
+                        advancesHTMLHistory: false,
+                        companionCSSChange: CompanionCSSHistoryChange(
+                            previousCSS: previousCompanionCSS,
+                            nextCSS: nextCompanionCSS
+                        )
+                    )
+                }
+                incrementReloadToken(for: target.htmlURL)
+                restartExternalPageMonitoring(force: true)
+            }
+
+            lastError = nil
+            statusMessage = result.updated
+                ? "\(result.selector) の font-family を更新しました。"
+                : "\(result.selector) の font-family に変更はありません。"
+            return true
+        } catch {
+            lastError = "Locale typography の保存に失敗しました: \(error.localizedDescription)"
+            return false
+        }
     }
 
     /// 論理名（日本語）: フォントstylesheet保証関数
@@ -4268,11 +5512,11 @@ final class EditorStore: ObservableObject {
     }
 
     /// 論理名（日本語）: ノード属性更新関数
-    /// 処理概要: 選択中ノードの編集対象属性を更新し、WebView へ反映する mutation を発行します。
+    /// 処理概要: 選択中ノードの編集対象属性を空文字を含む指定値へ設定し、属性削除intentとは分離してWebViewへ反映します。
     ///
     /// - Parameters:
     ///   - name: 更新する属性名。
-    ///   - value: Inspector から入力された値。空の場合は属性削除として扱います。
+    ///   - value: Inspector から入力された値。標準属性では先頭末尾空白と空文字をsource intentとして保持します。
     func updateNodeAttribute(name: String, value: String) {
         guard let selectedNodeID,
               let selectedNode,
@@ -4280,77 +5524,63 @@ final class EditorStore: ObservableObject {
         else {
             return
         }
+        guard selectedNode.supportsEditingAttribute(name) else {
+            lastError = "選択中の標準HTML要素では \(name) 属性を安全に編集できません。"
+            return
+        }
         guard !selectedNode.internalID.isEmpty else {
             reportHTMLObjectEditConflict()
             return
         }
-        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let expectedOldValue: String
-
-        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
-            switch name {
-            case "data-og-layout":
-                expectedOldValue = nodes[index].layout ?? ""
-            case "data-og-role":
-                expectedOldValue = nodes[index].role ?? ""
-            case "data-og-icon-library":
-                expectedOldValue = nodes[index].iconLibrary ?? ""
-            case "data-og-icon-name":
-                expectedOldValue = nodes[index].iconName ?? ""
-            case "data-og-icon-source":
-                expectedOldValue = nodes[index].iconSource ?? ""
-            default:
-                expectedOldValue = ""
-            }
-            guard expectedOldValue != normalizedValue else { return }
-        } else {
-            switch name {
-            case "data-og-layout":
-                expectedOldValue = selectedNode.layout ?? ""
-            case "data-og-role":
-                expectedOldValue = selectedNode.role ?? ""
-            case "data-og-icon-library":
-                expectedOldValue = selectedNode.iconLibrary ?? ""
-            case "data-og-icon-name":
-                expectedOldValue = selectedNode.iconName ?? ""
-            case "data-og-icon-source":
-                expectedOldValue = selectedNode.iconSource ?? ""
-            default:
-                expectedOldValue = ""
-            }
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedName.isEmpty else { return }
+        let persistedValue = normalizedName.hasPrefix("data-og-")
+            ? value.trimmingCharacters(in: .whitespacesAndNewlines)
+            : value
+        let currentNode = nodes.first(where: { $0.id == selectedNodeID }) ?? selectedNode
+        let authoredAttribute = currentNode.attributes.first {
+            $0.key.caseInsensitiveCompare(normalizedName) == .orderedSame
         }
+        let expectedOldPresence = normalizedName == "hidden"
+            ? currentNode.hasHiddenAttribute
+            : authoredAttribute != nil
+        let expectedOldValue = authoredAttribute?.value ?? ""
+        guard !expectedOldPresence || expectedOldValue != persistedValue else { return }
 
         let edit = HTMLObjectEdit(
             target: target,
             operation: .setAttribute(
                 nodeInternalID: selectedNode.internalID,
-                name: name,
-                value: normalizedValue,
-                expectedOldValue: expectedOldValue
+                name: normalizedName,
+                value: persistedValue,
+                expectedOldValue: expectedOldValue,
+                expectedOldPresence: expectedOldPresence
             )
         )
         let editResult = applyHTMLObjectEdit(edit)
         guard editResult.updated else { return }
 
         if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
-            switch name {
-            case "data-og-layout":
-                nodes[index].layout = normalizedValue.isEmpty ? nil : normalizedValue
-            case "data-og-role":
-                nodes[index].role = normalizedValue.isEmpty ? nil : normalizedValue
-            case "data-og-icon-library":
-                nodes[index].iconLibrary = normalizedValue.isEmpty ? nil : normalizedValue
-            case "data-og-icon-name":
-                nodes[index].iconName = normalizedValue.isEmpty ? nil : normalizedValue
-            case "data-og-icon-source":
-                nodes[index].iconSource = normalizedValue.isEmpty ? nil : normalizedValue
-            default:
-                break
+            let existingName = nodes[index].attributes.keys.first {
+                $0.caseInsensitiveCompare(normalizedName) == .orderedSame
             }
-        }
-
-        if edit.operation.removesAbsoluteLayoutChildPositionDeclarations {
-            removeCachedDirectChildPositionDeclarations(parentNodeID: selectedNodeID)
+            if let existingName, existingName != normalizedName {
+                nodes[index].attributes.removeValue(forKey: existingName)
+            }
+            nodes[index].attributes[normalizedName] = persistedValue
+            switch normalizedName {
+            case "hidden":
+                nodes[index].hasHiddenAttribute = true
+            case "role":
+                nodes[index].role = persistedValue.isEmpty ? nil : persistedValue
+            case "data-og-icon-library":
+                nodes[index].iconLibrary = persistedValue.isEmpty ? nil : persistedValue
+            case "data-og-icon-name":
+                nodes[index].iconName = persistedValue.isEmpty ? nil : persistedValue
+            case "data-og-icon-source":
+                nodes[index].iconSource = persistedValue.isEmpty ? nil : persistedValue
+            default: break
+            }
         }
 
         if editResult.requiresReload {
@@ -4361,32 +5591,82 @@ final class EditorStore: ObservableObject {
                 sequence: attributeMutationSequence,
                 pageURL: target.htmlURL,
                 nodeID: selectedNode.id,
-                name: name,
-                value: normalizedValue
+                name: normalizedName,
+                value: persistedValue
             )
         }
-        statusMessage = "\(selectedNode.displayID) の \(name) を更新しました。"
+        statusMessage = "\(selectedNode.displayID) の \(normalizedName) を更新しました。"
     }
 
-    /// 論理名（日本語）: Cached direct child位置宣言削除関数
-    /// 処理概要: 親 layout が absolute から flow へ変わった際、直下 child の位置指定を app 内 cache から削除します。
+    /// 論理名（日本語）: ノード属性削除関数
+    /// 処理概要: 選択中ノードに存在する属性tokenだけを明示的に削除し、空文字設定とは別operationとして保存します。
     ///
-    /// - Parameter parentNodeID: 直下 child を更新する親 node の選択 ID。
-    private func removeCachedDirectChildPositionDeclarations(parentNodeID: String) {
-        guard let parentIndex = nodes.firstIndex(where: { $0.id == parentNodeID }) else { return }
-        let parentDepth = nodes[parentIndex].depth
-        let directChildDepth = parentDepth + 1
-        var index = nodes.index(after: parentIndex)
-        while index < nodes.endIndex {
-            guard nodes[index].depth > parentDepth else { break }
-            if nodes[index].depth == directChildDepth {
-                for key in Self.absoluteLayoutChildPositionCSSKeys {
-                    nodes[index].cssVariables.removeValue(forKey: key)
-                    recordCSSVariableBaseline(nodeInternalID: nodes[index].internalID, key: key, value: "")
-                }
-            }
-            index = nodes.index(after: index)
+    /// - Parameter name: 削除する属性名。
+    func removeNodeAttribute(name: String) {
+        guard let selectedNodeID,
+              let selectedNode,
+              let target = currentHTMLSyncTarget()
+        else { return }
+        guard selectedNode.supportsEditingAttribute(name) else {
+            lastError = "選択中の標準HTML要素では \(name) 属性を安全に削除できません。"
+            return
         }
+        guard !selectedNode.internalID.isEmpty else {
+            reportHTMLObjectEditConflict()
+            return
+        }
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let currentNode = nodes.first(where: { $0.id == selectedNodeID }) ?? selectedNode
+        let authoredAttribute = currentNode.attributes.first {
+            $0.key.caseInsensitiveCompare(normalizedName) == .orderedSame
+        }
+        let isPresent = normalizedName == "hidden"
+            ? currentNode.hasHiddenAttribute
+            : authoredAttribute != nil
+        guard isPresent else { return }
+        let expectedOldValue = authoredAttribute?.value ?? ""
+        let edit = HTMLObjectEdit(
+            target: target,
+            operation: .removeAttribute(
+                nodeInternalID: selectedNode.internalID,
+                name: normalizedName,
+                expectedOldValue: expectedOldValue,
+                expectedOldPresence: true
+            )
+        )
+        let editResult = applyHTMLObjectEdit(edit)
+        guard editResult.updated else { return }
+
+        if let index = nodes.firstIndex(where: { $0.id == selectedNodeID }) {
+            if let existingName = nodes[index].attributes.keys.first(where: {
+                $0.caseInsensitiveCompare(normalizedName) == .orderedSame
+            }) {
+                nodes[index].attributes.removeValue(forKey: existingName)
+            }
+            switch normalizedName {
+            case "hidden": nodes[index].hasHiddenAttribute = false
+            case "role": nodes[index].role = nil
+            case "data-og-icon-library": nodes[index].iconLibrary = nil
+            case "data-og-icon-name": nodes[index].iconName = nil
+            case "data-og-icon-source": nodes[index].iconSource = nil
+            default: break
+            }
+        }
+
+        if editResult.requiresReload {
+            requestDocumentReplacementFromDisk(for: target, selectedNodeID: selectedNode.id)
+        } else {
+            attributeMutationSequence += 1
+            attributeMutation = NodeAttributeMutation(
+                sequence: attributeMutationSequence,
+                pageURL: target.htmlURL,
+                nodeID: selectedNode.id,
+                name: normalizedName,
+                value: "",
+                removesAttribute: true
+            )
+        }
+        statusMessage = "\(selectedNode.displayID) の \(normalizedName) を削除しました。"
     }
 
     /// 論理名（日本語）: ノード表示ID更新関数
@@ -4441,7 +5721,7 @@ final class EditorStore: ObservableObject {
     func previewNodeTextContent(_ value: String, expectedNodeID: String? = nil, expectedPageURL: URL? = nil) -> Bool {
         guard let selectedNodeID,
               let selectedNode,
-              selectedNode.type == "text",
+              selectedNode.supports(.editText),
               let target = currentHTMLSyncTarget()
         else {
             return false
@@ -4493,7 +5773,7 @@ final class EditorStore: ObservableObject {
     ) -> Bool {
         guard let selectedNodeID,
               let selectedNode,
-              selectedNode.type == "text",
+              selectedNode.supports(.editText),
               let target = currentHTMLSyncTarget()
         else {
             return false
@@ -4751,7 +6031,7 @@ final class EditorStore: ObservableObject {
     func updateIcon(library: String, name: String, source: String) {
         guard let selectedNodeID,
               let selectedNode,
-              selectedNode.type == "icon",
+              selectedNode.supports(.editIcon),
               let target = currentHTMLSyncTarget()
         else {
             return
@@ -5141,6 +6421,26 @@ final class EditorStore: ObservableObject {
         statusMessage = "CSS / Components の外部変更を表示へ同期しました。"
     }
 
+    /// 論理名（日本語）: 外部依存ファイル変更同期関数
+    /// 処理概要: HTML直下またはlocal CSS `@import` graphに含まれる依存だけを再読込対象とし、未知URLの通知では表示を変えません。
+    ///
+    /// - Parameter url: 外部変更を検出したlocal resource URL。
+    func refreshProjectDependencyFromDiskIfChanged(at url: URL) {
+        guard let loadedProject else { return }
+        let dependencyURLs = projectDependencyURLs(for: loadedProject)
+        let standardizedURL = url.standardizedFileURL
+        let resolvedURL = standardizedURL.resolvingSymlinksInPath()
+        let wasMonitored = dependencyChangeMonitorsByURL.keys.contains(standardizedURL)
+            || dependencyChangeMonitorsByURL.keys.contains(resolvedURL)
+        guard wasMonitored
+                || dependencyURLs.contains(standardizedURL)
+                || dependencyURLs.contains(resolvedURL)
+        else {
+            return
+        }
+        refreshProjectDependenciesFromDisk()
+    }
+
     /// 論理名（日本語）: WebViewエラー報告関数
     /// 処理概要: WebView や JavaScript ブリッジで発生したエラー文を画面表示用に保存します。
     ///
@@ -5394,6 +6694,23 @@ final class EditorStore: ObservableObject {
         return htmlSyncTarget(for: selectedPage, segment: selectedDocumentSegment)
     }
 
+    /// 論理名（日本語）: HTML同期対象page参照ID生成関数
+    /// 処理概要: 選択状態に依存せず、固定済みdocument identityからproject-aware AgentCore APIへ渡すpage/component参照IDを生成します。
+    ///
+    /// - Parameter target: PagesまたはComponentsのHTML同期対象。
+    /// - Returns: project内page/component参照ID。identityが空の場合は`nil`。
+    private func pageReferenceID(for target: HTMLSyncTarget) -> String? {
+        let containerID = target.identity.containerInternalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pageID = target.identity.pageInternalID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !containerID.isEmpty, !pageID.isEmpty else { return nil }
+        switch target.identity.segment {
+        case .pages:
+            return OpenGraphiteReferenceID.page(chapterID: containerID, pageID: pageID).stringValue
+        case .components:
+            return OpenGraphiteReferenceID.component(collectionID: containerID, componentID: pageID).stringValue
+        }
+    }
+
     /// 論理名（日本語）: CSS編集対象HTML同期先取得関数
     /// 処理概要: runtime 展開された component instance 内 node は component master の HTML/CSS を保存先にし、それ以外は現在表示中 HTML を保存先にします。
     ///
@@ -5487,6 +6804,10 @@ final class EditorStore: ObservableObject {
     @discardableResult
     private func applyHTMLObjectEdit(_ edit: HTMLObjectEdit) -> HTMLObjectEditResult {
         guard validateHTMLSyncTarget(edit.target) != nil else { return .failed }
+        guard !cssMutationHasIncompleteProvenance(edit.operation) else {
+            lastError = "一部stylesheetのsourceを読み取れないためCSSを変更できません。読み取り可能なsourceへ移してから再実行してください。"
+            return .failed
+        }
         guard let diskHTML = readHTMLFromDisk(at: edit.target.htmlURL) else {
             lastError = "HTMLを読み込めませんでした。ページを再読み込みしてからもう一度設定してください。"
             return .failed
@@ -5495,7 +6816,14 @@ final class EditorStore: ObservableObject {
         let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? edit.target.htmlURL)
         let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: edit.target.htmlURL)
         let document = OpenGraphiteHTMLDocument(html: diskHTML)
-        guard objectEditBaselineMatches(edit.operation, in: document, companionCSS: companionCSS, contract: contract) else {
+        guard objectEditBaselineMatches(
+            edit.operation,
+            in: document,
+            companionCSS: companionCSS,
+            contract: contract,
+            activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL),
+            target: edit.target
+        ) else {
             reportHTMLObjectEditConflict()
             return .failed
         }
@@ -5560,6 +6888,26 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: CSS source provenance不足編集拒否判定関数
+    /// 処理概要: WebKitまたはShared source graphが読み取り不能stylesheetを報告したnodeへのCSS保存を拒否し、computed inspectionだけを許可します。
+    ///
+    /// - Parameter operation: 保存予定のHTML object edit操作。
+    /// - Returns: 対象CSS mutationを安全にsourceへrebaseできない場合は`true`。
+    private func cssMutationHasIncompleteProvenance(_ operation: HTMLObjectEditOperation) -> Bool {
+        let nodeInternalID: String
+        switch operation {
+        case let .setCSSVariable(candidate, _, _, _),
+             let .setCSSVariables(candidate, _, _):
+            nodeInternalID = candidate
+        default:
+            return false
+        }
+        return nodes.contains { node in
+            node.hasIncompleteCSSProvenance
+                && (node.internalID == nodeInternalID || node.sourceNodeInternalID == nodeInternalID)
+        }
+    }
+
     /// 論理名（日本語）: HTMLオブジェクト編集永続化payload生成関数
     /// 処理概要: HTML mutation の保存内容を整え、挿入HTML内の editable design value を companion CSS へ移します。
     ///
@@ -5573,16 +6921,6 @@ final class EditorStore: ObservableObject {
         mutationHTML: String,
         contract: OpenGraphiteContract
     ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
-        if edit.operation.removesAbsoluteLayoutChildPositionDeclarations,
-           case let .setAttribute(parentInternalID, _, _, _) = edit.operation {
-            return try removingAbsoluteLayoutChildPositionDeclarations(
-                parentInternalID: parentInternalID,
-                html: mutationHTML,
-                htmlURL: edit.target.htmlURL,
-                contract: contract
-            )
-        }
-
         guard case .insertHTML = edit.operation else {
             return (mutationHTML, nil)
         }
@@ -5594,52 +6932,6 @@ final class EditorStore: ObservableObject {
         var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: edit.target.htmlURL)
         migrateInlineOpenGraphiteCSSVariables(from: legacyDocument, into: &companionCSS, contract: contract)
         return (sanitizedHTML, companionCSS)
-    }
-
-    /// 論理名（日本語）: Absolute layout child位置宣言削除関数
-    /// 処理概要: absolute 親から flow layout へ戻す際、直下 child の position / inset 宣言を正本 HTML/CSS から削除します。
-    ///
-    /// - Parameters:
-    ///   - parentInternalID: layout を変更した親 node の `data-og-internal-id`。
-    ///   - html: layout 属性変更後の HTML。
-    ///   - htmlURL: companion CSS を解決する HTML URL。
-    ///   - contract: CSS declaration の判定に使う OpenGraphite 契約。
-    /// - Returns: cleanup 後の HTML と、変更された companion CSS。
-    private func removingAbsoluteLayoutChildPositionDeclarations(
-        parentInternalID: String,
-        html: String,
-        htmlURL: URL,
-        contract: OpenGraphiteContract
-    ) throws -> (html: String, companionCSS: OpenGraphiteCompanionCSSDocument?) {
-        var companionCSS = try OpenGraphiteCompanionCSSDocument.read(forHTMLURL: htmlURL)
-        let originalCompanionCSS = companionCSS.css
-        let document = OpenGraphiteHTMLDocument(html: html)
-        let nodes = document.nodes(companionCSS: companionCSS, contract: contract)
-        guard let parentNode = nodes.first(where: { $0.internalID == parentInternalID }) else {
-            return (html, nil)
-        }
-
-        let childInternalIDs = nodes
-            .filter { $0.parentID == parentNode.id && !$0.internalID.isEmpty }
-            .map(\.internalID)
-        guard !childInternalIDs.isEmpty else {
-            return (html, nil)
-        }
-
-        var cleanedHTML = html
-        for childInternalID in childInternalIDs {
-            for key in Self.absoluteLayoutChildPositionCSSKeys {
-                companionCSS.setCSSVariable(key, value: "", forNodeInternalID: childInternalID)
-                let mutation = OpenGraphiteHTMLDocument(html: cleanedHTML)
-                    .settingCSSVariable(key, value: "", forNodeID: childInternalID, contract: contract)
-                if mutation.diagnostics.filter({ $0.severity == .error }).isEmpty {
-                    cleanedHTML = mutation.html
-                }
-            }
-        }
-
-        let changedCompanionCSS = companionCSS.css == originalCompanionCSS ? nil : companionCSS
-        return (cleanedHTML, changedCompanionCSS)
     }
 
     /// 論理名（日本語）: Inline design value移行関数
@@ -5722,13 +7014,25 @@ final class EditorStore: ObservableObject {
             else {
                 return nil
             }
+            if payload["removeAttribute"] as? Bool == true {
+                return HTMLObjectEdit(
+                    target: target,
+                    operation: .removeAttribute(
+                        nodeInternalID: nodeInternalID,
+                        name: name,
+                        expectedOldValue: payload["previousValue"] as? String ?? "",
+                        expectedOldPresence: payload["previousAttributePresent"] as? Bool ?? true
+                    )
+                )
+            }
             return HTMLObjectEdit(
                 target: target,
                 operation: .setAttribute(
                     nodeInternalID: nodeInternalID,
                     name: name,
                     value: payload["value"] as? String ?? "",
-                    expectedOldValue: payload["previousValue"] as? String ?? ""
+                    expectedOldValue: payload["previousValue"] as? String ?? "",
+                    expectedOldPresence: payload["previousAttributePresent"] as? Bool
                 )
             )
         case "renameNodeID":
@@ -5845,10 +7149,21 @@ final class EditorStore: ObservableObject {
         guard let html = readHTMLFromDisk(at: target.htmlURL) else { return fallback }
         let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
         let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
-        let sourceNode = OpenGraphiteHTMLDocument(html: html)
-            .nodes(companionCSS: companionCSS, contract: contract)
-            .first { $0.internalID == nodeInternalID }
+        let sourceNode = sourceNodeForCSSBaseline(
+            nodeInternalID: nodeInternalID,
+            target: target,
+            document: OpenGraphiteHTMLDocument(html: html),
+            companionCSS: companionCSS,
+            activeMediaQueries: activeMediaQueries(for: target.htmlURL),
+            contract: contract
+        )
         return keys.reduce(into: [String: String]()) { result, key in
+            if Self.relatedStyleProperties.contains(key) {
+                result[key] = sourceNode?.renderingTargets.lazy
+                    .compactMap { $0.authoredValues[key] }
+                    .first ?? fallback[key] ?? ""
+                return
+            }
             result[key] = sourceNode?.cssVariables[key] ?? fallback[key] ?? ""
         }
     }
@@ -5870,6 +7185,20 @@ final class EditorStore: ObservableObject {
             return fallback
         }
         return baseline[key] ?? ""
+    }
+
+    /// 論理名（日本語）: 編集対象CSS authored値取得関数
+    /// 処理概要: wrapper 自身の CSS と描画実体の標準 CSS を同じ編集経路で比較できるよう、保存対象に応じた authored 値を返します。
+    ///
+    /// - Parameters:
+    ///   - key: CSS property または OpenGraphite 予約 custom property 名。
+    ///   - node: 値を保持する Inspector node。
+    /// - Returns: 描画実体 property では render target の authored value、それ以外は wrapper の CSS declaration 値。
+    private static func authoredCSSValue(for key: String, in node: OpenGraphiteNode) -> String {
+        if relatedStyleProperties.contains(key) {
+            return node.renderTarget(for: key)?.authoredValue ?? ""
+        }
+        return node.cssVariables[key] ?? ""
     }
 
     /// 論理名（日本語）: CSS宣言baseline更新関数
@@ -5907,31 +7236,90 @@ final class EditorStore: ObservableObject {
         cssVariableBaselinesByInternalID[nodeInternalID] = baseline
     }
 
+    /// 論理名（日本語）: HTML別active media condition取得関数
+    /// 処理概要: WebKitがsame-origin stylesheetから収集した現在match中のauthored `@media` conditionをsource cascadeへ渡し、runtime component保存先には表示中Pageのviewport条件を引き継ぎます。
+    ///
+    /// - Parameter htmlURL: 表示中HTMLのURL。
+    /// - Returns: 重複を除いた安定順のcondition一覧。未収集時は空配列。
+    private func activeMediaQueries(for htmlURL: URL) -> [String] {
+        let standardizedURL = htmlURL.standardizedFileURL
+        if let currentURL = currentHTMLSyncTarget()?.htmlURL.standardizedFileURL,
+           currentURL != standardizedURL,
+           let current = activeMediaQueriesByHTMLURL[currentURL] {
+            return current
+        }
+        return activeMediaQueriesByHTMLURL[standardizedURL] ?? []
+    }
+
     /// 論理名（日本語）: オブジェクト編集基準一致判定関数
     /// 処理概要: 対象 node の旧値または subtree hash が最新ディスク HTML と一致するか確認します。
     ///
     /// - Parameters:
     ///   - operation: 検証する編集操作。
     ///   - document: 最新ディスク HTML document。
+    ///   - activeMediaQueries: WebKitで現在match中のauthored `@media` condition。
+    ///   - target: project CSSを含むpage graphの解決対象。
     /// - Returns: 競合がない場合は `true`。
     private func objectEditBaselineMatches(
         _ operation: HTMLObjectEditOperation,
         in document: OpenGraphiteHTMLDocument,
         companionCSS: OpenGraphiteCompanionCSSDocument?,
-        contract: OpenGraphiteContract
+        contract: OpenGraphiteContract,
+        activeMediaQueries: [String],
+        target: HTMLSyncTarget
     ) -> Bool {
         switch operation {
         case let .setCSSVariable(nodeInternalID, key, _, expectedOldValue):
-            guard let node = document.nodes(companionCSS: companionCSS, contract: contract).first(where: { $0.internalID == nodeInternalID }) else { return false }
+            guard let node = sourceNodeForCSSBaseline(
+                nodeInternalID: nodeInternalID,
+                target: target,
+                document: document,
+                companionCSS: companionCSS,
+                activeMediaQueries: activeMediaQueries,
+                contract: contract
+            ) else { return false }
+            if Self.relatedStyleProperties.contains(key) {
+                let authoredValue = node.renderingTargets.lazy
+                    .compactMap { $0.authoredValues[key] }
+                    .first ?? ""
+                return authoredValue == expectedOldValue
+            }
             return (node.cssVariables[key] ?? "") == expectedOldValue
         case let .setCSSVariables(nodeInternalID, _, expectedOldValues):
-            guard let node = document.nodes(companionCSS: companionCSS, contract: contract).first(where: { $0.internalID == nodeInternalID }) else { return false }
+            guard let node = sourceNodeForCSSBaseline(
+                nodeInternalID: nodeInternalID,
+                target: target,
+                document: document,
+                companionCSS: companionCSS,
+                activeMediaQueries: activeMediaQueries,
+                contract: contract
+            ) else { return false }
             return expectedOldValues.allSatisfy { key, value in
-                (node.cssVariables[key] ?? "") == value
+                if Self.relatedStyleProperties.contains(key) {
+                    let authoredValue = node.renderingTargets.lazy
+                        .compactMap { $0.authoredValues[key] }
+                        .first ?? ""
+                    return authoredValue == value
+                }
+                return (node.cssVariables[key] ?? "") == value
             }
-        case let .setAttribute(nodeInternalID, name, _, expectedOldValue):
+        case let .setAttribute(nodeInternalID, name, _, expectedOldValue, expectedOldPresence):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
-            return (node.attributes[name] ?? "") == expectedOldValue
+            let authoredAttribute = node.attributes.first { attributeName, _ in
+                attributeName.caseInsensitiveCompare(name) == .orderedSame
+            }
+            if let expectedOldPresence {
+                guard (authoredAttribute != nil) == expectedOldPresence else { return false }
+                return !expectedOldPresence || authoredAttribute?.value == expectedOldValue
+            }
+            return (authoredAttribute?.value ?? "") == expectedOldValue
+        case let .removeAttribute(nodeInternalID, name, expectedOldValue, expectedOldPresence):
+            guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
+            let authoredAttribute = node.attributes.first { attributeName, _ in
+                attributeName.caseInsensitiveCompare(name) == .orderedSame
+            }
+            return (authoredAttribute != nil) == expectedOldPresence
+                && (authoredAttribute?.value ?? "") == expectedOldValue
         case let .renameNodeID(nodeInternalID, _, expectedOldValue):
             guard let node = document.nodes().first(where: { $0.internalID == nodeInternalID }) else { return false }
             return node.id == expectedOldValue
@@ -5955,6 +7343,41 @@ final class EditorStore: ObservableObject {
         }
     }
 
+    /// 論理名（日本語）: Project-aware CSS baselineノード取得関数
+    /// 処理概要: project CSS、companion CSS、active mediaを含むpage graphを優先し、standalone時だけHTML source graphへfallbackします。
+    ///
+    /// - Parameters:
+    ///   - nodeInternalID: 対象nodeのinternal ID。
+    ///   - target: project内HTML同期対象。
+    ///   - document: fallback用HTML document。
+    ///   - companionCSS: fallback用companion CSS。
+    ///   - activeMediaQueries: WebKitでmatch中のauthored media condition。
+    ///   - contract: CSS契約。
+    /// - Returns: project-wide cascadeを反映した対象node。未解決時は`nil`。
+    private func sourceNodeForCSSBaseline(
+        nodeInternalID: String,
+        target: HTMLSyncTarget,
+        document: OpenGraphiteHTMLDocument,
+        companionCSS: OpenGraphiteCompanionCSSDocument?,
+        activeMediaQueries: [String],
+        contract: OpenGraphiteContract
+    ) -> OpenGraphiteAgentNode? {
+        if let pageID = pageReferenceID(for: target),
+           let graph = try? OpenGraphiteAgentCore(contract: contract).pageGraph(
+               projectURL: target.identity.projectURL,
+               pageID: pageID,
+               activeMediaQueries: activeMediaQueries
+           ),
+           let node = graph.nodes.first(where: { $0.internalID == nodeInternalID }) {
+            return node
+        }
+        return document.nodes(
+            companionCSS: companionCSS,
+            activeMediaQueries: activeMediaQueries,
+            contract: contract
+        ).first { $0.internalID == nodeInternalID }
+    }
+
     /// 論理名（日本語）: Agent coreオブジェクト編集適用関数
     /// 処理概要: CSS declaration や icon 更新を Editor 専用 HTML mutation ではなく AgentCore の正本保存経路へ通します。
     ///
@@ -5974,20 +7397,86 @@ final class EditorStore: ObservableObject {
             var lastResult: OpenGraphiteEditResult?
             switch edit.operation {
             case let .setCSSVariable(nodeInternalID, key, value, _):
-                lastResult = try core.setCSSVariable(
-                    key,
-                    value: value,
-                    nodeID: nodeInternalID,
-                    htmlURL: edit.target.htmlURL
-                )
+                if Self.relatedStyleProperties.contains(key) {
+                    if let pageID = pageReferenceID(for: edit.target) {
+                        lastResult = try core.setRelatedStyleDeclaration(
+                            key,
+                            value: value,
+                            wrapperNodeID: nodeInternalID,
+                            projectURL: edit.target.identity.projectURL,
+                            pageID: pageID,
+                            activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                        )
+                    } else {
+                        lastResult = try core.setRelatedStyleDeclaration(
+                            key,
+                            value: value,
+                            wrapperNodeID: nodeInternalID,
+                            htmlURL: edit.target.htmlURL,
+                            activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                        )
+                    }
+                } else {
+                    if let pageID = pageReferenceID(for: edit.target) {
+                        lastResult = try core.setCSSVariable(
+                            key,
+                            value: value,
+                            nodeID: nodeInternalID,
+                            projectURL: edit.target.identity.projectURL,
+                            pageID: pageID,
+                            activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                        )
+                    } else {
+                        lastResult = try core.setCSSVariable(
+                            key,
+                            value: value,
+                            nodeID: nodeInternalID,
+                            htmlURL: edit.target.htmlURL,
+                            activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                        )
+                    }
+                }
             case let .setCSSVariables(nodeInternalID, values, _):
                 for key in values.keys.sorted() {
-                    lastResult = try core.setCSSVariable(
-                        key,
-                        value: values[key] ?? "",
-                        nodeID: nodeInternalID,
-                        htmlURL: edit.target.htmlURL
-                    )
+                    if Self.relatedStyleProperties.contains(key) {
+                        if let pageID = pageReferenceID(for: edit.target) {
+                            lastResult = try core.setRelatedStyleDeclaration(
+                                key,
+                                value: values[key] ?? "",
+                                wrapperNodeID: nodeInternalID,
+                                projectURL: edit.target.identity.projectURL,
+                                pageID: pageID,
+                                activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                            )
+                        } else {
+                            lastResult = try core.setRelatedStyleDeclaration(
+                                key,
+                                value: values[key] ?? "",
+                                wrapperNodeID: nodeInternalID,
+                                htmlURL: edit.target.htmlURL,
+                                activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                            )
+                        }
+                    } else {
+                        if let pageID = pageReferenceID(for: edit.target) {
+                            lastResult = try core.setCSSVariable(
+                                key,
+                                value: values[key] ?? "",
+                                nodeID: nodeInternalID,
+                                projectURL: edit.target.identity.projectURL,
+                                pageID: pageID,
+                                activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                            )
+                        } else {
+                            lastResult = try core.setCSSVariable(
+                                key,
+                                value: values[key] ?? "",
+                                nodeID: nodeInternalID,
+                                htmlURL: edit.target.htmlURL,
+                                activeMediaQueries: activeMediaQueries(for: edit.target.htmlURL)
+                            )
+                        }
+                    }
                 }
             case let .setIcon(nodeInternalID, library, name, source, _):
                 lastResult = try core.setIcon(
@@ -6079,9 +7568,12 @@ final class EditorStore: ObservableObject {
                 currentHTML = mutation.html
             }
             return OpenGraphiteHTMLMutationResult(html: currentHTML, diagnostics: [])
-        case let .setAttribute(nodeInternalID, name, value, _):
+        case let .setAttribute(nodeInternalID, name, value, _, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .settingAttribute(name: name, value: value, forNodeID: nodeInternalID, contract: contract)
+        case let .removeAttribute(nodeInternalID, name, _, _):
+            return OpenGraphiteHTMLDocument(html: html)
+                .removingAttribute(name: name, forNodeID: nodeInternalID, contract: contract)
         case let .renameNodeID(nodeInternalID, value, _):
             return OpenGraphiteHTMLDocument(html: html)
                 .renamingNodeID(value: value, forNodeID: nodeInternalID, contract: contract)
@@ -6729,7 +8221,8 @@ final class EditorStore: ObservableObject {
                 guard let html = readHTMLFromDisk(at: pageURL) else { continue }
                 let masterNode = OpenGraphiteHTMLDocument(html: html).nodes().first { node in
                     node.attributes["data-og-component"] == componentID
-                        && node.attributes["data-og-component-kind"] == "master"
+                        && node.tagName.contains("-")
+                        && node.tagName != "og-instance"
                 }
                 guard let masterNode else { continue }
 
@@ -6865,6 +8358,10 @@ final class EditorStore: ObservableObject {
     ///
     /// - Parameter pageURL: reload token を進める HTML URL。
     private func incrementReloadToken(for pageURL: URL) {
+        let standardizedPageURL = pageURL.standardizedFileURL
+        canvasReferenceResolutionCache = canvasReferenceResolutionCache.filter { key, _ in
+            key.pageURL.standardizedFileURL != standardizedPageURL
+        }
         var tokens = pageReloadTokensByURL
         tokens[pageURL, default: 0] += 1
         pageReloadTokensByURL = tokens
@@ -6953,7 +8450,7 @@ final class EditorStore: ObservableObject {
             return EditorHistoryPresentation(
                 objectName: selectedNode.displayID,
                 actionName: documentHistoryActionName(for: entry),
-                previewKind: .node(type: selectedNode.type)
+                previewKind: .node(hint: selectedNode.presentationHint)
             )
         }
 
@@ -6963,7 +8460,7 @@ final class EditorStore: ObservableObject {
         return EditorHistoryPresentation(
             objectName: page?.displayName ?? entry.pageURL.lastPathComponent,
             actionName: documentHistoryActionName(for: entry),
-            previewKind: .node(type: "page")
+            previewKind: .node(hint: .page)
         )
     }
 
@@ -7871,7 +9368,7 @@ final class EditorStore: ObservableObject {
             monitor.start(url: dependencyURL) { [weak self] in
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     Task { @MainActor [weak self] in
-                        self?.refreshProjectDependenciesFromDisk()
+                        self?.refreshProjectDependencyFromDiskIfChanged(at: dependencyURL)
                     }
                 }
             }
@@ -7954,8 +9451,290 @@ final class EditorStore: ObservableObject {
             }
         }
 
+        urls.formUnion(
+            localCSSImportDependencyURLs(
+                startingAt: Set(urls.filter { $0.pathExtension.caseInsensitiveCompare("css") == .orderedSame }),
+                allowedRootURL: loadedProject.rootURL
+            )
+        )
+
         let pageURLs = Set(loadedProject.project.chapters.flatMap(\.pages).map { loadedProject.htmlURL(for: $0).standardizedFileURL })
         return urls.subtracting(pageURLs)
+    }
+
+    /// 論理名（日本語）: Local CSS import依存URL展開関数
+    /// 処理概要: HTML/projectから到達したCSSの`@import`をcycle-safeに辿り、project root内の実在fileだけを監視集合へ追加します。
+    ///
+    /// - Parameters:
+    ///   - startingURLs: HTMLまたはproject manifestから直接参照されたCSS URL。
+    ///   - allowedRootURL: importが越えてはならないproject root URL。
+    /// - Returns: 起点を含むlocal CSS依存URL集合。
+    private func localCSSImportDependencyURLs(
+        startingAt startingURLs: Set<URL>,
+        allowedRootURL: URL
+    ) -> Set<URL> {
+        let fileManager = FileManager.default
+        let allowedRoot = allowedRootURL.standardizedFileURL.resolvingSymlinksInPath()
+        var pending = Array(startingURLs)
+        var visited: Set<URL> = []
+
+        while let candidate = pending.popLast() {
+            let cssURL = candidate.standardizedFileURL.resolvingSymlinksInPath()
+            guard cssURL.isFileURL,
+                  Self.isDependencyURL(cssURL, containedIn: allowedRoot),
+                  cssURL.pathExtension.caseInsensitiveCompare("css") == .orderedSame,
+                  !visited.contains(cssURL),
+                  fileManager.fileExists(atPath: cssURL.path)
+            else {
+                continue
+            }
+            visited.insert(cssURL)
+            guard let css = try? String(contentsOf: cssURL, encoding: .utf8) else { continue }
+            for href in cssImportHrefs(in: css) {
+                let importedURL = resolveDependencyURL(href, relativeTo: cssURL)
+                    .standardizedFileURL
+                    .resolvingSymlinksInPath()
+                guard importedURL.isFileURL,
+                      Self.isDependencyURL(importedURL, containedIn: allowedRoot),
+                      importedURL.pathExtension.caseInsensitiveCompare("css") == .orderedSame,
+                      fileManager.fileExists(atPath: importedURL.path)
+                else {
+                    continue
+                }
+                pending.append(importedURL)
+            }
+        }
+        return visited
+    }
+
+    /// 論理名（日本語）: CSS import href抽出関数
+    /// 処理概要: comment/string内の見かけ上の`@import`を除外し、quotedまたは`url()`形式の標準import URLをlossless sourceから意味値へ復号します。
+    ///
+    /// - Parameter css: 調査するCSS source。
+    /// - Returns: source順のimport href一覧。
+    private func cssImportHrefs(in css: String) -> [String] {
+        let characters = Array(css)
+        var hrefs: [String] = []
+        var index = 0
+
+        func skipsComment(at cursor: Int) -> Bool {
+            cursor + 1 < characters.count
+                && characters[cursor] == "/"
+                && characters[cursor + 1] == "*"
+        }
+
+        func skipComment(_ cursor: inout Int) {
+            guard skipsComment(at: cursor) else { return }
+            cursor += 2
+            while cursor + 1 < characters.count {
+                if characters[cursor] == "*", characters[cursor + 1] == "/" {
+                    cursor += 2
+                    return
+                }
+                cursor += 1
+            }
+            cursor = characters.count
+        }
+
+        func skipTrivia(_ cursor: inout Int) {
+            while cursor < characters.count {
+                if characters[cursor].isWhitespace {
+                    cursor += 1
+                } else if skipsComment(at: cursor) {
+                    skipComment(&cursor)
+                } else {
+                    return
+                }
+            }
+        }
+
+        func parseQuotedValue(_ cursor: inout Int) -> String? {
+            guard cursor < characters.count,
+                  characters[cursor] == "\"" || characters[cursor] == "'"
+            else {
+                return nil
+            }
+            let quote = characters[cursor]
+            cursor += 1
+            var raw = ""
+            while cursor < characters.count {
+                let character = characters[cursor]
+                if character == quote {
+                    cursor += 1
+                    return Self.decodedCSSImportURL(raw)
+                }
+                if character == "\\", cursor + 1 < characters.count {
+                    raw.append(character)
+                    cursor += 1
+                    raw.append(characters[cursor])
+                    cursor += 1
+                    continue
+                }
+                raw.append(character)
+                cursor += 1
+            }
+            return nil
+        }
+
+        func parseIdentifier(_ cursor: inout Int) -> String {
+            var raw = ""
+            while cursor < characters.count {
+                let character = characters[cursor]
+                if Self.isCSSIdentifierCharacter(character) {
+                    raw.append(character)
+                    cursor += 1
+                    continue
+                }
+                guard character == "\\", cursor + 1 < characters.count else { break }
+                raw.append(character)
+                cursor += 1
+                var hexCount = 0
+                while cursor < characters.count,
+                      hexCount < 6,
+                      characters[cursor].isHexDigit {
+                    raw.append(characters[cursor])
+                    cursor += 1
+                    hexCount += 1
+                }
+                if hexCount == 0, cursor < characters.count {
+                    raw.append(characters[cursor])
+                    cursor += 1
+                } else if cursor < characters.count, characters[cursor].isWhitespace {
+                    raw.append(characters[cursor])
+                    cursor += 1
+                }
+            }
+            return Self.decodedCSSImportURL(raw) ?? ""
+        }
+
+        while index < characters.count {
+            if skipsComment(at: index) {
+                skipComment(&index)
+                continue
+            }
+            if characters[index] == "\"" || characters[index] == "'" {
+                _ = parseQuotedValue(&index)
+                continue
+            }
+            if characters[index] == "\\" {
+                index = min(index + 2, characters.count)
+                continue
+            }
+            guard characters[index] == "@" else {
+                index += 1
+                continue
+            }
+            var cursor = index + 1
+            let atKeyword = parseIdentifier(&cursor)
+            guard atKeyword.caseInsensitiveCompare("import") == .orderedSame else {
+                index += 1
+                continue
+            }
+            skipTrivia(&cursor)
+            var href = parseQuotedValue(&cursor)
+            if href == nil {
+                let beforeURL = cursor
+                let functionName = parseIdentifier(&cursor)
+                guard functionName.caseInsensitiveCompare("url") == .orderedSame else {
+                    index = max(index + 1, cursor)
+                    continue
+                }
+                skipTrivia(&cursor)
+                if cursor < characters.count, characters[cursor] == "(" {
+                    cursor += 1
+                    skipTrivia(&cursor)
+                    href = parseQuotedValue(&cursor)
+                    if href == nil {
+                        var raw = ""
+                        while cursor < characters.count {
+                            if characters[cursor] == ")" { break }
+                            if characters[cursor] == "\\", cursor + 1 < characters.count {
+                                raw.append(characters[cursor])
+                                cursor += 1
+                                raw.append(characters[cursor])
+                                cursor += 1
+                                continue
+                            }
+                            raw.append(characters[cursor])
+                            cursor += 1
+                        }
+                        href = Self.decodedCSSImportURL(
+                            raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                        )
+                    }
+                } else {
+                    cursor = beforeURL
+                }
+            }
+            if let href, !href.isEmpty {
+                hrefs.append(href)
+            }
+            index = max(index + 1, cursor)
+        }
+        return hrefs
+    }
+
+    /// 論理名（日本語）: CSS import URL escape復号関数
+    /// 処理概要: CSS string/url tokenのsimple escape、hex escape、line continuationをfile URL解決用の意味値へ変換します。
+    ///
+    /// - Parameter raw: quoteを除いたCSS URL token source。
+    /// - Returns: 復号済みURL。NULまたは不正scalarを含む場合は`nil`。
+    private static func decodedCSSImportURL(_ raw: String) -> String? {
+        let scalars = Array(raw.unicodeScalars)
+        var result = String.UnicodeScalarView()
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            guard scalar != "\0" else { return nil }
+            guard scalar == "\\" else {
+                result.append(scalar)
+                index += 1
+                continue
+            }
+            index += 1
+            guard index < scalars.count else { return nil }
+            if scalars[index] == "\n" || scalars[index] == "\r" || scalars[index] == "\u{000C}" {
+                if scalars[index] == "\r", index + 1 < scalars.count, scalars[index + 1] == "\n" {
+                    index += 1
+                }
+                index += 1
+                continue
+            }
+            var hex = ""
+            while index < scalars.count, hex.count < 6,
+                  CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains(scalars[index]) {
+                hex.unicodeScalars.append(scalars[index])
+                index += 1
+            }
+            if !hex.isEmpty {
+                guard let value = UInt32(hex, radix: 16),
+                      value != 0,
+                      let decoded = UnicodeScalar(value)
+                else {
+                    return nil
+                }
+                result.append(decoded)
+                if index < scalars.count, CharacterSet.whitespacesAndNewlines.contains(scalars[index]) {
+                    index += 1
+                }
+                continue
+            }
+            result.append(scalars[index])
+            index += 1
+        }
+        return String(result)
+    }
+
+    /// 論理名（日本語）: 依存URL root包含判定関数
+    /// 処理概要: symlink解決済みcandidateがproject root自身またはその子孫であることをpath component境界付きで確認します。
+    ///
+    /// - Parameters:
+    ///   - candidate: 判定するlocal file URL。
+    ///   - root: 許可するlocal root URL。
+    /// - Returns: candidateがroot内にある場合は`true`。
+    private static func isDependencyURL(_ candidate: URL, containedIn root: URL) -> Bool {
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        return candidate.path == root.path || candidate.path.hasPrefix(rootPath)
     }
 
     /// 論理名（日本語）: Component依存参照書き換え関数
@@ -8084,8 +9863,14 @@ final class EditorStore: ObservableObject {
     private func dependencyHrefs(in html: String) -> [String] {
         var hrefs: [String] = []
         for tag in matches(pattern: #"<link\b[^>]*>"#, in: html) {
-            let rel = attribute("rel", in: tag)?.lowercased() ?? ""
-            guard rel == "stylesheet" || rel == "opengraphite-components" else { continue }
+            let relations = Set(
+                (attribute("rel", in: tag) ?? "")
+                    .split(whereSeparator: \Character.isWhitespace)
+                    .map { $0.lowercased() }
+            )
+            guard relations.contains("stylesheet") || relations.contains("opengraphite-components") else {
+                continue
+            }
             if let href = attribute("href", in: tag) {
                 hrefs.append(href)
             }
@@ -8376,25 +10161,71 @@ final class EditorStore: ObservableObject {
         guard
             let id = dictionary["id"] as? String,
             !id.isEmpty,
-            let tagName = dictionary["tagName"] as? String,
-            let type = dictionary["type"] as? String
+            let tagName = dictionary["tagName"] as? String
         else {
             return nil
         }
 
         var cssVariables = sourceNode?.cssVariables ?? [:]
         for (key, value) in dictionary["cssVariables"] as? [String: String] ?? [:] {
+            if sourceNode != nil, sourceAuthoritativeStyleProperties.contains(key) {
+                continue
+            }
             cssVariables[key] = value
         }
+        let computedStyle = nodeComputedStyle(from: dictionary["computedStyle"])
+        let computedLayout = computedStyle.layoutMode
+        let webAttributes = stringDictionary(dictionary["attributes"])
+        let attributes = sourceNode?.attributes ?? webAttributes
+        let webCapabilities = Set(
+            stringArray(dictionary["capabilities"]).compactMap(OpenGraphiteNodeCapability.init(rawValue:))
+        )
+        let capabilities = sourceNode.map { sourceNode in
+            dictionary["capabilities"] == nil
+                ? Set(sourceNode.capabilities)
+                : Set(sourceNode.capabilities).intersection(webCapabilities)
+        } ?? webCapabilities
+        let capabilityEvidence = mergedCapabilityEvidence(
+            source: sourceNode?.capabilityEvidence,
+            web: nodeCapabilityEvidence(from: dictionary["capabilityEvidence"]),
+            computedDisplay: computedStyle.display
+        )
         var node = OpenGraphiteNode(
             id: id,
-            internalID: dictionary["internalID"] as? String ?? "",
+            authoredID: sourceNode?.id ?? dictionary["authoredID"] as? String,
+            standardID: sourceNode != nil
+                ? sourceNode?.attributes["id"]
+                : dictionary["standardID"] as? String,
+            internalID: sourceNode?.internalID ?? dictionary["internalID"] as? String ?? "",
+            reference: sourceNode?.reference ?? dictionary["reference"] as? String ?? "",
+            annotationStatus: sourceNode?.annotationStatus ?? (dictionary["annotationStatus"] as? String)
+                .flatMap(OpenGraphiteNodeAnnotationStatus.init(rawValue:)),
+            referenceStability: sourceNode?.referenceStability ?? (dictionary["referenceStability"] as? String)
+                .flatMap(OpenGraphiteNodeReferenceStability.init(rawValue:)),
+            locator: sourceNode.map { nodeSourceLocator(from: $0.locator) }
+                ?? nodeSourceLocator(from: dictionary["locator"]),
+            parentReference: sourceNode != nil
+                ? sourceNode?.parentReference
+                : dictionary["parentReference"] as? String,
             tagName: tagName,
-            type: type,
-            layout: dictionary["layout"] as? String,
-            role: dictionary["role"] as? String,
-            componentID: dictionary["componentID"] as? String,
-            componentKind: dictionary["componentKind"] as? String,
+            legacyTypeHint: sourceNode != nil
+                ? sourceNode?.legacyTypeHint
+                : dictionary["legacyTypeHint"] as? String,
+            capabilities: capabilities,
+            capabilityEvidence: capabilityEvidence,
+            attributes: attributes,
+            layout: computedLayout.isEmpty ? (dictionary["layout"] as? String ?? sourceNode?.layout) : computedLayout,
+            role: sourceNode != nil
+                ? sourceNode?.attributes["role"]
+                : dictionary["role"] as? String,
+            componentID: sourceNode != nil
+                ? sourceNode?.attributes["data-og-component"]
+                : dictionary["componentID"] as? String,
+            isComponentMaster: sourceNode.map { sourceNode in
+                sourceNode.tagName.contains("-")
+                    && sourceNode.tagName != "og-instance"
+                    && sourceNode.attributes["data-og-component"] != nil
+            } ?? (dictionary["componentMaster"] as? Bool ?? false),
             sourceComponentID: dictionary["sourceComponentID"] as? String,
             sourceInstanceID: dictionary["sourceInstanceID"] as? String,
             sourceNodeInternalID: dictionary["sourceNodeInternalID"] as? String,
@@ -8403,14 +10234,33 @@ final class EditorStore: ObservableObject {
             isPlacementGenerated: dictionary["placementGenerated"] as? Bool ?? false,
             textContent: dictionary["textContent"] as? String,
             fallbackTextContent: sourceNode?.textContent ?? dictionary["fallbackTextContent"] as? String,
-            textSource: sourceNode?.attributes["data-og-text-source"] ?? dictionary["textSource"] as? String,
-            i18nKey: sourceNode?.attributes["data-i18n-key"] ?? dictionary["i18nKey"] as? String,
-            iconLibrary: sourceNode?.attributes["data-og-icon-library"] ?? dictionary["iconLibrary"] as? String,
-            iconName: sourceNode?.attributes["data-og-icon-name"] ?? dictionary["iconName"] as? String,
-            iconSource: sourceNode?.attributes["data-og-icon-source"] ?? dictionary["iconSource"] as? String,
+            textSource: sourceNode != nil
+                ? sourceNode?.attributes["data-og-text-source"]
+                : dictionary["textSource"] as? String,
+            i18nKey: sourceNode != nil
+                ? sourceNode?.attributes["data-i18n-key"]
+                : dictionary["i18nKey"] as? String,
+            iconLibrary: sourceNode != nil
+                ? sourceNode?.attributes["data-og-icon-library"]
+                : dictionary["iconLibrary"] as? String,
+            iconName: sourceNode != nil
+                ? sourceNode?.attributes["data-og-icon-name"]
+                : dictionary["iconName"] as? String,
+            iconSource: sourceNode != nil
+                ? sourceNode?.attributes["data-og-icon-source"]
+                : dictionary["iconSource"] as? String,
             cssVariables: cssVariables,
+            computedStyle: computedStyle,
+            hasIncompleteCSSProvenance: (dictionary["unreadableStyleSheetCount"] as? Int ?? 0) > 0
+                || sourceNode?.hasIncompleteCSSProvenance == true,
+            renderTargets: renderingTargets(
+                sourceTargets: sourceNode?.renderingTargets ?? [],
+                webPayload: dictionary["renderingTargets"]
+            ),
             isHidden: dictionary["hidden"] as? Bool ?? false,
-            isLocked: dictionary["locked"] as? Bool ?? false,
+            hasHiddenAttribute: sourceNode?.hidden ?? dictionary["hasHiddenAttribute"] as? Bool ?? false,
+            isLocked: sourceNode.map { $0.attributes["data-og-locked"] == "true" }
+                ?? dictionary["locked"] as? Bool ?? false,
             depth: dictionary["depth"] as? Int ?? 0
         )
         if let resolvedFontFamily = dictionary["resolvedFontFamily"] as? String {
@@ -8420,6 +10270,272 @@ final class EditorStore: ObservableObject {
             }
         }
         return node
+    }
+
+    /// 論理名（日本語）: WebCanvas capability evidence変換関数
+    /// 処理概要: JavaScript payloadの標準DOM semantic flagsをShared schemaと同じevidence値へ変換します。
+    ///
+    /// - Parameter payload: WebCanvasが返す`capabilityEvidence`辞書。
+    /// - Returns: 必須boolean値を持つevidence。payloadがない場合は`nil`。
+    private static func nodeCapabilityEvidence(from payload: Any?) -> OpenGraphiteNodeCapabilityEvidence? {
+        guard let values = payload as? [String: Any] else { return nil }
+        return OpenGraphiteNodeCapabilityEvidence(
+            isProjectResourceRoot: values["isProjectResourceRoot"] as? Bool ?? false,
+            isNativeControl: values["isNativeControl"] as? Bool ?? false,
+            isCustomElement: values["isCustomElement"] as? Bool ?? false,
+            isLink: values["isLink"] as? Bool ?? false,
+            hasDirectText: values["hasDirectText"] as? Bool ?? false,
+            hasElementChildren: values["hasElementChildren"] as? Bool ?? false,
+            hasMediaContent: values["hasMediaContent"] as? Bool ?? false,
+            hasSVGContent: values["hasSVGContent"] as? Bool ?? false,
+            hasMaskContent: values["hasMaskContent"] as? Bool ?? false,
+            ariaRole: nonEmptyTrimmed(values["ariaRole"] as? String),
+            resolvedDisplay: nonEmptyTrimmed(values["resolvedDisplay"] as? String)
+        )
+    }
+
+    /// 論理名（日本語）: Source/WebKit capability evidence統合関数
+    /// 処理概要: project root境界は両経路の検出を維持し、その他のsemantic evidenceはsource/runtime両方が肯定した安全側だけを採用します。
+    ///
+    /// - Parameters:
+    ///   - source: Shared source inspection由来のevidence。
+    ///   - web: WebCanvas DOM由来のevidence。
+    ///   - computedDisplay: WebKitが現在解決した`display`。
+    /// - Returns: Appでinspectionとcapability説明に使う統合evidence。
+    private static func mergedCapabilityEvidence(
+        source: OpenGraphiteNodeCapabilityEvidence?,
+        web: OpenGraphiteNodeCapabilityEvidence?,
+        computedDisplay: String
+    ) -> OpenGraphiteNodeCapabilityEvidence {
+        let agreed: (Bool?, Bool?) -> Bool = { sourceValue, webValue in
+            switch (sourceValue, webValue) {
+            case let (.some(sourceValue), .some(webValue)):
+                sourceValue && webValue
+            case let (.some(sourceValue), .none):
+                sourceValue
+            case let (.none, .some(webValue)):
+                webValue
+            case (.none, .none):
+                false
+            }
+        }
+        let ariaRole: String?
+        if let sourceRole = source?.ariaRole, let webRole = web?.ariaRole {
+            ariaRole = sourceRole.caseInsensitiveCompare(webRole) == .orderedSame ? webRole : nil
+        } else {
+            ariaRole = web?.ariaRole ?? source?.ariaRole
+        }
+        return OpenGraphiteNodeCapabilityEvidence(
+            isProjectResourceRoot: source?.isProjectResourceRoot == true || web?.isProjectResourceRoot == true,
+            isNativeControl: agreed(source?.isNativeControl, web?.isNativeControl),
+            isCustomElement: agreed(source?.isCustomElement, web?.isCustomElement),
+            isLink: agreed(source?.isLink, web?.isLink),
+            hasDirectText: agreed(source?.hasDirectText, web?.hasDirectText),
+            hasElementChildren: agreed(source?.hasElementChildren, web?.hasElementChildren),
+            hasMediaContent: agreed(source?.hasMediaContent, web?.hasMediaContent),
+            hasSVGContent: agreed(source?.hasSVGContent, web?.hasSVGContent),
+            hasMaskContent: agreed(source?.hasMaskContent, web?.hasMaskContent),
+            ariaRole: nonEmptyTrimmed(ariaRole),
+            resolvedDisplay: nonEmptyTrimmed(computedDisplay)
+                ?? nonEmptyTrimmed(web?.resolvedDisplay)
+                ?? nonEmptyTrimmed(source?.resolvedDisplay)
+        )
+    }
+
+    /// 論理名（日本語）: WebKit computed style変換関数
+    /// 処理概要: JavaScript bridgeのcomputed値をauthored CSS辞書へ混ぜず、現在の描画状態専用モデルへ変換します。
+    ///
+    /// - Parameter payload: `getComputedStyle()`から抽出した標準CSS値辞書。
+    /// - Returns: 不足値を空文字列で補ったcomputed style。
+    private static func nodeComputedStyle(from payload: Any?) -> OpenGraphiteNodeComputedStyle {
+        let values = stringDictionary(payload)
+        return OpenGraphiteNodeComputedStyle(
+            display: values["display"] ?? "",
+            flexDirection: values["flexDirection"] ?? "",
+            gridTemplateColumns: values["gridTemplateColumns"] ?? "",
+            gridTemplateRows: values["gridTemplateRows"] ?? "",
+            gridAutoFlow: values["gridAutoFlow"] ?? "",
+            position: values["position"] ?? "",
+            visibility: values["visibility"] ?? "",
+            contentVisibility: values["contentVisibility"] ?? "",
+            overflowWrap: values["overflowWrap"] ?? "",
+            alignItems: values["alignItems"] ?? "",
+            justifyContent: values["justifyContent"] ?? ""
+        )
+    }
+
+    /// 論理名（日本語）: WebCanvas source locator変換関数
+    /// 処理概要: JavaScript bridge の locator 辞書を non-invasive selection / adoption で使う App model へ変換します。
+    ///
+    /// - Parameter payload: `documentURL`、selector、DOM path、source range、content hash を含む辞書。
+    /// - Returns: 必須の document URL と DOM path がある locator。形式不正時は `nil`。
+    private static func nodeSourceLocator(from payload: Any?) -> OpenGraphiteNodeSourceLocator? {
+        guard let dictionary = payload as? [String: Any],
+              let documentURL = dictionary["documentURL"] as? String,
+              let domPath = dictionary["domPath"] as? String,
+              let contentHash = dictionary["contentHash"] as? String
+        else {
+            return nil
+        }
+        let sourceRange = dictionary["sourceRange"] as? [String: Any]
+        return OpenGraphiteNodeSourceLocator(
+            documentURL: documentURL,
+            selector: (dictionary["selector"] as? String).flatMap { value in
+                let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return normalized.isEmpty ? nil : normalized
+            },
+            domPath: domPath,
+            sourceStart: sourceRange?["start"] as? Int ?? -1,
+            sourceEnd: sourceRange?["end"] as? Int ?? -1,
+            contentHash: contentHash
+        )
+    }
+
+    /// 論理名（日本語）: Shared source locator変換関数
+    /// 処理概要: source ASTが返した正確なrange/hashをAppのinspection locatorへ移します。
+    ///
+    /// - Parameter locator: Shared graphのsource locator。
+    /// - Returns: Appのnon-invasive inspection / adoption locator。
+    private static func nodeSourceLocator(from locator: OpenGraphiteNodeLocator) -> OpenGraphiteNodeSourceLocator {
+        OpenGraphiteNodeSourceLocator(
+            documentURL: locator.documentURL,
+            selector: locator.selector,
+            domPath: locator.domPath,
+            sourceStart: locator.sourceRange.start,
+            sourceEnd: locator.sourceRange.end,
+            contentHash: locator.contentHash
+        )
+    }
+
+    /// 論理名（日本語）: 描画実体payload統合関数
+    /// 処理概要: Shared source ASTのauthored/provenance値とWebCanvasのcomputed値をkind単位で統合し、property単位のInspector modelへ変換します。
+    ///
+    /// - Parameters:
+    ///   - sourceTargets: Shared graph が返す media / SVG / mask target。
+    ///   - webPayload: JavaScript bridge が返す同じ実体の session-only computed payload。
+    /// - Returns: `object-fit`、`stroke-width`、mask property単位の描画実体編集対象。
+    private static func renderingTargets(
+        sourceTargets: [OpenGraphiteAgentRenderingTarget],
+        webPayload: Any?
+    ) -> [OpenGraphiteRenderTarget] {
+        let webTargets = (webPayload as? [[String: Any]] ?? []).compactMap(WebRenderingTargetPayload.init)
+        let propertiesByKind: [(kind: String, properties: [String])] = [
+            ("media", ["object-fit"]),
+            ("svg", ["stroke-width"]),
+            ("mask", ["mask-image", "-webkit-mask-image"])
+        ]
+
+        return propertiesByKind.flatMap { entry -> [OpenGraphiteRenderTarget] in
+            let source = sourceTargets.first { $0.kind == entry.kind }
+            let webCandidates = webTargets.filter { $0.kind == entry.kind }
+            let web: WebRenderingTargetPayload?
+            if let source {
+                web = webCandidates.first { candidate in
+                    source.targetInternalID?.isEmpty == false
+                        && candidate.targetInternalID == source.targetInternalID
+                } ?? webCandidates.first { candidate in
+                    guard !candidate.targetStandardID.isEmpty else { return false }
+                    let escapedID = candidate.targetStandardID
+                        .replacingOccurrences(of: "\\", with: "\\\\")
+                        .replacingOccurrences(of: "\"", with: "\\\"")
+                    return source.writeSelector == "#\(candidate.targetStandardID)"
+                        || source.writeSelector == "[id=\"\(escapedID)\"]"
+                } ?? webCandidates.first { candidate in
+                    !source.relationSelector.isEmpty
+                        && candidate.relationSelector == source.relationSelector
+                }
+            } else {
+                web = webCandidates.first
+            }
+            guard source != nil || web != nil else { return [] }
+            return entry.properties.map { property in
+                let trace = (source?.sourceTrace[property] ?? []).map { candidate in
+                    OpenGraphiteRenderTargetSourceTrace(
+                        authoredProperty: candidate.authoredProperty,
+                        selector: candidate.selector,
+                        atRuleScope: candidate.atRules.map { atRule in
+                            "@\(atRule.name) \(atRule.prelude)".trimmingCharacters(in: .whitespaces)
+                        },
+                        value: candidate.value,
+                        important: candidate.important,
+                        specificityIDs: candidate.specificity.ids,
+                        specificityClasses: candidate.specificity.classes,
+                        specificityTypes: candidate.specificity.types,
+                        sourceOrder: candidate.sourceOrder
+                    )
+                }
+                return OpenGraphiteRenderTarget(
+                    kind: entry.kind,
+                    property: property,
+                    targetTagName: source?.tagName ?? web?.tagName ?? "",
+                    relation: source?.relation ?? web?.relation ?? "",
+                    writeSelector: source?.writeSelector ?? "",
+                    targetInternalID: source?.targetInternalID ?? web?.targetInternalID ?? "",
+                    authoredValue: source?.authoredValues[property]
+                        ?? web?.authoredInlineValues[property]
+                        ?? "",
+                    resolvedValue: source?.resolvedValues[property] ?? "",
+                    computedValue: web?.computedValues[property] ?? "",
+                    relationSelector: source?.relationSelector ?? web?.relationSelector ?? "",
+                    sourceTrace: trace
+                )
+            }
+        }
+    }
+
+    /// 論理名（日本語）: WebCanvas描画実体payload
+    /// 概要: JavaScript辞書からkind、relation selector、inline/computed標準CSS値だけを安全に取り出します。
+    private struct WebRenderingTargetPayload {
+        var kind: String
+        var tagName: String
+        var relation: String
+        var relationSelector: String
+        var targetStandardID: String
+        var targetInternalID: String
+        var authoredInlineValues: [String: String]
+        var computedValues: [String: String]
+
+        /// 論理名（日本語）: WebCanvas描画実体payload初期化関数
+        /// 処理概要: JavaScript bridge辞書に必要なkindがある場合だけ正規化済みpayloadを生成します。
+        ///
+        /// - Parameter dictionary: WebCanvas `renderingTargets` 配列内の辞書。
+        init?(_ dictionary: [String: Any]) {
+            guard let kind = dictionary["kind"] as? String, !kind.isEmpty else { return nil }
+            self.kind = kind
+            tagName = dictionary["tagName"] as? String ?? ""
+            relation = dictionary["relation"] as? String ?? ""
+            relationSelector = dictionary["relationSelector"] as? String ?? ""
+            targetStandardID = dictionary["targetStandardID"] as? String ?? ""
+            targetInternalID = dictionary["targetInternalID"] as? String ?? ""
+            authoredInlineValues = EditorStore.stringDictionary(dictionary["authoredInlineValues"])
+            computedValues = EditorStore.stringDictionary(dictionary["computedValues"])
+        }
+    }
+
+    /// 論理名（日本語）: JavaScript文字列辞書変換関数
+    /// 処理概要: WebKit bridgeが`[String: Any]`として渡した値から文字列entryだけを保持します。
+    ///
+    /// - Parameter value: JavaScript object由来の値。
+    /// - Returns: 文字列だけを持つ辞書。
+    nonisolated private static func stringDictionary(_ value: Any?) -> [String: String] {
+        if let dictionary = value as? [String: String] { return dictionary }
+        return (value as? [String: Any] ?? [:]).reduce(into: [String: String]()) { result, entry in
+            guard let string = entry.value as? String else { return }
+            result[entry.key] = string
+        }
+    }
+
+    /// 論理名（日本語）: JavaScript文字列配列変換関数
+    /// 処理概要: WebKit bridgeの配列から空白だけの値と重複を除き、source condition照合へ渡す安定順の文字列配列を返します。
+    ///
+    /// - Parameter value: JavaScript array由来の値。
+    /// - Returns: 正規化済みの文字列配列。
+    nonisolated private static func stringArray(_ value: Any?) -> [String] {
+        let strings = (value as? [String]) ?? (value as? [Any] ?? []).compactMap { $0 as? String }
+        return Array(Set(strings.compactMap { value in
+            let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return normalized.isEmpty ? nil : normalized
+        })).sorted()
     }
 
     /// 論理名（日本語）: ノード表示ID正規化関数
@@ -8443,68 +10559,4 @@ final class EditorStore: ObservableObject {
         return result.isEmpty ? "node" : result
     }
 
-    /// 論理名（日本語）: ページルートノード抽出関数
-    /// 処理概要: HTML 正本から page root として扱う `data-og-type="page"` の node を取得します。
-    ///
-    /// - Parameters:
-    ///   - html: 対象 HTML 文字列。
-    ///   - companionCSS: HTML と同名の design value 正本 CSS。
-    /// - Returns: ページ root node。見つからない場合は `nil`。
-    private static func pageRootNode(
-        in html: String,
-        companionCSS: OpenGraphiteCompanionCSSDocument? = nil,
-        contract: OpenGraphiteContract = .builtIn
-    ) -> OpenGraphiteAgentNode? {
-        OpenGraphiteHTMLDocument(html: html)
-            .nodes(companionCSS: companionCSS, contract: contract)
-            .first { node in
-                node.type == "page"
-            }
-    }
-
-    /// 論理名（日本語）: 現在HTML正本ノード索引生成関数
-    /// 処理概要: Inspector の fallback text と CSS 表示に使うため、表示中 HTML と component source HTML の正本 node を `data-og-internal-id` で引ける辞書へ変換します。
-    ///
-    /// - Returns: 現在の HTML と component source HTML に含まれるノードの内部 ID 索引。
-    private func sourceNodesByInternalIDForCurrentTarget() -> [String: OpenGraphiteAgentNode] {
-        guard let target = currentHTMLSyncTarget(),
-              let html = readHTMLFromDisk(at: target.htmlURL)
-        else {
-            return [:]
-        }
-        let contract = OpenGraphiteContract.loadDefault(startingAt: projectRootURL ?? target.htmlURL)
-        let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: target.htmlURL)
-        var sourceNodes = componentSourceNodesByInternalID(contract: contract)
-        OpenGraphiteHTMLDocument(html: html)
-            .nodes(companionCSS: companionCSS, contract: contract)
-            .forEach { node in
-                guard !node.internalID.isEmpty else { return }
-                sourceNodes[node.internalID] = node
-            }
-        return sourceNodes
-    }
-
-    /// 論理名（日本語）: Component sourceノード索引生成関数
-    /// 処理概要: project に登録された component canvas HTML と companion CSS を読み、runtime 展開後 node の Inspector 表示に使う正本 node 索引を作ります。
-    ///
-    /// - Parameter contract: CSS declaration の編集契約。
-    /// - Returns: component source に含まれる node の内部 ID 索引。
-    private func componentSourceNodesByInternalID(contract: OpenGraphiteContract) -> [String: OpenGraphiteAgentNode] {
-        guard let loadedProject else { return [:] }
-        var sourceNodes: [String: OpenGraphiteAgentNode] = [:]
-        for collection in loadedProject.project.collections {
-            for componentPage in collection.components {
-                let componentURL = loadedProject.htmlURL(for: componentPage)
-                guard let html = readHTMLFromDisk(at: componentURL) else { continue }
-                let companionCSS = try? OpenGraphiteCompanionCSSDocument.existing(forHTMLURL: componentURL)
-                OpenGraphiteHTMLDocument(html: html)
-                    .nodes(companionCSS: companionCSS, contract: contract)
-                    .forEach { node in
-                        guard !node.internalID.isEmpty else { return }
-                        sourceNodes[node.internalID] = node
-                    }
-            }
-        }
-        return sourceNodes
-    }
 }

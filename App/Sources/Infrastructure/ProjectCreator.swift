@@ -265,13 +265,13 @@ struct ProjectCreator {
     /// 論理名（日本語）: 初期HTML本文生成関数
     /// 処理概要: 新規 project の最初の編集対象になる OpenGraphite HTML body を返します。
     ///
-    /// - Parameter projectName: `<Heading>` に表示する project 名。
-    /// - Returns: standalone HTML の body に入れる OpenGraphite markup。
+    /// - Parameter projectName: 標準`<h1>`に表示するproject名。
+    /// - Returns: standalone HTMLのbodyに入れる標準semantic markup。
     private static func initialBodyHTML(projectName: String) -> String {
         """
-            <OpenGraphitePage data-og-id="home-root" data-og-type="page" data-og-layout="vertical">
-              <Heading data-og-id="headline" data-og-type="text">\(escapeText(projectName))</Heading>
-            </OpenGraphitePage>
+            <main id="home-root" style="display: flex; flex-direction: column;">
+              <h1 id="headline">\(escapeText(projectName))</h1>
+            </main>
         """
     }
 

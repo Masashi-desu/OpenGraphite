@@ -16,6 +16,7 @@ sources=(
   "$ROOT_DIR/App/Sources/Infrastructure/ProjectLoader.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteContract.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCurrentProjectStore.swift"
+  "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCSSSource.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteCompanionCSS.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteHTMLDocument.swift"
   "$ROOT_DIR/Shared/Sources/AgentInterface/OpenGraphiteIconMarkup.swift"

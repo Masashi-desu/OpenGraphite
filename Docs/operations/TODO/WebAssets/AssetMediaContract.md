@@ -1,13 +1,13 @@
 # Asset Media Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
 ## 目的
 
-`data-og-type="image"` はプリミティブとして存在するが、画像・メディアのバイナリがリポジトリへ入る規則（取り込み先、命名、重複）、参照形式、`srcset`、companion CSS の背景画像の扱いが未定義。asset 契約を確定し、spec 化する。
+標準 `img` / `picture` / `video` と CSS background から media capability を判定できる一方、画像・メディアのバイナリがリポジトリへ入る規則（取り込み先、命名、重複）、参照形式、`srcset`、companion CSS の背景画像の扱いが未定義。asset 契約を確定し、spec 化する。
 
 ## スコープ
 

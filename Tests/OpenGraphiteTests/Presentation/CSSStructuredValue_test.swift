@@ -54,6 +54,90 @@ struct CSSStructuredValueTests {
         #expect(cssString == "calc(100% - 24px) 20px")
     }
 
+    /// 論理名（日本語）: 標準scale二軸解析テスト
+    /// 概要: 標準`scale`の1値・2値・percentageをX/Y軸へ展開し、明示的な2値へ直列化できることを検証します。
+    @Test("scaleの1値・2値・percentageを二軸編集できる")
+    func testScaleOneTwoAndPercentageValuesUseAxisFields() {
+        // コンディション：1値、2値、percentageの標準scale値を用意する（Given）
+        let oneValue = CSSScaleValue(cssString: "1.25")
+        let twoValues = CSSScaleValue(cssString: "1.25 0.8")
+        let percentages = CSSScaleValue(cssString: "120% -80%")
+
+        // 検証内容：各値をInspectorの二軸モデルへ展開して再直列化する（When）
+        let serializedValues = [oneValue.cssString, twoValues.cssString, percentages.cssString]
+
+        // 期待値：単項は両軸へ展開され、2値とpercentageは単位・符号を保つ（Then）
+        #expect(oneValue.usesAxisFields)
+        #expect(oneValue.x == "1.25")
+        #expect(oneValue.y == "1.25")
+        #expect(twoValues.x == "1.25")
+        #expect(twoValues.y == "0.8")
+        #expect(percentages.x == "120%")
+        #expect(percentages.y == "-80%")
+        #expect(serializedValues == ["1.25 1.25", "1.25 0.8", "120% -80%"])
+    }
+
+    /// 論理名（日本語）: 標準scale raw値保持テスト
+    /// 概要: `none`、関数値、custom property、3D scaleを二軸へ誤変換せずraw編集値として保持することを検証します。
+    @Test("scaleのnone・関数・3値はraw値として保持する")
+    func testScaleNoneFunctionAndThreeValuesRemainRawEditable() {
+        // コンディション：二軸数値欄では構文を保てない標準scale値を用意する（Given）
+        let sourceValues = [
+            "none",
+            "var(--card-scale)",
+            "calc(100% - 5%) 1",
+            "1 /* preserve axis note */ 0.8",
+            "1 2 3"
+        ]
+
+        // 検証内容：各値を標準scale編集モデルへ読み込む（When）
+        let values = sourceValues.map(CSSScaleValue.init(cssString:))
+
+        // 期待値：すべてrawフィールドへ分類され、元の文字列をbyte-exactに直列化する（Then）
+        #expect(values.allSatisfy { !$0.usesAxisFields })
+        #expect(values.map(\.rawValue) == sourceValues)
+        #expect(values.map(\.cssString) == sourceValues)
+    }
+
+    /// 論理名（日本語）: 標準scale軸・raw編集テスト
+    /// 概要: 二軸編集とraw編集の双方が単一の標準`scale`値として保存文字列を生成することを検証します。
+    @Test("scaleは二軸値とraw値の双方を編集できる")
+    func testScaleAxisAndRawEditsSerializeStandardPropertyValue() {
+        // コンディション：2D scaleとrawの`none`をそれぞれ編集状態へ読み込む（Given）
+        var axisValue = CSSScaleValue(cssString: "1.2 0.8")
+        var rawValue = CSSScaleValue(cssString: "none")
+
+        // 検証内容：X軸を反転し、raw値をcustom property参照へ変更する（When）
+        axisValue.x = "-1.2"
+        rawValue.rawValue = "var(--card-scale)"
+
+        // 期待値：どちらもOpenGraphite helperを介さず標準scale文字列になる（Then）
+        #expect(axisValue.cssString == "-1.2 0.8")
+        #expect(rawValue.cssString == "var(--card-scale)")
+    }
+
+    /// 論理名（日本語）: 標準scale未変更source保持テスト
+    /// 概要: Inspectorを開いてフォーカスアウトしただけでは1値表記やraw custom propertyを正規化せず、実際の軸編集時だけ2値へ直列化することを検証します。
+    @Test("scale Inspectorは未変更sourceを保持して軸編集時だけ直列化する")
+    func testScalePreservesUnchangedAuthoredSyntaxUntilAxisEdit() {
+        // コンディション：1値表記とcustom propertyをInspector編集状態へ読み込む（Given）
+        let oneValueSource = " 1.25 "
+        let rawSource = " var(--card-scale) "
+        var axisValue = CSSScaleValue(cssString: oneValueSource)
+        let rawValue = CSSScaleValue(cssString: rawSource)
+
+        // 検証内容：未変更状態を直列化した後、X軸だけを編集する（When）
+        let unchangedAxisSource = axisValue.cssString(preservingUnchanged: oneValueSource)
+        let unchangedRawSource = rawValue.cssString(preservingUnchanged: rawSource)
+        axisValue.x = "-1.25"
+        let editedAxisSource = axisValue.cssString(preservingUnchanged: oneValueSource)
+
+        // 期待値：未変更時はauthored構文を維持し、編集時だけ明示的な2軸scaleになる（Then）
+        #expect(unchangedAxisSource == "1.25")
+        #expect(unchangedRawSource == "var(--card-scale)")
+        #expect(editedAxisSource == "-1.25 1.25")
+    }
+
     /// 論理名（日本語）: CSS関数寸法値解析テスト
     /// 概要: `min()` のような CSS 関数値を通常 UI の関数モードとして扱えることを検証します。
     @Test("min関数寸法値を解析して保持できる")

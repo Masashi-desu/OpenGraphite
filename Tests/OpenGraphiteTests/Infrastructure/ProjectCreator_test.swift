@@ -41,8 +41,9 @@ struct ProjectCreatorTests {
         #expect(html.contains("<title>Created Project</title>"))
         #expect(html.contains(#"href="../CSS/OpenGraphite.css""#))
         #expect(html.contains(#"href="index.css""#))
-        #expect(html.contains(#"data-og-id="home-root""#))
-        #expect(html.contains(#"data-og-id="headline""#))
+        #expect(html.contains(#"<main id="home-root""#))
+        #expect(html.contains(#"<h1 id="headline""#))
+        #expect(!html.contains("data-og-type"))
     }
 
     /// 論理名（日本語）: 既存public採用テスト

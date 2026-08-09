@@ -1,14 +1,122 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  connectionmap,
+  instancelabel,
+  instancelesson,
+  instancerow,
+  maparrow,
+  maplabel,
+  mapnode,
+  mapvalue,
+  og-instance,
+  steplabel,
+  synccopy,
+  synclabel,
+  synclesson,
+  syncstep,
+  syncsteps,
+  synctext,
+  synctitle,
+  tutorialheader,
+  tutorialinstances,
+  tutoriallead,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  connectionmap,
+  instancelesson,
+  instancerow,
+  mapnode,
+  og-instance,
+  synccopy,
+  synclesson,
+  syncsteps,
+  tutorialheader,
+  tutorialinstances
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  instancelabel,
+  maparrow,
+  maplabel,
+  mapvalue,
+  steplabel,
+  synclabel,
+  syncstep,
+  synctext,
+  synctitle,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  instancelabel,
+  maparrow,
+  maplabel,
+  mapvalue,
+  steplabel,
+  synclabel,
+  syncstep,
+  synctext,
+  synctitle,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutinsroot007"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0b0d0c;
   color: #f5f7f5;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutinsroot007"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutinsheader07"] {
+  display: flex;
+  flex-direction: column;
   max-width: 900px;
   gap: 12px;
 }
@@ -41,6 +149,8 @@
 }
 
 [data-og-internal-id="tutinsmap007"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   align-items: center;
@@ -49,6 +159,8 @@
 [data-og-internal-id="tutinsmapmaster"],
 [data-og-internal-id="tutinsmapinst"],
 [data-og-internal-id="tutinsmapslot"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   gap: 6px;
   padding: 15px;
@@ -72,6 +184,8 @@
 }
 
 [data-og-internal-id="tutinsrow007"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 16px;
   align-items: stretch;
@@ -80,6 +194,8 @@
 [data-og-internal-id="tutinsdesignls"],
 [data-og-internal-id="tutinsenginels"],
 [data-og-internal-id="tutinsresearch"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-width: 0;
   gap: 10px;
@@ -103,6 +219,8 @@
 }
 
 [data-og-internal-id="tutinssyncless"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 28px;
   padding: 26px;
@@ -113,6 +231,8 @@
 }
 
 [data-og-internal-id="tutinssynccopy"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   gap: 10px;
 }
@@ -130,6 +250,8 @@
 }
 
 [data-og-internal-id="tutinssyncsteps"] {
+  display: flex;
+  flex-direction: column;
   width: 250px;
   min-width: 250px;
   gap: 8px;
@@ -144,4 +266,17 @@
   border: 1px solid #3b503b;
   border-radius: 5px;
   font-size: 12px;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutinsmap007"],
+  [data-og-internal-id="tutinsrow007"],
+  [data-og-internal-id="tutinssyncless"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+tutorial-profile-card::part(action) {
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }

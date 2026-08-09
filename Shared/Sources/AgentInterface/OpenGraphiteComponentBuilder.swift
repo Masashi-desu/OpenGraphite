@@ -49,6 +49,22 @@ struct OpenGraphiteBuiltAsset: Codable, Equatable {
 /// 概要: Pages HTML の `<og-instance>` を Components HTML の master subtree で展開し、静的 HTML を生成します。
 struct OpenGraphiteComponentBuilder {
     private static let schemaVersion = "0.1"
+    private static let maximumComponentExpansionDepth = 32
+
+    /// 論理名（日本語）: 標準component master記述子
+    /// 概要: Custom Element host、直下template、source URLを静的build用に保持します。
+    private struct ComponentMaster {
+        var html: String
+        var sourceURL: URL
+    }
+
+    /// 論理名（日本語）: component instance source範囲
+    /// 概要: 対応する`<og-instance>`全体、開始tag属性、light DOM contentのrangeを保持します。
+    private struct ComponentInstanceRange {
+        var fullRange: Range<String.Index>
+        var attributes: String
+        var content: String
+    }
 
     /// 論理名（日本語）: project build関数
     /// 処理概要: `.ogp` の通常 Pages を対象に component instance を展開し、出力ディレクトリへ HTML を保存します。
@@ -140,12 +156,12 @@ struct OpenGraphiteComponentBuilder {
         sourceCSSURL: URL? = nil,
         outputCSSURL: URL? = nil
     ) throws -> String {
-        var components: [String: String] = [:]
+        var components: [String: ComponentMaster] = [:]
         for href in componentHrefs(in: html) {
             let componentURL = resolveComponentURL(href, relativeTo: pageURL)
             let componentHTML = try String(contentsOf: componentURL, encoding: .utf8)
             for (componentID, masterHTML) in componentMasters(in: componentHTML) {
-                components[componentID] = masterHTML
+                components[componentID] = ComponentMaster(html: masterHTML, sourceURL: componentURL)
             }
         }
 
@@ -251,10 +267,10 @@ struct OpenGraphiteComponentBuilder {
         }
     }
 
-    /// 論理名（日本語）: component master抽出関数
-    /// 処理概要: Components HTML から `data-og-component-kind="master"` の subtree を component ID ごとに抽出します。
+    /// 論理名（日本語）: 標準component master抽出関数
+    /// 処理概要: Components HTML から、`data-og-component`を持つhyphenated Custom Elementと直下`template`のsubtreeを抽出します。
     private func componentMasters(in html: String) -> [String: String] {
-        let pattern = #"(?is)<([A-Za-z][\w:-]*)\b(?=[^>]*\bdata-og-component=(["'])(.*?)\2)(?=[^>]*\bdata-og-component-kind=(["'])master\4)[^>]*>.*?</\1>"#
+        let pattern = #"(?is)<([A-Za-z][\w:.-]*-[\w:.-]*)\b(?=[^>]*\bdata-og-component=(["'])(.*?)\2)[^>]*>\s*<template\b[^>]*>.*?</template>\s*</\1>"#
         var result: [String: String] = [:]
         for match in regexMatches(pattern: pattern, in: html) {
             guard match.numberOfRanges >= 4,
@@ -269,26 +285,31 @@ struct OpenGraphiteComponentBuilder {
     }
 
     /// 論理名（日本語）: instance展開関数
-    /// 処理概要: `<og-instance>` を対応する component master HTML で置換します。
+    /// 処理概要: `<og-instance>`を同じtemplate sourceのdeclarative Shadow DOM hostへ再帰展開します。
     private func expandInstances(
         in html: String,
-        components: [String: String],
+        components: [String: ComponentMaster],
         pageURL: URL,
-        diagnostics: inout [OpenGraphiteDiagnostic]
+        diagnostics: inout [OpenGraphiteDiagnostic],
+        componentStack: [String] = []
     ) -> String {
-        let pattern = #"(?is)<og-instance\b([^>]*)>(.*?)</og-instance>"#
         var result = html
-        for match in regexMatches(pattern: pattern, in: html).reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: html),
-                  let attributeRange = Range(match.range(at: 1), in: html),
-                  let contentRange = Range(match.range(at: 2), in: html)
-            else {
+        for instance in topLevelComponentInstances(in: html).reversed() {
+            let attributes = instance.attributes
+            guard let componentID = attribute("data-og-component", in: attributes) else { continue }
+            guard !componentStack.contains(componentID), componentStack.count < Self.maximumComponentExpansionDepth else {
+                diagnostics.append(
+                    OpenGraphiteDiagnostic(
+                        severity: .error,
+                        code: "component-expansion-cycle",
+                        message: "component参照が循環しています: \((componentStack + [componentID]).joined(separator: " -> "))",
+                        path: pageURL.path,
+                        nodeID: attribute("data-og-id", in: attributes)
+                    )
+                )
                 continue
             }
-            let attributes = String(html[attributeRange])
-            let content = String(html[contentRange])
-            guard let componentID = attribute("data-og-component", in: attributes) else { continue }
-            guard let masterHTML = components[componentID] else {
+            guard let master = components[componentID] else {
                 diagnostics.append(
                     OpenGraphiteDiagnostic(
                         severity: .error,
@@ -302,62 +323,188 @@ struct OpenGraphiteComponentBuilder {
             }
             let idPrefix = attribute("data-og-id", in: attributes) ?? "\(componentID)-instance"
             let instanceStyle = attribute("style", in: attributes)
-            let rendered = render(masterHTML: masterHTML, slots: slots(in: content), idPrefix: idPrefix, instanceStyle: instanceStyle)
-            result.replaceSubrange(fullRange, with: rendered)
+            let instanceVariant = attribute("variant", in: attributes)
+            let instanceSlot = attribute("slot", in: attributes)
+            let rendered = render(
+                master: master,
+                lightDOM: instance.content,
+                idPrefix: idPrefix,
+                instanceStyle: instanceStyle,
+                instanceVariant: instanceVariant,
+                instanceSlot: instanceSlot,
+                components: components,
+                pageURL: pageURL,
+                diagnostics: &diagnostics,
+                componentStack: componentStack + [componentID]
+            )
+            result.replaceSubrange(instance.fullRange, with: rendered)
         }
         return result
     }
 
     /// 論理名（日本語）: master描画関数
-    /// 処理概要: master HTML に slot 内容、ID prefix、instance style を適用して page 内 HTML を生成します。
-    private func render(masterHTML: String, slots: [String: String], idPrefix: String, instanceStyle: String?) -> String {
-        var html = masterHTML
-        html = removeAttribute("data-og-component-kind", from: html)
-        html = applySlots(to: html, slots: slots)
+    /// 処理概要: master templateをdeclarative Shadow DOM化し、instance light DOM、host variant/slot/style、ID prefixを適用します。
+    private func render(
+        master: ComponentMaster,
+        lightDOM: String,
+        idPrefix: String,
+        instanceStyle: String?,
+        instanceVariant: String?,
+        instanceSlot: String?,
+        components: [String: ComponentMaster],
+        pageURL: URL,
+        diagnostics: inout [OpenGraphiteDiagnostic],
+        componentStack: [String]
+    ) -> String {
+        var html = rewriteComponentResourceReferences(
+            in: master.html,
+            componentURL: master.sourceURL,
+            pageURL: pageURL
+        )
         html = rewriteIDs(in: html, idPrefix: idPrefix)
+        html = makeTemplateDeclarative(in: html)
+        html = insertLightDOM(lightDOM, into: html)
         if let instanceStyle, !instanceStyle.isEmpty {
             html = mergeRootStyle(instanceStyle, into: html)
         }
-        return html
+        if let instanceVariant, !instanceVariant.isEmpty {
+            html = setRootAttribute("variant", value: instanceVariant, in: html)
+        }
+        if let instanceSlot, !instanceSlot.isEmpty {
+            html = setRootAttribute("slot", value: instanceSlot, in: html)
+        }
+        return expandInstances(
+            in: html,
+            components: components,
+            pageURL: pageURL,
+            diagnostics: &diagnostics,
+            componentStack: componentStack
+        )
     }
 
-    /// 論理名（日本語）: slot抽出関数
-    /// 処理概要: instance source child の `slot` 属性と inner HTML を対応付けます。
-    private func slots(in html: String) -> [String: String] {
-        let pattern = #"(?is)<([A-Za-z][\w:-]*)\b(?=[^>]*\bslot=(["'])(.*?)\2)([^>]*)>(.*?)</\1>"#
-        var result: [String: String] = [:]
-        for match in regexMatches(pattern: pattern, in: html) {
-            guard let slotRange = Range(match.range(at: 3), in: html),
-                  let contentRange = Range(match.range(at: 5), in: html)
-            else {
+    /// 論理名（日本語）: top-level component instance range抽出関数
+    /// 処理概要: 入れ子`og-instance`をstackで対応付け、現在のHTML断片で最上位にあるinstanceだけを返します。
+    private func topLevelComponentInstances(in html: String) -> [ComponentInstanceRange] {
+        let pattern = #"(?is)</?og-instance\b[^>]*>"#
+        let matches = regexMatches(pattern: pattern, in: html)
+        var stack: [(start: NSRange, openingEnd: Int, attributes: String)] = []
+        var result: [ComponentInstanceRange] = []
+        for match in matches {
+            guard let tokenRange = Range(match.range(at: 0), in: html) else { continue }
+            let token = String(html[tokenRange])
+            if token.lowercased().hasPrefix("</") {
+                guard let opening = stack.popLast() else { continue }
+                if stack.isEmpty,
+                   let fullRange = Range(
+                       NSRange(location: opening.start.location, length: match.range(at: 0).upperBound - opening.start.location),
+                       in: html
+                   ),
+                   let contentRange = Range(
+                       NSRange(location: opening.openingEnd, length: match.range(at: 0).location - opening.openingEnd),
+                       in: html
+                   ) {
+                    result.append(
+                        ComponentInstanceRange(
+                            fullRange: fullRange,
+                            attributes: opening.attributes,
+                            content: String(html[contentRange])
+                        )
+                    )
+                }
                 continue
             }
-            result[String(html[slotRange])] = String(html[contentRange])
+            let attributes = token
+                .replacingOccurrences(of: #"(?is)^<og-instance\b"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #">$"#, with: "", options: .regularExpression)
+            stack.append((match.range(at: 0), match.range(at: 0).upperBound, attributes))
         }
         return result
     }
 
-    /// 論理名（日本語）: slot適用関数
-    /// 処理概要: `data-og-slot` を持つ要素の中身を instance slot 内容で置き換えます。
-    private func applySlots(to html: String, slots: [String: String]) -> String {
-        let pattern = #"(?is)<([A-Za-z][\w:-]*)\b(?=[^>]*\bdata-og-slot=(["'])(.*?)\2)([^>]*)>(.*?)</\1>"#
+    /// 論理名（日本語）: declarative Shadow DOM template変換関数
+    /// 処理概要: masterの最初のtemplateへ標準shadowroot属性を追加し、static HTMLだけでShadow DOMを構築可能にします。
+    private func makeTemplateDeclarative(in html: String) -> String {
+        let pattern = #"(?is)<template\b[^>]*>"#
+        guard let match = regexMatches(pattern: pattern, in: html).first,
+              let range = Range(match.range(at: 0), in: html)
+        else { return html }
+        var tag = String(html[range])
+        tag = setAttribute("shadowrootmode", value: "open", in: tag)
+        tag = setBooleanAttribute("shadowrootclonable", in: tag)
+        tag = setBooleanAttribute("shadowrootserializable", in: tag)
+        var result = html
+        result.replaceSubrange(range, with: tag)
+        return result
+    }
+
+    /// 論理名（日本語）: instance light DOM挿入関数
+    /// 処理概要: authored slot childrenをCustom Element hostのtemplate後へそのまま挿入し、native slot assignmentを維持します。
+    private func insertLightDOM(_ lightDOM: String, into html: String) -> String {
+        guard !lightDOM.isEmpty,
+              let rootTag = regexMatches(pattern: #"(?is)^\s*<([A-Za-z][\w:.-]*)\b"#, in: html).first,
+              let tagNameRange = Range(rootTag.range(at: 1), in: html)
+        else { return html }
+        let tagName = NSRegularExpression.escapedPattern(for: String(html[tagNameRange]))
+        let closingPattern = "(?is)</\(tagName)\\s*>\\s*$"
+        guard let closing = regexMatches(pattern: closingPattern, in: html).first,
+              let range = Range(closing.range(at: 0), in: html)
+        else { return html }
+        var result = html
+        result.insert(contentsOf: lightDOM, at: range.lowerBound)
+        return result
+    }
+
+    /// 論理名（日本語）: component resource URL書換え関数
+    /// 処理概要: template内のlocal href/srcをcomponent source基準からpage source基準の相対URLへ変換します。
+    private func rewriteComponentResourceReferences(
+        in html: String,
+        componentURL: URL,
+        pageURL: URL
+    ) -> String {
+        let pattern = #"(?is)<[A-Za-z][\w:.-]*\b[^>]*(?:href|src)\s*=\s*(["']).*?\1[^>]*>"#
         var result = html
         for match in regexMatches(pattern: pattern, in: html).reversed() {
-            guard let fullRange = Range(match.range(at: 0), in: html),
-                  let tagRange = Range(match.range(at: 1), in: html),
-                  let slotRange = Range(match.range(at: 3), in: html),
-                  let attributeRange = Range(match.range(at: 4), in: html),
-                  let fallbackRange = Range(match.range(at: 5), in: html)
-            else {
-                continue
+            guard let range = Range(match.range(at: 0), in: html) else { continue }
+            var tag = String(html[range])
+            for attributeName in ["href", "src"] {
+                guard let authoredValue = attribute(attributeName, in: tag),
+                      !authoredValue.hasPrefix("#"),
+                      !authoredValue.hasPrefix("data:"),
+                      !authoredValue.contains("://")
+                else { continue }
+                let targetURL = resolveURL(authoredValue, relativeTo: componentURL)
+                let pageRelativeValue = Self.relativePath(
+                    from: pageURL.deletingLastPathComponent(),
+                    to: targetURL
+                )
+                tag = setAttribute(attributeName, value: pageRelativeValue, in: tag)
             }
-            let tag = String(html[tagRange])
-            let attributes = String(html[attributeRange])
-            let slotName = String(html[slotRange])
-            let fallback = String(html[fallbackRange])
-            let content = slots[slotName] ?? fallback
-            result.replaceSubrange(fullRange, with: "<\(tag)\(attributes)>\(content)</\(tag)>")
+            result.replaceSubrange(range, with: tag)
         }
+        return result
+    }
+
+    /// 論理名（日本語）: root属性設定関数
+    /// 処理概要: component hostの開始tagだけへvariantなどの標準host属性を設定します。
+    private func setRootAttribute(_ name: String, value: String, in html: String) -> String {
+        guard let firstTag = regexMatches(pattern: #"(?is)<[A-Za-z][\w:.-]*\b[^>]*>"#, in: html).first,
+              let tagRange = Range(firstTag.range(at: 0), in: html)
+        else { return html }
+        var result = html
+        result.replaceSubrange(tagRange, with: setAttribute(name, value: value, in: String(html[tagRange])))
+        return result
+    }
+
+    /// 論理名（日本語）: boolean属性設定関数
+    /// 処理概要: 開始tagへ重複なくboolean属性を追加します。
+    private func setBooleanAttribute(_ name: String, in tag: String) -> String {
+        let escapedName = NSRegularExpression.escapedPattern(for: name)
+        guard tag.range(of: #"(?i)\b\#(escapedName)(?:\s|=|/?>)"#, options: .regularExpression) == nil else {
+            return tag
+        }
+        var result = tag
+        let insertionIndex = result.lastIndex(of: ">") ?? result.endIndex
+        result.insert(contentsOf: " \(name)", at: insertionIndex)
         return result
     }
 

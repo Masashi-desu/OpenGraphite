@@ -1,14 +1,152 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  cardlabel,
+  headercopy,
+  layerarrow,
+  layerchip,
+  layerorder,
+  lessongrid,
+  ownershipcard,
+  ownershiplabel,
+  ownershiptext,
+  ownershipvalue,
+  practiceheader,
+  practicelabel,
+  practicestate,
+  practicesurface,
+  practicetarget,
+  stepcopy,
+  steplabel,
+  stepnumber,
+  steptext,
+  steptitle,
+  targetcross,
+  targettext,
+  targettitle,
+  trylabel,
+  trypanel,
+  trytext,
+  tutorialheader,
+  tutoriallead,
+  tutorialstickynotes,
+  tutorialtitle,
+  workflowcard,
+  workflowstep
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  headercopy,
+  layerorder,
+  lessongrid,
+  ownershipcard,
+  practiceheader,
+  practicesurface,
+  practicetarget,
+  stepcopy,
+  trypanel,
+  tutorialheader,
+  tutorialstickynotes,
+  workflowcard,
+  workflowstep
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  cardlabel,
+  layerarrow,
+  layerchip,
+  ownershiplabel,
+  ownershiptext,
+  ownershipvalue,
+  practicelabel,
+  practicestate,
+  steplabel,
+  stepnumber,
+  steptext,
+  steptitle,
+  targetcross,
+  targettext,
+  targettitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  cardlabel,
+  layerarrow,
+  layerchip,
+  ownershiplabel,
+  ownershiptext,
+  ownershipvalue,
+  practicelabel,
+  practicestate,
+  steplabel,
+  stepnumber,
+  steptext,
+  steptitle,
+  targetcross,
+  targettext,
+  targettitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutstroot008"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 32px;
   background: #0c1010;
   color: #f5f7f3;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutstroot008"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutstheader08"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 32px;
   align-items: flex-end;
@@ -16,6 +154,8 @@
 }
 
 [data-og-internal-id="tutstheadcopy"] {
+  display: flex;
+  flex-direction: column;
   max-width: 760px;
   gap: 12px;
 }
@@ -44,6 +184,8 @@
 }
 
 [data-og-internal-id="tutstowncard8"] {
+  display: flex;
+  flex-direction: column;
   width: 292px;
   gap: 7px;
   padding: 18px 20px;
@@ -73,6 +215,8 @@
 }
 
 [data-og-internal-id="tutstgrid0008"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   align-items: stretch;
@@ -80,6 +224,8 @@
 
 [data-og-internal-id="tutstworkflow"],
 [data-og-internal-id="tutstpractice8"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 520px;
   gap: 18px;
@@ -92,6 +238,8 @@
 [data-og-internal-id="tutstworkstep1"],
 [data-og-internal-id="tutstworkstep2"],
 [data-og-internal-id="tutstworkstep3"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 16px;
   padding: 17px;
@@ -119,6 +267,8 @@
 [data-og-internal-id="tutstworkcopy1"],
 [data-og-internal-id="tutstworkcopy2"],
 [data-og-internal-id="tutstworkcopy3"] {
+  display: flex;
+  flex-direction: column;
   gap: 5px;
 }
 
@@ -138,6 +288,9 @@
 }
 
 [data-og-internal-id="tutstprheader8"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   width: 100%;
   justify-content: space-between;
 }
@@ -150,6 +303,8 @@
 }
 
 [data-og-internal-id="tutstprtarget8"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 330px;
   gap: 10px;
@@ -181,6 +336,8 @@
 }
 
 [data-og-internal-id="tutstlayer008"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 10px;
   align-items: center;
@@ -209,6 +366,8 @@
 }
 
 [data-og-internal-id="tutsttrypanel8"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 22px;
   padding: 19px 22px;
@@ -222,4 +381,17 @@
   color: #e6dfc2;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutstheader08"],
+  [data-og-internal-id="tutstgrid0008"],
+  [data-og-internal-id="tutstworkstep1"],
+  [data-og-internal-id="tutstworkstep2"],
+  [data-og-internal-id="tutstworkstep3"],
+  [data-og-internal-id="tutstprheader8"],
+  [data-og-internal-id="tutstlayer008"],
+  [data-og-internal-id="tutsttrypanel8"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

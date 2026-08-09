@@ -10,10 +10,12 @@ const ogkilnPath = join(repoRoot, "Scripts", "ogkiln");
 
 let inputBuffer = Buffer.alloc(0);
 
-process.stdin.on("data", (chunk) => {
-  inputBuffer = Buffer.concat([inputBuffer, chunk]);
-  readMessages();
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.stdin.on("data", (chunk) => {
+    inputBuffer = Buffer.concat([inputBuffer, chunk]);
+    readMessages();
+  });
+}
 
 function readMessages() {
   while (true) {
@@ -100,7 +102,7 @@ function resourcesList() {
     {
       uri: "opengraphite://contract/css",
       name: "OpenGraphite Contract",
-      description: "Machine-readable data-og-* and editable CSS declaration contract.",
+      description: "Machine-readable optional annotation/adoption policy and editable CSS declaration contract.",
       mimeType: "application/json"
     },
     {
@@ -223,7 +225,7 @@ function textResource(uri, mimeType, text) {
   return { uri, mimeType, text };
 }
 
-function toolsList() {
+export function toolsList() {
   return [
     {
       name: "validate",
@@ -231,6 +233,16 @@ function toolsList() {
       inputSchema: objectSchema({
         projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." }
       }, ["projectPath"])
+    },
+    {
+      name: "migrate_project",
+      description: "Dry-run an explicit project Web-contract migration, or atomically apply the exact reviewed proposal. Dry-run is the default; apply requires proposalReference.",
+      inputSchema: objectSchema({
+        project: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        targetVersion: { type: "string", description: "Target Web contract version. Defaults to the contract migration policy target." },
+        proposalReference: { type: "string", description: "Apply-only proposalReference returned by a dry-run with the same project and target." },
+        apply: { type: "boolean", description: "Apply the reviewed proposal when true. Omit or false for dry-run." }
+      }, ["project"])
     },
     {
       name: "get_contract",
@@ -279,6 +291,33 @@ function toolsList() {
         projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
         name: { type: "string", description: "CSS custom property name, for example --color-primary." }
       }, ["projectPath", "name"])
+    },
+    {
+      name: "list_locale_typography",
+      description: "List authored root and :lang() font-family declarations for one page or component without writing computed preview state.",
+      inputSchema: targetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        ...pageSelectorProperties()
+      }, ["projectPath"])
+    },
+    {
+      name: "set_locale_typography",
+      description: "Set the standard root or :lang() font-family declaration for one page or component while preserving CSS source provenance.",
+      inputSchema: targetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        ...pageSelectorProperties(),
+        locale: { type: "string", description: "Optional 'default' or a selector-safe BCP 47 tag. Omit for the root declaration." },
+        value: { type: "string", description: "Complete standard CSS font-family value." }
+      }, ["projectPath", "value"])
+    },
+    {
+      name: "remove_locale_typography",
+      description: "Remove the standard root or :lang() font-family declaration for one page or component while preserving surrounding source.",
+      inputSchema: targetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path, relative to the repository root or absolute, or 'current'." },
+        ...pageSelectorProperties(),
+        locale: { type: "string", description: "Optional 'default' or a selector-safe BCP 47 tag. Omit for the root declaration." }
+      }, ["projectPath"])
     },
     {
       name: "build_project",
@@ -422,10 +461,11 @@ function toolsList() {
     },
     {
       name: "list_nodes",
-      description: "Return the OpenGraphite graph for a page or component canvas registered in an .ogp project.",
+      description: "Return every inspectable DOM node for a registered page or component, including standard CSS-derived layout, source/resolved visibility, annotation status, references, and locators. Optional active media conditions never mutate source.",
       inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
-        ...pageSelectorProperties()
+        ...pageSelectorProperties(),
+        activeMediaQueries: { type: "array", items: { type: "string" }, description: "Authored CSSMediaRule.conditionText values confirmed active by the rendering environment." }
       }, ["projectPath"])
     },
     {
@@ -465,50 +505,79 @@ function toolsList() {
     },
     {
       name: "query_nodes",
-      description: "Filter OpenGraphite nodes in a project-registered page or component canvas by id, type, role, tag, or text content.",
+      description: "Filter every inspectable standard DOM node by optional annotation, legacy data-og-type hint, operation capabilities, tag, or text without adopting annotations. Capabilities are derived from standard DOM/CSS semantics and every requested capability must match.",
       inputSchema: targetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         idContains: { type: "string" },
-        type: { type: "string" },
+        type: { type: "string", description: "Deprecated legacy data-og-type hint filter. It does not grant operation capability." },
+        capabilities: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: [
+              "drag-position", "edit-control", "edit-icon", "edit-layout", "edit-link",
+              "edit-media", "edit-text", "group", "receive-children", "reorder-flow", "ungroup"
+            ]
+          },
+          description: "Operation capabilities that the node must all satisfy."
+        },
         role: { type: "string" },
         tag: { type: "string" },
-        textContains: { type: "string" }
+        textContains: { type: "string" },
+        activeMediaQueries: { type: "array", items: { type: "string" }, description: "Authored CSSMediaRule.conditionText values confirmed active by the rendering environment." }
       }, ["projectPath"])
     },
     {
       name: "get_node",
-      description: "Return a single node by data-og-internal-id or ogref.",
+      description: "Inspect one node by stable data-og-internal-id/typed ogref or a session-scoped graph reference without adopting annotations. Session references are not mutation targets.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
-        id: { type: "string" }
+        id: { type: "string" },
+        activeMediaQueries: { type: "array", items: { type: "string" }, description: "Authored CSSMediaRule.conditionText values confirmed active by the rendering environment." }
       }, ["projectPath", "id"])
     },
     {
+      name: "adopt_node",
+      description: "Preview optional OpenGraphite identity for one node or subtree by inspected reference/selector/DOM path. Dry-run is the default and returns a unified source diff plus an apply-only proposal targetReference binding the target, whole-document hash, scope, and displayID; apply requires that reference with the same normalized proposal parameters.",
+      inputSchema: adoptionTargetObjectSchema({
+        projectPath: { type: "string", description: ".ogp path or 'current'." },
+        ...pageSelectorProperties(),
+        reference: { type: "string", description: "Inspection reference for dry-run, or the apply-only proposal targetReference returned by dry-run when apply is true. A graph session reference cannot be applied directly." },
+        selector: { type: "string", description: "Safe locator.selector returned by node inspection. Dry-run only." },
+        domPath: { type: "string", description: "locator.domPath returned by node inspection. Dry-run only." },
+        scope: { type: "string", enum: ["node", "subtree"], description: "Adopt only the target node or its inspectable subtree. Defaults to node and must match the dry-run when apply is true." },
+        displayID: { type: "string", description: "Optional human-readable data-og-id proposed for the target node. Its normalized value must match the dry-run when apply is true." },
+        apply: { type: "boolean", description: "When true, apply the reviewed diff using the dry-run proposal targetReference and identical normalized scope/displayID. Omit or false for dry-run." }
+      }, ["projectPath"])
+    },
+    {
       name: "set_css_variable",
-      description: "Set an editable companion CSS declaration on a node selected by data-og-internal-id or ogref.",
+      description: "Set an editable companion CSS declaration. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
         variable: { type: "string" },
-        value: { type: "string" }
+        value: { type: "string" },
+        activeMediaQueries: { type: "array", items: { type: "string" }, description: "Active authored media conditions used to update the reviewed cascade winner in place." }
       }, ["projectPath", "id", "variable", "value"])
     },
     {
       name: "remove_css_variable",
-      description: "Remove an editable companion CSS declaration from a node selected by data-og-internal-id or ogref.",
+      description: "Remove an editable companion CSS declaration. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
         id: { type: "string" },
-        variable: { type: "string" }
+        variable: { type: "string" },
+        activeMediaQueries: { type: "array", items: { type: "string" }, description: "Active authored media conditions used to remove the reviewed cascade winner in place." }
       }, ["projectPath", "id", "variable"])
     },
     {
       name: "set_node_attribute",
-      description: "Set an editable data-og-* attribute on a node selected by data-og-internal-id or ogref.",
+      description: "Set an editable standard HTML or OpenGraphite metadata attribute on a capability-compatible DOM target. Empty strings remain present empty attributes; use remove_node_attribute to delete the token. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -519,7 +588,7 @@ function toolsList() {
     },
     {
       name: "remove_node_attribute",
-      description: "Remove an editable data-og-* attribute from a node selected by data-og-internal-id or ogref.",
+      description: "Remove an editable standard HTML or OpenGraphite metadata attribute token from a capability-compatible DOM target. This is distinct from setting an empty string. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -529,7 +598,7 @@ function toolsList() {
     },
     {
       name: "set_icon",
-      description: "Update a Lucide icon node's metadata and saved page-side markup.",
+      description: "Update a Lucide icon wrapper's existing OpenGraphite icon metadata and saved markup. Plain SVG edit-icon nodes remain available to CSS stroke editing but cannot be replaced by this tool. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -541,7 +610,7 @@ function toolsList() {
     },
     {
       name: "insert_icon",
-      description: "Insert a Lucide icon node before, after, prepend, or append relative to an anchor node.",
+      description: "Insert a Lucide icon relative to an anchor. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session anchor first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -557,7 +626,7 @@ function toolsList() {
     },
     {
       name: "set_text_content",
-      description: "Replace a node's inner content with escaped plain text.",
+      description: "Replace a node's inner content with escaped plain text. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -567,7 +636,7 @@ function toolsList() {
     },
     {
       name: "insert_html",
-      description: "Insert an HTML fragment before, after, prepend, or append relative to an anchor node.",
+      description: "Insert an HTML fragment relative to an anchor. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session anchor first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -578,7 +647,7 @@ function toolsList() {
     },
     {
       name: "replace_node_html",
-      description: "Replace a node subtree with an HTML fragment.",
+      description: "Replace a node subtree with an HTML fragment. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -588,7 +657,7 @@ function toolsList() {
     },
     {
       name: "delete_node",
-      description: "Delete a node subtree selected by data-og-internal-id or ogref.",
+      description: "Delete a node subtree. Requires a stable data-og-internal-id or typed ogref; explicitly adopt a session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -597,7 +666,7 @@ function toolsList() {
     },
     {
       name: "move_node",
-      description: "Move a node subtree before, after, prepend, or append relative to a target node.",
+      description: "Move a node subtree relative to a target. Both require a stable data-og-internal-id or typed ogref; explicitly adopt any session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -608,7 +677,7 @@ function toolsList() {
     },
     {
       name: "copy_node",
-      description: "Copy a node subtree, prefix copied data-og-id values, and insert it relative to a target node.",
+      description: "Copy a node subtree and insert it relative to a target. Both require a stable data-og-internal-id or typed ogref; explicitly adopt any session reference first.",
       inputSchema: nodeTargetObjectSchema({
         projectPath: { type: "string", description: ".ogp path or 'current'." },
         ...pageSelectorProperties(),
@@ -636,6 +705,34 @@ function targetObjectSchema(properties, required) {
     oneOf: [
       { required: ["pageID"] },
       { required: ["componentID"] }
+    ]
+  };
+}
+
+function adoptionTargetObjectSchema(properties, required) {
+  return {
+    ...objectSchema(properties, required),
+    allOf: [
+      {
+        oneOf: [
+          { required: ["pageID"] },
+          { required: ["componentID"] }
+        ]
+      },
+      {
+        oneOf: [
+          { required: ["reference"] },
+          { required: ["selector"] },
+          { required: ["domPath"] }
+        ]
+      },
+      {
+        if: {
+          required: ["apply"],
+          properties: { apply: { const: true } }
+        },
+        then: { required: ["reference"] }
+      }
     ]
   };
 }
@@ -671,10 +768,19 @@ function callTool(name, args) {
   };
 }
 
-function commandForTool(name, args) {
+export function commandForTool(name, args) {
   switch (name) {
     case "validate":
       return ["validate", requiredArg(args, "projectPath"), "--json"];
+    case "migrate_project":
+      return [
+        "migrate",
+        requiredArg(args, "project"),
+        ...optionalFlag(args, "targetVersion", "--target-version"),
+        ...optionalFlag(args, "proposalReference", "--proposal"),
+        ...(args?.apply === true ? ["--apply"] : []),
+        "--json"
+      ];
     case "get_contract":
       return ["contract", "get", "--json"];
     case "list_canvas_annotations":
@@ -716,6 +822,34 @@ function commandForTool(name, args) {
         requiredArg(args, "projectPath"),
         "--name",
         requiredArg(args, "name")
+      ];
+    case "list_locale_typography":
+      return [
+        "locale-typography",
+        "list",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        "--json"
+      ];
+    case "set_locale_typography":
+      return [
+        "locale-typography",
+        "set",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        ...optionalFlag(args, "locale", "--locale"),
+        "--value",
+        requiredArg(args, "value"),
+        "--json"
+      ];
+    case "remove_locale_typography":
+      return [
+        "locale-typography",
+        "remove",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        ...optionalFlag(args, "locale", "--locale"),
+        "--json"
       ];
     case "build_project":
       return ["build", requiredArg(args, "projectPath"), "--output", requiredArg(args, "outputPath")];
@@ -770,8 +904,7 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
         ...optionalValueFlag(args, "height", "--height"),
-        ...optionalPreviewMockFlags(args),
-        ...optionalPreviewPlacementMockFlags(args)
+        ...optionalPreviewMockFlags(args)
       ];
     case "set_project_page_document_context":
       return [
@@ -854,7 +987,8 @@ function commandForTool(name, args) {
         ...optionalValueFlag(args, "y", "--y"),
         ...optionalValueFlag(args, "width", "--width"),
         ...optionalValueFlag(args, "height", "--height"),
-        ...optionalPreviewMockFlags(args)
+        ...optionalPreviewMockFlags(args),
+        ...optionalPreviewPlacementMockFlags(args)
       ];
     case "remove_project_component":
       return [
@@ -867,7 +1001,12 @@ function commandForTool(name, args) {
         ...(args?.deleteFile === true ? ["--delete-file"] : [])
       ];
     case "list_nodes":
-      return ["page", "graph", requiredArg(args, "projectPath"), ...pageSelectorArgs(args), "--json"];
+      return [
+        "page", "graph", requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        ...optionalRepeatedStringFlags(args, "activeMediaQueries", "--active-media"),
+        "--json"
+      ];
     case "screenshot_canvas":
       return [
         "screenshot",
@@ -912,9 +1051,11 @@ function commandForTool(name, args) {
         ...pageSelectorArgs(args),
         ...optionalFlag(args, "idContains", "--id-contains"),
         ...optionalFlag(args, "type", "--type"),
+        ...optionalRepeatedStringFlags(args, "capabilities", "--capability"),
         ...optionalFlag(args, "role", "--role"),
         ...optionalFlag(args, "tag", "--tag"),
         ...optionalFlag(args, "textContains", "--text-contains"),
+        ...optionalRepeatedStringFlags(args, "activeMediaQueries", "--active-media"),
         "--json"
       ];
     case "get_node":
@@ -925,6 +1066,19 @@ function commandForTool(name, args) {
         ...pageSelectorArgs(args),
         "--id",
         requiredArg(args, "id"),
+        ...optionalRepeatedStringFlags(args, "activeMediaQueries", "--active-media"),
+        "--json"
+      ];
+    case "adopt_node":
+      return [
+        "node",
+        "adopt",
+        requiredArg(args, "projectPath"),
+        ...pageSelectorArgs(args),
+        ...adoptionLocatorArgs(args),
+        ...optionalFlag(args, "scope", "--scope"),
+        ...optionalFlag(args, "displayID", "--display-id"),
+        ...(args?.apply === true ? ["--apply"] : []),
         "--json"
       ];
     case "set_css_variable":
@@ -939,7 +1093,8 @@ function commandForTool(name, args) {
         "--var",
         requiredArg(args, "variable"),
         "--value",
-        requiredArg(args, "value")
+        requiredArg(args, "value"),
+        ...optionalRepeatedStringFlags(args, "activeMediaQueries", "--active-media")
       ];
     case "remove_css_variable":
       return [
@@ -951,7 +1106,8 @@ function commandForTool(name, args) {
         "--id",
         requiredArg(args, "id"),
         "--var",
-        requiredArg(args, "variable")
+        requiredArg(args, "variable"),
+        ...optionalRepeatedStringFlags(args, "activeMediaQueries", "--active-media")
       ];
     case "set_node_attribute":
       return [
@@ -965,7 +1121,7 @@ function commandForTool(name, args) {
         "--name",
         requiredArg(args, "name"),
         "--value",
-        requiredArg(args, "value")
+        requiredStringArg(args, "value")
       ];
     case "remove_node_attribute":
       return [
@@ -1123,6 +1279,22 @@ function typedNodeReference(value) {
   return typeof value === "string" && /^ogref:(node|component-node):/.test(value);
 }
 
+function adoptionLocatorArgs(args) {
+  const candidates = [
+    ["reference", "--reference"],
+    ["selector", "--selector"],
+    ["domPath", "--dom-path"]
+  ].filter(([key]) => typeof args?.[key] === "string" && args[key].length > 0);
+  if (candidates.length !== 1) {
+    throw new Error("Specify exactly one adoption locator: reference, selector, or domPath.");
+  }
+  if (args?.apply === true && candidates[0][0] !== "reference") {
+    throw new Error("Explicit adoption apply requires the proposal targetReference returned by dry-run with the same scope/displayID.");
+  }
+  const [key, flag] = candidates[0];
+  return [flag, args[key]];
+}
+
 function optionalFlag(args, key, flag) {
   const value = args?.[key];
   if (typeof value !== "string" || value.length === 0) {
@@ -1145,6 +1317,19 @@ function optionalValueFlag(args, key, flag) {
     return [];
   }
   return [flag, String(value)];
+}
+
+function optionalRepeatedStringFlags(args, key, flag) {
+  const values = args?.[key];
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return values.flatMap((value) => {
+    if (typeof value !== "string" || value.trim().length === 0) {
+      return [];
+    }
+    return [flag, value];
+  });
 }
 
 function optionalPreviewMockFlags(args) {
@@ -1182,6 +1367,14 @@ function optionalStringArg(args, key) {
 function requiredArg(args, key) {
   const value = args?.[key];
   if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Missing required argument: ${key}`);
+  }
+  return value;
+}
+
+function requiredStringArg(args, key) {
+  const value = args?.[key];
+  if (typeof value !== "string") {
     throw new Error(`Missing required argument: ${key}`);
   }
   return value;

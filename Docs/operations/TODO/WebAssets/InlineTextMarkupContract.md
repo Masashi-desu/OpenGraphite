@@ -1,7 +1,7 @@
 # Inline Text Markup Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
@@ -11,7 +11,7 @@ text node 内の inline 要素（`a`、`strong`、`em`、`br`、`code` 等）の
 
 ## スコープ
 
-- 対象: `data-og-type="text"` node 内の inline 要素 allowlist、保存・escape 規則、Canvas の text 編集セッションでの inline 生成、CLI / MCP / graph の表現、i18n binding との併用。
+- 対象: DOM / content から text-edit capability を持つと判定された node 内の inline 要素 allowlist、保存・escape 規則、Canvas の text 編集セッションでの inline 生成、CLI / MCP / graph の表現、i18n binding との併用。`data-og-type="text"` は必須条件にしない。
 - 対象外: block 要素の入れ子（frame 構造の範囲）、rich text 独自フォーマットの導入（HTML 標準の範囲に限定する）。
 
 ## 人間側の意思決定

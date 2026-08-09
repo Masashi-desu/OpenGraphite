@@ -7,6 +7,30 @@ import Testing
 @MainActor
 @Suite("EditorStoreキャンバス参照テストスイート")
 struct EditorStoreCanvasReferenceTests {
+    /// 論理名（日本語）: Canvas参照非同期キャッシュテスト
+    /// 概要: SwiftUI描画前はidleを返し、background解決後は同じproject / page revisionの結果を同期的に再利用することを確認します。
+    @Test("Canvas参照はbackground解決後にrevisionキャッシュを再利用する")
+    func testCanvasReferenceResolutionUsesBackgroundRevisionCache() async throws {
+        // コンディション：任意階層nodeを持つprojectを開き、参照をまだ解決していない（Given）
+        let fixture = try CanvasReferenceStoreFixture.make()
+        defer { fixture.remove() }
+        let store = EditorStore()
+        store.openProject(at: fixture.projectURL)
+        let referenceID = "ogref:node:chopaque:pgopaque:nested-opaque"
+        #expect(store.canvasReferenceResolutionState(for: referenceID) == .idle)
+
+        // 検証内容：参照をbackgroundで準備し、同じrevisionでもう一度準備する（When）
+        await store.prepareCanvasReferenceResolution(for: referenceID)
+        let firstResult = store.canvasReferenceResolutionState(for: referenceID)
+        await store.prepareCanvasReferenceResolution(for: referenceID)
+        let cachedResult = store.canvasReferenceResolutionState(for: referenceID)
+
+        // 期待値：解決済み対象が公開され、2回目は同じrevisionキャッシュ値を維持する（Then）
+        #expect(firstResult.target?.node.id == "nested-object")
+        #expect(firstResult.target?.node.internalID == "nested-opaque")
+        #expect(cachedResult == firstResult)
+    }
+
     /// 論理名（日本語）: キャンバス直下参照追加テスト
     /// 概要: node参照がPage HTML内ではなくChapter直下へ右クリックworld座標どおり保存されることを確認します。
     @Test("参照配置はPage内ではなくChapter Canvas直下へ保存する")
@@ -145,7 +169,7 @@ struct EditorStoreCanvasReferenceTests {
     /// 論理名（日本語）: 参照元編集Undo/Redoテスト
     /// 概要: 参照viewportから行ったHTML text編集とcompanion CSS編集が統合履歴へ記録されることを確認します。
     @Test("参照経由のHTMLとCSS編集を取り消してやり直せる")
-    func testReferencedObjectEditsSupportUndoAndRedo() throws {
+    func testReferencedObjectEditsSupportUndoAndRedo() async throws {
         // コンディション：Page内text nodeの参照配置を選択し、WebView相当のnode payloadを取り込む（Given）
         let fixture = try CanvasReferenceStoreFixture.make()
         defer { fixture.remove() }
@@ -169,6 +193,7 @@ struct EditorStoreCanvasReferenceTests {
                 "depth": 0
             ]
         ])
+        await store.waitForNodeSourceEnrichment()
         let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(
             forHTMLURL: fixture.pageHTMLURL
         )
@@ -236,7 +261,7 @@ struct EditorStoreCanvasReferenceTests {
     /// 論理名（日本語）: 参照元CSS履歴外部競合拒否テスト
     /// 概要: 参照経由のCSS編集後にcompanion CSSが外部変更された場合、Undoで外部値を上書きしないことを確認します。
     @Test("外部更新された参照元CSSへ古い履歴を適用しない")
-    func testReferencedCSSUndoRejectsExternalChange() throws {
+    func testReferencedCSSUndoRejectsExternalChange() async throws {
         // コンディション：参照viewportからCSSを編集した後、同じcompanion CSSを外部変更する（Given）
         let fixture = try CanvasReferenceStoreFixture.make()
         defer { fixture.remove() }
@@ -260,6 +285,7 @@ struct EditorStoreCanvasReferenceTests {
                 "depth": 0
             ]
         ])
+        await store.waitForNodeSourceEnrichment()
         store.updateCSSVariable(key: "color", value: "#123456")
         let companionCSSURL = OpenGraphiteCompanionCSSDocument.companionURL(
             forHTMLURL: fixture.pageHTMLURL

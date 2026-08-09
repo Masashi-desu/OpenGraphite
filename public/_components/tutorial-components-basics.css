@@ -1,14 +1,154 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  anatomyguide,
+  badgedot,
+  badgetext,
+  componenttutorial,
+  guideitem,
+  guidenumber,
+  guidetext,
+  lessoncode,
+  lessonlabel,
+  lessontask,
+  masterlesson,
+  masterstage,
+  rulelabel,
+  ruletext,
+  sourcerule,
+  steplabel,
+  tutorial-action,
+  tutorial-badge,
+  tutorialheader,
+  tutoriallead,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  anatomyguide,
+  badgedot,
+  componenttutorial,
+  guideitem,
+  masterlesson,
+  masterstage,
+  sourcerule,
+  tutorial-badge,
+  tutorialheader
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  badgetext,
+  guidenumber,
+  guidetext,
+  lessoncode,
+  lessonlabel,
+  lessontask,
+  rulelabel,
+  ruletext,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  badgetext,
+  guidenumber,
+  guidetext,
+  lessoncode,
+  lessonlabel,
+  lessontask,
+  rulelabel,
+  ruletext,
+  steplabel,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  tutorial-action
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  tutorial-action
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+@media (max-width: 760px) {
+  :where(
+    tutorial-action
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="tutcmpbasroot"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0b0e12;
   color: #f4f7fa;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutcmpbasroot"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutcmpbashead"] {
+  display: flex;
+  flex-direction: column;
   max-width: 820px;
   gap: 12px;
 }
@@ -40,6 +180,8 @@
 }
 
 [data-og-internal-id="tutcmpbasguide"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   align-items: stretch;
@@ -48,6 +190,8 @@
 [data-og-internal-id="tutcmpgroot01"],
 [data-og-internal-id="tutcmpgpart01"],
 [data-og-internal-id="tutcmpgslot01"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   gap: 8px;
   padding: 16px;
@@ -65,6 +209,8 @@
 }
 
 [data-og-internal-id="tutcmpbasstage"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   align-items: stretch;
@@ -72,6 +218,8 @@
 
 [data-og-internal-id="tutcmpbtnlesson"],
 [data-og-internal-id="tutcmpbadgeless"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   min-height: 400px;
   gap: 22px;
@@ -96,6 +244,8 @@
 }
 
 [data-og-internal-id="tutcmpbadgemst"] {
+  display: flex;
+  flex-direction: row;
   width: max-content;
   gap: 10px;
   padding: 12px 16px;
@@ -145,6 +295,8 @@
 }
 
 [data-og-internal-id="tutcmpbasrule"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 18px;
   padding: 18px 22px;
@@ -158,4 +310,13 @@
   color: #bdc6cf;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutcmpbasguide"],
+  [data-og-internal-id="tutcmpbasstage"],
+  [data-og-internal-id="tutcmpbadgemst"],
+  [data-og-internal-id="tutcmpbasrule"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

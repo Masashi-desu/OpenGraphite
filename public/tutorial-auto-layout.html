@@ -3,57 +3,57 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tutorial 02 — Auto Layout</title>
+    <title>Tutorial 02 — Standard CSS Layout</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
     <link rel="stylesheet" href="./tutorial-auto-layout.css">
   </head>
   <body>
-    <TutorialAutoLayout data-og-id="tutorial-auto-layout" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutlayroot001">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayheader01">
-        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutlaystep002">PAGES TUTORIAL · 02</StepLabel>
-        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutlaytitle002">Auto Layout を組み替える</TutorialTitle>
-        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutlaylead0002">親 Frame の Layout が、直下の子の並び方を決めます。下の3つは同じカードを Vertical、Horizontal、Nested の順で配置した比較教材です。</TutorialLead>
+    <TutorialAutoLayout data-og-id="tutorial-auto-layout" data-og-internal-id="tutlayroot001">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutlayheader01">
+        <StepLabel data-og-id="step-label" data-og-internal-id="tutlaystep002">PAGES TUTORIAL · 02</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutlaytitle002">標準 CSS Layout を組み替える</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutlaylead0002">並び方の正本は companion CSS の display、flex-direction、grid-template-columns です。下の教材で Flex、Grid、通常の Block flow と responsive rule を比較します。</TutorialLead>
       </TutorialHeader>
 
-      <LayoutComparison data-og-id="layout-comparison" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlaycompare2">
-        <LayoutLesson data-og-id="vertical-layout-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayvertical">
-          <LessonHeading data-og-id="vertical-lesson-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayvhead002">
-            <LessonIndex data-og-id="vertical-lesson-index" data-og-type="text" data-og-internal-id="tutlayvindex02">A</LessonIndex>
-            <LessonTitle data-og-id="vertical-lesson-title" data-og-type="text" data-og-internal-id="tutlayvtitle02">Vertical</LessonTitle>
+      <LayoutComparison data-og-id="layout-comparison" data-og-internal-id="tutlaycompare2">
+        <LayoutLesson data-og-id="vertical-layout-lesson" data-og-internal-id="tutlayvertical">
+          <LessonHeading data-og-id="vertical-lesson-heading" data-og-internal-id="tutlayvhead002">
+            <LessonIndex data-og-id="vertical-lesson-index" data-og-internal-id="tutlayvindex02">A</LessonIndex>
+            <LessonTitle data-og-id="vertical-lesson-title" data-og-internal-id="tutlayvtitle02">Vertical</LessonTitle>
           </LessonHeading>
-          <CardStack data-og-id="vertical-card-stack" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayvstack02">
-            <MiniCard data-og-id="vertical-card-1" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayvcard201"><CardDot data-og-id="vertical-dot-1" data-og-type="frame" data-og-internal-id="tutlayvdot0201"></CardDot><CardText data-og-id="vertical-text-1" data-og-type="text" data-og-internal-id="tutlayvtext201">First card</CardText></MiniCard>
-            <MiniCard data-og-id="vertical-card-2" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayvcard202"><CardDot data-og-id="vertical-dot-2" data-og-type="frame" data-og-internal-id="tutlayvdot0202"></CardDot><CardText data-og-id="vertical-text-2" data-og-type="text" data-og-internal-id="tutlayvtext202">Second card</CardText></MiniCard>
-            <MiniCard data-og-id="vertical-card-3" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayvcard203"><CardDot data-og-id="vertical-dot-3" data-og-type="frame" data-og-internal-id="tutlayvdot0203"></CardDot><CardText data-og-id="vertical-text-3" data-og-type="text" data-og-internal-id="tutlayvtext203">Third card</CardText></MiniCard>
+          <CardStack data-og-id="vertical-card-stack" data-og-internal-id="tutlayvstack02">
+            <MiniCard data-og-id="vertical-card-1" data-og-internal-id="tutlayvcard201"><CardDot data-og-id="vertical-dot-1" data-og-internal-id="tutlayvdot0201"></CardDot><CardText data-og-id="vertical-text-1" data-og-internal-id="tutlayvtext201">First card</CardText></MiniCard>
+            <MiniCard data-og-id="vertical-card-2" data-og-internal-id="tutlayvcard202"><CardDot data-og-id="vertical-dot-2" data-og-internal-id="tutlayvdot0202"></CardDot><CardText data-og-id="vertical-text-2" data-og-internal-id="tutlayvtext202">Second card</CardText></MiniCard>
+            <MiniCard data-og-id="vertical-card-3" data-og-internal-id="tutlayvcard203"><CardDot data-og-id="vertical-dot-3" data-og-internal-id="tutlayvdot0203"></CardDot><CardText data-og-id="vertical-text-3" data-og-internal-id="tutlayvtext203">Third card</CardText></MiniCard>
           </CardStack>
-          <LessonHint data-og-id="vertical-lesson-hint" data-og-type="text" data-og-internal-id="tutlayvhint002">親を選択して Gap を変える</LessonHint>
+          <LessonHint data-og-id="vertical-lesson-hint" data-og-internal-id="tutlayvhint002">display: flex / flex-direction: column / gap を確認</LessonHint>
         </LayoutLesson>
 
-        <LayoutLesson data-og-id="horizontal-layout-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayhorizont">
-          <LessonHeading data-og-id="horizontal-lesson-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayhhead002">
-            <LessonIndex data-og-id="horizontal-lesson-index" data-og-type="text" data-og-internal-id="tutlayhindex02">B</LessonIndex>
-            <LessonTitle data-og-id="horizontal-lesson-title" data-og-type="text" data-og-internal-id="tutlayhtitle02">Horizontal</LessonTitle>
+        <LayoutLesson data-og-id="horizontal-layout-lesson" data-og-internal-id="tutlayhorizont">
+          <LessonHeading data-og-id="horizontal-lesson-heading" data-og-internal-id="tutlayhhead002">
+            <LessonIndex data-og-id="horizontal-lesson-index" data-og-internal-id="tutlayhindex02">B</LessonIndex>
+            <LessonTitle data-og-id="horizontal-lesson-title" data-og-internal-id="tutlayhtitle02">Horizontal</LessonTitle>
           </LessonHeading>
-          <CardRow data-og-id="horizontal-card-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayhrow0002">
-            <MetricCard data-og-id="metric-card-1" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlaymetric21"><MetricValue data-og-id="metric-value-1" data-og-type="text" data-og-internal-id="tutlayvalue021">24</MetricValue><MetricLabel data-og-id="metric-label-1" data-og-type="text" data-og-internal-id="tutlaylabel021">Gap</MetricLabel></MetricCard>
-            <MetricCard data-og-id="metric-card-2" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlaymetric22"><MetricValue data-og-id="metric-value-2" data-og-type="text" data-og-internal-id="tutlayvalue022">Center</MetricValue><MetricLabel data-og-id="metric-label-2" data-og-type="text" data-og-internal-id="tutlaylabel022">Align</MetricLabel></MetricCard>
-            <MetricCard data-og-id="metric-card-3" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlaymetric23"><MetricValue data-og-id="metric-value-3" data-og-type="text" data-og-internal-id="tutlayvalue023">Fill</MetricValue><MetricLabel data-og-id="metric-label-3" data-og-type="text" data-og-internal-id="tutlaylabel023">Width</MetricLabel></MetricCard>
+          <CardRow data-og-id="horizontal-card-row" data-og-internal-id="tutlayhrow0002">
+            <MetricCard data-og-id="metric-card-1" data-og-internal-id="tutlaymetric21"><MetricValue data-og-id="metric-value-1" data-og-internal-id="tutlayvalue021">24</MetricValue><MetricLabel data-og-id="metric-label-1" data-og-internal-id="tutlaylabel021">Gap</MetricLabel></MetricCard>
+            <MetricCard data-og-id="metric-card-2" data-og-internal-id="tutlaymetric22"><MetricValue data-og-id="metric-value-2" data-og-internal-id="tutlayvalue022">Center</MetricValue><MetricLabel data-og-id="metric-label-2" data-og-internal-id="tutlaylabel022">Align</MetricLabel></MetricCard>
+            <MetricCard data-og-id="metric-card-3" data-og-internal-id="tutlaymetric23"><MetricValue data-og-id="metric-value-3" data-og-internal-id="tutlayvalue023">Fill</MetricValue><MetricLabel data-og-id="metric-label-3" data-og-internal-id="tutlaylabel023">Width</MetricLabel></MetricCard>
           </CardRow>
-          <LessonHint data-og-id="horizontal-lesson-hint" data-og-type="text" data-og-internal-id="tutlayhhint002">Align と Justify の違いを確認</LessonHint>
+          <LessonHint data-og-id="horizontal-lesson-hint" data-og-internal-id="tutlayhhint002">Grid の2列と、内側 Flex の Align / Justify を確認</LessonHint>
         </LayoutLesson>
       </LayoutComparison>
 
-      <NestedLesson data-og-id="nested-layout-lesson" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlaynested02">
-        <NestedCopy data-og-id="nested-copy" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlaynestcopy">
-          <LessonIndex data-og-id="nested-lesson-index" data-og-type="text" data-og-internal-id="tutlaynindex02">C · NESTED</LessonIndex>
-          <NestedTitle data-og-id="nested-title" data-og-type="text" data-og-internal-id="tutlayntitle02">Auto Layout の中に Auto Layout を入れる</NestedTitle>
-          <NestedDescription data-og-id="nested-description" data-og-type="text" data-og-internal-id="tutlayndesc002">外側は Horizontal、カード内部は Vertical、ボタン行は Horizontal。Layers で3階層をたどると、どの親がどの Gap を所有しているか分かります。</NestedDescription>
-          <NestedTask data-og-id="nested-task" data-og-type="text" data-og-internal-id="tutlayntask002">TRY：外側を Vertical に切り替えて変化を見る</NestedTask>
+      <NestedLesson data-og-id="nested-layout-lesson" data-og-internal-id="tutlaynested02">
+        <NestedCopy data-og-id="nested-copy" data-og-internal-id="tutlaynestcopy">
+          <LessonIndex data-og-id="nested-lesson-index" data-og-internal-id="tutlaynindex02">C · NESTED</LessonIndex>
+          <NestedTitle data-og-id="nested-title" data-og-internal-id="tutlayntitle02">Grid、Block、Flex を混在させる</NestedTitle>
+          <NestedDescription data-og-id="nested-description" data-og-internal-id="tutlayndesc002">外側は project-defined Grid、説明欄は通常の Block flow、カード列とボタン行は Flex です。Layers と Inspector は単一 enum ではなく、各要素の computed style と編集 capability を読み取ります。</NestedDescription>
+          <NestedTask data-og-id="nested-task" data-og-internal-id="tutlayntask002">TRY：幅を760px以下にして、media queryで1列へ変わることを確認</NestedTask>
         </NestedCopy>
-        <ProductRow data-og-id="product-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayproducts2">
-          <ProductCard data-og-id="product-card-a" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayproducta"><ProductBadge data-og-id="product-badge-a" data-og-type="text" data-og-internal-id="tutlaybadge002a">CARD A</ProductBadge><ProductTitle data-og-id="product-title-a" data-og-type="text" data-og-internal-id="tutlayprodtitlea">Research</ProductTitle><ProductCopy data-og-id="product-copy-a" data-og-type="text" data-og-internal-id="tutlayprodcopya">情報を集めて方向性を揃える。</ProductCopy><ProductActions data-og-id="product-actions-a" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayactions2a"><button data-og-id="product-action-a1" data-og-type="button" type="button" data-og-internal-id="tutlayactiona1">Open</button><button data-og-id="product-action-a2" data-og-type="button" type="button" data-og-internal-id="tutlayactiona2">Copy</button></ProductActions></ProductCard>
-          <ProductCard data-og-id="product-card-b" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutlayproductb"><ProductBadge data-og-id="product-badge-b" data-og-type="text" data-og-internal-id="tutlaybadge002b">CARD B</ProductBadge><ProductTitle data-og-id="product-title-b" data-og-type="text" data-og-internal-id="tutlayprodtitleb">Compose</ProductTitle><ProductCopy data-og-id="product-copy-b" data-og-type="text" data-og-internal-id="tutlayprodcopyb">部品を組み合わせて構造を作る。</ProductCopy><ProductActions data-og-id="product-actions-b" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutlayactions2b"><button data-og-id="product-action-b1" data-og-type="button" type="button" data-og-internal-id="tutlayactionb1">Open</button><button data-og-id="product-action-b2" data-og-type="button" type="button" data-og-internal-id="tutlayactionb2">Copy</button></ProductActions></ProductCard>
+        <ProductRow data-og-id="product-row" data-og-internal-id="tutlayproducts2">
+          <ProductCard data-og-id="product-card-a" data-og-internal-id="tutlayproducta"><ProductBadge data-og-id="product-badge-a" data-og-internal-id="tutlaybadge002a">CARD A</ProductBadge><ProductTitle data-og-id="product-title-a" data-og-internal-id="tutlayprodtitlea">Research</ProductTitle><ProductCopy data-og-id="product-copy-a" data-og-internal-id="tutlayprodcopya">情報を集めて方向性を揃える。</ProductCopy><ProductActions data-og-id="product-actions-a" data-og-internal-id="tutlayactions2a"><button data-og-id="product-action-a1" type="button" data-og-internal-id="tutlayactiona1">Open</button><button data-og-id="product-action-a2" type="button" data-og-internal-id="tutlayactiona2">Copy</button></ProductActions></ProductCard>
+          <ProductCard data-og-id="product-card-b" data-og-internal-id="tutlayproductb"><ProductBadge data-og-id="product-badge-b" data-og-internal-id="tutlaybadge002b">CARD B</ProductBadge><ProductTitle data-og-id="product-title-b" data-og-internal-id="tutlayprodtitleb">Compose</ProductTitle><ProductCopy data-og-id="product-copy-b" data-og-internal-id="tutlayprodcopyb">部品を組み合わせて構造を作る。</ProductCopy><ProductActions data-og-id="product-actions-b" data-og-internal-id="tutlayactions2b"><button data-og-id="product-action-b1" type="button" data-og-internal-id="tutlayactionb1">Open</button><button data-og-id="product-action-b2" type="button" data-og-internal-id="tutlayactionb2">Copy</button></ProductActions></ProductCard>
         </ProductRow>
       </NestedLesson>
     </TutorialAutoLayout>

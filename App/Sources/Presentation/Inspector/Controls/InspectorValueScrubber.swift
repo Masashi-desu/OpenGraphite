@@ -256,9 +256,9 @@ struct InspectorScrubProfile: Equatable {
             return InspectorScrubProfile(step: 0.05, fallbackUnit: "", allowsNegative: false)
         case "z-index":
             return .count
-        case "--og-scale-x", "--og-scale-y":
+        case "scale":
             return InspectorScrubProfile(step: 0.05, fallbackUnit: "", allowsNegative: true)
-        case "--og-stroke-width":
+        case "stroke-width":
             return InspectorScrubProfile(step: 0.25, fallbackUnit: "", allowsNegative: false)
         case "transform-origin":
             return .percentage

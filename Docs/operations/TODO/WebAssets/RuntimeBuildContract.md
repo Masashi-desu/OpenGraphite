@@ -1,7 +1,7 @@
 # Runtime Build Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
@@ -11,7 +11,7 @@ DesignPhilosophy は「Web 標準 source files から決定的に生成される
 
 ## スコープ
 
-- 対象: `OpenGraphite.runtime.js` の `<og-instance>` 展開契約（順序、入れ子、失敗時挙動、冪等性）、`ogkiln build` の出力契約（含める / 除外する資産、書き換え規則、決定性保証）、contract version と runtime の互換表明。
+- 対象: `OpenGraphite.runtime.js` の `<og-instance>` と標準 Web Components 展開契約（順序、入れ子、slot / part、失敗時挙動、冪等性）、`ogkiln build` の出力契約（含める / 除外する資産、書き換え規則、決定性保証）、contract version と runtime の互換表明。
 - 対象外: 実装側 runtime（i18n runtime 等。Text Binding Contract の範囲）、hosting・デプロイ手順。
 
 ## 人間側の意思決定
@@ -20,7 +20,7 @@ DesignPhilosophy は「Web 標準 source files から決定的に生成される
 
 ## 草案（判断材料）
 
-- runtime 展開: document order で展開し、入れ子 master の深さ制限と循環参照検出を定義する。失敗時は `data-og-component-error`（既存 runtime-only 属性）で理由を表示する。展開は冪等で、再実行しても DOM が増殖しない。
+- runtime 展開: [Source of Truth Contract](../../../specs/SourceOfTruthContract.md) の標準 Custom Elements / template / slot / part semantics を前提に document order で展開し、入れ子 master の深さ制限と循環参照検出を定義する。失敗理由の表示は runtime-private state とし、保存 HTML の契約へ混ぜない。展開は冪等で、再実行しても DOM が増殖しない。
 - build 出力: component source HTML と placement host は公開 page として出力せず、runtime / component source link の除去（README 記載）を正式契約にする。component companion CSS と component が参照する asset は、page が展開後 DOM を描画するために必要な静的資源として copy / link 書き換え対象に含める。asset copy 規則は [AssetMediaContract TODO](AssetMediaContract.md) と整合させる。locale JSON は成果物に含める。
 - 決定性: 同一入力から byte 一致の出力を保証する。タイムスタンプ・環境依存値を出力へ混入させない。検証は build を 2 回実行して比較する。
 - 互換表明: `OpenGraphite.contract.json` の version と runtime / build の対応（どの契約 version の HTML を処理できるか）を宣言する。

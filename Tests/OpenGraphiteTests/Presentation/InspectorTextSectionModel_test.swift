@@ -334,6 +334,27 @@ struct InspectorTextSectionModelTests {
         #expect(payload == "cms-payload")
     }
 
+    /// 論理名（日本語）: 属性presence操作アクセシビリティテスト
+    /// 概要: missing属性への空値追加とpresent属性の明示削除が、異なる表示とVoiceOverラベルを持つことを確認します。
+    @Test("属性presenceの追加と削除を別actionとして案内する")
+    func testAttributePresenceActionsExposeDistinctAccessibilityLabels() {
+        // コンディション：missing属性とpresent-empty属性に対応するpresence actionを用意する（Given）
+        let addAction = InspectorAttributePresenceAction(isPresent: false)
+        let removeAction = InspectorAttributePresenceAction(isPresent: true)
+
+        // 検証内容：各actionのsystem image名とaccessibility labelを取得する（When）
+        let addLabel = addAction.accessibilityLabel(attributeName: "alt")
+        let removeLabel = removeAction.accessibilityLabel(attributeName: "alt")
+
+        // 期待値：空値の追加と属性tokenの削除を視覚・音声の両方で区別できる（Then）
+        #expect(addAction == .addEmpty)
+        #expect(addAction.systemImageName == "plus.circle")
+        #expect(addLabel == "alt属性を追加")
+        #expect(removeAction == .remove)
+        #expect(removeAction.systemImageName == "minus.circle")
+        #expect(removeLabel == "alt属性を削除")
+    }
+
     /// 論理名（日本語）: i18n検査結果生成関数
     /// 処理概要: Text section model テストで使う最小 i18n runtime 検査結果を構成します。
     ///

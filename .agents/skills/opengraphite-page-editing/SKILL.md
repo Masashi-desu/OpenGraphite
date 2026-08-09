@@ -16,7 +16,7 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 - OpenGraphite の設計思想と判断基準: `Docs/specs/DesignPhilosophy.md`
 - 機能変更と `Tutorials` 教材の同期規約: `Docs/rules/TutorialSynchronizationStandards.md`
 - リポジトリの build / test / quality gate / sample project の扱い: `README.md`
-- `OpenGraphite.css`、`data-og-*`、`--og-*`、role、layout、component の説明: `opengraphite-css-contract`
+- `OpenGraphite.css`、optional `data-og-*`、標準 HTML/CSS、legacy migration input、operation capability、component の説明: `opengraphite-css-contract`
 
 この skill と詳細資料が食い違う場合は、詳細資料を優先する。この skill は方針を思い出すための入口であり、正本の代替ではない。
 
@@ -30,6 +30,8 @@ OpenGraphite 管理下の page / component HTML を編集するときの思想�
 - 既存機能で自然に編集できない場合は、ページを迂回して壊れやすい例外運用を増やすのではなく、OpenGraphite 側の不足として捉える。
 - 不足機能を追加するときは、短期的な作業効率よりも、source-of-truth model、Web 標準としての可読性、リポジトリ上でのレビュー可能性を優先する。
 - ユーザーが観察できる機能を追加・改修・削除するときは、最も近い既存教材を更新するか独立した教材を追加し、実装、仕様、テスト、Sample `.ogp` と同じ変更単位で同期する。教材を更新しない判断は、利用者が観察できる挙動を変えない場合に限る。
+- `public/`、Tutorial HTML/CSS、Sampleの新規resourceは現行Web contractの標準sourceだけで作る。legacy tokenそのものを公開教材へ埋め込まず、移行手順は明示dry-run、全diff review、snapshot-bound proposal、atomic apply、再validateとして説明する。実legacy inputの受入確認はrepository外の一時fixtureで行う。
+- 旧projectを変換する場合も通常のopen、inspection、preview、無編集保存をmigrationとみなさない。`ogkiln migrate` / `migrate_project`のdry-runを先に行い、manifest、登録HTML、project/companion/linked/import CSS、local runtimeのclosureと全diffをreviewする。未知reserved CSS、解決不能dependency、legacy component master/slot、source placement mode/stateのように一意に変換できない構造があれば、公開sourceへ推測patchせずproject全体をno-writeにし、template / slot / placement sourceと`.ogp`のstandard host stateを手動で揃えて再dry-runする。migration教材を更新するときは`.ogp` / Agent schema据え置き、optional identity / reference / binding / editing policy / icon provenanceの維持、project-local `OpenGraphite.contract.json`をproposal/diff/apply対象にせずbytes不変にする境界、registered-source token検出に基づくapply後idempotencyも同期する。
 - class や生成物や editor-only state を、OpenGraphite が信頼する主要な編集正本へ昇格させない。
 - ページ編集の完了判断は、見た目が一度整ったかではなく、OpenGraphite の正本モデルに沿って継続的に編集、検証、配布できる状態になっているかで行う。
 

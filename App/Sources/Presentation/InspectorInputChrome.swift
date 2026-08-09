@@ -155,9 +155,9 @@ enum InspectorParameterIcon {
     /// - Returns: パラメータの意味を表すアイコン。
     static func cssVariable(_ key: String) -> InspectorInputIcon {
         switch key {
-        case "left", "right", "--og-scale-x":
+        case "left", "right":
             return InspectorInputIcon(.lucide("move-horizontal", fallbackSystemName: "arrow.left.and.right"))
-        case "top", "bottom", "--og-scale-y":
+        case "top", "bottom":
             return InspectorInputIcon(.lucide("move-vertical", fallbackSystemName: "arrow.up.and.down"))
         case "position":
             return InspectorInputIcon(.lucide("map-pin", fallbackSystemName: "mappin"))
@@ -177,7 +177,7 @@ enum InspectorParameterIcon {
             return InspectorInputIcon(.lucide("list-collapse", fallbackSystemName: "line.3.horizontal"))
         case "letter-spacing":
             return InspectorInputIcon(.lucide("case-sensitive", fallbackSystemName: "textformat.abc"))
-        case "--og-stroke-width":
+        case "stroke-width":
             return InspectorInputIcon(.lucide("circle", fallbackSystemName: "circle"))
         case "color":
             return InspectorInputIcon(.lucide("palette", fallbackSystemName: "paintpalette"))
@@ -191,6 +191,8 @@ enum InspectorParameterIcon {
             return InspectorInputIcon(.lucide("stretch-horizontal", fallbackSystemName: "arrow.left.and.right"))
         case "transform-origin":
             return InspectorInputIcon(.lucide("crosshair", fallbackSystemName: "scope"))
+        case "scale":
+            return InspectorInputIcon(.lucide("maximize-2", fallbackSystemName: "arrow.up.left.and.arrow.down.right"))
         default:
             return InspectorInputIcon(.lucide("settings-2", fallbackSystemName: "slider.horizontal.3"))
         }
@@ -224,7 +226,7 @@ enum InspectorParameterIcon {
             return shadowIcon(for: normalizedLabel)
         case "flex":
             return flexIcon(for: normalizedLabel)
-        case "transform-origin":
+        case "transform-origin", "scale":
             return axisIcon(for: normalizedLabel)
         default:
             return labelIcon(normalizedLabel)

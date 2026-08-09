@@ -15,7 +15,26 @@ struct OpenGraphiteResolvedCanvasReference: Equatable {
     var segment: OpenGraphiteCanvasSegment
     var containerInternalID: String
     var page: OpenGraphitePage
-    var node: OpenGraphiteAgentNode
+    var node: OpenGraphiteHTMLReferenceTarget
+    var pageURL: URL
+}
+
+/// 論理名（日本語）: キャンバス参照source解決情報
+/// 概要: typed参照IDの軽量manifest解決結果を、HTML読み込みと分離して保持します。
+///
+/// プロパティ:
+/// - `referenceID`: 正規化済みtyped参照ID。
+/// - `segment`: 参照元のPages / Componentsセグメント。
+/// - `containerInternalID`: Chapter / Collection内部ID。
+/// - `page`: 参照元HTMLカード。
+/// - `nodeInternalID`: HTML内の安定node内部ID。
+/// - `pageURL`: 参照元HTML URL。
+struct OpenGraphiteCanvasReferenceResolutionSource: Equatable {
+    var referenceID: String
+    var segment: OpenGraphiteCanvasSegment
+    var containerInternalID: String
+    var page: OpenGraphitePage
+    var nodeInternalID: String
     var pageURL: URL
 }
 
@@ -65,6 +84,21 @@ enum OpenGraphiteCanvasReferenceResolver {
         _ value: String,
         in project: LoadedOpenGraphiteProject
     ) throws -> OpenGraphiteResolvedCanvasReference {
+        try resolve(source(value, in: project))
+    }
+
+    /// 論理名（日本語）: キャンバス参照source解決関数
+    /// 処理概要: typed参照IDからmanifest内のcontainer、HTMLカード、node内部IDを、HTMLを読まずに確定します。
+    ///
+    /// - Parameters:
+    ///   - value: 入力されたtyped参照ID。
+    ///   - project: 解決対象の読み込み済みproject。
+    /// - Returns: キャッシュkeyとbackground HTML解決に使うsource情報。
+    /// - Throws: 形式またはmanifest参照が不正な場合の解決エラー。
+    static func source(
+        _ value: String,
+        in project: LoadedOpenGraphiteProject
+    ) throws -> OpenGraphiteCanvasReferenceResolutionSource {
         let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedValue.isEmpty,
               let reference = OpenGraphiteReferenceID(parsing: normalizedValue)
@@ -112,24 +146,44 @@ enum OpenGraphiteCanvasReferenceResolver {
             throw OpenGraphiteCanvasReferenceResolutionError.unsupportedType
         }
 
-        let pageURL = project.htmlURL(for: page)
-        guard let html = try? String(contentsOf: pageURL, encoding: .utf8) else {
-            throw OpenGraphiteCanvasReferenceResolutionError.unreadablePage
-        }
-        guard let node = OpenGraphiteHTMLDocument(html: html).nodes().first(where: {
-            $0.internalID == nodeInternalID
-        }) else {
-            throw OpenGraphiteCanvasReferenceResolutionError.missingNode
-        }
-        guard node.type != "page" else {
-            throw OpenGraphiteCanvasReferenceResolutionError.pageRootNotSupported
-        }
-
-        return OpenGraphiteResolvedCanvasReference(
+        return OpenGraphiteCanvasReferenceResolutionSource(
             referenceID: reference.stringValue,
             segment: segment,
             containerInternalID: containerInternalID,
             page: page,
+            nodeInternalID: nodeInternalID,
+            pageURL: project.htmlURL(for: page)
+        )
+    }
+
+    /// 論理名（日本語）: HTMLキャンバス参照解決関数
+    /// 処理概要: manifestで確定済みのsource情報からHTMLを1回だけ走査し、参照用軽量nodeを返します。
+    ///
+    /// - Parameter source: manifest側で検証済みの参照source情報。
+    /// - Returns: プレビュと編集同期に使う解決済み参照元。
+    /// - Throws: HTML読み込み、node解決、Page root guardに失敗した場合の解決エラー。
+    static func resolve(
+        _ source: OpenGraphiteCanvasReferenceResolutionSource
+    ) throws -> OpenGraphiteResolvedCanvasReference {
+        let pageURL = source.pageURL
+        guard let html = try? String(contentsOf: pageURL, encoding: .utf8) else {
+            throw OpenGraphiteCanvasReferenceResolutionError.unreadablePage
+        }
+        guard let node = OpenGraphiteHTMLDocument(html: html).referenceTarget(
+            internalID: source.nodeInternalID,
+            isProjectRegisteredResource: true
+        ) else {
+            throw OpenGraphiteCanvasReferenceResolutionError.missingNode
+        }
+        guard !node.isProjectResourceRoot else {
+            throw OpenGraphiteCanvasReferenceResolutionError.pageRootNotSupported
+        }
+
+        return OpenGraphiteResolvedCanvasReference(
+            referenceID: source.referenceID,
+            segment: source.segment,
+            containerInternalID: source.containerInternalID,
+            page: source.page,
             node: node,
             pageURL: pageURL
         )

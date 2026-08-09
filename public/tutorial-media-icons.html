@@ -3,59 +3,59 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tutorial 05 — Media &amp; Icons</title>
+    <title>Tutorial 05 — Standard Media &amp; Icons</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../CSS/OpenGraphite.css">
     <link rel="stylesheet" href="./tutorial-media-icons.css">
   </head>
   <body>
-    <TutorialMedia data-og-id="tutorial-media" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutmedroot005">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmedheader05">
-        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutmedstep005">PAGES TUTORIAL · 05</StepLabel>
-        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutmedtitle05">Image と Icon を扱う</TutorialTitle>
-        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutmedlead005">Image はメディアの表示枠、Icon は意味を持つ小さな図形です。枠のサイズと中身のフィット方法を分けて考えます。</TutorialLead>
+    <TutorialMedia data-og-id="tutorial-media" data-og-internal-id="tutmedroot005">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutmedheader05">
+        <StepLabel data-og-id="step-label" data-og-internal-id="tutmedstep005">PAGES TUTORIAL · 05</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutmedtitle05">標準 CSS で Image と Icon を扱う</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutmedlead005">wrapper は選択と出自、実際の img・SVG・mask child は描画を担当します。枠と描画実体の標準 CSS を分けて確認します。</TutorialLead>
       </TutorialHeader>
 
-      <MediaGrid data-og-id="media-grid" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmedgrid005">
-        <MediaLesson data-og-id="image-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmedimageles">
-          <LessonHeading data-og-id="image-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmedimghead5">
-            <LessonIndex data-og-id="image-index" data-og-type="text" data-og-internal-id="tutmedimgidx05">A · IMAGE</LessonIndex>
-            <LessonValue data-og-id="image-fit-value" data-og-type="text" data-og-internal-id="tutmedfitval05">object-fit: cover</LessonValue>
+      <MediaGrid data-og-id="media-grid" data-og-internal-id="tutmedgrid005">
+        <MediaLesson data-og-id="image-lesson" data-og-internal-id="tutmedimageles">
+          <LessonHeading data-og-id="image-heading" data-og-internal-id="tutmedimghead5">
+            <LessonIndex data-og-id="image-index" data-og-internal-id="tutmedimgidx05">A · IMAGE</LessonIndex>
+            <LessonValue data-og-id="image-fit-value" data-og-internal-id="tutmedfitval05">object-fit: cover</LessonValue>
           </LessonHeading>
-          <PreviewImage data-og-id="preview-image" data-og-type="image" data-og-internal-id="tutmedpreview5">
+          <PreviewImage data-og-id="preview-image" data-og-internal-id="tutmedpreview5">
             <img src="./assets/editor-preview.svg" alt="OpenGraphite editor preview">
           </PreviewImage>
-          <LessonCopy data-og-id="image-copy" data-og-type="text" data-og-internal-id="tutmedimgcopy5">Image オブジェクトの Width / Height を変え、Object fit を Cover と Contain で切り替えて比較します。</LessonCopy>
-          <LessonTask data-og-id="image-task" data-og-type="text" data-og-internal-id="tutmedimgtask5">TRY：高さを 260 → 180、Object fit を Contain に変更</LessonTask>
+          <LessonCopy data-og-id="image-copy" data-og-internal-id="tutmedimgcopy5">Image wrapper の Width / Height と、実体 img の標準 object-fit を分けて編集します。wrapper を選択した Inspector も実体 declaration を示します。</LessonCopy>
+          <LessonTask data-og-id="image-task" data-og-internal-id="tutmedimgtask5">TRY：高さを 300 → 180、img の object-fit を contain に変更</LessonTask>
         </MediaLesson>
 
-        <MediaLesson data-og-id="icon-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmediconles">
-          <LessonHeading data-og-id="icon-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmedicohead5">
-            <LessonIndex data-og-id="icon-index" data-og-type="text" data-og-internal-id="tutmedicoidx05">B · ICON</LessonIndex>
-            <LessonValue data-og-id="icon-source-value" data-og-type="text" data-og-internal-id="tutmedsrcval05">Lucide · inline</LessonValue>
+        <MediaLesson data-og-id="icon-lesson" data-og-internal-id="tutmediconles">
+          <LessonHeading data-og-id="icon-heading" data-og-internal-id="tutmedicohead5">
+            <LessonIndex data-og-id="icon-index" data-og-internal-id="tutmedicoidx05">B · ICON</LessonIndex>
+            <LessonValue data-og-id="icon-source-value" data-og-internal-id="tutmedsrcval05">Lucide · SVG / CSS mask</LessonValue>
           </LessonHeading>
-          <IconStage data-og-id="icon-stage" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmedicostage">
-            <IconTile data-og-id="icon-tile-move" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmedtilemove">
-              <Icon data-og-id="icon-move" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="move" data-og-icon-source="inline" data-og-internal-id="tutmedicomove5"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"></path></svg></Icon>
-              <IconName data-og-id="icon-name-move" data-og-type="text" data-og-internal-id="tutmednamemove">move</IconName>
+          <IconStage data-og-id="icon-stage" data-og-internal-id="tutmedicostage">
+            <IconTile data-og-id="icon-tile-move" data-og-internal-id="tutmedtilemove">
+              <Icon data-og-id="icon-move" data-og-icon-library="lucide" data-og-icon-name="move" data-og-icon-source="inline" data-og-internal-id="tutmedicomove5"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"></path></svg></Icon>
+              <IconName data-og-id="icon-name-move" data-og-internal-id="tutmednamemove">move</IconName>
             </IconTile>
-            <IconTile data-og-id="icon-tile-layers" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmedtilelayr">
-              <Icon data-og-id="icon-layers" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="layers" data-og-icon-source="inline" data-og-internal-id="tutmedicolayer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></svg></Icon>
-              <IconName data-og-id="icon-name-layers" data-og-type="text" data-og-internal-id="tutmednamelayr">layers</IconName>
+            <IconTile data-og-id="icon-tile-layers" data-og-internal-id="tutmedtilelayr">
+              <Icon data-og-id="icon-layers" data-og-icon-library="lucide" data-og-icon-name="layers" data-og-icon-source="inline" data-og-internal-id="tutmedicolayer"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></svg></Icon>
+              <IconName data-og-id="icon-name-layers" data-og-internal-id="tutmednamelayr">layers</IconName>
             </IconTile>
-            <IconTile data-og-id="icon-tile-sparkles" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutmedtilesprk">
-              <Icon data-og-id="icon-sparkles" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="sparkles" data-og-icon-source="inline" data-og-internal-id="tutmedicospark"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.4 3.6L7 8l3.6 1.4L12 13l1.4-3.6L17 8l-3.6-1.4L12 3Z"></path><path d="m5 14-.9 2.1L2 17l2.1.9L5 20l.9-2.1L8 17l-2.1-.9L5 14Z"></path><path d="m19 13-1.1 2.9L15 17l2.9 1.1L19 21l1.1-2.9L23 17l-2.9-1.1L19 13Z"></path></svg></Icon>
-              <IconName data-og-id="icon-name-sparkles" data-og-type="text" data-og-internal-id="tutmednamesprk">sparkles</IconName>
+            <IconTile data-og-id="icon-tile-sparkles" data-og-internal-id="tutmedtilesprk">
+              <Icon data-og-id="icon-sparkles" data-og-icon-library="lucide" data-og-icon-name="sparkles" data-og-icon-source="cdn" data-og-internal-id="tutmedicospark"><span aria-hidden="true" class="og-style-tutorial-media-icons-001"></span></Icon>
+              <IconName data-og-id="icon-name-sparkles" data-og-internal-id="tutmednamesprk">sparkles</IconName>
             </IconTile>
           </IconStage>
-          <LessonCopy data-og-id="icon-copy" data-og-type="text" data-og-internal-id="tutmedicocopy5">Icon は Width / Height、Color、Stroke width を編集できます。名前とライブラリ情報は HTML に残ります。</LessonCopy>
-          <LessonTask data-og-id="icon-task" data-og-type="text" data-og-internal-id="tutmedicotask5">TRY：move アイコンを 36px、Stroke width を 1.5 に変更</LessonTask>
+          <LessonCopy data-og-id="icon-copy" data-og-internal-id="tutmedicocopy5">inline SVG は標準 stroke-width、CDN icon は span の mask-image で描画します。名前・library・source は再取得できる provenance として wrapper に残ります。</LessonCopy>
+          <LessonTask data-og-id="icon-task" data-og-internal-id="tutmedicotask5">TRY：move を 36px、子 SVG の stroke-width を 1.5 に変更し、sparkles の mask-image を確認</LessonTask>
         </MediaLesson>
       </MediaGrid>
 
-      <ObjectRule data-og-id="object-rule" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutmedrule005">
-        <RuleBadge data-og-id="rule-badge" data-og-type="text" data-og-internal-id="tutmedrulebadge">RULE</RuleBadge>
-        <RuleText data-og-id="rule-text" data-og-type="text" data-og-internal-id="tutmedruletext">画像ファイルは public/assets、表示枠のデザイン値は companion CSS、Icon の出自は data-og-icon-* に保持します。</RuleText>
+      <ObjectRule data-og-id="object-rule" data-og-internal-id="tutmedrule005">
+        <RuleBadge data-og-id="rule-badge" data-og-internal-id="tutmedrulebadge">RULE</RuleBadge>
+        <RuleText data-og-id="rule-text" data-og-internal-id="tutmedruletext">画像ファイルは public/assets、描画値は実体の標準 CSS、Icon の出自だけは optional data-og-icon-* metadata に保持します。</RuleText>
       </ObjectRule>
     </TutorialMedia>
   </body>

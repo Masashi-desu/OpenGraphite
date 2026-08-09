@@ -24,45 +24,194 @@ struct InspectorView: View {
                     loadedProject: store.loadedProject,
                     designTokens: store.projectDesignTokens,
                     i18nInspection: store.projectI18nRuntimeInspection,
+                    migrationStatus: store.projectMigrationStatus,
                     onUpdateDesignToken: store.updateProjectDesignToken,
                     onRemoveDesignToken: store.removeProjectDesignToken,
                     onRecommendI18n: store.recommendI18nForProject,
-                    onUpdateI18nRuntime: store.updateProjectI18nRuntime
+                    onUpdateI18nRuntime: store.updateProjectI18nRuntime,
+                    onPreviewMigration: store.previewProjectMigration
                 )
             } else if let node = store.selectedNode {
+                let objectFitTarget = node.renderTarget(for: "object-fit")
+                let strokeWidthTarget = node.renderTarget(for: "stroke-width")
+                let maskImageTarget = node.renderTarget(for: "mask-image")
+                let webkitMaskImageTarget = node.renderTarget(for: "-webkit-mask-image")
+                let hasIconProvenance = node.iconLibrary != nil || node.iconName != nil || node.iconSource != nil
+                let hasIconEditingCapability = node.supports(.editIcon)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         NodeSummaryPanel(node: node)
+                        NodeInspectionStatusPanel(
+                            node: node,
+                            onAdoptNode: { store.previewSelectedNodeAdoption(scope: .node) },
+                            onAdoptSubtree: { store.previewSelectedNodeAdoption(scope: .subtree) }
+                        )
 
-                        if let componentSource = store.selectedComponentSource {
-                            ComponentSourceSection(source: componentSource) {
-                                store.revealComponentSource(componentSource)
+                        Group {
+                            if let componentSource = store.selectedComponentSource {
+                                ComponentSourceSection(source: componentSource) {
+                                    store.revealComponentSource(componentSource)
+                                }
                             }
-                        }
 
-                        InspectorSection(title: "Context", sectionID: .context) {
-                            InspectorInfoRow(label: "tag", value: node.tagName)
-                            InspectorInfoRow(label: "data-og-id", value: node.displayID)
-                            InspectorInfoRow(label: "data-og-type", value: node.type)
-                            EditableAttributeField(
-                                label: "data-og-role",
-                                value: node.role ?? ""
-                            ) { value in
-                                store.updateNodeAttribute(name: "data-og-role", value: value)
+                            InspectorSection(title: "Context", sectionID: .context) {
+                                InspectorInfoRow(label: "tag", value: node.tagName)
+                                if let standardID = node.standardID {
+                                    InspectorInfoRow(label: "id", value: standardID)
+                                }
+                                if let authoredID = node.authoredID {
+                                    InspectorInfoRow(label: "data-og-id", value: authoredID)
+                                }
+                                if let legacyTypeHint = node.legacyTypeHint {
+                                    InspectorInfoRow(label: "legacy data-og-type", value: legacyTypeHint)
+                                }
+                                InspectorInfoRow(
+                                    label: "capabilities",
+                                    value: node.capabilities.map(\.rawValue).sorted().joined(separator: ", ")
+                                )
+                                InspectorInfoRow(
+                                    label: "computed display",
+                                    value: node.computedStyle.display.isEmpty ? "-" : node.computedStyle.display
+                                )
+                                InspectorInfoRow(
+                                    label: "computed position",
+                                    value: node.computedStyle.position.isEmpty ? "-" : node.computedStyle.position
+                                )
+                                InspectorInfoRow(
+                                    label: "computed visibility",
+                                    value: node.computedStyle.visibility.isEmpty ? "-" : node.computedStyle.visibility
+                                )
+                                InspectorInfoRow(
+                                    label: "computed content-visibility",
+                                    value: node.computedStyle.contentVisibility.isEmpty
+                                        ? "-"
+                                        : node.computedStyle.contentVisibility
+                                )
+                                InspectorInfoRow(label: "rendered", value: node.isHidden ? "hidden" : "visible")
+                                InspectorInfoRow(
+                                    label: "hidden attribute",
+                                    value: node.hasHiddenAttribute ? "present" : "absent"
+                                )
+                                if node.hasIncompleteCSSProvenance {
+                                    Text("一部stylesheetは読み取り不能です。computed値は表示できますが、そのsource ruleはread-onlyです。")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                EditableAttributeField(
+                                    label: "role",
+                                    value: node.role ?? "",
+                                    isPresent: node.hasAuthoredAttribute(named: "role"),
+                                    onCommit: { value in
+                                        store.updateNodeAttribute(name: "role", value: value)
+                                    },
+                                    onRemove: { store.removeNodeAttribute(name: "role") }
+                                )
+                                .id("\(node.id)-role")
+
+                                if node.supportsEditingAttribute("href") {
+                                    EditableAttributeField(
+                                        label: "href",
+                                        value: node.attributes["href"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "href"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "href", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "href") }
+                                    )
+                                    .id("\(node.id)-href")
+
+                                    EditableAttributeField(
+                                        label: "target",
+                                        value: node.attributes["target"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "target"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "target", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "target") }
+                                    )
+                                    .id("\(node.id)-target")
+                                }
+
+                                if node.supportsEditingAttribute("aria-label") {
+                                    EditableAttributeField(
+                                        label: "aria-label",
+                                        value: node.attributes["aria-label"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "aria-label"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "aria-label", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "aria-label") }
+                                    )
+                                    .id("\(node.id)-aria-label")
+                                }
+
+                                if node.supportsEditingAttribute("value") {
+                                    EditableAttributeField(
+                                        label: "value",
+                                        value: node.attributes["value"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "value"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "value", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "value") }
+                                    )
+                                    .id("\(node.id)-value")
+                                }
                             }
-                            .id("\(node.id)-role")
-                        }
 
-                        InspectorSection(title: "Alignment", sectionID: .alignment) {
-                            NodeAlignmentControls(node: node) { values in
-                                store.updateSelectedNodeCSSVariables(values: values)
+                        if node.supports(.editLayout) {
+                            InspectorSection(title: "Alignment", sectionID: .alignment) {
+                                NodeAlignmentControls(node: node) { values in
+                                    store.updateSelectedNodeCSSVariables(values: values)
+                                }
                             }
-                        }
+                            .disabled(node.hasIncompleteCSSProvenance)
 
-                        InspectorSection(title: "Layout", sectionID: .layout) {
+                            InspectorSection(title: "Layout", sectionID: .layout) {
                             InspectorLayoutModeTiles(value: node.layout ?? "") { value in
-                                store.updateNodeAttribute(name: "data-og-layout", value: value)
+                                store.updateSelectedNodeLayout(mode: value)
                             }
+
+                            CSSVariableField(key: "display", value: node.cssVariables["display"] ?? "") { value in
+                                store.updateCSSVariable(key: "display", value: value)
+                            }
+                            .id("\(node.id)-display")
+
+                            CSSEnumVariableField(
+                                key: "flex-direction",
+                                value: node.cssVariables["flex-direction"] ?? "",
+                                options: ["row", "row-reverse", "column", "column-reverse"]
+                            ) { value in
+                                store.updateCSSVariable(key: "flex-direction", value: value)
+                            }
+                            .id("\(node.id)-flex-direction")
+
+                            CSSVariableField(
+                                key: "grid-template-columns",
+                                value: node.cssVariables["grid-template-columns"] ?? ""
+                            ) { value in
+                                store.updateCSSVariable(key: "grid-template-columns", value: value)
+                            }
+                            .id("\(node.id)-grid-template-columns")
+
+                            CSSVariableField(
+                                key: "grid-template-rows",
+                                value: node.cssVariables["grid-template-rows"] ?? ""
+                            ) { value in
+                                store.updateCSSVariable(key: "grid-template-rows", value: value)
+                            }
+                            .id("\(node.id)-grid-template-rows")
+
+                            CSSEnumVariableField(
+                                key: "grid-auto-flow",
+                                value: node.cssVariables["grid-auto-flow"] ?? "",
+                                options: ["row", "column", "dense", "row dense", "column dense"]
+                            ) { value in
+                                store.updateCSSVariable(key: "grid-auto-flow", value: value)
+                            }
+                            .id("\(node.id)-grid-auto-flow")
+
+                            CSSEnumVariableField(
+                                key: "visibility",
+                                value: node.cssVariables["visibility"] ?? "",
+                                options: ["visible", "hidden", "collapse"]
+                            ) { value in
+                                store.updateCSSVariable(key: "visibility", value: value)
+                            }
+                            .id("\(node.id)-visibility")
 
                             CSSPairVariableField(
                                 key: "gap",
@@ -96,9 +245,10 @@ struct InspectorView: View {
                                 store.updateCSSVariable(key: "flex", value: value)
                             }
                             .id("\(node.id)-flex")
-                        }
+                            }
+                            .disabled(node.hasIncompleteCSSProvenance)
 
-                        InspectorSection(title: "Position", sectionID: .position) {
+                            InspectorSection(title: "Position", sectionID: .position) {
                             CSSSegmentedEnumVariableField(
                                 key: "position",
                                 value: node.cssVariables["position"] ?? "",
@@ -122,9 +272,10 @@ struct InspectorView: View {
                                 store.updateCSSVariable(key: "z-index", value: value)
                             }
                             .id("\(node.id)-z-index")
-                        }
+                            }
+                            .disabled(node.hasIncompleteCSSProvenance)
 
-                        InspectorSection(title: "Dimensions", sectionID: .dimensions) {
+                            InspectorSection(title: "Dimensions", sectionID: .dimensions) {
                             CSSDimensionVariableField(key: "width", value: node.cssVariables["width"] ?? "") { value in
                                 store.updateCSSVariable(key: "width", value: value)
                             }
@@ -149,6 +300,8 @@ struct InspectorView: View {
                                 store.updateCSSVariable(key: "max-width", value: value)
                             }
                             .id("\(node.id)-max-width")
+                            }
+                            .disabled(node.hasIncompleteCSSProvenance)
                         }
 
                         InspectorSection(title: "Appearance", sectionID: .appearance) {
@@ -174,7 +327,7 @@ struct InspectorView: View {
                             }
                             .id("\(node.id)-background")
 
-                            if node.type != "icon" {
+                            if !hasIconEditingCapability {
                                 CSSColorVariableField(
                                     key: "color",
                                     value: node.cssVariables["color"] ?? "",
@@ -185,8 +338,9 @@ struct InspectorView: View {
                                 .id("\(node.id)-foreground")
                             }
                         }
+                        .disabled(node.hasIncompleteCSSProvenance)
 
-                        if node.type == "text" {
+                        if node.supports(.editText) {
                             TextContentSection(node: node)
 
                             InspectorSection(title: "Typography", sectionID: .typography) {
@@ -243,61 +397,109 @@ struct InspectorView: View {
                                     store.updateCSSVariable(key: "text-align", value: value)
                                 }
                                 .id("\(node.id)-text-align")
+
+                                CSSEnumVariableField(
+                                    key: "overflow-wrap",
+                                    value: node.cssVariables["overflow-wrap"] ?? "",
+                                    options: ["normal", "break-word", "anywhere"]
+                                ) { value in
+                                    store.updateCSSVariable(key: "overflow-wrap", value: value)
+                                }
+                                .id("\(node.id)-overflow-wrap")
                             }
+                            .disabled(node.hasIncompleteCSSProvenance)
                         }
 
-                        if node.type == "image" {
+                        if node.supports(.editMedia) {
                             InspectorSection(title: "Media", sectionID: .media) {
-                                CSSGlyphEnumVariableField(
-                                    key: "--og-object-fit",
-                                    value: node.cssVariables["--og-object-fit"] ?? "",
-                                    options: InspectorOptionCatalog.objectFit
-                                ) { value in
-                                    store.updateCSSVariable(key: "--og-object-fit", value: value)
+                                if let objectFitTarget {
+                                    RenderTargetProvenanceView(target: objectFitTarget)
+                                    Group {
+                                        if RenderTargetInspectorControlStyle.supportsObjectFitGlyph(
+                                            objectFitTarget.displayValue
+                                        ) {
+                                            CSSGlyphEnumVariableField(
+                                                key: "object-fit",
+                                                value: objectFitTarget.displayValue,
+                                                options: InspectorOptionCatalog.objectFit
+                                            ) { value in
+                                                store.updateRelatedStyleDeclaration(property: "object-fit", value: value)
+                                            }
+                                        } else {
+                                            CSSVariableField(key: "object-fit", value: objectFitTarget.displayValue) { value in
+                                                store.updateRelatedStyleDeclaration(property: "object-fit", value: value)
+                                            }
+                                        }
+                                    }
+                                    .id("\(node.id)-object-fit")
+                                    .disabled(node.hasIncompleteCSSProvenance)
                                 }
-                                .id("\(node.id)-object-fit")
+
+                                if node.supportsEditingAttribute("src") {
+                                    EditableAttributeField(
+                                        label: "src",
+                                        value: node.attributes["src"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "src"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "src", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "src") }
+                                    )
+                                    .id("\(node.id)-src")
+                                }
+
+                                if node.supportsEditingAttribute("alt") {
+                                    EditableAttributeField(
+                                        label: "alt",
+                                        value: node.attributes["alt"] ?? "",
+                                        isPresent: node.hasAuthoredAttribute(named: "alt"),
+                                        onCommit: { value in store.updateNodeAttribute(name: "alt", value: value) },
+                                        onRemove: { store.removeNodeAttribute(name: "alt") }
+                                    )
+                                    .id("\(node.id)-alt")
+                                }
                             }
                         }
 
-                        if node.type == "icon" {
+                        if hasIconEditingCapability {
                             InspectorSection(title: "Icon", sectionID: .icon) {
-                                IconAttributeOptionPicker(
-                                    label: "data-og-icon-library",
-                                    value: node.iconLibrary ?? "lucide",
-                                    options: ["lucide"]
-                                ) { value in
-                                    store.updateIcon(
-                                        library: value,
-                                        name: node.iconName ?? "circle",
-                                        source: node.iconSource ?? "inline"
-                                    )
-                                }
-                                .id("\(node.id)-icon-library")
+                                if hasIconProvenance {
+                                    IconAttributeOptionPicker(
+                                        label: "data-og-icon-library",
+                                        value: node.iconLibrary ?? "lucide",
+                                        options: ["lucide"]
+                                    ) { value in
+                                        store.updateIcon(
+                                            library: value,
+                                            name: node.iconName ?? "circle",
+                                            source: node.iconSource ?? "inline"
+                                        )
+                                    }
+                                    .id("\(node.id)-icon-library")
 
-                                IconAttributeOptionPicker(
-                                    label: "data-og-icon-source",
-                                    value: node.iconSource ?? "inline",
-                                    options: ["inline", "cdn", "library"]
-                                ) { value in
-                                    store.updateIcon(
-                                        library: node.iconLibrary ?? "lucide",
-                                        name: node.iconName ?? "circle",
-                                        source: value
-                                    )
-                                }
-                                .id("\(node.id)-icon-source")
+                                    IconAttributeOptionPicker(
+                                        label: "data-og-icon-source",
+                                        value: node.iconSource ?? "inline",
+                                        options: ["inline", "cdn", "library"]
+                                    ) { value in
+                                        store.updateIcon(
+                                            library: node.iconLibrary ?? "lucide",
+                                            name: node.iconName ?? "circle",
+                                            source: value
+                                        )
+                                    }
+                                    .id("\(node.id)-icon-source")
 
-                                EditableAttributeField(
-                                    label: "data-og-icon-name",
-                                    value: node.iconName ?? ""
-                                ) { value in
-                                    store.updateIcon(
-                                        library: node.iconLibrary ?? "lucide",
-                                        name: value,
-                                        source: node.iconSource ?? "inline"
-                                    )
+                                    EditableAttributeField(
+                                        label: "data-og-icon-name",
+                                        value: node.iconName ?? ""
+                                    ) { value in
+                                        store.updateIcon(
+                                            library: node.iconLibrary ?? "lucide",
+                                            name: value,
+                                            source: node.iconSource ?? "inline"
+                                        )
+                                    }
+                                    .id("\(node.id)-icon-name")
                                 }
-                                .id("\(node.id)-icon-name")
 
                                 CSSColorVariableField(
                                     key: "color",
@@ -307,11 +509,51 @@ struct InspectorView: View {
                                     store.updateCSSVariable(key: "color", value: value)
                                 }
                                 .id("\(node.id)-icon-foreground")
+                                .disabled(node.hasIncompleteCSSProvenance)
 
-                                CSSNumericUnitVariableField(key: "--og-stroke-width", value: node.cssVariables["--og-stroke-width"] ?? "", units: ["", "px"]) { value in
-                                    store.updateCSSVariable(key: "--og-stroke-width", value: value)
+                                if let strokeWidthTarget {
+                                    RenderTargetProvenanceView(target: strokeWidthTarget)
+                                    Group {
+                                        if RenderTargetInspectorControlStyle.supportsStrokeWidthNumeric(
+                                            strokeWidthTarget.displayValue
+                                        ) {
+                                            CSSNumericUnitVariableField(
+                                                key: "stroke-width",
+                                                value: strokeWidthTarget.displayValue,
+                                                units: ["", "px"]
+                                            ) { value in
+                                                store.updateRelatedStyleDeclaration(property: "stroke-width", value: value)
+                                            }
+                                        } else {
+                                            CSSVariableField(key: "stroke-width", value: strokeWidthTarget.displayValue) { value in
+                                                store.updateRelatedStyleDeclaration(property: "stroke-width", value: value)
+                                            }
+                                        }
+                                    }
+                                    .id("\(node.id)-stroke-width")
+                                    .disabled(node.hasIncompleteCSSProvenance)
                                 }
-                                .id("\(node.id)-stroke-width")
+
+                                if let maskImageTarget {
+                                    RenderTargetProvenanceView(target: maskImageTarget)
+                                    CSSVariableField(key: "mask-image", value: maskImageTarget.displayValue) { value in
+                                        store.updateRelatedStyleDeclaration(property: "mask-image", value: value)
+                                    }
+                                    .id("\(node.id)-mask-image")
+                                    .disabled(node.hasIncompleteCSSProvenance)
+                                }
+
+                                if let webkitMaskImageTarget {
+                                    RenderTargetProvenanceView(target: webkitMaskImageTarget)
+                                    CSSVariableField(
+                                        key: "-webkit-mask-image",
+                                        value: webkitMaskImageTarget.displayValue
+                                    ) { value in
+                                        store.updateRelatedStyleDeclaration(property: "-webkit-mask-image", value: value)
+                                    }
+                                    .id("\(node.id)-webkit-mask-image")
+                                    .disabled(node.hasIncompleteCSSProvenance)
+                                }
                             }
                         }
 
@@ -331,22 +573,17 @@ struct InspectorView: View {
                             }
                             .id("\(node.id)-transform-origin")
 
-                            InspectorFieldGrid {
-                                CSSNumericUnitVariableField(key: "--og-scale-x", value: node.cssVariables["--og-scale-x"] ?? "", units: [""]) { value in
-                                    store.updateCSSVariable(key: "--og-scale-x", value: value)
-                                }
-                                .id("\(node.id)-scale-x")
-
-                                CSSNumericUnitVariableField(key: "--og-scale-y", value: node.cssVariables["--og-scale-y"] ?? "", units: [""]) { value in
-                                    store.updateCSSVariable(key: "--og-scale-y", value: value)
-                                }
-                                .id("\(node.id)-scale-y")
+                            CSSScaleVariableField(value: node.cssVariables["scale"] ?? "") { value in
+                                store.updateCSSVariable(key: "scale", value: value)
                             }
+                            .id("\(node.id)-scale")
                         }
+                        .disabled(node.hasIncompleteCSSProvenance)
 
                         AnimationInspectorSection(node: node) { key, value in
                             store.updateCSSVariable(key: key, value: value)
                         }
+                        .disabled(node.hasIncompleteCSSProvenance)
 
                         ScrollTimelineInspectorSection(
                             node: node,
@@ -354,6 +591,9 @@ struct InspectorView: View {
                         ) { key, value in
                             store.updateCSSVariable(key: key, value: value)
                         }
+                        .disabled(node.hasIncompleteCSSProvenance)
+                        }
+                        .disabled(!node.hasStableReference)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 12)
@@ -365,15 +605,15 @@ struct InspectorView: View {
                     page: page,
                     htmlDocumentContext: store.selectedHTMLDocumentContext,
                     i18nInspection: store.selectedI18nRuntimeInspection,
-                    pageFontVariables: store.selectedPageRootCSSVariables,
+                    localeTypography: store.selectedLocaleTypography,
                     onOpenI18nRuntime: {
                         store.selectProjectResource(.i18nRuntime)
                     },
-                    onUpdatePageFontVariable: { key, value in
-                        store.updateSelectedPageRootCSSVariable(key: key, value: value)
+                    onUpdateLocaleTypography: { locale, value in
+                        store.updateSelectedLocaleTypography(locale: locale, fontFamily: value)
                     },
-                    onSelectPageFontCandidate: { key, candidate in
-                        store.applySelectedPageRootFontCandidate(variableKey: key, candidate: candidate)
+                    onSelectLocaleFontCandidate: { locale, candidate in
+                        store.applySelectedLocaleFontCandidate(locale: locale, candidate: candidate)
                     }
                 ) { x, y, width, height, name, previewContext, htmlDocumentContext in
                     store.updateSelectedHTMLDocumentContext(htmlDocumentContext)
@@ -399,6 +639,21 @@ struct InspectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(item: $store.nodeAdoptionPreview) { preview in
+            NodeAdoptionPreviewSheet(
+                preview: preview,
+                onApply: store.applyNodeAdoptionPreview,
+                onCancel: store.cancelNodeAdoptionPreview
+            )
+        }
+        .sheet(item: $store.projectMigrationPreview) { preview in
+            ProjectMigrationPreviewSheet(
+                preview: preview,
+                onApply: store.applyProjectMigrationPreview,
+                onRefresh: store.previewProjectMigration,
+                onCancel: store.cancelProjectMigrationPreview
+            )
+        }
     }
 
     private func fontPreviewText(for node: OpenGraphiteNode) -> String {
@@ -408,6 +663,78 @@ struct InspectorView: View {
             return OpenGraphiteFontLibrary.defaultSampleText
         }
         return normalizedText
+    }
+}
+
+/// 論理名（日本語）: 描画実体Inspector control形式判定
+/// 概要: 標準CSSの任意authored値をread-onlyにせず、専用controlで安全に表せる値とraw fieldへ渡す値を分類します。
+enum RenderTargetInspectorControlStyle {
+    /// 論理名（日本語）: object-fit図示control対応判定関数
+    /// 処理概要: 図示済みkeywordまたは未設定値だけをglyph controlで扱い、global keywordや`var()`はraw編集へ渡します。
+    ///
+    /// - Parameter value: authoredまたはresolved `object-fit` 値。
+    /// - Returns: glyph controlで値を損なわず編集できる場合は`true`。
+    static func supportsObjectFitGlyph(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return ["", "fill", "contain", "cover", "none", "scale-down"].contains(normalized)
+    }
+
+    /// 論理名（日本語）: stroke-width数値control対応判定関数
+    /// 処理概要: unitlessまたはpxの単純数値だけをscrubberへ渡し、percentage、他のlength、関数値、custom propertyはraw編集へ渡します。
+    ///
+    /// - Parameter value: authoredまたはresolved `stroke-width` 値。
+    /// - Returns: 数値・単位controlで値を損なわず編集できる場合は`true`。
+    static func supportsStrokeWidthNumeric(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return true }
+        return normalized.range(
+            of: #"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:px)?$"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+    }
+}
+
+/// 論理名（日本語）: 描画実体provenance表示
+/// 概要: wrapper の Inspector control が編集する実体 tag、保存 selector、computed value、cascade winner を表示します。
+///
+/// プロパティ:
+/// - `target`: 表示する media / SVG / mask 実体。
+private struct RenderTargetProvenanceView: View {
+    var target: OpenGraphiteRenderTarget
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(target.targetTagName) · \(target.targetLabel)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            if !target.computedValue.isEmpty {
+                Text("Computed: \(target.computedValue)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+            }
+            if !target.resolvedValue.isEmpty, target.resolvedValue != target.computedValue {
+                Text("Resolved: \(target.resolvedValue)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+            }
+            if let winner = target.winnerTrace {
+                let important = winner.important ? " !important" : ""
+                Text("Source: \(winner.selector) · \(winner.authoredProperty)\(important)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
+                    .textSelection(.enabled)
+                if !winner.atRuleScope.isEmpty {
+                    Text(winner.atRuleScope.joined(separator: " → "))
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -625,6 +952,206 @@ private struct ComponentSourceSection: View {
     }
 }
 
+/// 論理名（日本語）: Node inspection参照状態パネル
+/// 概要: optional annotation、stable/session reference、read-only状態を表示し、明示adoptionのdry-run入口を提供します。
+///
+/// プロパティ:
+/// - `node`: 表示対象のinspection node。
+/// - `onAdoptNode`: node単体のdry-runを開始する処理。
+/// - `onAdoptSubtree`: subtreeのdry-runを開始する処理。
+private struct NodeInspectionStatusPanel: View {
+    var node: OpenGraphiteNode
+    var onAdoptNode: () -> Void
+    var onAdoptSubtree: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: node.hasStableReference ? "link.circle.fill" : "clock.arrow.circlepath")
+                    .foregroundStyle(node.hasStableReference ? Color.green : Color.orange)
+                Text(node.hasStableReference ? "Stable reference" : "Session reference · Read only")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(node.annotationStatus.rawValue)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(node.reference)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .textSelection(.enabled)
+
+            if let selector = node.locator?.selector {
+                InspectorInfoRow(label: "selector", value: selector)
+            } else if let domPath = node.locator?.domPath, !domPath.isEmpty {
+                InspectorInfoRow(label: "DOM path", value: domPath)
+            }
+
+            if node.canAdoptIdentity {
+                HStack(spacing: 8) {
+                    Button("Adopt Node…", action: onAdoptNode)
+                    Button("Adopt Subtree…", action: onAdoptSubtree)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: EditorColumnStyle.panelRadius)
+                .stroke(EditorColumnStyle.separatorColor, lineWidth: 1)
+        )
+    }
+}
+
+/// 論理名（日本語）: Node adoption差分確認シート
+/// 概要: dry-runのunified diffとdiagnosticsを表示し、ユーザーの明示操作でだけsource applyを実行します。
+///
+/// プロパティ:
+/// - `preview`: Storeが保持するdry-run結果。
+/// - `onApply`: 確認済み差分を適用する処理。
+/// - `onCancel`: sourceを変更せず閉じる処理。
+private struct NodeAdoptionPreviewSheet: View {
+    var preview: OpenGraphiteNodeAdoptionPreview
+    var onApply: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Adopt \(preview.displayName)")
+                .font(.title3.weight(.semibold))
+            Text(preview.scope == .subtree
+                ? "このnodeとsubtreeへoptional identityを追加します。"
+                : "このnodeへoptional identityを追加します。")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text(preview.path)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            if !preview.diagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(preview.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                        Text("[\(diagnostic.severity.rawValue)] \(diagnostic.message)")
+                            .font(.caption)
+                            .foregroundStyle(diagnostic.severity == .error ? Color.red : Color.secondary)
+                    }
+                }
+            }
+
+            ScrollView([.horizontal, .vertical]) {
+                Text(preview.unifiedDiff.isEmpty ? "変更はありません。" : preview.unifiedDiff)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(10)
+            }
+            .frame(minWidth: 640, minHeight: 320)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack {
+                Spacer()
+                Button("キャンセル", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Apply Adoption", action: onApply)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!preview.changed || preview.diagnostics.contains { $0.severity == .error })
+            }
+        }
+        .padding(20)
+    }
+}
+
+/// 論理名（日本語）: Project migration差分確認シート
+/// 概要: 明示dry-runのmulti-file diffとdiagnosticsを表示し、確認済みproposalだけをApplyへ渡します。
+///
+/// プロパティ:
+/// - `preview`: Storeが保持するProject migration dry-runまたは失敗結果。
+/// - `onApply`: 確認済みproposalを適用する処理。
+/// - `onRefresh`: stale sourceから新しいdry-run proposalを作る処理。
+/// - `onCancel`: sourceを変更せずsheetを閉じる処理。
+private struct ProjectMigrationPreviewSheet: View {
+    var preview: OpenGraphiteProjectMigrationPreview
+    var onApply: () -> Void
+    var onRefresh: () -> Void
+    var onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Migrate Web Contract")
+                .font(.title3.weight(.semibold))
+            Text("\(preview.sourceContractVersion) → \(preview.targetContractVersion) · \(preview.diffs.count) source file(s)")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            if preview.isStale {
+                Label(
+                    "Sourceがdry-run後に変更されました。ApplyせずPreviewを更新してください。",
+                    systemImage: "arrow.triangle.2.circlepath.circle.fill"
+                )
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.orange)
+            }
+
+            if !preview.diagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(preview.diagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                        Text("[\(diagnostic.severity.rawValue)] \(diagnostic.code): \(diagnostic.message)")
+                            .font(.caption)
+                            .foregroundStyle(diagnostic.severity == .error ? Color.red : Color.secondary)
+                    }
+                }
+            }
+
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    if preview.diffs.isEmpty {
+                        Text("変更はありません。")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(preview.diffs.enumerated()), id: \.offset) { _, diff in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(diff.path)
+                                    .font(.caption.weight(.semibold).monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                Text(diff.unifiedDiff)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(10)
+            }
+            .frame(minWidth: 680, minHeight: 360)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+
+            HStack {
+                Spacer()
+                Button("キャンセル", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                if preview.isStale || preview.diagnostics.contains(where: { $0.severity == .error }) {
+                    Button("Refresh Preview", action: onRefresh)
+                        .keyboardShortcut(.defaultAction)
+                } else {
+                    Button("Apply Migration", action: onApply)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!preview.canApply)
+                }
+            }
+        }
+        .padding(20)
+    }
+}
+
 /// 論理名（日本語）: ノード概要パネル
 /// 概要: Inspector 上部に選択ノードのアイコン、タグ名、詳細行を表示します。
 ///
@@ -663,15 +1190,21 @@ private struct NodeSummaryPanel: View {
     }
 
     private var iconName: String {
-        switch node.type {
-        case "text":
+        switch node.presentationHint {
+        case .text:
             return "textformat"
-        case "button":
+        case .control:
             return "button.programmable"
-        case "image":
+        case .media:
             return "photo"
-        default:
+        case .icon:
+            return "star"
+        case .page:
+            return "doc.text"
+        case .container:
             return "number.square"
+        case .generic:
+            return "curlybraces"
         }
     }
 }
@@ -1044,19 +1577,19 @@ private struct PreviewMockFieldDraft: Identifiable, Equatable {
 /// - `page`: 表示・編集対象のページ。
 /// - `htmlDocumentContext`: HTML 正本の `<html>` attribute と binding metadata。
 /// - `i18nInspection`: 実装資源から検出した i18n runtime 設定。
-/// - `pageFontVariables`: ページ root node に保存されている locale font-family 変数。
+/// - `localeTypography`: ページroot selectorに保存された標準`font-family`と`:lang()`宣言。
 /// - `onOpenI18nRuntime`: Project 依存性の i18n runtime 選択へ移動する処理。
-/// - `onUpdatePageFontVariable`: ページ root node の font-family 変数を保存する処理。
-/// - `onSelectPageFontCandidate`: フォントブラウザの候補をページ root node へ保存する処理。
+/// - `onUpdateLocaleTypography`: defaultまたはlocale別の標準`font-family`を保存する処理。
+/// - `onSelectLocaleFontCandidate`: フォント候補と必要なstylesheetを保存する処理。
 /// - `onCommit`: 有効なキャンバス入力を適用する処理。
 private struct PageInspectorView: View {
     var page: OpenGraphitePage
     var htmlDocumentContext: OpenGraphiteHTMLDocumentContext
     var i18nInspection: OpenGraphiteI18nRuntimeInspection?
-    var pageFontVariables: [String: String]
+    var localeTypography: OpenGraphiteLocaleTypographyListResult?
     var onOpenI18nRuntime: () -> Void
-    var onUpdatePageFontVariable: (String, String) -> Void
-    var onSelectPageFontCandidate: (String, OpenGraphiteFontCandidate) -> Void
+    var onUpdateLocaleTypography: (String?, String) -> Void
+    var onSelectLocaleFontCandidate: (String?, OpenGraphiteFontCandidate) -> Void
     var onCommit: (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
 
     @State private var nameDraft: String
@@ -1081,28 +1614,28 @@ private struct PageInspectorView: View {
     ///   - page: 表示・編集対象のページ。
     ///   - htmlDocumentContext: HTML 正本の `<html>` attribute と binding metadata。
     ///   - i18nInspection: 実装資源から検出した i18n runtime 設定。
-    ///   - pageFontVariables: ページ root node に保存されている locale font-family 変数。
+    ///   - localeTypography: ページroot selectorに保存された標準`font-family`と`:lang()`宣言。
     ///   - onOpenI18nRuntime: Project 依存性の i18n runtime 選択へ移動する処理。
-    ///   - onUpdatePageFontVariable: ページ root node の font-family 変数を保存する処理。
-    ///   - onSelectPageFontCandidate: フォントブラウザの候補をページ root node へ保存する処理。
+    ///   - onUpdateLocaleTypography: defaultまたはlocale別の標準`font-family`を保存する処理。
+    ///   - onSelectLocaleFontCandidate: フォント候補と必要なstylesheetを保存する処理。
     ///   - onCommit: 有効なキャンバス入力を適用する処理。
     init(
         page: OpenGraphitePage,
         htmlDocumentContext: OpenGraphiteHTMLDocumentContext,
         i18nInspection: OpenGraphiteI18nRuntimeInspection?,
-        pageFontVariables: [String: String],
+        localeTypography: OpenGraphiteLocaleTypographyListResult?,
         onOpenI18nRuntime: @escaping () -> Void,
-        onUpdatePageFontVariable: @escaping (String, String) -> Void,
-        onSelectPageFontCandidate: @escaping (String, OpenGraphiteFontCandidate) -> Void,
+        onUpdateLocaleTypography: @escaping (String?, String) -> Void,
+        onSelectLocaleFontCandidate: @escaping (String?, OpenGraphiteFontCandidate) -> Void,
         onCommit: @escaping (Double, Double, Double, Double, String, OpenGraphitePreviewContext, OpenGraphiteHTMLDocumentContext) -> Void
     ) {
         self.page = page
         self.htmlDocumentContext = htmlDocumentContext
         self.i18nInspection = i18nInspection
-        self.pageFontVariables = pageFontVariables
+        self.localeTypography = localeTypography
         self.onOpenI18nRuntime = onOpenI18nRuntime
-        self.onUpdatePageFontVariable = onUpdatePageFontVariable
-        self.onSelectPageFontCandidate = onSelectPageFontCandidate
+        self.onUpdateLocaleTypography = onUpdateLocaleTypography
+        self.onSelectLocaleFontCandidate = onSelectLocaleFontCandidate
         self.onCommit = onCommit
         _nameDraft = State(initialValue: page.canvas.displayName ?? "")
         _xDraft = State(initialValue: Self.draftText(for: page.canvas.x))
@@ -1171,12 +1704,12 @@ private struct PageInspectorView: View {
 
                 InspectorSection(title: "Locale Typography", sectionID: .localeTypography) {
                     LocaleTypographyFontSection(
-                        variables: pageFontVariables,
+                        typography: localeTypography,
                         htmlDocumentContext: htmlDocumentContext,
                         previewContext: page.canvas.previewContext,
                         i18nInspection: i18nInspection,
-                        onCommit: onUpdatePageFontVariable,
-                        onSelectCandidate: onSelectPageFontCandidate
+                        onCommit: onUpdateLocaleTypography,
+                        onSelectCandidate: onSelectLocaleFontCandidate
                     )
                 }
 
@@ -1690,37 +2223,42 @@ private struct PageInspectorView: View {
 }
 
 /// 論理名（日本語）: Locale別フォント行
-/// 概要: Page Inspector の Locale Typography セクションに表示する font-family 変数行を表します。
+/// 概要: Page Inspectorに表示する標準`font-family`のdefaultまたは`:lang()`宣言行を表します。
 ///
 /// プロパティ:
 /// - `id`: SwiftUI の行識別子。
+/// - `locale`: defaultでは`nil`、locale overrideでは正規化済みBCP 47 tag。
 /// - `title`: 表示名。
-/// - `detail`: 補助情報。
-/// - `variable`: 保存対象の CSS 変数名。
+/// - `selector`: authored selectorまたは新規保存先selector。
+/// - `value`: authored `font-family`値。
 private struct LocaleTypographyFontEntry: Identifiable, Equatable {
-    var id: String { variable }
+    var id: String { locale ?? "default" }
+    var locale: String?
     var title: String
-    var detail: String
-    var variable: String
+    var selector: String
+    var value: String
 }
 
 /// 論理名（日本語）: Locale別タイポグラフィセクション
-/// 概要: ページ root node の default / locale 別 font-family 変数を編集します。
+/// 概要: page / component rootの標準`font-family`と任意BCP 47 `:lang()` ruleを編集します。
 ///
 /// プロパティ:
-/// - `variables`: ページ root node の CSS 変数。
+/// - `typography`: Shared coreがCSS sourceから抽出したroot selectorとlocale宣言。
 /// - `htmlDocumentContext`: HTML 正本の `<html>` attribute と binding metadata。
 /// - `previewContext`: Page canvas の preview mock state。
 /// - `i18nInspection`: 実装資源から検出した i18n runtime 設定。
-/// - `onCommit`: CSS 値の直接編集を保存する処理。
-/// - `onSelectCandidate`: フォントブラウザの候補を保存する処理。
+/// - `onCommit`: defaultまたはlocale別`font-family`を保存する処理。
+/// - `onSelectCandidate`: フォント候補と必要なstylesheetを保存する処理。
 private struct LocaleTypographyFontSection: View {
-    var variables: [String: String]
+    var typography: OpenGraphiteLocaleTypographyListResult?
     var htmlDocumentContext: OpenGraphiteHTMLDocumentContext
     var previewContext: OpenGraphitePreviewContext
     var i18nInspection: OpenGraphiteI18nRuntimeInspection?
-    var onCommit: (String, String) -> Void
-    var onSelectCandidate: (String, OpenGraphiteFontCandidate) -> Void
+    var onCommit: (String?, String) -> Void
+    var onSelectCandidate: (String?, OpenGraphiteFontCandidate) -> Void
+
+    @State private var localeDraft = ""
+    @State private var additionalLocales: [String] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1735,7 +2273,7 @@ private struct LocaleTypographyFontSection: View {
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        Text(entry.detail)
+                        Text(entry.selector)
                             .font(.caption2.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -1743,12 +2281,12 @@ private struct LocaleTypographyFontSection: View {
                     }
 
                     CSSFontFamilyVariableField(
-                        key: entry.variable,
-                        value: variables[entry.variable] ?? ""
+                        key: "font-family",
+                        value: entry.value
                     ) { value in
-                        onCommit(entry.variable, value)
+                        onCommit(entry.locale, value)
                     } onSelectCandidate: { candidate in
-                        onSelectCandidate(entry.variable, candidate)
+                        onSelectCandidate(entry.locale, candidate)
                     }
                 }
                 .padding(8)
@@ -1758,28 +2296,46 @@ private struct LocaleTypographyFontSection: View {
                         .stroke(EditorColumnStyle.separatorColor.opacity(0.7), lineWidth: 1)
                 )
             }
+
+            HStack(spacing: 8) {
+                TextField("BCP 47 locale", text: $localeDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption.monospaced())
+                    .onSubmit(addLocaleIfValid)
+
+                Button(action: addLocaleIfValid) {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.semibold))
+                        .frame(width: 22, height: 22)
+                }
+                .buttonStyle(.plain)
+                .disabled(normalizedLocaleDraft == nil)
+                .help("Add :lang() font rule")
+            }
+
+            if localeDraftIsInvalid {
+                Text("Enter a valid BCP 47 language tag.")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var entries: [LocaleTypographyFontEntry] {
-        var result = [
-            LocaleTypographyFontEntry(
-                title: "Default",
-                detail: "--og-font-family-default",
-                variable: "--og-font-family-default"
-            )
-        ]
-        var seenVariables = Set(result.map(\.variable))
+        let defaultDeclaration = preferredDeclaration(for: "default")
+        var result = [LocaleTypographyFontEntry(
+            locale: nil,
+            title: "Default",
+            selector: defaultDeclaration?.selector ?? rootSelector,
+            value: defaultDeclaration?.value ?? ""
+        )]
+        var seenLocales = Set<String>()
 
         for locale in localeCandidates {
-            guard let entry = Self.entry(forLocale: locale),
-                  !seenVariables.contains(entry.variable)
-            else {
-                continue
-            }
+            guard !seenLocales.contains(locale), let entry = entry(forLocale: locale) else { continue }
             result.append(entry)
-            seenVariables.insert(entry.variable)
+            seenLocales.insert(locale)
         }
 
         return result
@@ -1790,13 +2346,16 @@ private struct LocaleTypographyFontSection: View {
 
         func appendLocale(_ value: String?) {
             guard let normalized = Self.normalizedLocale(value),
-                  !locales.contains(normalized)
+                  !locales.contains(where: { $0.caseInsensitiveCompare(normalized) == .orderedSame })
             else {
                 return
             }
             locales.append(normalized)
         }
 
+        for declaration in typography?.declarations ?? [] where declaration.locale != "default" {
+            appendLocale(declaration.locale)
+        }
         appendLocale(htmlDocumentContext.langValue)
         if htmlDocumentContext.langSource == .binding {
             appendLocale(previewContext.fieldMocks[htmlDocumentContext.langField])
@@ -1809,8 +2368,24 @@ private struct LocaleTypographyFontSection: View {
         for resource in i18nInspection?.resources ?? [] {
             appendLocale(resource.locale)
         }
+        for locale in additionalLocales {
+            appendLocale(locale)
+        }
 
         return locales
+    }
+
+    private var rootSelector: String {
+        let value = typography?.rootSelector.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? ":root" : value
+    }
+
+    private var normalizedLocaleDraft: String? {
+        Self.normalizedLocale(localeDraft)
+    }
+
+    private var localeDraftIsInvalid: Bool {
+        !localeDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && normalizedLocaleDraft == nil
     }
 
     private var activeLocaleLabel: String? {
@@ -1823,41 +2398,54 @@ private struct LocaleTypographyFontSection: View {
     }
 
     /// 論理名（日本語）: Localeフォント行生成関数
-    /// 処理概要: locale 名を対応する `--og-font-family-<locale>` 変数行へ変換します。
+    /// 処理概要: localeを既存authored selectorまたはroot-scoped標準`:lang()` selectorの表示行へ変換します。
     ///
     /// - Parameter locale: locale 名。
     /// - Returns: 表示行。locale 名が不正な場合は `nil`。
-    private static func entry(forLocale locale: String) -> LocaleTypographyFontEntry? {
-        guard let normalized = normalizedLocale(locale) else { return nil }
+    private func entry(forLocale locale: String) -> LocaleTypographyFontEntry? {
+        guard let normalized = Self.normalizedLocale(locale) else { return nil }
+        let declaration = preferredDeclaration(for: normalized)
+        let parsedLocale = OpenGraphiteLocaleTypographyLocale.parse(normalized)
         return LocaleTypographyFontEntry(
-            title: localizedLocaleName(for: normalized),
-            detail: "--og-font-family-\(normalized)",
-            variable: "--og-font-family-\(normalized)"
+            locale: normalized,
+            title: Self.localizedLocaleName(for: normalized),
+            selector: declaration?.selector ?? parsedLocale?.selector(rootSelector: rootSelector) ?? rootSelector,
+            value: declaration?.value ?? ""
         )
     }
 
+    /// 論理名（日本語）: Locale宣言優先解決関数
+    /// 処理概要: 同じlocaleの重複宣言から`!important`とsource orderに従う表示対象を選びます。
+    ///
+    /// - Parameter locale: `default`または正規化済みBCP 47 tag。
+    /// - Returns: Inspectorで編集するauthored宣言。未設定時は`nil`。
+    private func preferredDeclaration(for locale: String) -> OpenGraphiteLocaleTypographyDeclaration? {
+        (typography?.declarations ?? [])
+            .filter { $0.locale.caseInsensitiveCompare(locale) == .orderedSame }
+            .max { lhs, rhs in
+                if lhs.important != rhs.important { return !lhs.important && rhs.important }
+                return lhs.sourceOrder < rhs.sourceOrder
+            }
+    }
+
+    /// 論理名（日本語）: Locale追加関数
+    /// 処理概要: Sharedと同じBCP 47 parserで正規化できたlocaleを、固定allowlistなしで編集行へ追加します。
+    private func addLocaleIfValid() {
+        guard let locale = normalizedLocaleDraft else { return }
+        if !additionalLocales.contains(where: { $0.caseInsensitiveCompare(locale) == .orderedSame }) {
+            additionalLocales.append(locale)
+        }
+        localeDraft = ""
+    }
+
     /// 論理名（日本語）: Locale名正規化関数
-    /// 処理概要: CSS 変数 suffix に使える lowercase locale token へ変換します。
+    /// 処理概要: Sharedのselector-safe parserを使い、任意BCP 47 tagをcanonical casingへ正規化します。
     ///
     /// - Parameter locale: 入力 locale 名。
     /// - Returns: 正規化済み locale。空または不正な場合は `nil`。
     private static func normalizedLocale(_ locale: String?) -> String? {
-        guard let locale else { return nil }
-        let lowered = locale
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: "-")
-        let scalars = lowered.unicodeScalars.map { scalar -> Character in
-            let value = scalar.value
-            if (48...57).contains(value) || (97...122).contains(value) {
-                return Character(String(scalar))
-            }
-            return "-"
-        }
-        let normalized = String(scalars)
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .joined(separator: "-")
-        return normalized.isEmpty ? nil : normalized
+        guard case let .locale(identifier)? = OpenGraphiteLocaleTypographyLocale.parse(locale) else { return nil }
+        return identifier
     }
 
     /// 論理名（日本語）: Locale表示名生成関数
@@ -1880,17 +2468,21 @@ private struct LocaleTypographyFontSection: View {
 /// - `resource`: 選択中の Project 資源。
 /// - `loadedProject`: 読み込み済み `.ogp`。
 /// - `inspection`: i18n runtime 検査結果。
+/// - `migrationStatus`: 明示Web contract migrationの確認・適用状態。
 /// - `onRecommendI18n`: 推奨 runtime / locale JSON を実装資源へ作成する処理。
 /// - `onUpdateI18nRuntime`: literal i18n runtime 設定を実装資源へ保存する処理。
+/// - `onPreviewMigration`: sourceを変更しないProject migration dry-runを開始する処理。
 private struct ProjectResourceInspectorView: View {
     var resource: OpenGraphiteProjectResourceSelection
     var loadedProject: LoadedOpenGraphiteProject?
     var designTokens: [OpenGraphiteDesignToken]
     var i18nInspection: OpenGraphiteI18nRuntimeInspection?
+    var migrationStatus: OpenGraphiteProjectMigrationStatus
     var onUpdateDesignToken: (_ name: String, _ value: String) -> Void
     var onRemoveDesignToken: (_ name: String) -> Void
     var onRecommendI18n: () -> Void
     var onUpdateI18nRuntime: (_ loadPath: String?, _ fallbackLocale: String?) -> Void
+    var onPreviewMigration: () -> Void
 
     var body: some View {
         ScrollView {
@@ -1962,6 +2554,37 @@ private struct ProjectResourceInspectorView: View {
 
         InspectorSection(title: "I18n Runtime", sectionID: .i18nRuntime) {
             I18nRuntimeSummaryContent(inspection: i18nInspection)
+        }
+
+        InspectorSection(title: "Web Contract Migration", sectionID: .projectMigration) {
+            InspectorInfoRow(label: "policy", value: "Explicit only")
+            InspectorInfoRow(label: "status", value: migrationStatus.label)
+            InspectorInfoRow(label: "target", value: migrationStatus.targetVersion ?? "-")
+            Text(migrationStatus.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onPreviewMigration) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                    Text("Preview Migration…")
+                    Spacer()
+                }
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .foregroundStyle(Color.accentColor)
+                .background(EditorColumnStyle.elevatedRowFill, in: RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: EditorColumnStyle.rowRadius)
+                        .stroke(Color.accentColor.opacity(0.24), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(loadedProject == nil)
+            .help("Sourceを変更せずmigration差分を確認")
         }
     }
 
@@ -3091,17 +3714,57 @@ private struct InspectorEmptyStateView: View {
     }
 }
 
+/// 論理名（日本語）: Inspector属性presence操作
+/// 概要: missing属性への空値追加とpresent属性tokenの削除を、値編集とは独立したaccessibility actionとして表します。
+enum InspectorAttributePresenceAction: Equatable {
+    case addEmpty
+    case remove
+
+    /// 論理名（日本語）: 属性presence操作初期化関数
+    /// 処理概要: source上の属性token存在状態から追加または削除actionを選びます。
+    ///
+    /// - Parameter isPresent: 属性tokenが存在するか。
+    init(isPresent: Bool) {
+        self = isPresent ? .remove : .addEmpty
+    }
+
+    /// 論理名（日本語）: 属性presence操作アイコン名
+    /// 処理概要: 空値属性追加または属性token削除を示す標準system image名を返します。
+    var systemImageName: String {
+        switch self {
+        case .addEmpty: "plus.circle"
+        case .remove: "minus.circle"
+        }
+    }
+
+    /// 論理名（日本語）: 属性presenceアクセシビリティラベル生成関数
+    /// 処理概要: VoiceOver向けに属性名と追加/削除intentを明示したラベルを返します。
+    ///
+    /// - Parameter attributeName: 対象属性名。
+    /// - Returns: accessibility label。
+    func accessibilityLabel(attributeName: String) -> String {
+        switch self {
+        case .addEmpty: "\(attributeName)属性を追加"
+        case .remove: "\(attributeName)属性を削除"
+        }
+    }
+}
+
 /// 論理名（日本語）: 編集可能属性フィールド
-/// 概要: `data-og-role` などの属性値をテキスト入力し、Enter またはフォーカスアウトで確定する入力行です。
+/// 概要: standard `role` などの属性値をテキスト入力し、Enter またはフォーカスアウトで確定する入力行です。
 ///
 /// プロパティ:
 /// - `label`: 属性名。
 /// - `value`: 現在値。
+/// - `isPresent`: sourceに属性tokenが存在するか。`nil`ではpresence操作を表示しません。
 /// - `onCommit`: 適用時に呼び出す処理。
+/// - `onRemove`: 属性tokenを明示削除するときに呼び出す処理。
 private struct EditableAttributeField: View {
     var label: String
     var value: String
+    var isPresent: Bool?
     var onCommit: (String) -> Void
+    var onRemove: (() -> Void)?
 
     @State private var draft: String
     @FocusState private var isFocused: Bool
@@ -3112,11 +3775,21 @@ private struct EditableAttributeField: View {
     /// - Parameters:
     ///   - label: 属性名。
     ///   - value: 現在値。
+    ///   - isPresent: source上の属性token存在状態。
     ///   - onCommit: 適用時に呼び出す処理。
-    init(label: String, value: String, onCommit: @escaping (String) -> Void) {
+    ///   - onRemove: 属性tokenを削除する処理。
+    init(
+        label: String,
+        value: String,
+        isPresent: Bool? = nil,
+        onCommit: @escaping (String) -> Void,
+        onRemove: (() -> Void)? = nil
+    ) {
         self.label = label
         self.value = value
+        self.isPresent = isPresent
         self.onCommit = onCommit
+        self.onRemove = onRemove
         _draft = State(initialValue: value)
     }
 
@@ -3140,6 +3813,22 @@ private struct EditableAttributeField: View {
                     .onSubmit(commitIfChanged)
                     .frame(minWidth: 0, maxWidth: .infinity)
             }
+
+            if let isPresent, let onRemove {
+                let action = InspectorAttributePresenceAction(isPresent: isPresent)
+                Button {
+                    if action == .remove {
+                        onRemove()
+                    } else {
+                        onCommit(draft)
+                    }
+                } label: {
+                    Image(systemName: action.systemImageName)
+                }
+                .buttonStyle(.plain)
+                .help(action == .remove ? "\(label)属性を削除" : "\(label)属性を空値で追加")
+                .accessibilityLabel(action.accessibilityLabel(attributeName: label))
+            }
         }
         .frame(maxWidth: .infinity)
         .onChange(of: value) { _, newValue in
@@ -3152,12 +3841,10 @@ private struct EditableAttributeField: View {
     }
 
     /// 論理名（日本語）: 編集可能属性変更時適用関数
-    /// 処理概要: 入力値を trim し、変更がある場合だけ属性更新を反映します。
+    /// 処理概要: 標準属性の先頭末尾空白を保持し、表示値から変更された場合だけ属性更新を反映します。
     private func commitIfChanged() {
-        let nextValue = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        draft = nextValue
-        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
-        onCommit(nextValue)
+        guard draft != value else { return }
+        onCommit(draft)
     }
 }
 
@@ -3177,7 +3864,10 @@ private struct NodeAlignmentControls: View {
                 title: isVerticalLayout ? "justify-content · 主軸 (縦)" : "justify-content · 主軸 (横)",
                 options: InspectorAlignmentAxisOptions.mainAxisOptions(isVerticalLayout: isVerticalLayout),
                 selectedValue: justifyContent,
-                effectiveValue: InspectorAlignmentModel.resolvedJustifyContent(justifyContent)
+                effectiveValue: InspectorAlignmentModel.resolvedJustifyContent(
+                    justifyContent,
+                    computedValue: node.computedStyle.justifyContent
+                )
             ) { value in
                 onCommit(["justify-content": value])
             }
@@ -3186,13 +3876,16 @@ private struct NodeAlignmentControls: View {
                 title: isVerticalLayout ? "align-items · 交差軸 (横)" : "align-items · 交差軸 (縦)",
                 options: InspectorAlignmentAxisOptions.crossAxisOptions(isVerticalLayout: isVerticalLayout),
                 selectedValue: alignItems,
-                effectiveValue: InspectorAlignmentModel.resolvedAlignItems(alignItems, layout: layout)
+                effectiveValue: InspectorAlignmentModel.resolvedAlignItems(
+                    alignItems,
+                    computedValue: node.computedStyle.alignItems
+                )
             ) { value in
                 onCommit(["align-items": value])
             }
 
             if !InspectorAlignmentModel.supportsAlignment(layout) {
-                Text("absolute レイアウトでは flex 整列は描画へ反映されません。")
+                Text("現在の computed display では flex / grid 整列は描画へ反映されません。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

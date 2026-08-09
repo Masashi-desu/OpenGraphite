@@ -1,12 +1,202 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  [data-og-internal-id="121eafb2db25"],
+  [data-og-internal-id="34vfise6qu6ba"],
+  [data-og-internal-id="4gl1ddnnfvj1"],
+  [data-og-internal-id="d18d27ada2f2"],
+  [data-og-internal-id="de0b4736948f"],
+  actionrow,
+  buttonlabel,
+  componentcardgrid,
+  componentdemo,
+  eyebrowtext,
+  heroappimage,
+  herocopy,
+  herosignalrail,
+  homehero,
+  homeviewportframe,
+  leadtext,
+  maintitle,
+  navlabel,
+  og-instance,
+  opengraphitepage,
+  principlelist,
+  scopeline,
+  signalcell,
+  workflowcell,
+  workflowrail
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  actionrow,
+  componentcardgrid,
+  componentdemo,
+  herocopy,
+  herosignalrail,
+  homehero,
+  homeviewportframe,
+  og-instance,
+  opengraphitepage,
+  principlelist,
+  workflowrail
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  buttonlabel,
+  eyebrowtext,
+  leadtext,
+  maintitle,
+  navlabel,
+  scopeline,
+  signalcell,
+  workflowcell
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  buttonlabel,
+  eyebrowtext,
+  leadtext,
+  maintitle,
+  navlabel,
+  scopeline,
+  signalcell,
+  workflowcell
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  [data-og-internal-id="121eafb2db25"],
+  [data-og-internal-id="34vfise6qu6ba"],
+  [data-og-internal-id="4gl1ddnnfvj1"],
+  [data-og-internal-id="d18d27ada2f2"],
+  [data-og-internal-id="de0b4736948f"]
+) {
+  gap: var(--space-small);
+  min-height: var(--button-min-height);
+  padding: var(--button-padding-default);
+  border-radius: var(--button-radius-default);
+  border: 0;
+  background: color-mix(in srgb, currentColor var(--state-background-mix-subtle), transparent);
+  font-weight: var(--font-weight-button);
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  line-height: var(--line-height-tight);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where(
+  [data-og-internal-id="121eafb2db25"],
+  [data-og-internal-id="34vfise6qu6ba"],
+  [data-og-internal-id="4gl1ddnnfvj1"],
+  [data-og-internal-id="d18d27ada2f2"],
+  [data-og-internal-id="de0b4736948f"]
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: inline-flex;
+}
+
+:where(
+  heroappimage
+) {
+  overflow: hidden;
+}
+
+:where(
+  heroappimage
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  heroappimage
+) > img,
+:where(
+  heroappimage
+) picture,
+:where(
+  heroappimage
+) video {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+:where(
+  heroappimage
+) > img,
+:where(
+  heroappimage
+) video {
+  object-fit: cover;
+}
+
+@media (max-width: 760px) {
+  :where(
+    [data-og-internal-id="121eafb2db25"],
+    [data-og-internal-id="34vfise6qu6ba"],
+    [data-og-internal-id="4gl1ddnnfvj1"],
+    [data-og-internal-id="d18d27ada2f2"],
+    [data-og-internal-id="de0b4736948f"]
+  ) {
+    width: 100%;
+  }
+}
+
+
 [data-og-internal-id="72222bd6f11e"] {
+  display: flex;
+  flex-direction: column;
   gap:0;
   padding:0 var(--space-page-inset-tight) var(--space-page-bottom-wide);
   background:var(--color-canvas);
   color:var(--color-text);
-  --og-font-family-default:var(--font-family-ui);
-  --og-font-family-ja:var(--font-family-ja);
-  --og-font-family-eng:var(--font-family-eng);
+  font-family:var(--font-family-ui);
+  overflow-wrap:break-word;
   min-height:100vh;
+}
+
+[data-og-internal-id="72222bd6f11e"]:lang(ja) {
+  font-family:var(--font-family-ja);
+}
+
+[data-og-internal-id="72222bd6f11e"]:lang(en),
+[data-og-internal-id="72222bd6f11e"]:lang(eng) {
+  font-family:var(--font-family-eng);
 }
 
 [data-og-internal-id="121eafb2db25"] {
@@ -46,6 +236,8 @@
 }
 
 [data-og-internal-id="8ac1b0d2e3f4"] {
+  display: flex;
+  flex-direction: column;
   width:min(100%,var(--size-page-max));
   margin:0 auto;
   min-height:calc(100vh - var(--size-header-offset));
@@ -55,6 +247,8 @@
 }
 
 [data-og-internal-id="36y1umzz0tjrm"] {
+  display: flex;
+  flex-direction: row;
   width:100%;
   padding:46px 0 62px;
   gap:36px;
@@ -65,6 +259,8 @@
 }
 
 [data-og-internal-id="1rl4q0jsthuim"] {
+  display: flex;
+  flex-direction: column;
   gap:var(--space-copy-gap);
   width:min(100%,var(--size-copy-max));
   flex:0 0 min(100%,var(--size-copy-max));
@@ -111,6 +307,8 @@
 }
 
 [data-og-internal-id="3sxai5vs8yyy3"] {
+  display: flex;
+  flex-direction: row;
   gap:var(--space-compact);
   align-items:flex-start;
   padding:var(--space-2xs) 0 0;
@@ -144,6 +342,8 @@
 }
 
 [data-og-internal-id="herosignalrail1"] {
+  display: flex;
+  flex-direction: row;
   width:min(100%,var(--size-hero-rail-max));
   gap:0;
   align-items:stretch;
@@ -193,10 +393,12 @@
 }
 
 .og-style-index-001 {
-  --og-object-fit:var(--media-object-fit-contain);
+  object-fit:var(--media-object-fit-contain);
 }
 
 [data-og-internal-id="5592a3b13c94"] {
+  display: flex;
+  flex-direction: column;
   width:100%;
   padding:38px 0;
   gap:var(--space-copy-gap);
@@ -209,6 +411,8 @@
 }
 
 [data-og-internal-id="b01aee52375f"] {
+  display: flex;
+  flex-direction: row;
   gap:var(--space-card-gap);
   align-items:stretch;
   width:100%;
@@ -241,6 +445,8 @@
 }
 
 [data-og-internal-id="d3386fbce50b"] {
+  display: flex;
+  flex-direction: column;
   width:100%;
   gap:0;
   padding:42px 0 0;
@@ -260,6 +466,8 @@
 }
 
 [data-og-internal-id="3tdqz10hz3xf9"] {
+  display: flex;
+  flex-direction: row;
   gap:0;
   align-items:stretch;
   padding:var(--space-section-gap) 0 0;
@@ -352,36 +560,6 @@
   animation-fill-mode:both;
   animation-timeline:--home-principles;
   animation-range:entry 54% cover 76%;
-}
-
-[data-og-internal-id="514d2ab22594"] > [data-og-generated="true"] {
-  width:100%;
-  margin:0;
-}
-
-[data-og-internal-id="d9778be9a854"] > [data-og-generated="true"] {
-  width:100%;
-  background:var(--color-surface);
-  color:var(--color-text);
-  border:var(--border-subtle);
-}
-
-[data-og-internal-id="0da96bf67932"] > [data-og-generated="true"] {
-  width:100%;
-  background:var(--color-surface-raised);
-  color:var(--color-text);
-  border:var(--border-muted);
-}
-
-[data-og-internal-id="9617db163b8c"] > [data-og-generated="true"] {
-  width:100%;
-  margin:0;
-  gap:var(--space-medium);
-  padding:0 0 18px;
-}
-
-[data-og-internal-id="37e927f5553b"] > [data-og-generated="true"] {
-  border-bottom:var(--border-subtle);
 }
 
 [data-og-id="component-demo-heading"][data-og-internal-id] {
@@ -498,6 +676,17 @@
   to {
     color:var(--color-accent);
     transform:translateY(0);
+  }
+}
+
+@media (max-width: 760px) {
+  [data-og-internal-id="36y1umzz0tjrm"],
+  [data-og-internal-id="3sxai5vs8yyy3"],
+  [data-og-internal-id="herosignalrail1"],
+  [data-og-internal-id="b01aee52375f"],
+  [data-og-internal-id="3tdqz10hz3xf9"] {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

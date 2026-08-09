@@ -311,6 +311,13 @@ struct OpenGraphiteScreenshotResult: Codable, Equatable {
 /// - `capturePage(targetURL:pageID:outputURL:readAccessURL:width:height:fullPage:)`: 単一ページを保存します。
 /// - `captureNode(htmlURL:nodeID:outputURL:readAccessURL:width:height:padding:)`: 指定ノードを切り抜いて保存します。
 struct OpenGraphiteScreenshotRenderer {
+    /// 論理名（日本語）: Screenshot Component Placement参照スクリプト
+    /// 処理概要: ScreenshotとWeb Canvasのruntime registry parity検証に使うplacement reference scriptを返します。
+    @MainActor
+    static var componentPlacementReferencesScript: String {
+        OpenGraphitePageSnapshotter.componentPlacementReferencesScript
+    }
+
     private static let defaultViewportWidth: CGFloat = 1440
     private static let defaultViewportHeight: CGFloat = 1200
     private static let defaultCanvasBackground = NSColor(
@@ -346,11 +353,11 @@ struct OpenGraphiteScreenshotRenderer {
     }
 
     /// 論理名（日本語）: ページスクリーンショット関数
-    /// 処理概要: `.ogp` の page 内部参照 ID または HTML ファイルを WebKit でレンダリングし、PNG として保存します。
+    /// 処理概要: `.ogp` の page / component 参照 ID または HTML ファイルを WebKit でレンダリングし、PNG として保存します。
     ///
     /// - Parameters:
     ///   - targetURL: `.ogp` または HTML URL。
-    ///   - pageID: `.ogp` 内ページを指定する ID。HTML 直接指定時は `nil`。
+    ///   - pageID: `.ogp` 内pageまたはcomponentを指定するID。HTML直接指定時は`nil`。
     ///   - outputURL: PNG 出力先 URL。
     ///   - readAccessURL: HTML 直接指定時の読み取り許可ルート。
     ///   - width: viewport 幅。`.ogp` 指定時は省略すると page canvas 幅を使います。
@@ -500,10 +507,12 @@ struct OpenGraphiteScreenshotRenderer {
         if targetURL.pathExtension == "ogp" {
             let loadedProject = try ProjectLoader().loadProject(at: targetURL)
             guard let pageID else {
-                throw OpenGraphiteScreenshotError(message: ".ogp の page screenshot には --id が必要です。")
+                throw OpenGraphiteScreenshotError(
+                    message: ".ogp の page screenshot には --page-id または --component-id が必要です。"
+                )
             }
-            guard let page = page(in: loadedProject.project, matching: pageID) else {
-                throw OpenGraphiteScreenshotError(message: "page id \"\(pageID)\" が見つかりません。")
+            guard let page = screenshotPage(in: loadedProject.project, matching: pageID) else {
+                throw OpenGraphiteScreenshotError(message: "page / component id \"\(pageID)\" が見つかりません。")
             }
             pageURL = loadedProject.htmlURL(for: page)
             accessURL = loadedProject.rootURL
@@ -713,13 +722,13 @@ struct OpenGraphiteScreenshotRenderer {
     }
 
     /// 論理名（日本語）: スクリーンショット対象ページ解決関数
-    /// 処理概要: 内部 ID または複合参照 ID で `.ogp` 内 page entry を解決します。
+    /// 処理概要: 表示ID、内部ID、または複合参照IDで`.ogp`内page / component entryを解決します。
     ///
     /// - Parameters:
     ///   - project: 検索対象 `.ogp` project。
     ///   - reference: `--page-id` / `--component-id` で指定された値。
     /// - Returns: 一致した page entry。見つからない場合は `nil`。
-    private func page(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphitePage? {
+    func screenshotPage(in project: OpenGraphiteProject, matching reference: String) -> OpenGraphitePage? {
         let normalizedReference = reference.trimmingCharacters(in: .whitespacesAndNewlines)
         if let page = typedPage(in: project, matching: normalizedReference) {
             return page
@@ -728,7 +737,9 @@ struct OpenGraphiteScreenshotRenderer {
             return page
         }
 
-        return project.allPages.first { $0.internalID == normalizedReference }
+        return project.allPages.first {
+            $0.id == normalizedReference || $0.internalID == normalizedReference
+        }
     }
 
     /// 論理名（日本語）: typedスクリーンショットページ解決関数
@@ -1208,8 +1219,10 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             """
         )
         let payload = try dictionaryValue(discoveryValue, description: "component reference discovery")
-        let componentHTMLs = localTextDocuments(from: payload["componentHrefs"] as? [String] ?? [])
-        guard !componentHTMLs.isEmpty else { return }
+        let componentDocuments = localHTMLDocumentsWithBaseURLs(
+            from: payload["componentHrefs"] as? [String] ?? []
+        )
+        guard !componentDocuments.isEmpty else { return }
 
         let runtimeLoaded = payload["runtimeLoaded"] as? Bool ?? false
         let runtimeSource = runtimeLoaded ? nil : localTextDocuments(from: payload["runtimeHrefs"] as? [String] ?? []).first
@@ -1219,7 +1232,7 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         (function() {
           \(runtimeSource ?? "")
           if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function') {
-            window.OpenGraphiteRuntime.renderComponentHTMLDocuments(\(try javaScriptArrayLiteral(componentHTMLs)));
+            window.OpenGraphiteRuntime.renderComponentHTMLDocuments(\(try javaScriptObjectArrayLiteral(componentDocuments)));
             return true;
           }
           return false;
@@ -1262,6 +1275,24 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
         hrefs.compactMap { href -> String? in
             guard let url = URL(string: href), url.isFileURL else { return nil }
             return try? String(contentsOf: url, encoding: .utf8)
+        }
+    }
+
+    /// 論理名（日本語）: base URL付きローカルHTML文書読み込み関数
+    /// 処理概要: component HTMLと元のfile URLを組にし、相対stylesheet・asset参照をruntimeが正しく解決できるpayloadを作ります。
+    ///
+    /// - Parameter hrefs: component linkのhref一覧。
+    /// - Returns: HTML本文とbase URLを持つdocument payload一覧。
+    private func localHTMLDocumentsWithBaseURLs(from hrefs: [String]) -> [[String: String]] {
+        hrefs.compactMap { href -> [String: String]? in
+            guard
+                let url = URL(string: href),
+                url.isFileURL,
+                let html = try? String(contentsOf: url, encoding: .utf8)
+            else {
+                return nil
+            }
+            return ["baseURL": url.absoluteString, "html": html]
         }
     }
 
@@ -1358,17 +1389,13 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
           });
           if (documentContext.lang) {
             document.documentElement.lang = documentContext.lang;
-            document.documentElement.dataset.ogPreviewLocale = documentContext.lang;
           } else {
             document.documentElement.removeAttribute('lang');
-            delete document.documentElement.dataset.ogPreviewLocale;
           }
           if (documentContext.dir) {
             document.documentElement.dir = documentContext.dir;
-            document.documentElement.dataset.ogPreviewDir = documentContext.dir;
           } else {
             document.documentElement.removeAttribute('dir');
-            delete document.documentElement.dataset.ogPreviewDir;
           }
           window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = Object.freeze(context);
         })();
@@ -1376,11 +1403,159 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
     }
 
     /// 論理名（日本語）: Component Placement参照レンダリングスクリプト
-    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開します。
-    private static let componentPlacementReferencesScript = """
+    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開し、
+    /// DOM属性ではなくsession-onlyの `WeakMap` / `WeakSet` でprovenanceを保持します。
+    static let componentPlacementReferencesScript = """
         (function() {
+          if (window.OpenGraphiteComponentPlacementReferences &&
+              typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
+            window.OpenGraphiteComponentPlacementReferences.render();
+            return;
+          }
+
+          const metadataByElement = new WeakMap();
+          const generatedElements = new WeakSet();
+          const generatedRootByHost = new WeakMap();
+
           function placementHosts() {
-            return Array.from(document.querySelectorAll('[data-og-role="component-placement"][data-og-source-node-internal-id]'));
+            return Array.from(document.querySelectorAll('og-placement[data-og-source-node-internal-id]'));
+          }
+
+          function elementValue(value) {
+            if (value && value.nodeType === Node.ELEMENT_NODE) { return value; }
+            return value && value.parentElement ? value.parentElement : null;
+          }
+
+          function composedParent(value) {
+            if (!value) { return null; }
+            if (value.parentElement) { return value.parentElement; }
+            const root = typeof value.getRootNode === 'function' ? value.getRootNode() : null;
+            return root && root.host ? root.host : null;
+          }
+
+          function composedElements(root) {
+            const elements = [];
+            function visit(node) {
+              if (!node || node.nodeType !== Node.ELEMENT_NODE) { return; }
+              elements.push(node);
+              if (node.shadowRoot) {
+                Array.from(node.shadowRoot.children || []).forEach(visit);
+              }
+              Array.from(node.children || []).forEach(visit);
+            }
+            visit(root);
+            return elements;
+          }
+
+          function cloneWithOpenShadowRoots(source) {
+            const clone = source.cloneNode(true);
+            function copyShadowTrees(sourceNode, cloneNode) {
+              if (!sourceNode || !cloneNode || sourceNode.nodeType !== Node.ELEMENT_NODE || cloneNode.nodeType !== Node.ELEMENT_NODE) {
+                return;
+              }
+              if (sourceNode.shadowRoot) {
+                let cloneShadowRoot = cloneNode.shadowRoot;
+                if (!cloneShadowRoot) {
+                  try {
+                    cloneShadowRoot = cloneNode.attachShadow({ mode: 'open' });
+                  } catch (_) {
+                    cloneShadowRoot = null;
+                  }
+                }
+                if (cloneShadowRoot) {
+                  cloneShadowRoot.replaceChildren(...Array.from(sourceNode.shadowRoot.childNodes).map((child) => child.cloneNode(true)));
+                  Array.from(sourceNode.shadowRoot.children || []).forEach((sourceChild, index) => {
+                    copyShadowTrees(sourceChild, cloneShadowRoot.children[index]);
+                  });
+                }
+              }
+              Array.from(sourceNode.children || []).forEach((sourceChild, index) => {
+                copyShadowTrees(sourceChild, cloneNode.children[index]);
+              });
+            }
+            copyShadowTrees(source, clone);
+            return clone;
+          }
+
+          function applyStandardHostPreviewState(host, fields) {
+            const runtime = window.OpenGraphiteRuntime;
+            if (runtime && typeof runtime.applyPreviewState === 'function') {
+              return runtime.applyPreviewState(host, fields);
+            }
+            const booleanAttributes = new Set([
+              'autofocus', 'autoplay', 'checked', 'controls', 'disabled', 'hidden', 'inert',
+              'loop', 'multiple', 'muted', 'open', 'readonly', 'required', 'selected'
+            ]);
+            const protectedAttributes = new Set(['id', 'part', 'slot', 'style']);
+            const appliedAttributes = [];
+            const appliedClasses = [];
+            Object.keys(fields || {}).sort().forEach((fieldName) => {
+              if (!fieldName.startsWith('host.')) { return; }
+              const attributeName = fieldName.slice(5).trim().toLowerCase();
+              if (!/^[a-z_:][a-z0-9_.:-]*$/.test(attributeName)) { return; }
+              if (attributeName.startsWith('on') || attributeName.startsWith('data-og-') || protectedAttributes.has(attributeName)) { return; }
+              const value = String(fields[fieldName]);
+              if (attributeName === 'class') {
+                value.split(/\\s+/).filter(Boolean).forEach((token) => {
+                  try {
+                    host.classList.add(token);
+                    appliedClasses.push(token);
+                  } catch (_) {}
+                });
+                return;
+              }
+              if (booleanAttributes.has(attributeName)) {
+                const present = !['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+                if (present) { host.setAttribute(attributeName, ''); }
+                else { host.removeAttribute(attributeName); }
+              } else {
+                host.setAttribute(attributeName, value);
+              }
+              appliedAttributes.push(attributeName);
+            });
+            return Object.freeze({
+              attributes: Object.freeze(appliedAttributes),
+              classes: Object.freeze(appliedClasses)
+            });
+          }
+
+          function metadataFor(value) {
+            let element = elementValue(value);
+            while (element) {
+              const metadata = metadataByElement.get(element);
+              if (metadata) { return metadata; }
+              element = composedParent(element);
+            }
+            return null;
+          }
+
+          function isGenerated(value) {
+            let element = elementValue(value);
+            while (element) {
+              if (generatedElements.has(element)) { return true; }
+              element = composedParent(element);
+            }
+            return false;
+          }
+
+          function hostFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.host : null;
+          }
+
+          function rootFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.root : null;
+          }
+
+          function sourceFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.source : null;
+          }
+
+          function placementIDFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.placementID : '';
           }
 
           function sourceNodeFor(host) {
@@ -1388,76 +1563,55 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             if (!nodeInternalID) { return null; }
             return Array.from(document.querySelectorAll('[data-og-internal-id]')).find((element) => {
               if (element === host) { return false; }
-              if (element.getAttribute('data-og-generated') === 'true') { return false; }
-              if (element.closest('[data-og-placement-generated="true"]')) { return false; }
+              if (isGenerated(element)) { return false; }
               return element.getAttribute('data-og-internal-id') === nodeInternalID;
             }) || null;
           }
 
           function clearGeneratedPlacementContent(host) {
-            Array.from(host.children).forEach((child) => {
-              if (child.getAttribute('data-og-generated') === 'true' ||
-                  child.getAttribute('data-og-placement-generated') === 'true') {
-                child.remove();
-              }
+            const root = generatedRootByHost.get(host);
+            if (!root) { return; }
+            composedElements(root).forEach((element) => {
+              generatedElements.delete(element);
+              metadataByElement.delete(element);
             });
+            if (root.parentNode === host) {
+              root.remove();
+            }
+            generatedRootByHost.delete(host);
           }
 
           function mockFieldsFor(host) {
             const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
             const fields = Object.assign({}, context.fields || {});
             const placementMocks = context.placementMocks || {};
-            [
-              host.getAttribute('data-og-internal-id'),
-              host.getAttribute('data-og-id')
-            ].forEach((placementID) => {
-              const key = String(placementID || '').trim();
-              if (!key || !placementMocks[key]) { return; }
-              Object.assign(fields, placementMocks[key]);
-            });
+            const internalID = String(host.getAttribute('data-og-internal-id') || '').trim();
+            const displayID = String(host.getAttribute('data-og-id') || '').trim();
+            const placementFields = (internalID && placementMocks[internalID])
+              || (displayID && placementMocks[displayID])
+              || null;
+            if (placementFields) { Object.assign(fields, placementFields); }
             return fields;
           }
 
-          function applyCodeViewerMode(root, fields) {
-            const mode = String((fields && fields.codeViewerMode) || '').trim();
-            if (!mode) { return; }
-            root.querySelectorAll('[data-code-viewer-panel]').forEach((panel) => {
-              panel.setAttribute('data-og-hidden', panel.getAttribute('data-code-viewer-panel') === mode ? 'false' : 'true');
+          function registerGeneratedClone(root, source, host) {
+            const placementID = String(
+              host.getAttribute('data-og-id') || host.getAttribute('data-og-internal-id') || ''
+            ).trim();
+            const cloneElements = composedElements(root);
+            const sourceElements = composedElements(source);
+            cloneElements.forEach((element, index) => {
+              const sourceElement = sourceElements[index] || source;
+              generatedElements.add(element);
+              metadataByElement.set(element, Object.freeze({
+                host: host,
+                root: root,
+                source: sourceElement,
+                placementID: placementID,
+                previewClone: true
+              }));
             });
-            root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
-              const active = button.getAttribute('data-code-viewer-tab') === mode;
-              button.setAttribute('aria-pressed', active ? 'true' : 'false');
-              button.style.setProperty('background', active ? '#858892' : '#343438');
-              button.style.setProperty('border', active ? '1px solid #858892' : '1px solid transparent');
-            });
-          }
-
-          function applyPlacementModeState(root, host, fields) {
-            const mode = String((fields && fields.placementMode) || host.getAttribute('data-og-placement-mode') || '').trim();
-            if (!mode) { return; }
-            const stateTokens = mode.split(/\\s+/).filter((token) => /^[A-Za-z0-9_-]+$/.test(token));
-            stateTokens.forEach((token) => {
-              root.querySelectorAll('[data-og-state-hidden~="' + token + '"]').forEach((node) => {
-                node.setAttribute('data-og-hidden', 'true');
-              });
-              root.querySelectorAll('[data-og-state-visible~="' + token + '"]').forEach((node) => {
-                node.setAttribute('data-og-hidden', 'false');
-              });
-            });
-          }
-
-          function markGenerated(root, host) {
-            const placementID = host.getAttribute('data-og-id') || '';
-            root.setAttribute('data-og-generated', 'true');
-            root.setAttribute('data-og-placement-generated', 'true');
-            root.setAttribute('data-og-source-placement', placementID);
-            root.setAttribute('data-og-preview-clone', 'true');
-            root.querySelectorAll('[data-og-id]').forEach((element) => {
-              element.setAttribute('data-og-generated', 'true');
-              element.setAttribute('data-og-placement-generated', 'true');
-              element.setAttribute('data-og-source-placement', placementID);
-              element.setAttribute('data-og-preview-clone', 'true');
-            });
+            generatedRootByHost.set(host, root);
           }
 
           function inlinePlacementVariable(host, name) {
@@ -1482,20 +1636,62 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
             }
           }
 
-          const hosts = placementHosts();
-          hosts.forEach(clearGeneratedPlacementContent);
-          hosts.forEach((host) => {
-            const source = sourceNodeFor(host);
-            if (!source) { return; }
-            const clone = source.cloneNode(true);
-            const fields = mockFieldsFor(host);
-            applyPlacementFrameSizing(clone, host);
-            clone.style.pointerEvents = 'none';
-            applyCodeViewerMode(clone, fields);
-            applyPlacementModeState(clone, host, fields);
-            markGenerated(clone, host);
-            host.appendChild(clone);
+          function renderComponentPlacementReferences() {
+            const hosts = placementHosts();
+            hosts.forEach(clearGeneratedPlacementContent);
+            hosts.forEach((host) => {
+              const source = sourceNodeFor(host);
+              if (!source) { return; }
+              const clone = cloneWithOpenShadowRoots(source);
+              const fields = mockFieldsFor(host);
+              applyPlacementFrameSizing(clone, host);
+              clone.style.pointerEvents = 'none';
+              host.appendChild(clone);
+              applyStandardHostPreviewState(clone, fields);
+              registerGeneratedClone(clone, source, host);
+            });
+          }
+
+          function clear() {
+            placementHosts().forEach(clearGeneratedPlacementContent);
+          }
+
+          function suspend() {
+            const state = [];
+            placementHosts().forEach((host) => {
+              const root = generatedRootByHost.get(host);
+              if (!root || root.parentNode !== host) { return; }
+              state.push(Object.freeze({ host: host, root: root, nextSibling: root.nextSibling }));
+              root.remove();
+            });
+            return state;
+          }
+
+          function resume(state) {
+            if (!Array.isArray(state)) { return false; }
+            state.forEach((entry) => {
+              if (!entry || !entry.host || !entry.host.isConnected || !entry.root) { return; }
+              const nextSibling = entry.nextSibling && entry.nextSibling.parentNode === entry.host
+                ? entry.nextSibling
+                : null;
+              entry.host.insertBefore(entry.root, nextSibling);
+            });
+            return true;
+          }
+
+          window.OpenGraphiteComponentPlacementReferences = Object.freeze({
+            render: renderComponentPlacementReferences,
+            clear: clear,
+            suspend: suspend,
+            resume: resume,
+            metadataFor: metadataFor,
+            isGenerated: isGenerated,
+            hostFor: hostFor,
+            rootFor: rootFor,
+            sourceFor: sourceFor,
+            placementIDFor: placementIDFor
           });
+          renderComponentPlacementReferences();
         })();
         """
 
@@ -1643,6 +1839,16 @@ private final class OpenGraphitePageSnapshotter: NSObject, WKNavigationDelegate 
 
     private func javaScriptArrayLiteral(_ values: [String]) throws -> String {
         let data = try JSONSerialization.data(withJSONObject: values)
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    /// 論理名（日本語）: JavaScript object配列リテラル生成関数
+    /// 処理概要: base URL付きHTML document payloadをJavaScriptへ安全に渡すJSON配列へ変換します。
+    ///
+    /// - Parameter values: JSON objectとして表現する文字列dictionary一覧。
+    /// - Returns: JavaScriptで評価可能なJSON配列文字列。
+    private func javaScriptObjectArrayLiteral(_ values: [[String: String]]) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 

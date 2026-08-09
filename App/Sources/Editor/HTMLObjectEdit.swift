@@ -34,7 +34,8 @@ struct HTMLSyncTarget: Equatable {
 /// 定義内容:
 /// - `setCSSVariable`: CSS 変数を設定または削除します。
 /// - `setCSSVariables`: 複数 CSS 変数を同一 node に設定または削除します。
-/// - `setAttribute`: 永続属性を設定または削除します。
+/// - `setAttribute`: 永続属性を空文字を含む指定値へ設定します。
+/// - `removeAttribute`: 永続属性tokenを明示的に削除します。
 /// - `renameNodeID`: node の `data-og-id` を重複しない表示 ID へ変更します。
 /// - `setIcon`: icon node の metadata と描画 HTML を更新します。
 /// - `setTextContent`: text node のプレーンテキストを置換します。
@@ -45,7 +46,19 @@ struct HTMLSyncTarget: Equatable {
 enum HTMLObjectEditOperation: Equatable {
     case setCSSVariable(nodeInternalID: String, key: String, value: String, expectedOldValue: String)
     case setCSSVariables(nodeInternalID: String, values: [String: String], expectedOldValues: [String: String])
-    case setAttribute(nodeInternalID: String, name: String, value: String, expectedOldValue: String)
+    case setAttribute(
+        nodeInternalID: String,
+        name: String,
+        value: String,
+        expectedOldValue: String,
+        expectedOldPresence: Bool?
+    )
+    case removeAttribute(
+        nodeInternalID: String,
+        name: String,
+        expectedOldValue: String,
+        expectedOldPresence: Bool
+    )
     case renameNodeID(nodeInternalID: String, value: String, expectedOldValue: String)
     case setIcon(nodeInternalID: String, library: String, name: String, source: String, expectedOldValues: [String: String])
     case setTextContent(nodeInternalID: String, text: String, expectedOldValue: String)
@@ -54,23 +67,16 @@ enum HTMLObjectEditOperation: Equatable {
     case deleteNode(nodeInternalID: String, baselineNodeHash: String?)
     case moveNode(nodeInternalID: String, targetInternalID: String, position: OpenGraphiteHTMLInsertionPosition, baselineNodeHash: String?)
 
-    /// 論理名（日本語）: Absolute子配置宣言削除要否
-    /// 処理概要: 親 layout を absolute から flow layout へ戻す操作で、直下 child の位置指定 cleanup が必要か判定します。
-    var removesAbsoluteLayoutChildPositionDeclarations: Bool {
-        guard case let .setAttribute(_, name, value, expectedOldValue) = self else { return false }
-        return name == "data-og-layout"
-            && expectedOldValue.trimmingCharacters(in: .whitespacesAndNewlines) == "absolute"
-            && Self.isFlowLayout(value)
-    }
-
     /// 論理名（日本語）: WebView再読み込み要否
-    /// 処理概要: WebView 側の DOM だけでは保存後の表示を継続できない操作かどうかを返します。
+    /// 処理概要: source cascadeを再評価するため、CSS保存とDOM形状が変わる操作で再読み込みを要求します。
     var requiresWebViewReload: Bool {
         switch self {
-        case .setCSSVariable, .setCSSVariables, .renameNodeID, .setTextContent:
+        case .setCSSVariable, .setCSSVariables:
+            return true
+        case .renameNodeID, .setTextContent:
             return false
-        case .setAttribute:
-            return removesAbsoluteLayoutChildPositionDeclarations
+        case .setAttribute, .removeAttribute:
+            return false
         case .setIcon:
             return true
         case .insertHTML, .replaceNodeHTML, .deleteNode:
@@ -78,16 +84,6 @@ enum HTMLObjectEditOperation: Equatable {
         case .moveNode:
             return false
         }
-    }
-
-    /// 論理名（日本語）: Flow layout判定関数
-    /// 処理概要: 指定 layout 値が子要素を親のフローへ参加させる mode か判定します。
-    ///
-    /// - Parameter value: `data-og-layout` の候補値。
-    /// - Returns: `vertical` または `horizontal` の場合は `true`。
-    private static func isFlowLayout(_ value: String) -> Bool {
-        let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalizedValue == "vertical" || normalizedValue == "horizontal"
     }
 }
 

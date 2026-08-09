@@ -428,13 +428,13 @@ private final class OpenGraphiteCommandWebView: WKWebView {
     }
 
     /// 論理名（日本語）: プレビュー内容非表示関数
-    /// 処理概要: CSS 未適用の provisional document が白く描画される期間、WebKit content を親キャンバスへ透過させます。
+    /// 処理概要: provisional document のDOM準備前にWebKit contentを親キャンバスへ透過させます。
     func hidePreviewContentUntilStyled() {
         alphaValue = 0
     }
 
     /// 論理名（日本語）: プレビュー内容表示関数
-    /// 処理概要: OpenGraphite CSS 適用後の document だけをユーザーへ表示します。
+    /// 処理概要: 標準HTML文書のDOM準備後に、利用するstylesheetを問わずcontentを表示します。
     func revealStyledPreviewContent() {
         alphaValue = 1
     }
@@ -614,82 +614,94 @@ private final class OpenGraphiteCommandWebView: WKWebView {
 /// 概要: Focus表示中に選択DOM subtreeのみを可視化し、元のlayoutとsource identityを保つsession-only controllerを定義します。
 ///
 /// 定義内容:
-/// - `rootAttributeName`: Focus表示中のdocument rootに付与する一時属性。
-/// - `visibleAttributeName`: 選択対象とそのsubtreeに付与する一時属性。
-/// - `styleElementID`: Focus隔離用のeditor-only style element ID。
-/// - `source`: `window.OpenGraphiteFocusIsolation` を導入するJavaScript。
+/// - `source`: DOM属性やinline styleを付与せず、キャンセル可能なWeb Animations API effectで
+///   `window.OpenGraphiteFocusIsolation` を導入するJavaScript。
 enum WebCanvasFocusIsolationScript {
-    static let rootAttributeName = "data-og-editor-focus-root"
-    static let visibleAttributeName = "data-og-editor-focus-visible"
-    static let styleElementID = "opengraphite-editor-focus-style"
-
     static var source: String {
         """
         (function() {
-          if (window.OpenGraphiteFocusIsolation) {
-            window.OpenGraphiteFocusIsolation.installStyle();
-            return;
-          }
-          const rootAttributeName = '\(rootAttributeName)';
-          const visibleAttributeName = '\(visibleAttributeName)';
-          const styleElementID = '\(styleElementID)';
+          if (window.OpenGraphiteFocusIsolation) { return; }
+          const sessionAnimations = new Set();
+          let activeTargets = [];
 
-          function installStyle() {
-            if (document.getElementById(styleElementID)) { return; }
-            const style = document.createElement('style');
-            style.id = styleElementID;
-            style.setAttribute('data-og-editor-artifact', 'true');
-            style.textContent = [
-              'html[' + rootAttributeName + '="true"],html[' + rootAttributeName + '="true"] body{overflow:hidden!important;overscroll-behavior:none!important;}',
-              'html[' + rootAttributeName + '="true"] body *:not([' + visibleAttributeName + ']){visibility:hidden!important;}',
-              'html[' + rootAttributeName + '="true"] [' + visibleAttributeName + '="target"]{visibility:visible!important;}'
-            ].join('');
-            (document.head || document.documentElement).appendChild(style);
+          function applySessionEffect(element, keyframe) {
+            if (!(element instanceof Element) || typeof element.animate !== 'function') { return; }
+            const animation = element.animate(
+              [keyframe, keyframe],
+              { duration: 86400000, fill: 'both' }
+            );
+            animation.pause();
+            animation.currentTime = 0;
+            sessionAnimations.add(animation);
+          }
+
+          function cancelSessionEffects() {
+            sessionAnimations.forEach((animation) => animation.cancel());
+            sessionAnimations.clear();
           }
 
           function clear() {
-            if (document.documentElement) {
-              document.documentElement.removeAttribute(rootAttributeName);
-            }
-            document.querySelectorAll('[' + visibleAttributeName + ']').forEach((element) => {
-              element.removeAttribute(visibleAttributeName);
-            });
+            cancelSessionEffects();
+            activeTargets = [];
           }
 
           function apply(elements) {
             clear();
-            installStyle();
             const targets = (Array.isArray(elements) ? elements : []).filter((element) => {
               return element instanceof Element && element.isConnected;
             });
             if (targets.length === 0 || !document.documentElement) { return false; }
 
-            document.documentElement.setAttribute(rootAttributeName, 'true');
+            activeTargets = targets.slice();
+            applySessionEffect(document.documentElement, {
+              overflow: 'hidden',
+              overscrollBehavior: 'none'
+            });
+            if (document.body) {
+              applySessionEffect(document.body, {
+                overflow: 'hidden',
+                overscrollBehavior: 'none'
+              });
+            }
             const documentScroller = document.scrollingElement || document.documentElement;
             if (documentScroller) {
               documentScroller.scrollLeft = 0;
               documentScroller.scrollTop = 0;
             }
-            targets.forEach((target) => {
-              target.setAttribute(visibleAttributeName, 'target');
-              target.querySelectorAll('*').forEach((descendant) => {
-                descendant.setAttribute(visibleAttributeName, 'true');
-              });
+            Array.from(document.body ? document.body.querySelectorAll('*') : []).forEach((element) => {
+              const isVisible = targets.some((target) => element === target || target.contains(element));
+              if (!isVisible) {
+                applySessionEffect(element, { visibility: 'hidden' });
+              }
             });
+            targets.forEach((target) => applySessionEffect(target, { visibility: 'visible' }));
             return true;
           }
 
           function isActive() {
-            return !!document.documentElement && document.documentElement.getAttribute(rootAttributeName) === 'true';
+            return activeTargets.length > 0;
+          }
+
+          function suspend() {
+            if (!isActive()) { return null; }
+            const targets = activeTargets.slice();
+            clear();
+            return targets;
+          }
+
+          function resume(targets) {
+            if (!Array.isArray(targets) || targets.length === 0) { return false; }
+            return apply(targets);
           }
 
           window.OpenGraphiteFocusIsolation = Object.freeze({
             apply: apply,
             clear: clear,
             isActive: isActive,
-            installStyle: installStyle
+            suspend: suspend,
+            resume: resume,
+            installStyle: function() { return true; }
           });
-          installStyle();
         })();
         """
     }
@@ -743,6 +755,7 @@ struct WebCanvasView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let userContentController = WKUserContentController()
         userContentController.add(context.coordinator, name: "openGraphiteNodes")
+        userContentController.add(context.coordinator, name: "openGraphiteNodeDetails")
         userContentController.add(context.coordinator, name: "openGraphiteSelection")
         userContentController.add(context.coordinator, name: "openGraphiteContextMenu")
         userContentController.add(context.coordinator, name: "openGraphiteScrollState")
@@ -920,6 +933,7 @@ struct WebCanvasView: NSViewRepresentable {
     ///   - coordinator: WKWebView に紐づくコーディネーター。
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteNodes")
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteNodeDetails")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteSelection")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteContextMenu")
         nsView.configuration.userContentController.removeScriptMessageHandler(forName: "openGraphiteScrollState")
@@ -974,7 +988,7 @@ struct WebCanvasView: NSViewRepresentable {
     ///
     /// - Parameter previewContext: preview に注入する runtime Mock State。
     /// - Returns: document start で実行する JavaScript。
-    private static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
+    static func previewContextScript(for previewContext: OpenGraphitePreviewContext) -> String {
         let payload: [String: Any] = [
             "fields": previewContext.fieldMocks,
             "placementMocks": previewContext.placementMocks
@@ -1015,44 +1029,6 @@ struct WebCanvasView: NSViewRepresentable {
           function directionForLanguage(lang) {
             const rtlLanguages = new Set(['ar', 'arc', 'dv', 'fa', 'ha', 'he', 'khw', 'ks', 'ku', 'ps', 'ur', 'yi']);
             return rtlLanguages.has(primaryLanguageSubtag(lang)) ? 'rtl' : 'ltr';
-          }
-          function localeFontVariableNames(lang) {
-            const normalized = String(lang || '')
-              .trim()
-              .toLowerCase()
-              .replace(/_/g, '-')
-              .replace(/[^a-z0-9-]/g, '-')
-              .replace(/-+/g, '-')
-              .replace(/^-|-$/g, '');
-            if (!normalized) { return []; }
-            const primary = normalized.split('-')[0];
-            const names = [`--og-font-family-${normalized}`];
-            if (primary && primary !== normalized) {
-              names.push(`--og-font-family-${primary}`);
-            }
-            if (normalized === 'eng') {
-              names.push('--og-font-family-en');
-            } else if (primary === 'en') {
-              names.push('--og-font-family-eng');
-            }
-            return Array.from(new Set(names));
-          }
-          function applyLocaleFont(lang) {
-            const variableNames = localeFontVariableNames(lang);
-            const pageRoots = document.querySelectorAll('[data-og-type="page"]');
-            pageRoots.forEach((pageRoot) => {
-              const computedStyle = window.getComputedStyle(pageRoot);
-              let fontFamily = '';
-              for (const variableName of variableNames) {
-                fontFamily = computedStyle.getPropertyValue(variableName).trim();
-                if (fontFamily) { break; }
-              }
-              if (fontFamily) {
-                pageRoot.style.setProperty('--og-active-font-family', fontFamily);
-              } else {
-                pageRoot.style.removeProperty('--og-active-font-family');
-              }
-            });
           }
           const fallbackLang = root.getAttribute('lang') || '';
           const langSource = root.getAttribute('data-og-lang-source') || 'literal';
@@ -1112,31 +1088,173 @@ struct WebCanvasView: NSViewRepresentable {
           }
           if (documentContext.lang) {
             document.documentElement.lang = documentContext.lang;
-            document.documentElement.dataset.ogPreviewLocale = documentContext.lang;
           } else {
             document.documentElement.removeAttribute('lang');
-            delete document.documentElement.dataset.ogPreviewLocale;
           }
           if (documentContext.dir) {
             document.documentElement.dir = documentContext.dir;
-            document.documentElement.dataset.ogPreviewDir = documentContext.dir;
           } else {
             document.documentElement.removeAttribute('dir');
-            delete document.documentElement.dataset.ogPreviewDir;
           }
-          applyLocaleFont(documentContext.lang);
-          window.__OPENGRAPHITE_APPLY_LOCALE_FONT__ = applyLocaleFont;
           window.__OPENGRAPHITE_PREVIEW_CONTEXT__ = Object.freeze(context);
         })();
         """
     }
 
     /// 論理名（日本語）: Component Placement参照レンダリングスクリプト
-    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開します。
-    private static let componentPlacementReferencesScript = """
+    /// 処理概要: HTML 内の placement host へ参照元 component node の clone を展開し、
+    /// DOM属性ではなくsession-onlyの `WeakMap` / `WeakSet` でprovenanceを保持します。
+    static let componentPlacementReferencesScript = """
         (function() {
+          if (window.OpenGraphiteComponentPlacementReferences &&
+              typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
+            window.OpenGraphiteComponentPlacementReferences.render();
+            return;
+          }
+
+          const metadataByElement = new WeakMap();
+          const generatedElements = new WeakSet();
+          const generatedRootByHost = new WeakMap();
+
           function placementHosts() {
-            return Array.from(document.querySelectorAll('[data-og-role="component-placement"][data-og-source-node-internal-id]'));
+            return Array.from(document.querySelectorAll('og-placement[data-og-source-node-internal-id]'));
+          }
+
+          function elementValue(value) {
+            if (value && value.nodeType === Node.ELEMENT_NODE) { return value; }
+            return value && value.parentElement ? value.parentElement : null;
+          }
+
+          function composedParent(value) {
+            if (!value) { return null; }
+            if (value.parentElement) { return value.parentElement; }
+            const root = typeof value.getRootNode === 'function' ? value.getRootNode() : null;
+            return root && root.host ? root.host : null;
+          }
+
+          function composedElements(root) {
+            const elements = [];
+            function visit(node) {
+              if (!node || node.nodeType !== Node.ELEMENT_NODE) { return; }
+              elements.push(node);
+              if (node.shadowRoot) {
+                Array.from(node.shadowRoot.children || []).forEach(visit);
+              }
+              Array.from(node.children || []).forEach(visit);
+            }
+            visit(root);
+            return elements;
+          }
+
+          function cloneWithOpenShadowRoots(source) {
+            const clone = source.cloneNode(true);
+            function copyShadowTrees(sourceNode, cloneNode) {
+              if (!sourceNode || !cloneNode || sourceNode.nodeType !== Node.ELEMENT_NODE || cloneNode.nodeType !== Node.ELEMENT_NODE) {
+                return;
+              }
+              if (sourceNode.shadowRoot) {
+                let cloneShadowRoot = cloneNode.shadowRoot;
+                if (!cloneShadowRoot) {
+                  try {
+                    cloneShadowRoot = cloneNode.attachShadow({ mode: 'open' });
+                  } catch (_) {
+                    cloneShadowRoot = null;
+                  }
+                }
+                if (cloneShadowRoot) {
+                  cloneShadowRoot.replaceChildren(...Array.from(sourceNode.shadowRoot.childNodes).map((child) => child.cloneNode(true)));
+                  Array.from(sourceNode.shadowRoot.children || []).forEach((sourceChild, index) => {
+                    copyShadowTrees(sourceChild, cloneShadowRoot.children[index]);
+                  });
+                }
+              }
+              Array.from(sourceNode.children || []).forEach((sourceChild, index) => {
+                copyShadowTrees(sourceChild, cloneNode.children[index]);
+              });
+            }
+            copyShadowTrees(source, clone);
+            return clone;
+          }
+
+          function applyStandardHostPreviewState(host, fields) {
+            const runtime = window.OpenGraphiteRuntime;
+            if (runtime && typeof runtime.applyPreviewState === 'function') {
+              return runtime.applyPreviewState(host, fields);
+            }
+            const booleanAttributes = new Set([
+              'autofocus', 'autoplay', 'checked', 'controls', 'disabled', 'hidden', 'inert',
+              'loop', 'multiple', 'muted', 'open', 'readonly', 'required', 'selected'
+            ]);
+            const protectedAttributes = new Set(['id', 'part', 'slot', 'style']);
+            const appliedAttributes = [];
+            const appliedClasses = [];
+            Object.keys(fields || {}).sort().forEach((fieldName) => {
+              if (!fieldName.startsWith('host.')) { return; }
+              const attributeName = fieldName.slice(5).trim().toLowerCase();
+              if (!/^[a-z_:][a-z0-9_.:-]*$/.test(attributeName)) { return; }
+              if (attributeName.startsWith('on') || attributeName.startsWith('data-og-') || protectedAttributes.has(attributeName)) { return; }
+              const value = String(fields[fieldName]);
+              if (attributeName === 'class') {
+                value.split(/\\s+/).filter(Boolean).forEach((token) => {
+                  try {
+                    host.classList.add(token);
+                    appliedClasses.push(token);
+                  } catch (_) {}
+                });
+                return;
+              }
+              if (booleanAttributes.has(attributeName)) {
+                const present = !['0', 'false', 'no', 'off'].includes(value.trim().toLowerCase());
+                if (present) { host.setAttribute(attributeName, ''); }
+                else { host.removeAttribute(attributeName); }
+              } else {
+                host.setAttribute(attributeName, value);
+              }
+              appliedAttributes.push(attributeName);
+            });
+            return Object.freeze({
+              attributes: Object.freeze(appliedAttributes),
+              classes: Object.freeze(appliedClasses)
+            });
+          }
+
+          function metadataFor(value) {
+            let element = elementValue(value);
+            while (element) {
+              const metadata = metadataByElement.get(element);
+              if (metadata) { return metadata; }
+              element = composedParent(element);
+            }
+            return null;
+          }
+
+          function isGenerated(value) {
+            let element = elementValue(value);
+            while (element) {
+              if (generatedElements.has(element)) { return true; }
+              element = composedParent(element);
+            }
+            return false;
+          }
+
+          function hostFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.host : null;
+          }
+
+          function rootFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.root : null;
+          }
+
+          function sourceFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.source : null;
+          }
+
+          function placementIDFor(value) {
+            const metadata = metadataFor(value);
+            return metadata ? metadata.placementID : '';
           }
 
           function sourceNodeFor(host) {
@@ -1144,76 +1262,55 @@ struct WebCanvasView: NSViewRepresentable {
             if (!nodeInternalID) { return null; }
             return Array.from(document.querySelectorAll('[data-og-internal-id]')).find((element) => {
               if (element === host) { return false; }
-              if (element.getAttribute('data-og-generated') === 'true') { return false; }
-              if (element.closest('[data-og-placement-generated="true"]')) { return false; }
+              if (isGenerated(element)) { return false; }
               return element.getAttribute('data-og-internal-id') === nodeInternalID;
             }) || null;
           }
 
           function clearGeneratedPlacementContent(host) {
-            Array.from(host.children).forEach((child) => {
-              if (child.getAttribute('data-og-generated') === 'true' ||
-                  child.getAttribute('data-og-placement-generated') === 'true') {
-                child.remove();
-              }
+            const root = generatedRootByHost.get(host);
+            if (!root) { return; }
+            composedElements(root).forEach((element) => {
+              generatedElements.delete(element);
+              metadataByElement.delete(element);
             });
+            if (root.parentNode === host) {
+              root.remove();
+            }
+            generatedRootByHost.delete(host);
           }
 
           function mockFieldsFor(host) {
             const context = window.__OPENGRAPHITE_PREVIEW_CONTEXT__ || {};
             const fields = Object.assign({}, context.fields || {});
             const placementMocks = context.placementMocks || {};
-            [
-              host.getAttribute('data-og-internal-id'),
-              host.getAttribute('data-og-id')
-            ].forEach((placementID) => {
-              const key = String(placementID || '').trim();
-              if (!key || !placementMocks[key]) { return; }
-              Object.assign(fields, placementMocks[key]);
-            });
+            const internalID = String(host.getAttribute('data-og-internal-id') || '').trim();
+            const displayID = String(host.getAttribute('data-og-id') || '').trim();
+            const placementFields = (internalID && placementMocks[internalID])
+              || (displayID && placementMocks[displayID])
+              || null;
+            if (placementFields) { Object.assign(fields, placementFields); }
             return fields;
           }
 
-          function applyCodeViewerMode(root, fields) {
-            const mode = String((fields && fields.codeViewerMode) || '').trim();
-            if (!mode) { return; }
-            root.querySelectorAll('[data-code-viewer-panel]').forEach((panel) => {
-              panel.setAttribute('data-og-hidden', panel.getAttribute('data-code-viewer-panel') === mode ? 'false' : 'true');
+          function registerGeneratedClone(root, source, host) {
+            const placementID = String(
+              host.getAttribute('data-og-id') || host.getAttribute('data-og-internal-id') || ''
+            ).trim();
+            const cloneElements = composedElements(root);
+            const sourceElements = composedElements(source);
+            cloneElements.forEach((element, index) => {
+              const sourceElement = sourceElements[index] || source;
+              generatedElements.add(element);
+              metadataByElement.set(element, Object.freeze({
+                host: host,
+                root: root,
+                source: sourceElement,
+                placementID: placementID,
+                previewClone: true
+              }));
             });
-            root.querySelectorAll('[data-code-viewer-tab]').forEach((button) => {
-              const active = button.getAttribute('data-code-viewer-tab') === mode;
-              button.setAttribute('aria-pressed', active ? 'true' : 'false');
-              button.style.setProperty('background', active ? '#858892' : '#343438');
-              button.style.setProperty('border', active ? '1px solid #858892' : '1px solid transparent');
-            });
-          }
-
-          function applyPlacementModeState(root, host, fields) {
-            const mode = String((fields && fields.placementMode) || host.getAttribute('data-og-placement-mode') || '').trim();
-            if (!mode) { return; }
-            const stateTokens = mode.split(/\\s+/).filter((token) => /^[A-Za-z0-9_-]+$/.test(token));
-            stateTokens.forEach((token) => {
-              root.querySelectorAll('[data-og-state-hidden~="' + token + '"]').forEach((node) => {
-                node.setAttribute('data-og-hidden', 'true');
-              });
-              root.querySelectorAll('[data-og-state-visible~="' + token + '"]').forEach((node) => {
-                node.setAttribute('data-og-hidden', 'false');
-              });
-            });
-          }
-
-          function markGenerated(root, host) {
-            const placementID = host.getAttribute('data-og-id') || '';
-            root.setAttribute('data-og-generated', 'true');
-            root.setAttribute('data-og-placement-generated', 'true');
-            root.setAttribute('data-og-source-placement', placementID);
-            root.setAttribute('data-og-preview-clone', 'true');
-            root.querySelectorAll('[data-og-id]').forEach((element) => {
-              element.setAttribute('data-og-generated', 'true');
-              element.setAttribute('data-og-placement-generated', 'true');
-              element.setAttribute('data-og-source-placement', placementID);
-              element.setAttribute('data-og-preview-clone', 'true');
-            });
+            generatedRootByHost.set(host, root);
           }
 
           function inlinePlacementVariable(host, name) {
@@ -1244,18 +1341,53 @@ struct WebCanvasView: NSViewRepresentable {
             hosts.forEach((host) => {
               const source = sourceNodeFor(host);
               if (!source) { return; }
-              const clone = source.cloneNode(true);
+              const clone = cloneWithOpenShadowRoots(source);
               const fields = mockFieldsFor(host);
               applyPlacementFrameSizing(clone, host);
-              applyCodeViewerMode(clone, fields);
-              applyPlacementModeState(clone, host, fields);
-              markGenerated(clone, host);
               host.appendChild(clone);
+              applyStandardHostPreviewState(clone, fields);
+              registerGeneratedClone(clone, source, host);
             });
           }
 
+          function clear() {
+            placementHosts().forEach(clearGeneratedPlacementContent);
+          }
+
+          function suspend() {
+            const state = [];
+            placementHosts().forEach((host) => {
+              const root = generatedRootByHost.get(host);
+              if (!root || root.parentNode !== host) { return; }
+              state.push(Object.freeze({ host: host, root: root, nextSibling: root.nextSibling }));
+              root.remove();
+            });
+            return state;
+          }
+
+          function resume(state) {
+            if (!Array.isArray(state)) { return false; }
+            state.forEach((entry) => {
+              if (!entry || !entry.host || !entry.host.isConnected || !entry.root) { return; }
+              const nextSibling = entry.nextSibling && entry.nextSibling.parentNode === entry.host
+                ? entry.nextSibling
+                : null;
+              entry.host.insertBefore(entry.root, nextSibling);
+            });
+            return true;
+          }
+
           window.OpenGraphiteComponentPlacementReferences = Object.freeze({
-            render: renderComponentPlacementReferences
+            render: renderComponentPlacementReferences,
+            clear: clear,
+            suspend: suspend,
+            resume: resume,
+            metadataFor: metadataFor,
+            isGenerated: isGenerated,
+            hostFor: hostFor,
+            rootFor: rootFor,
+            sourceFor: sourceFor,
+            placementIDFor: placementIDFor
           });
           renderComponentPlacementReferences();
         })();
@@ -1303,6 +1435,11 @@ struct WebCanvasView: NSViewRepresentable {
             "min-width",
             "min-height",
             "max-width",
+            "display",
+            "flex-direction",
+            "grid-template-columns",
+            "grid-template-rows",
+            "grid-auto-flow",
             "flex",
             "margin",
             "padding",
@@ -1315,6 +1452,8 @@ struct WebCanvasView: NSViewRepresentable {
             "right",
             "bottom",
             "z-index",
+            "visibility",
+            "overflow-wrap",
             "color",
             "background",
             "border",
@@ -1327,20 +1466,11 @@ struct WebCanvasView: NSViewRepresentable {
             "letter-spacing",
             "text-align",
             "transform-origin",
-            "--og-page-background",
-            "--og-text-color",
-            "--og-muted-color",
-            "--og-accent",
-            "--og-accent-foreground",
-            "--og-object-fit",
-            "--og-stroke-width",
-            "--og-icon-url",
-            "--og-scale-x",
-            "--og-scale-y",
-            "--og-font-family-default",
-            "--og-font-family-ja",
-            "--og-font-family-en",
-            "--og-font-family-eng"
+            "object-fit",
+            "stroke-width",
+            "mask-image",
+            "-webkit-mask-image",
+            "scale"
         ]
         private static let webKitErrorDomain = "WebKitErrorDomain"
         private static let frameLoadInterruptedErrorCode = 102
@@ -1412,6 +1542,12 @@ struct WebCanvasView: NSViewRepresentable {
                 Task { @MainActor in
                     store.ingestNodePayload(payload)
                     refreshFocusedNodeFrame()
+                }
+            }
+
+            if message.name == "openGraphiteNodeDetails", let payload = message.body as? [String: Any] {
+                Task { @MainActor in
+                    store.ingestNodeDetailPayload(payload)
                 }
             }
 
@@ -1528,7 +1664,7 @@ struct WebCanvasView: NSViewRepresentable {
             revealPreviewWhenDocumentIsStyled(in: webView)
             collectStaticFlowLinks()
             if isInteractive || !focusedNodeIDs.isEmpty {
-                ensureInternalIDsAndCollectNodes()
+                collectNodes()
             }
             Task { @MainActor in
                 if isInteractive {
@@ -1557,22 +1693,20 @@ struct WebCanvasView: NSViewRepresentable {
             webView.evaluateJavaScript(discoveryScript) { [weak self, weak webView] result, _ in
                 guard let self, let webView, let payload = result as? [String: Any] else { return }
                 let componentHrefs = payload["componentHrefs"] as? [String] ?? []
-                let componentHTMLs = self.localTextDocuments(from: componentHrefs)
-                guard !componentHTMLs.isEmpty else { return }
+                let componentDocuments = self.localHTMLDocumentsWithBaseURLs(from: componentHrefs)
+                guard !componentDocuments.isEmpty else { return }
 
                 let runtimeLoaded = payload["runtimeLoaded"] as? Bool ?? false
                 let runtimeHrefs = payload["runtimeHrefs"] as? [String] ?? []
                 let runtimeSource = self.localTextDocuments(from: runtimeHrefs).first
                 guard runtimeLoaded || runtimeSource != nil else { return }
 
-                let htmlArray = componentHTMLs
-                    .map(Self.javaScriptLiteral)
-                    .joined(separator: ",")
+                let componentDocumentsLiteral = Self.javaScriptObjectArrayLiteral(componentDocuments)
                 let renderScript = """
                 (function() {
                   \(runtimeSource ?? "")
                   if (window.OpenGraphiteRuntime && typeof window.OpenGraphiteRuntime.renderComponentHTMLDocuments === 'function') {
-                    window.OpenGraphiteRuntime.renderComponentHTMLDocuments([\(htmlArray)]);
+                    window.OpenGraphiteRuntime.renderComponentHTMLDocuments(\(componentDocumentsLiteral));
                     return true;
                   }
                   return false;
@@ -1625,34 +1759,28 @@ struct WebCanvasView: NSViewRepresentable {
             }
         }
 
+        /// 論理名（日本語）: base URL付きローカルHTML文書読み込み関数
+        /// 処理概要: component HTMLと元のfile URLを組にし、相対stylesheet・asset参照をruntimeが正しく解決できるpayloadを作ります。
+        ///
+        /// - Parameter hrefs: component linkのhref一覧。
+        /// - Returns: HTML本文とbase URLを持つdocument payload一覧。
+        private func localHTMLDocumentsWithBaseURLs(from hrefs: [String]) -> [[String: String]] {
+            hrefs.compactMap { href -> [String: String]? in
+                guard
+                    let url = URL(string: href),
+                    url.isFileURL,
+                    let html = try? String(contentsOf: url, encoding: .utf8)
+                else {
+                    return nil
+                }
+                return ["baseURL": url.absoluteString, "html": html]
+            }
+        }
+
         /// 論理名（日本語）: WebViewノード収集関数
         /// 処理概要: 表示中 DOM から OpenGraphite node graph を JavaScript bridge 経由で再収集します。
         func collectNodes() {
-            webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectNodes();")
-        }
-
-        /// 論理名（日本語）: 内部ID補完後ノード収集関数
-        /// 処理概要: HTML ノード内部 ID を補完し、補完が発生した場合は正本 HTML へ同期してからノード一覧を収集します。
-        private func ensureInternalIDsAndCollectNodes() {
-            guard let webView else { return }
-            webView.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.ensureInternalIDs();") { [weak self] result, error in
-                guard let self else { return }
-                Task { @MainActor in
-                    if let error {
-                        self.store.reportWebError("内部IDの補完に失敗しました: \(error.localizedDescription)")
-                        self.collectNodes()
-                        return
-                    }
-
-                    if (result as? Bool) == true {
-                        self.serializeAndSyncHTML {
-                            self.collectNodes()
-                        }
-                    } else {
-                        self.collectNodes()
-                    }
-                }
-            }
+            webView?.evaluateJavaScript("window.OpenGraphite && window.OpenGraphite.collectLayerNodes();")
         }
 
         /// 論理名（日本語）: WebView静的フローリンク収集関数
@@ -1713,8 +1841,8 @@ struct WebCanvasView: NSViewRepresentable {
             }
         }
 
-        /// 論理名（日本語）: スタイル適用後プレビュー表示関数
-        /// 処理概要: OpenGraphite CSS が page root へ適用されたことを確認してから WebKit content を表示します。
+        /// 論理名（日本語）: 文書準備後プレビュー表示関数
+        /// 処理概要: 標準HTML文書のDOM準備を確認してWebKit contentを表示し、判定不能でも上限到達時に必ず表示します。
         ///
         /// - Parameters:
         ///   - webView: 表示判定対象の WebView。
@@ -1742,6 +1870,8 @@ struct WebCanvasView: NSViewRepresentable {
                                 attempt: attempt + 1
                             )
                         }
+                    } else {
+                        (webView as? OpenGraphiteCommandWebView)?.revealStyledPreviewContent()
                     }
                 }
             }
@@ -1779,6 +1909,9 @@ struct WebCanvasView: NSViewRepresentable {
                 didSelect = !!window.OpenGraphite.selectNodes(\(idsLiteral), \(primaryIDLiteral));
               } else if (window.OpenGraphite && typeof window.OpenGraphite.selectNode === 'function') {
                 didSelect = !!window.OpenGraphite.selectNode(\(primaryIDLiteral));
+              }
+              if (didSelect && typeof window.OpenGraphite.collectNodeDetails === 'function') {
+                window.OpenGraphite.collectNodeDetails(\(primaryIDLiteral));
               }
               if (!didSelect || typeof window.OpenGraphite.selectionOverlayPayload !== 'function') {
                 return null;
@@ -1982,7 +2115,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         @MainActor
         /// 論理名（日本語）: 属性mutation反映関数
-        /// 処理概要: `data-og-*` 属性 mutation を DOM へ適用し、成功時に HTML をディスクへ同期します。
+        /// 処理概要: 標準HTML属性またはmetadata属性の空値設定と明示削除を区別してDOMへ適用し、成功時に保存済みmutationを完了扱いにします。
         ///
         /// - Parameter mutation: 反映対象の属性 mutation。
         func applyAttributeMutation(_ mutation: NodeAttributeMutation) {
@@ -1993,7 +2126,8 @@ struct WebCanvasView: NSViewRepresentable {
             window.OpenGraphite && window.OpenGraphite.setAttributeValue(
               \(Self.javaScriptLiteral(mutation.nodeID)),
               \(Self.javaScriptLiteral(mutation.name)),
-              \(Self.javaScriptLiteral(mutation.value))
+              \(Self.javaScriptLiteral(mutation.value)),
+              \(mutation.removesAttribute ? "true" : "false")
             );
             """
 
@@ -2093,31 +2227,19 @@ struct WebCanvasView: NSViewRepresentable {
 
             let script = """
             (function() {
-              const editorStyleSelector = '#opengraphite-editor-selection-style,[data-og-editor-artifact="true"]';
+              const focusController = window.OpenGraphiteFocusIsolation;
+              const focusState = focusController && typeof focusController.suspend === 'function'
+                ? focusController.suspend()
+                : null;
+              const editorController = window.OpenGraphite;
+              const editorState = editorController && typeof editorController.suspendTransientStateForSerialization === 'function'
+                ? editorController.suspendTransientStateForSerialization()
+                : null;
+              try {
+              const editorStyleSelector = '#opengraphite-editor-selection-style,#opengraphite-editor-focus-style';
               function removeEditorStyles(root) {
                 if (!root || typeof root.querySelectorAll !== 'function') { return; }
                 root.querySelectorAll(editorStyleSelector).forEach((element) => {
-                  element.remove();
-                });
-              }
-              function removePreviewContextAttributes(root) {
-                if (!root || typeof root.removeAttribute !== 'function') { return; }
-                root.removeAttribute('data-og-preview-locale');
-                root.removeAttribute('data-og-preview-dir');
-              }
-              function removeEditorFocusAttributes(root) {
-                if (!root || typeof root.removeAttribute !== 'function') { return; }
-                root.removeAttribute('\(WebCanvasFocusIsolationScript.rootAttributeName)');
-                root.removeAttribute('\(WebCanvasFocusIsolationScript.visibleAttributeName)');
-                if (typeof root.querySelectorAll !== 'function') { return; }
-                root.querySelectorAll('[\(WebCanvasFocusIsolationScript.rootAttributeName)],[\(WebCanvasFocusIsolationScript.visibleAttributeName)]').forEach((element) => {
-                  element.removeAttribute('\(WebCanvasFocusIsolationScript.rootAttributeName)');
-                  element.removeAttribute('\(WebCanvasFocusIsolationScript.visibleAttributeName)');
-                });
-              }
-              function removePlacementGeneratedNodes(root) {
-                if (!root || typeof root.querySelectorAll !== 'function') { return; }
-                root.querySelectorAll('[data-og-placement-generated="true"]').forEach((element) => {
                   element.remove();
                 });
               }
@@ -2141,29 +2263,21 @@ struct WebCanvasView: NSViewRepresentable {
                 const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
                 removeEditorStyles(parsedDocument);
                 if (!parsedDocument.documentElement) { return html; }
-                removePlacementGeneratedNodes(parsedDocument);
-                removePreviewContextAttributes(parsedDocument.documentElement);
-                removeEditorFocusAttributes(parsedDocument.documentElement);
                 restorePreviewDocumentAttributes(parsedDocument.documentElement);
                 return '<!doctype html>\\n' + parsedDocument.documentElement.outerHTML;
               }
               const clone = document.documentElement.cloneNode(true);
               removeEditorStyles(clone);
-              removePlacementGeneratedNodes(clone);
-              removePreviewContextAttributes(clone);
-              removeEditorFocusAttributes(clone);
               restorePreviewDocumentAttributes(clone);
-              clone.querySelectorAll('[data-og-selected]').forEach((element) => {
-                element.removeAttribute('data-og-selected');
-              });
-              clone.querySelectorAll('[data-og-editing]').forEach((element) => {
-                element.removeAttribute('data-og-editing');
-                element.removeAttribute('contenteditable');
-                element.removeAttribute('spellcheck');
-                element.style.removeProperty('--og-edit-width');
-                element.style.removeProperty('--og-edit-min-height');
-              });
               return '<!doctype html>\\n' + clone.outerHTML;
+              } finally {
+                if (editorController && typeof editorController.resumeTransientStateAfterSerialization === 'function') {
+                  editorController.resumeTransientStateAfterSerialization(editorState);
+                }
+                if (focusController && typeof focusController.resume === 'function') {
+                  focusController.resume(focusState);
+                }
+              }
             })();
             """
 
@@ -2206,27 +2320,21 @@ struct WebCanvasView: NSViewRepresentable {
             return String(data: data, encoding: .utf8) ?? "\"\""
         }
 
+        /// 論理名（日本語）: JavaScript object配列リテラル生成関数
+        /// 処理概要: base URL付きHTML document payloadをJavaScriptへ安全に渡すJSON配列へ変換します。
+        ///
+        /// - Parameter values: JSON objectとして表現する文字列dictionary一覧。
+        /// - Returns: JavaScriptで評価可能なJSON配列文字列。
+        private static func javaScriptObjectArrayLiteral(_ values: [[String: String]]) -> String {
+            let data = try? JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
+            return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        }
+
         private static let previewReadinessMaximumAttempts = 120
         private static let previewReadinessRetryInterval: TimeInterval = 1.0 / 60.0
-        private static let previewReadinessScript = """
+        static let previewReadinessScript = """
         (function() {
-          const page = document.querySelector('[data-og-type="page"]');
-          if (!document.body || !page) { return false; }
-          const bodyStyle = window.getComputedStyle(document.body);
-          const pageStyle = window.getComputedStyle(page);
-          const rect = page.getBoundingClientRect();
-          const viewportWidth = document.documentElement.clientWidth || window.innerWidth || 0;
-          const viewportHeight = document.documentElement.clientHeight || window.innerHeight || 0;
-          const hasResetBodyMargin =
-            bodyStyle.marginTop === '0px' &&
-            bodyStyle.marginRight === '0px' &&
-            bodyStyle.marginBottom === '0px' &&
-            bodyStyle.marginLeft === '0px';
-          const hasStyledPageDisplay = pageStyle.display !== 'inline';
-          const fillsViewport =
-            rect.width >= Math.max(1, viewportWidth - 1) &&
-            rect.height >= Math.max(1, viewportHeight - 1);
-          return hasResetBodyMargin && hasStyledPageDisplay && fillsViewport;
+          return !!document.documentElement && !!document.body && document.readyState !== 'loading';
         })();
         """
 
@@ -2250,11 +2358,20 @@ struct WebCanvasView: NSViewRepresentable {
 
             let selectedID = payload["id"] as? String
             let selectedNode = selectedID.flatMap { id in store.nodes.first { $0.id == id } }
-            let isPageNode = selectedNode?.type == "page"
-            let isHidden = selectedNode?.isHidden == true
+            let isPageNode = selectedNode?.capabilityEvidence.isProjectResourceRoot == true
+            let hasHiddenAttribute = selectedNode?.hasHiddenAttribute == true
             let isLocked = selectedNode?.isLocked == true
-            let canMutateSelection = selectedID != nil && !isPageNode && !isLocked
-            let canSetLayout = (selectedNode?.type == "frame" || selectedNode?.type == "page") && !isLocked
+            let hasCompleteCSSProvenance = selectedNode?.hasIncompleteCSSProvenance != true
+            let hasStableEditTarget = selectedNode?.hasStableReference == true
+            let canMutateSelection = hasStableEditTarget && !isPageNode && !isLocked
+            let canSetLayout = hasStableEditTarget
+                && selectedNode?.supports(.editLayout) == true
+                && hasCompleteCSSProvenance
+                && !isLocked
+            let canReceiveChildren = selectedNode?.supports(.receiveChildren) == true
+            let canReorder = canMutateSelection && selectedNode?.supports(.reorderFlow) == true
+            let canGroup = canMutateSelection && selectedNode?.supports(.group) == true
+            let canUngroup = canMutateSelection && selectedNode?.supports(.ungroup) == true
             let hasPasteContent = pasteboardPayload() != nil
             let hasCSSVariableContent = cssVariablesPasteboardPayload() != nil
             let focusFramePayload = payload["focusFrame"] as? [String: Any]
@@ -2277,7 +2394,7 @@ struct WebCanvasView: NSViewRepresentable {
             menu.addItem(.separator())
 
             addMenuItem("コピー", command: "copy", to: menu, enabled: selectedID != nil, keyEquivalent: "c", modifiers: [.command])
-            addMenuItem("ここに貼り付け", command: "pasteHere", to: menu, enabled: selectedID != nil && hasPasteContent)
+            addMenuItem("ここに貼り付け", command: "pasteHere", to: menu, enabled: hasStableEditTarget && canReceiveChildren && hasPasteContent)
             addMenuItem("貼り付けて置換", command: "pasteReplace", to: menu, enabled: canMutateSelection && hasPasteContent, keyEquivalent: "r", modifiers: [.command, .shift])
 
             let copyOptions = NSMenu(title: "コピー/貼り付けオプション")
@@ -2285,8 +2402,13 @@ struct WebCanvasView: NSViewRepresentable {
             addMenuItem("HTMLとしてコピー", command: "copyHTML", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("テキストとしてコピー", command: "copyText", to: copyOptions, enabled: selectedID != nil)
             addMenuItem("CSS宣言としてコピー", command: "copyCSSVariables", to: copyOptions, enabled: selectedID != nil)
-            addMenuItem("HTMLをここに貼り付け", command: "pasteHere", to: copyOptions, enabled: selectedID != nil && hasPasteContent)
-            addMenuItem("CSS宣言を貼り付け", command: "pasteCSSVariables", to: copyOptions, enabled: canMutateSelection && hasCSSVariableContent)
+            addMenuItem("HTMLをここに貼り付け", command: "pasteHere", to: copyOptions, enabled: hasStableEditTarget && canReceiveChildren && hasPasteContent)
+            addMenuItem(
+                "CSS宣言を貼り付け",
+                command: "pasteCSSVariables",
+                to: copyOptions,
+                enabled: canMutateSelection && hasCompleteCSSProvenance && hasCSSVariableContent
+            )
             let copyOptionsItem = NSMenuItem(title: "コピー/貼り付けオプション", action: nil, keyEquivalent: "")
             copyOptionsItem.submenu = copyOptions
             menu.addItem(copyOptionsItem)
@@ -2308,13 +2430,13 @@ struct WebCanvasView: NSViewRepresentable {
                 menu.addItem(layerItem)
             }
 
-            addMenuItem("最前面へ移動", command: "moveFront", to: menu, enabled: canMutateSelection, keyEquivalent: "]")
-            addMenuItem("最背面へ移動", command: "moveBack", to: menu, enabled: canMutateSelection, keyEquivalent: "[")
+            addMenuItem("最前面へ移動", command: "moveFront", to: menu, enabled: canReorder, keyEquivalent: "]")
+            addMenuItem("最背面へ移動", command: "moveBack", to: menu, enabled: canReorder, keyEquivalent: "[")
 
             menu.addItem(.separator())
 
-            addMenuItem("選択範囲のフレーム化", command: "wrapFrame", to: menu, enabled: canMutateSelection, keyEquivalent: "g", modifiers: [.command, .option])
-            addMenuItem("グループ解除", command: "ungroup", to: menu, enabled: selectedNode?.type == "frame" && !isPageNode, keyEquivalent: "\u{8}", modifiers: [.command])
+            addMenuItem("選択範囲のフレーム化", command: "wrapFrame", to: menu, enabled: canGroup, keyEquivalent: "g", modifiers: [.command, .option])
+            addMenuItem("グループ解除", command: "ungroup", to: menu, enabled: canUngroup, keyEquivalent: "\u{8}", modifiers: [.command])
 
             menu.addItem(.separator())
 
@@ -2323,17 +2445,18 @@ struct WebCanvasView: NSViewRepresentable {
             let layoutMenu = NSMenu(title: "その他のレイアウトオプション")
             addMenuItem("縦方向レイアウト", command: "layoutVertical", to: layoutMenu, enabled: canSetLayout)
             addMenuItem("横方向レイアウト", command: "layoutHorizontal", to: layoutMenu, enabled: canSetLayout)
-            addMenuItem("絶対配置レイアウト", command: "layoutAbsolute", to: layoutMenu, enabled: canSetLayout)
+            addMenuItem("グリッドレイアウト", command: "layoutGrid", to: layoutMenu, enabled: canSetLayout)
+            addMenuItem("標準フロー", command: "layoutBlock", to: layoutMenu, enabled: canSetLayout)
             let layoutItem = NSMenuItem(title: "その他のレイアウトオプション", action: nil, keyEquivalent: "")
             layoutItem.submenu = layoutMenu
             menu.addItem(layoutItem)
 
             menu.addItem(.separator())
 
-            addMenuItem(isHidden ? "表示" : "非表示", command: "toggleHidden", to: menu, enabled: canMutateSelection, keyEquivalent: "h", modifiers: [.command, .shift])
-            addMenuItem(isLocked ? "ロック解除" : "ロック", command: "toggleLocked", to: menu, enabled: selectedID != nil && !isPageNode, keyEquivalent: "l", modifiers: [.command, .shift])
-            addMenuItem("左右反転", command: "flipHorizontal", to: menu, enabled: canMutateSelection, keyEquivalent: "h", modifiers: [.shift])
-            addMenuItem("上下反転", command: "flipVertical", to: menu, enabled: canMutateSelection, keyEquivalent: "v", modifiers: [.shift])
+            addMenuItem(hasHiddenAttribute ? "hidden属性を解除" : "hidden属性を追加", command: "toggleHidden", to: menu, enabled: canMutateSelection, keyEquivalent: "h", modifiers: [.command, .shift])
+            addMenuItem(isLocked ? "ロック解除" : "ロック", command: "toggleLocked", to: menu, enabled: hasStableEditTarget && !isPageNode, keyEquivalent: "l", modifiers: [.command, .shift])
+            addMenuItem("左右反転", command: "flipHorizontal", to: menu, enabled: canMutateSelection && hasCompleteCSSProvenance, keyEquivalent: "h", modifiers: [.shift])
+            addMenuItem("上下反転", command: "flipVertical", to: menu, enabled: canMutateSelection && hasCompleteCSSProvenance, keyEquivalent: "v", modifiers: [.shift])
 
             menu.addItem(.separator())
 
@@ -2346,6 +2469,15 @@ struct WebCanvasView: NSViewRepresentable {
                 guard let webView else { return }
                 menu.popUp(positioning: nil, at: point, in: webView)
             }
+        }
+
+        /// 論理名（日本語）: 標準レイアウト編集可否判定関数
+        /// 処理概要: legacy typeやlayout annotationを参照せず、operation別capabilityからlayout menuの可否を決めます。
+        ///
+        /// - Parameter node: Context menu対象のinspection node。
+        /// - Returns: 標準`display` / flex / grid declarationを編集できる場合は`true`。
+        private static func canSetStandardLayout(on node: OpenGraphiteNode) -> Bool {
+            node.supports(.editLayout)
         }
 
         /// 論理名（日本語）: フォーカス表示矩形変換関数
@@ -2454,8 +2586,19 @@ struct WebCanvasView: NSViewRepresentable {
                 performDOMCommand("setLayout", payload: ["layout": "vertical"])
             case "layoutHorizontal":
                 performDOMCommand("setLayout", payload: ["layout": "horizontal"])
-            case "layoutAbsolute":
-                performDOMCommand("setLayout", payload: ["layout": "absolute"])
+            case "layoutGrid":
+                performDOMCommand("setLayout", payload: ["layout": "grid"])
+            case "layoutBlock":
+                performDOMCommand("setLayout", payload: ["layout": "block"])
+            case "flipHorizontal", "flipVertical":
+                let authoredScale = store.selectedNode?.cssVariables["scale"]
+                performDOMCommand(
+                    command,
+                    payload: [
+                        "hasAuthoredScale": authoredScale == nil ? "false" : "true",
+                        "authoredScale": authoredScale ?? ""
+                    ]
+                )
             default:
                 performDOMCommand(command, payload: [:])
             }
@@ -2656,20 +2799,14 @@ struct WebCanvasView: NSViewRepresentable {
         /// - Returns: 編集対象であれば `true`。
         private static func isOpenGraphiteStyleKey(_ key: String) -> Bool {
             let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines)
-            if openGraphiteStyleKeys.contains(normalized) {
-                return true
-            }
-            return normalized.range(
-                of: #"^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$"#,
-                options: [.regularExpression]
-            ) != nil
+            return openGraphiteStyleKeys.contains(normalized)
         }
 
         /// 論理名（日本語）: レイヤー候補
         /// 概要: 右クリック位置の DOM 祖先から選択候補として表示するレイヤー情報です。
         ///
         /// プロパティ:
-        /// - `id`: 対象ノードの `data-og-id`。
+        /// - `id`: annotation有無に応じたWebCanvas session内の選択キー。
         /// - `title`: メニューに表示するタイトル。
         private struct LayerCandidate {
             var id: String
@@ -2683,16 +2820,27 @@ struct WebCanvasView: NSViewRepresentable {
         /// - Returns: レイヤー候補一覧。候補がない場合は `nil`。
         private func layerCandidates(from payload: [String: Any]) -> [LayerCandidate]? {
             guard let rawCandidates = payload["candidates"] as? [[String: Any]] else { return nil }
-            return rawCandidates.compactMap { candidate in
+            return rawCandidates.compactMap { candidate -> LayerCandidate? in
                 guard let id = candidate["id"] as? String, !id.isEmpty else { return nil }
                 let tagName = candidate["tagName"] as? String ?? id
-                let detail = [candidate["type"] as? String, candidate["role"] as? String]
+                let capabilities = Self.stringArray(candidate["capabilities"])
+                let detail = [capabilities.isEmpty ? nil : capabilities.joined(separator: ", "), candidate["role"] as? String]
                     .compactMap { $0 }
                     .filter { !$0.isEmpty }
                     .joined(separator: " · ")
                 let title = detail.isEmpty ? tagName : "\(tagName)  \(detail)"
                 return LayerCandidate(id: id, title: title)
             }
+        }
+
+        /// 論理名（日本語）: JavaScript文字列配列変換関数
+        /// 処理概要: WebKit message payloadのNSArray表現から文字列要素だけを順序維持で取得します。
+        ///
+        /// - Parameter value: JavaScript由来の配列値。
+        /// - Returns: 文字列要素一覧。非配列では空配列。
+        private static func stringArray(_ value: Any?) -> [String] {
+            if let values = value as? [String] { return values }
+            return (value as? [Any] ?? []).compactMap { $0 as? String }
         }
 
         /// 論理名（日本語）: JavaScript JSONリテラル生成関数
@@ -2706,14 +2854,20 @@ struct WebCanvasView: NSViewRepresentable {
         }
     }
 
-    private static let bridgeScript = """
+    /// 論理名（日本語）: WebCanvas編集bridge script
+    /// 概要: Canvas node収集、選択、編集と、media / SVG / mask 描画実体のcomputed style収集をWebViewへ導入します。
+    static let bridgeScript = """
     \(WebCanvasFocusIsolationScript.source)
     (function() {
         if (window.OpenGraphite) {
           if (typeof window.OpenGraphite.installEditorSelectionStyle === 'function') {
             window.OpenGraphite.installEditorSelectionStyle();
           }
-          window.OpenGraphite.collectNodes();
+          if (typeof window.OpenGraphite.collectLayerNodes === 'function') {
+            window.OpenGraphite.collectLayerNodes();
+          } else {
+            window.OpenGraphite.collectNodes();
+          }
           return;
         }
 
@@ -2729,44 +2883,26 @@ struct WebCanvasView: NSViewRepresentable {
         var activeDrag = null;
         var pendingFramePlacement = null;
         var framePlacement = null;
-        var framePlacementOverlay = null;
         var selectionOverlay = null;
+        var pendingNodeCollectionTimer = 0;
+        const observedMediaQueries = new Map();
         var selectionOverlayFrame = null;
         var selectionOverlayUpdateTimer = null;
         var lastSelectionOverlayUpdateTime = 0;
-        var reorderAnimationToken = 0;
         var editingTextElement = null;
         var editingOriginalText = '';
+        var editingPresentationState = null;
         var suppressNextClick = false;
         var clickSequenceStartSelectedID = '';
         var currentSelectedIDs = new Set();
         var focusedNodeIDs = [];
+        var nodeCollectionContext = null;
+        const frameGuideAnimations = new Map();
+        const reorderAnimations = new WeakMap();
         let minimumFramePlacementSize = 2;
 
         function installEditorSelectionStyle() {
-          if (document.getElementById('opengraphite-editor-selection-style')) { return; }
-          const style = document.createElement('style');
-          style.id = 'opengraphite-editor-selection-style';
-          style.textContent = [
-            'html,body{scroll-padding:24px;}',
-            '[data-og-selected="true"]{outline:none!important;box-shadow:none!important;scroll-margin:24px;}',
-            '[data-og-selected="true"][data-og-component],',
-            '[data-og-selected="true"][data-og-component-kind="master"]{outline:none!important;box-shadow:none!important;}',
-            '[data-og-dragging="true"]{cursor:grabbing!important;filter:drop-shadow(0 14px 24px rgba(0,0,0,.28));z-index:2147483647;}',
-            '[data-og-reorder-dragging="true"]{pointer-events:none;transform:translate3d(var(--og-drag-x,0),var(--og-drag-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:none!important;will-change:transform;}',
-            '[data-og-reorder-animating="true"]{transform:translate3d(var(--og-reorder-x,0),var(--og-reorder-y,0),0) scale(var(--og-scale-x,1),var(--og-scale-y,1))!important;transition:transform 160ms cubic-bezier(.2,0,.2,1)!important;will-change:transform;}',
-            '[data-og-reorder-preparing="true"]{transition:none!important;}',
-            'html[data-og-frame-guides="true"] [data-og-type="frame"]:not([data-og-selected="true"]){outline:1px dashed rgba(29,155,240,.35)!important;outline-offset:-1px!important;}',
-            '[data-og-selected="true"][data-og-type="frame"]{outline:none!important;box-shadow:none!important;}',
-            '[data-og-frame-preview="true"]{background:rgba(29,155,240,.14)!important;border:1px solid rgba(29,155,240,.75)!important;outline:1px solid #1d9bf0!important;outline-offset:0!important;box-shadow:0 0 0 1px rgba(29,155,240,.45) inset!important;pointer-events:none!important;position:absolute!important;z-index:2147483645!important;}',
-            '[data-og-editor-artifact="true"]{pointer-events:none!important;user-select:none!important;-webkit-user-select:none!important;}',
-            '[data-og-frame-placement-overlay="true"]{box-sizing:border-box!important;contain:layout style paint!important;position:fixed!important;}',
-            '[data-og-frame-placement-overlay="true"]{background:rgba(29,155,240,.16)!important;border:1px solid #60a5fa!important;box-shadow:0 0 0 1px rgba(29,155,240,.92),0 12px 30px rgba(29,155,240,.22)!important;z-index:2147483647!important;}',
-            '[data-og-frame-placement-overlay="true"]::after{background:#0a84ff;border-radius:4px;color:#fff;display:block;font:600 10px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;left:-1px;max-width:260px;overflow:hidden;padding:2px 6px;position:absolute;text-overflow:ellipsis;top:-21px;white-space:nowrap;}',
-            '[data-og-frame-placement-overlay="true"]::after{content:attr(data-og-placement-label);}',
-            '[data-og-frame-placement-overlay="true"][data-og-overlay-label-position="inside"]::after{left:2px;top:2px;}'
-          ].join('');
-          (document.head || document.documentElement).appendChild(style);
+          return true;
         }
 
       const openGraphiteStyleKeys = new Set([
@@ -2775,6 +2911,11 @@ struct WebCanvasView: NSViewRepresentable {
         'min-width',
         'min-height',
         'max-width',
+        'display',
+        'flex-direction',
+        'grid-template-columns',
+        'grid-template-rows',
+        'grid-auto-flow',
         'flex',
         'margin',
         'padding',
@@ -2787,6 +2928,8 @@ struct WebCanvasView: NSViewRepresentable {
         'right',
         'bottom',
         'z-index',
+        'visibility',
+        'overflow-wrap',
         'color',
         'background',
         'border',
@@ -2820,39 +2963,440 @@ struct WebCanvasView: NSViewRepresentable {
         'view-timeline-axis',
         'view-timeline-inset',
         'transform-origin',
-        '--og-page-background',
-        '--og-text-color',
-        '--og-muted-color',
-        '--og-accent',
-        '--og-accent-foreground',
-        '--og-object-fit',
-        '--og-stroke-width',
-        '--og-icon-url',
-        '--og-scale-x',
-        '--og-scale-y',
-        '--og-font-family-default',
-        '--og-font-family-ja',
-        '--og-font-family-en',
-        '--og-font-family-eng'
+        'object-fit',
+        'stroke-width',
+        'mask-image',
+        '-webkit-mask-image',
+        'scale'
       ]);
 
       function isOpenGraphiteStyleKey(key) {
-        return openGraphiteStyleKeys.has(key) || /^--og-font-family-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(key);
+        return openGraphiteStyleKeys.has(key);
       }
 
       function cssVariables(element) {
-        const style = element.getAttribute('style') || '';
         const variables = {};
-        style.split(';').forEach((part) => {
-          const index = part.indexOf(':');
-          if (index <= 0) { return; }
-          const key = part.slice(0, index).trim();
-          const value = part.slice(index + 1).trim();
+        const style = element.style;
+        for (let index = 0; index < style.length; index += 1) {
+          const key = String(style.item(index) || '').trim();
+          const value = String(style.getPropertyValue(key) || '').trim();
           if (isOpenGraphiteStyleKey(key) && value.length > 0) {
             variables[key] = value;
           }
-        });
+        }
         return variables;
+      }
+
+      function computedStylePayload(element) {
+        if (nodeCollectionContext && nodeCollectionContext.computedStyles.has(element)) {
+          return nodeCollectionContext.computedStyles.get(element);
+        }
+        let payload;
+        try {
+          const style = window.getComputedStyle(element);
+          payload = {
+            display: String(style.display || '').trim(),
+            flexDirection: String(style.flexDirection || '').trim(),
+            gridTemplateColumns: String(style.gridTemplateColumns || '').trim(),
+            gridTemplateRows: String(style.gridTemplateRows || '').trim(),
+            gridAutoFlow: String(style.gridAutoFlow || '').trim(),
+            position: String(style.position || '').trim(),
+            visibility: String(style.visibility || '').trim(),
+            contentVisibility: String(style.contentVisibility || '').trim(),
+            overflowWrap: String(style.overflowWrap || style.wordWrap || '').trim(),
+            alignItems: String(style.alignItems || '').trim(),
+            justifyContent: String(style.justifyContent || '').trim()
+          };
+        } catch (_) {
+          payload = {
+            display: '', flexDirection: '', gridTemplateColumns: '', gridTemplateRows: '',
+            gridAutoFlow: '', position: '', visibility: '', contentVisibility: '', overflowWrap: '',
+            alignItems: '', justifyContent: ''
+          };
+        }
+        if (nodeCollectionContext) {
+          nodeCollectionContext.computedStyles.set(element, payload);
+        }
+        return payload;
+      }
+
+      function layoutModeForComputedStyle(style) {
+        const display = String(style && style.display || '').trim().toLowerCase();
+        if (display === 'flex' || display === 'inline-flex') {
+          const direction = String(style && style.flexDirection || '').trim().toLowerCase();
+          return direction.startsWith('row') ? 'horizontal' : 'vertical';
+        }
+        if (display === 'grid' || display === 'inline-grid') { return 'grid'; }
+        return display;
+      }
+
+      function isHiddenByComputedStyle(element) {
+        const ownStyle = computedStylePayload(element);
+        const ownVisibility = ownStyle.visibility.toLowerCase();
+        if (ownVisibility === 'hidden' || ownVisibility === 'collapse') { return true; }
+        let candidate = element;
+        while (candidate && candidate.nodeType === Node.ELEMENT_NODE) {
+          const style = computedStylePayload(candidate);
+          const display = style.display.toLowerCase();
+          if (display === 'none') { return true; }
+          if (style.contentVisibility.toLowerCase() === 'hidden') { return true; }
+          candidate = composedParentElement(candidate);
+        }
+        return false;
+      }
+
+      const genericFlowContainerTags = new Set([
+        'address', 'article', 'aside', 'blockquote', 'body', 'caption', 'dd', 'details', 'dialog',
+        'div', 'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'header',
+        'li', 'main', 'nav', 'search', 'section', 'td', 'th'
+      ]);
+      const standardHTMLTags = new Set([
+        'a', 'abbr', 'address', 'area', 'article', 'aside', 'audio', 'b', 'base', 'bdi', 'bdo',
+        'blockquote', 'body', 'br', 'button', 'canvas', 'caption', 'cite', 'code', 'col', 'colgroup',
+        'data', 'datalist', 'dd', 'del', 'details', 'dfn', 'dialog', 'div', 'dl', 'dt', 'em', 'embed',
+        'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'head', 'header', 'hgroup', 'hr', 'html', 'i', 'iframe', 'img', 'input', 'ins', 'kbd',
+        'label', 'legend', 'li', 'link', 'main', 'map', 'mark', 'menu', 'meta', 'meter', 'nav',
+        'noscript', 'object', 'ol', 'optgroup', 'option', 'output', 'p', 'picture', 'pre', 'progress',
+        'q', 'rp', 'rt', 'ruby', 's', 'samp', 'script', 'search', 'section', 'select', 'slot', 'small',
+        'source', 'span', 'strong', 'style', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'template',
+        'textarea', 'tfoot', 'th', 'thead', 'time', 'title', 'tr', 'track', 'u', 'ul', 'var', 'video',
+        'wbr', 'acronym', 'applet', 'basefont', 'bgsound', 'big', 'center', 'dir', 'font', 'frame',
+        'frameset', 'keygen', 'marquee', 'noembed', 'noframes', 'param', 'plaintext', 'strike', 'tt', 'xmp'
+      ]);
+
+      function canReceiveChildren(element) {
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) { return false; }
+        if (element.namespaceURI !== 'http://www.w3.org/1999/xhtml') { return false; }
+        const tagName = element.tagName.toLowerCase();
+        return genericFlowContainerTags.has(tagName) || isValidCustomElementName(tagName) ||
+          (!standardHTMLTags.has(tagName) && typeof HTMLUnknownElement !== 'undefined' &&
+            element instanceof HTMLUnknownElement);
+      }
+
+      function isValidCustomElementName(value) {
+        return /^[a-z][a-z0-9._-]*-[a-z0-9._-]+$/.test(String(value || ''));
+      }
+
+      function canReorderFlowChild(element, parent) {
+        if (!element || !parent) { return false; }
+        if (canReceiveChildren(parent)) { return true; }
+        const childTag = element.tagName.toLowerCase();
+        const parentTag = parent.tagName.toLowerCase();
+        if ((parentTag === 'ul' || parentTag === 'ol' || parentTag === 'menu') &&
+            childTag === 'li') { return true; }
+        if ((parentTag === 'thead' || parentTag === 'tbody' || parentTag === 'tfoot') &&
+            childTag === 'tr') { return true; }
+        if (parentTag === 'tr' && (childTag === 'td' || childTag === 'th')) { return true; }
+        if (parentTag === 'optgroup' && childTag === 'option') { return true; }
+        return parentTag === 'colgroup' && childTag === 'col';
+      }
+
+      const nativeControlTags = new Set([
+        'button', 'input', 'select', 'textarea', 'option', 'optgroup', 'fieldset',
+        'details', 'summary', 'dialog', 'meter', 'progress', 'output'
+      ]);
+      const interactiveARIARoles = new Set([
+        'button', 'checkbox', 'combobox', 'gridcell', 'listbox', 'menuitem',
+        'menuitemcheckbox', 'menuitemradio', 'option', 'radio', 'scrollbar', 'searchbox',
+        'slider', 'spinbutton', 'switch', 'tab', 'textbox', 'treeitem'
+      ]);
+      const recognizedARIARoles = new Set([
+        'alert', 'alertdialog', 'application', 'article', 'banner', 'blockquote', 'button',
+        'caption', 'cell', 'checkbox', 'code', 'columnheader', 'combobox', 'complementary',
+        'contentinfo', 'definition', 'deletion', 'dialog', 'directory', 'document', 'emphasis',
+        'feed', 'figure', 'form', 'generic', 'grid', 'gridcell', 'group', 'heading', 'img',
+        'insertion', 'link', 'list', 'listbox', 'listitem', 'log', 'main', 'marquee', 'math',
+        'menu', 'menubar', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'meter',
+        'navigation', 'none', 'note', 'option', 'paragraph', 'presentation', 'progressbar',
+        'radio', 'radiogroup', 'region', 'row', 'rowgroup', 'rowheader', 'scrollbar', 'search',
+        'searchbox', 'separator', 'slider', 'spinbutton', 'status', 'strong', 'subscript',
+        'suggestion', 'superscript', 'switch', 'tab', 'table', 'tablist', 'tabpanel', 'term', 'textbox',
+        'time', 'timer', 'toolbar', 'tooltip', 'tree', 'treegrid', 'treeitem'
+      ]);
+      const textSemanticTags = new Set([
+        'abbr', 'address', 'b', 'bdi', 'bdo', 'blockquote', 'button', 'caption', 'cite',
+        'code', 'dd', 'del', 'dfn', 'dt', 'em', 'figcaption', 'h1', 'h2', 'h3', 'h4',
+        'h5', 'h6', 'i', 'ins', 'kbd', 'label', 'legend', 'li', 'mark', 'option', 'p',
+        'pre', 'q', 'rp', 'rt', 'ruby', 's', 'samp', 'small', 'span', 'strong', 'sub',
+        'summary', 'sup', 'td', 'th', 'time', 'u', 'var'
+      ]);
+      const domTextEditingExcludedTags = new Set(['input', 'optgroup', 'select', 'textarea']);
+      const mediaTags = new Set([
+        'audio', 'canvas', 'embed', 'iframe', 'img', 'object', 'picture', 'source', 'track', 'video'
+      ]);
+      const svgTags = new Set([
+        'svg', 'g', 'path', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'rect', 'use',
+        'defs', 'symbol', 'mask', 'clippath', 'lineargradient', 'radialgradient', 'stop',
+        'text', 'tspan', 'foreignobject'
+      ]);
+      const safelyUngroupableTags = new Set([
+        'div', 'span', 'section', 'article', 'main', 'aside', 'header', 'footer', 'nav',
+        'figure', 'figcaption'
+      ]);
+      const nonOperationalTags = new Set([
+        'base', 'basefont', 'bgsound', 'head', 'html', 'link', 'meta', 'noframes',
+        'noembed', 'noscript', 'script', 'style', 'template', 'title', 'xmp', 'plaintext'
+      ]);
+      const nonTextEditableTags = new Set([
+        'base', 'head', 'html', 'link', 'meta', 'noembed', 'noframes', 'noscript',
+        'script', 'style', 'template', 'xmp', 'plaintext'
+      ]);
+
+      function directAuthoredTextPresent(element) {
+        if (!element) { return false; }
+        return Array.from(element.childNodes).some((node) => {
+          return node.nodeType === Node.TEXT_NODE && String(node.textContent || '').trim().length > 0;
+        });
+      }
+
+      function isEffectivelyContentEditable(element) {
+        let candidate = element;
+        while (candidate && candidate.nodeType === Node.ELEMENT_NODE) {
+          if (candidate.hasAttribute('contenteditable')) {
+            const value = String(candidate.getAttribute('contenteditable') || '')
+              .trim()
+              .toLowerCase();
+            if (value === '' || value === 'true' || value === 'plaintext-only') { return true; }
+            if (value === 'false') { return false; }
+          }
+          candidate = candidate.parentElement;
+        }
+        return false;
+      }
+
+      function firstRecognizedARIARole(element) {
+        if (!element) { return ''; }
+        const tokens = String(element.getAttribute('role') || '')
+          .trim()
+          .toLowerCase()
+          .split(/\\s+/)
+          .filter((token) => token.length > 0);
+        return tokens.find((token) => recognizedARIARoles.has(token)) || '';
+      }
+
+      function elementOrDescendantMatches(element, selector) {
+        if (!element || typeof element.matches !== 'function') { return false; }
+        try {
+          return element.matches(selector) || !!element.querySelector(selector);
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function authoredResourceRootElement() {
+        if (!document.body) { return null; }
+        const authoredTopLevel = Array.from(document.body.children).filter((element) => {
+          return isInspectableElement(element) && !isPlacementGeneratedElement(element) && !isRuntimeGeneratedNode(element);
+        });
+        return authoredTopLevel.length === 1 ? authoredTopLevel[0] : null;
+      }
+
+      function isProtectedResourceTopLevel(element) {
+        return !!element && (element === document.body || element.parentElement === document.body);
+      }
+
+      function capabilityEvidenceForElement(element) {
+        const tagName = element ? element.tagName.toLowerCase() : '';
+        const ariaRole = firstRecognizedARIARole(element);
+        const computed = computedStylePayload(element);
+        const hasMaskContent = !!element && maskRenderElements(element).length > 0;
+        return {
+          isProjectResourceRoot: !!element && authoredResourceRootElement() === element,
+          isNativeControl: nativeControlTags.has(tagName),
+          isCustomElement: isValidCustomElementName(tagName) ||
+            isValidCustomElementName(element.getAttribute('is')),
+          isLink: ((tagName === 'a' || tagName === 'area') && element.hasAttribute('href')) || ariaRole === 'link',
+          hasDirectText: directAuthoredTextPresent(element),
+          hasElementChildren: !!element && element.children.length > 0,
+          hasMediaContent: mediaTags.has(tagName) || elementOrDescendantMatches(element, 'audio, canvas, embed, iframe, img, object, picture, source, track, video'),
+          hasSVGContent: svgTags.has(tagName) || elementOrDescendantMatches(
+            element,
+            'svg, g, path, circle, ellipse, line, polyline, polygon, rect, use, defs, symbol, mask, clipPath, linearGradient, radialGradient, stop, text, tspan, foreignObject'
+          ),
+          hasMaskContent: hasMaskContent,
+          ariaRole: ariaRole || null,
+          resolvedDisplay: computed.display || null
+        };
+      }
+
+      function capabilitiesForElement(element, evidence) {
+        if (!element) { return []; }
+        const facts = evidence || capabilityEvidenceForElement(element);
+        const tagName = element.tagName.toLowerCase();
+        const capabilities = new Set();
+        const canContain = canReceiveChildren(element);
+        const isOperational = !nonOperationalTags.has(tagName);
+        const isProtectedTopLevel = isProtectedResourceTopLevel(element);
+        const position = computedPosition(element);
+        const display = String(facts.resolvedDisplay || '').trim().toLowerCase();
+        const role = String(facts.ariaRole || '').trim().toLowerCase();
+        const hasIconProvenance = [
+          'data-og-icon-library', 'data-og-icon-name', 'data-og-icon-source'
+        ].some((attributeName) => element.hasAttribute(attributeName));
+
+        if (canContain) { capabilities.add('receive-children'); }
+        const hasSafeTextShape = facts.hasDirectText || textSemanticTags.has(tagName) ||
+          isEffectivelyContentEditable(element) || role === 'textbox';
+        if (!nonTextEditableTags.has(tagName) &&
+            !domTextEditingExcludedTags.has(tagName) && hasSafeTextShape) {
+          capabilities.add('edit-text');
+        }
+        const hasHrefAttribute = element.hasAttribute('href');
+        const isNativeHyperlink = tagName === 'a' || tagName === 'area';
+        if (hasHrefAttribute && (isNativeHyperlink || role === 'link')) {
+          capabilities.add('edit-link');
+        }
+        if (facts.hasMediaContent) { capabilities.add('edit-media'); }
+        if (facts.hasSVGContent || facts.hasMaskContent || hasIconProvenance) {
+          capabilities.add('edit-icon');
+        }
+        if (facts.isNativeControl || interactiveARIARoles.has(role) ||
+            (role === 'link' && !hasHrefAttribute)) {
+          capabilities.add('edit-control');
+        }
+        if (isOperational) { capabilities.add('edit-layout'); }
+
+        if (isOperational && !isProtectedTopLevel && (position === 'absolute' || position === 'fixed')) {
+          capabilities.add('drag-position');
+        }
+        const parent = element.parentElement;
+        const parentDisplay = parent
+          ? String(computedStylePayload(parent).display || '').trim().toLowerCase()
+          : '';
+        if (isOperational && !isProtectedTopLevel && parent && canReorderFlowChild(element, parent) &&
+            position !== 'absolute' && position !== 'fixed' &&
+            parentDisplay !== 'none' && parentDisplay !== 'contents' &&
+            display !== 'none' && display !== 'contents') {
+          capabilities.add('reorder-flow');
+        }
+        const parentCanReceiveGenericChildren = !!parent && canReceiveChildren(parent) &&
+          parentDisplay !== 'none' && parentDisplay !== 'contents';
+        if (isOperational && !isProtectedTopLevel && parentCanReceiveGenericChildren) {
+          capabilities.add('group');
+        }
+        if (isOperational && !isProtectedTopLevel && safelyUngroupableTags.has(tagName) &&
+            parentCanReceiveGenericChildren && facts.hasElementChildren) {
+          capabilities.add('ungroup');
+        }
+        return Array.from(capabilities).sort();
+      }
+
+      function nodeCapabilityPayload(element) {
+        const evidence = capabilityEvidenceForElement(element);
+        return {
+          capabilities: capabilitiesForElement(element, evidence),
+          evidence: evidence
+        };
+      }
+
+      function elementSupportsCapability(element, capability) {
+        return capabilitiesForElement(element).includes(capability);
+      }
+
+      function operationAttributesForElement(element) {
+        if (!element) { return {}; }
+        const attributes = {};
+        [
+          'href', 'target', 'rel', 'download', 'src', 'alt', 'value', 'name', 'type',
+          'placeholder', 'disabled', 'checked', 'selected', 'role', 'aria-label'
+        ].forEach((attributeName) => {
+          if (element.hasAttribute(attributeName)) {
+            attributes[attributeName] = element.getAttribute(attributeName) || '';
+          }
+        });
+        return attributes;
+      }
+
+      function scheduleNodeCollection() {
+        if (pendingNodeCollectionTimer) { return; }
+        pendingNodeCollectionTimer = window.setTimeout(function() {
+          pendingNodeCollectionTimer = 0;
+          collectLayerNodes();
+        }, 0);
+      }
+
+      function observeAuthoredMediaCondition(condition) {
+        if (!condition || observedMediaQueries.has(condition)) {
+          const observed = observedMediaQueries.get(condition);
+          return observed ? observed.mediaQuery : null;
+        }
+        const mediaQuery = window.matchMedia(condition);
+        const listener = function() { scheduleNodeCollection(); };
+        if (typeof mediaQuery.addEventListener === 'function') {
+          mediaQuery.addEventListener('change', listener);
+        } else if (typeof mediaQuery.addListener === 'function') {
+          mediaQuery.addListener(listener);
+        }
+        observedMediaQueries.set(condition, { mediaQuery: mediaQuery, listener: listener });
+        return mediaQuery;
+      }
+
+      function releaseUnobservedMediaConditions(authoredConditions) {
+        observedMediaQueries.forEach((observed, condition) => {
+          if (authoredConditions.has(condition)) { return; }
+          if (typeof observed.mediaQuery.removeEventListener === 'function') {
+            observed.mediaQuery.removeEventListener('change', observed.listener);
+          } else if (typeof observed.mediaQuery.removeListener === 'function') {
+            observed.mediaQuery.removeListener(observed.listener);
+          }
+          observedMediaQueries.delete(condition);
+        });
+      }
+
+      function activeAuthoredMediaState() {
+        const activeConditions = new Set();
+        const authoredConditions = new Set();
+        const visitedStyleSheets = new Set();
+        let unreadableStyleSheetCount = 0;
+        const recordAuthoredCondition = function(value) {
+          const condition = String(value || '').trim();
+          if (!condition) { return; }
+          authoredConditions.add(condition);
+          const mediaQuery = observeAuthoredMediaCondition(condition);
+          if (mediaQuery && mediaQuery.matches) {
+            activeConditions.add(condition);
+          }
+        };
+        const visitRules = function(rules) {
+          Array.from(rules || []).forEach((rule) => {
+            const isMediaRule = typeof CSSRule !== 'undefined' && rule.type === CSSRule.MEDIA_RULE;
+            if (isMediaRule) {
+              recordAuthoredCondition(rule.conditionText);
+            }
+            const isImportRule = typeof CSSRule !== 'undefined' && rule.type === CSSRule.IMPORT_RULE;
+            if (isImportRule) {
+              try {
+                recordAuthoredCondition(rule.media && rule.media.mediaText);
+                if (rule.styleSheet) { visitStyleSheet(rule.styleSheet); }
+              } catch (_) {
+                unreadableStyleSheetCount += 1;
+              }
+              return;
+            }
+            try {
+              if (rule.cssRules) { visitRules(rule.cssRules); }
+            } catch (_) {
+              unreadableStyleSheetCount += 1;
+            }
+          });
+        };
+        const visitStyleSheet = function(styleSheet) {
+          if (!styleSheet || visitedStyleSheets.has(styleSheet)) { return; }
+          visitedStyleSheets.add(styleSheet);
+          try {
+            recordAuthoredCondition(styleSheet.media && styleSheet.media.mediaText);
+            visitRules(styleSheet.cssRules);
+          } catch (_) {
+            unreadableStyleSheetCount += 1;
+          }
+        };
+        Array.from(document.styleSheets || []).forEach(visitStyleSheet);
+        releaseUnobservedMediaConditions(authoredConditions);
+        return {
+          activeMediaQueries: Array.from(activeConditions).sort(),
+          unreadableStyleSheetCount: unreadableStyleSheetCount
+        };
       }
 
       function resolvedFontFamily(element) {
@@ -2863,39 +3407,501 @@ struct WebCanvasView: NSViewRepresentable {
         }
       }
 
+      function renderTargetRelation(wrapper, target) {
+        if (wrapper === target) { return 'self'; }
+        return target && composedParentElement(target) === wrapper ? 'direct-child' : 'descendant';
+      }
+
+      function renderTargetPathSegment(element) {
+        const tagName = element.tagName.toLowerCase();
+        const parent = composedParentElement(element);
+        if (!parent) { return tagName; }
+        const sameTagSiblings = Array.from(parent.children).filter((candidate) => candidate.tagName === element.tagName);
+        if (sameTagSiblings.length <= 1) { return tagName; }
+        return tagName + ':nth-of-type(' + (sameTagSiblings.indexOf(element) + 1) + ')';
+      }
+
+      function renderTargetRelationSelector(wrapper, target) {
+        if (wrapper === target) { return ':scope'; }
+        const segments = [];
+        let cursor = target;
+        while (cursor && cursor !== wrapper) {
+          segments.unshift(renderTargetPathSegment(cursor));
+          cursor = composedParentElement(cursor);
+        }
+        if (cursor !== wrapper || segments.length === 0) { return '';
+        }
+        return ':scope > ' + segments.join(' > ');
+      }
+
+      function belongsToRenderingScope(wrapper, candidate) {
+        if (wrapper === candidate) { return true; }
+        let cursor = composedParentElement(candidate);
+        while (cursor && cursor !== wrapper) {
+          if (cursor.hasAttribute('data-og-id') || cursor.hasAttribute('data-og-internal-id')) {
+            return false;
+          }
+          cursor = composedParentElement(cursor);
+        }
+        return cursor === wrapper;
+      }
+
+      function relatedElements(wrapper, selector) {
+        const candidates = [];
+        if (wrapper.matches && wrapper.matches(selector)) { candidates.push(wrapper); }
+        shadowIncludingElements(wrapper).forEach((candidate) => {
+          if (candidate === wrapper || !candidate.matches || !candidate.matches(selector)) { return; }
+          if (belongsToRenderingScope(wrapper, candidate)) { candidates.push(candidate); }
+        });
+        return candidates;
+      }
+
+      function computedCSSProperty(element, property) {
+        try {
+          return String(window.getComputedStyle(element).getPropertyValue(property) || '').trim();
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function authoredInlineCSSProperty(element, property) {
+        try {
+          return String(element.style.getPropertyValue(property) || '').trim();
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function hasComputedMask(element) {
+        return ['mask-image', '-webkit-mask-image'].some((property) => {
+          const value = computedCSSProperty(element, property).toLowerCase();
+          return value.length > 0 && value !== 'none';
+        });
+      }
+
+      function maskRenderElements(wrapper) {
+        const candidates = relatedElements(wrapper, '*');
+        const rendered = candidates.filter((candidate) => hasComputedMask(candidate));
+        if (rendered.length > 0) { return rendered; }
+        if ((wrapper.getAttribute('data-og-icon-source') || '').toLowerCase() !== 'cdn') { return []; }
+        const fallback = candidates.find((candidate) => candidate !== wrapper && candidate.matches('span, i'));
+        return fallback ? [fallback] : [];
+      }
+
+      function renderingTargetPayload(wrapper, target, kind, properties) {
+        if (!target) { return null; }
+        const authoredInlineValues = {};
+        const computedValues = {};
+        properties.forEach((property) => {
+          authoredInlineValues[property] = authoredInlineCSSProperty(target, property);
+          computedValues[property] = computedCSSProperty(target, property);
+        });
+        return {
+          kind,
+          tagName: target.tagName.toLowerCase(),
+          relation: renderTargetRelation(wrapper, target),
+          relationSelector: renderTargetRelationSelector(wrapper, target),
+          targetStandardID: target.getAttribute('id') || '',
+          targetInternalID: target.getAttribute('data-og-internal-id') || '',
+          authoredInlineValues,
+          computedValues
+        };
+      }
+
+      function renderingTargets(wrapper) {
+        const targets = [];
+        const mediaElements = relatedElements(wrapper, 'img, video');
+        const svgElements = relatedElements(
+          wrapper,
+          'svg, g, path, circle, ellipse, line, polyline, polygon, rect, use'
+        );
+        const maskElements = maskRenderElements(wrapper);
+        mediaElements.forEach((element) => {
+          const target = renderingTargetPayload(wrapper, element, 'media', ['object-fit']);
+          if (target) { targets.push(target); }
+        });
+        svgElements.forEach((element) => {
+          const target = renderingTargetPayload(wrapper, element, 'svg', ['stroke-width']);
+          if (target) { targets.push(target); }
+        });
+        maskElements.forEach((element) => {
+          const target = renderingTargetPayload(
+            wrapper,
+            element,
+            'mask',
+            ['mask-image', '-webkit-mask-image']
+          );
+          if (target) { targets.push(target); }
+        });
+        return targets;
+      }
+
+      function isPlacementGeneratedElement(element) {
+        const controller = window.OpenGraphiteComponentPlacementReferences;
+        return !!(controller && typeof controller.isGenerated === 'function' && controller.isGenerated(element));
+      }
+
+      function placementGeneratedRootForElement(element) {
+        const controller = window.OpenGraphiteComponentPlacementReferences;
+        return controller && typeof controller.rootFor === 'function' ? controller.rootFor(element) : null;
+      }
+
+      function runtimeMetadataForElement(element) {
+        const runtime = window.OpenGraphiteRuntime;
+        return runtime && typeof runtime.metadataFor === 'function' ? runtime.metadataFor(element) : null;
+      }
+
+      function composedParentElement(element) {
+        if (!element) { return null; }
+        if (element.parentElement) { return element.parentElement; }
+        const root = typeof element.getRootNode === 'function' ? element.getRootNode() : null;
+        return root && root.host ? root.host : null;
+      }
+
+      function shadowIncludingElements(root) {
+        const elements = [];
+        const visitedRoots = new Set();
+        function visit(node, includeNode) {
+          if (!node || visitedRoots.has(node)) { return; }
+          if (node.nodeType === Node.DOCUMENT_NODE || node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
+            visitedRoots.add(node);
+            Array.from(node.childNodes || []).forEach((child) => visit(child, true));
+            return;
+          }
+          if (node.nodeType !== Node.ELEMENT_NODE) { return; }
+          if (includeNode) { elements.push(node); }
+          if (node.shadowRoot) { visit(node.shadowRoot, false); }
+          Array.from(node.childNodes || []).forEach((child) => visit(child, true));
+        }
+        visit(root, true);
+        return elements;
+      }
+
+      function originalEventTarget(event) {
+        if (event && typeof event.composedPath === 'function') {
+          const path = event.composedPath();
+          if (path.length > 0) { return path[0]; }
+        }
+        return event ? event.target : null;
+      }
+
+      function isExpandedRuntimeInstance(element) {
+        const runtime = window.OpenGraphiteRuntime;
+        return !!(runtime && typeof runtime.isExpanded === 'function' && runtime.isExpanded(element));
+      }
+
+      const inspectionExcludedTags = new Set([
+        'html', 'head', 'script', 'style', 'link', 'meta', 'title', 'base', 'template', 'noscript'
+      ]);
+      const sessionReferenceByElement = new WeakMap();
+      const sessionElementByReference = new Map();
+      let sessionReferenceCounter = 0;
+      const inspectionSessionID = (function() {
+        const used = new Set();
+        return randomInternalID(used);
+      })();
+
+      function isInspectableElement(element) {
+        if (!element || element.nodeType !== Node.ELEMENT_NODE) { return false; }
+        const tagName = (element.tagName || '').toLowerCase();
+        if (inspectionExcludedTags.has(tagName)) { return false; }
+        if (element === document.body) {
+          const hasExplicitIdentityOrSemantics = [
+            'id',
+            'data-og-id',
+            'data-og-internal-id',
+            'data-og-type',
+            'role'
+          ].some((attributeName) => {
+            return (element.getAttribute(attributeName) || '').trim().length > 0;
+          });
+          if (!hasExplicitIdentityOrSemantics) { return false; }
+        }
+        if (isPlacementGeneratedElement(element)) { return true; }
+        const persistentPlacementRoot = element.closest('og-placement');
+        if (persistentPlacementRoot && persistentPlacementRoot !== element) { return false; }
+        return !isExpandedRuntimeInstance(element);
+      }
+
+      function allInspectableNodes() {
+        const runtime = window.OpenGraphiteRuntime;
+        const candidates = runtime && typeof runtime.elementsForInspection === 'function'
+          ? runtime.elementsForInspection()
+          : (document.body ? shadowIncludingElements(document.body) : []);
+        return candidates.filter(isInspectableElement);
+      }
+
+      function allEditableNodes() {
+        return allInspectableNodes();
+      }
+
+      function allAuthoredSourceElements() {
+        if (nodeCollectionContext && nodeCollectionContext.authoredSourceElements) {
+          return nodeCollectionContext.authoredSourceElements;
+        }
+        const sourceElements = [];
+        const roots = [document];
+        while (roots.length > 0) {
+          const root = roots.shift();
+          Array.from(root.querySelectorAll('*')).forEach((candidate) => {
+            sourceElements.push(candidate);
+            if ((candidate.tagName || '').toLowerCase() === 'template' && candidate.content) {
+              roots.push(candidate.content);
+            }
+          });
+        }
+        const authoredSourceElements = sourceElements.filter((candidate) => {
+          return !isPlacementGeneratedElement(candidate) && !isRuntimeGeneratedNode(candidate);
+        });
+        if (nodeCollectionContext) {
+          nodeCollectionContext.authoredSourceElements = authoredSourceElements;
+        }
+        return authoredSourceElements;
+      }
+
+      function attributeValueCounts(attributeName, trimsValue) {
+        if (!nodeCollectionContext) { return null; }
+        const cache = trimsValue
+          ? nodeCollectionContext.trimmedAttributeCounts
+          : nodeCollectionContext.rawAttributeCounts;
+        if (cache.has(attributeName)) { return cache.get(attributeName); }
+        const counts = new Map();
+        allAuthoredSourceElements().forEach((candidate) => {
+          const rawValue = candidate.getAttribute(attributeName);
+          if (rawValue === null) { return; }
+          const value = trimsValue ? rawValue.trim() : rawValue;
+          if (!value) { return; }
+          counts.set(value, (counts.get(value) || 0) + 1);
+        });
+        cache.set(attributeName, counts);
+        return counts;
+      }
+
+      function hasUniqueInspectableAttribute(element, attributeName) {
+        if (!element) { return false; }
+        if (isPlacementGeneratedElement(element) || isRuntimeGeneratedNode(element)) { return false; }
+        const value = (element.getAttribute(attributeName) || '').trim();
+        if (!value) { return false; }
+        const counts = attributeValueCounts(attributeName, true);
+        if (counts) { return counts.get(value) === 1; }
+        return allAuthoredSourceElements().filter((candidate) => {
+          return (candidate.getAttribute(attributeName) || '').trim() === value;
+        }).length === 1;
+      }
+
+      function hasUniqueAuthoredRawAttribute(element, attributeName) {
+        if (!element) { return false; }
+        if (isPlacementGeneratedElement(element) || isRuntimeGeneratedNode(element)) { return false; }
+        const value = element.getAttribute(attributeName);
+        if (value === null || value.trim().length === 0) { return false; }
+        const counts = attributeValueCounts(attributeName, false);
+        if (counts) { return counts.get(value) === 1; }
+        return allAuthoredSourceElements().filter((candidate) => {
+          return candidate.getAttribute(attributeName) === value;
+        }).length === 1;
+      }
+
       function depth(element) {
         let count = 0;
-        let parent = element.parentElement;
+        let parent = composedParentElement(element);
         while (parent && parent !== document.body && parent !== document.documentElement) {
-          if (parent.hasAttribute && parent.hasAttribute('data-og-id')) {
+          if (isInspectableElement(parent)) {
             count += 1;
           }
-          parent = parent.parentElement;
+          parent = composedParentElement(parent);
         }
         return count;
       }
 
-      function isPlacementGeneratedElement(element) {
-        return !!(element && element.closest && element.closest('[data-og-placement-generated="true"]'));
+      function annotationStatusForElement(element) {
+        if (!element) { return 'none'; }
+        const hasID = (element.getAttribute('data-og-id') || '').trim().length > 0;
+        const hasInternalID = (element.getAttribute('data-og-internal-id') || '').trim().length > 0;
+        if (hasID && hasInternalID) { return 'complete'; }
+        return hasID || hasInternalID ? 'partial' : 'none';
       }
 
-      function placementGeneratedRootForElement(element) {
-        return element && element.closest ?
-          element.closest('[data-og-placement-generated="true"][data-og-source-placement]') :
-          null;
-      }
-
-      function allEditableNodes() {
-        return Array.from(document.querySelectorAll('[data-og-id]')).filter((element) => {
-          if (isPlacementGeneratedElement(element)) {
-            return true;
-          }
-          const persistentPlacementRoot = element.closest('[data-og-role="component-placement"]');
-          if (persistentPlacementRoot && persistentPlacementRoot !== element) {
-            return false;
-          }
-          return !(element.tagName && element.tagName.toLowerCase() === 'og-instance' && element.hasAttribute('data-og-expanded'));
+      function cssEscapedIdentifier(value) {
+        if (!value) { return ''; }
+        if (window.CSS && typeof window.CSS.escape === 'function') {
+          return window.CSS.escape(value);
+        }
+        return value.replace(/[^a-zA-Z0-9_-]/g, function(character) {
+          return '\\\\' + character.codePointAt(0).toString(16) + ' ';
         });
+      }
+
+      function standardIDSelector(element) {
+        if (!element) { return ''; }
+        const rawID = element.getAttribute('id');
+        if (rawID === null || !rawID.trim() || !hasUniqueAuthoredRawAttribute(element, 'id')) { return ''; }
+        if (rawID === rawID.trim() && /^[A-Za-z_][A-Za-z0-9_-]*$/.test(rawID)) {
+          return '#' + rawID;
+        }
+        return quotedAttributeSelector('id', rawID);
+      }
+
+      function quotedAttributeSelector(attributeName, value) {
+        const escaped = Array.from(String(value)).map((character) => {
+          if (character.codePointAt(0) === 92) { return String.fromCharCode(92, 92); }
+          if (character === '"') { return String.fromCharCode(92, 34); }
+          return character;
+        }).join('');
+        return '[' + attributeName + '="' + escaped + '"]';
+      }
+
+      function safeAuthoredSelector(element) {
+        if (!element || isPlacementGeneratedElement(element) || isRuntimeGeneratedNode(element)) { return ''; }
+        const sourceElements = allAuthoredSourceElements();
+        const tagName = (element.tagName || '').toLowerCase();
+        const classNames = (element.getAttribute('class') || '').trim().split(/\\s+/).filter((className) => {
+          return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(className);
+        });
+        for (const className of classNames) {
+          const matchingClassElements = sourceElements.filter((candidate) => {
+            return candidate.classList && candidate.classList.contains(className);
+          });
+          const classSelector = '.' + cssEscapedIdentifier(className);
+          if (matchingClassElements.length === 1 && matchingClassElements[0] === element) {
+            return classSelector;
+          }
+          const matchingTagClassElements = matchingClassElements.filter((candidate) => {
+            return (candidate.tagName || '').toLowerCase() === tagName;
+          });
+          if (matchingTagClassElements.length === 1 && matchingTagClassElements[0] === element) {
+            return tagName + classSelector;
+          }
+        }
+        if (tagName.includes('-')) {
+          const matchingTags = sourceElements.filter((candidate) => {
+            return (candidate.tagName || '').toLowerCase() === tagName;
+          });
+          if (matchingTags.length === 1 && matchingTags[0] === element) {
+            return tagName;
+          }
+        }
+        return '';
+      }
+
+      function domPathForElement(element) {
+        if (!element || !element.isConnected) { return ''; }
+        const segments = [];
+        let current = element;
+        while (current && current.nodeType === Node.ELEMENT_NODE) {
+          const tagName = (current.tagName || '').toLowerCase();
+          if (!tagName) { break; }
+          let segment = tagName;
+          const parent = composedParentElement(current);
+          if (parent) {
+            const currentRoot = typeof current.getRootNode === 'function' ? current.getRootNode() : null;
+            const siblingSource = currentRoot && currentRoot.host === parent
+              ? currentRoot.children
+              : parent.children;
+            const sameTagSiblings = Array.from(siblingSource || []).filter((candidate) => {
+              return (candidate.tagName || '').toLowerCase() === tagName;
+            });
+            segment += ':nth-of-type(' + (sameTagSiblings.indexOf(current) + 1) + ')';
+          } else {
+            segment += ':nth-of-type(1)';
+          }
+          segments.unshift(segment);
+          if (current === document.documentElement) { break; }
+          current = parent;
+        }
+        return segments.join(' > ');
+      }
+
+      function inspectionContentHash(element) {
+        const source = element ? element.outerHTML || '' : '';
+        let hash = 2166136261;
+        for (let index = 0; index < source.length; index += 1) {
+          hash ^= source.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(16).padStart(8, '0');
+      }
+
+      function locatorForElement(element) {
+        if (nodeCollectionContext && nodeCollectionContext.locators.has(element)) {
+          return nodeCollectionContext.locators.get(element);
+        }
+        const locator = {
+          documentURL: window.location.href || '',
+          selector: standardIDSelector(element) || safeAuthoredSelector(element) || null,
+          domPath: domPathForElement(element),
+          sourceRange: { start: -1, end: -1 },
+          contentHash: inspectionContentHash(element)
+        };
+        if (nodeCollectionContext) {
+          nodeCollectionContext.locators.set(element, locator);
+        }
+        return locator;
+      }
+
+      function sessionReferenceForElement(element) {
+        if (!element) { return ''; }
+        const existing = sessionReferenceByElement.get(element);
+        if (existing) { return existing; }
+        const locator = locatorForElement(element);
+        sessionReferenceCounter += 1;
+        const locatorHint = locator.selector || locator.domPath || String(sessionReferenceCounter);
+        const reference = [
+          'ogref-session:node',
+          encodeURIComponent(inspectionSessionID),
+          encodeURIComponent(locatorHint),
+          encodeURIComponent(locator.contentHash)
+        ].join(':');
+        sessionReferenceByElement.set(element, reference);
+        sessionElementByReference.set(reference, element);
+        return reference;
+      }
+
+      function referenceForElement(element) {
+        if (nodeCollectionContext && nodeCollectionContext.references.has(element)) {
+          return nodeCollectionContext.references.get(element);
+        }
+        const internalID = nodeInternalID(element);
+        let reference;
+        if (internalID && hasUniqueInspectableAttribute(element, 'data-og-internal-id')) {
+          reference = 'ogref-dom:node:' + encodeURIComponent(internalID);
+        } else {
+          reference = sessionReferenceForElement(element);
+        }
+        if (nodeCollectionContext) {
+          nodeCollectionContext.references.set(element, reference);
+        }
+        return reference;
+      }
+
+      function referenceStabilityForElement(element) {
+        return hasUniqueInspectableAttribute(element, 'data-og-internal-id') ? 'stable' : 'session';
+      }
+
+      function parentReferenceForElement(element) {
+        let parent = composedParentElement(element);
+        while (parent && parent !== document.documentElement) {
+          if (isInspectableElement(parent)) {
+            return referenceForElement(parent);
+          }
+          parent = composedParentElement(parent);
+        }
+        return null;
+      }
+
+      function inspectableElementFromTarget(target) {
+        let element = target;
+        while (element && element.nodeType !== Node.ELEMENT_NODE) {
+          element = composedParentElement(element);
+        }
+        while (element && element !== document.documentElement) {
+          if (isInspectableElement(element)) { return element; }
+          element = composedParentElement(element);
+        }
+        return null;
+      }
+
+      function editableSourceElement(element) {
+        return !!element && hasUniqueInspectableAttribute(element, 'data-og-internal-id');
       }
 
         function randomInternalID(used) {
@@ -2914,34 +3920,16 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function isRuntimeGeneratedNode(element) {
-          return element && (
-            element.getAttribute('data-og-generated') === 'true' ||
-            element.hasAttribute('data-og-source-component') ||
-            !!element.closest('[data-og-generated="true"]')
-          );
-        }
-
-        function ensureInternalIDs() {
-          const used = new Set();
-          let changed = false;
-          allEditableNodes().forEach((element) => {
-            // Generated component DOM keeps master internal IDs so companion CSS styles every instance.
-            if (isPlacementGeneratedElement(element) || isRuntimeGeneratedNode(element)) { return; }
-            const current = (element.getAttribute('data-og-internal-id') || '').trim();
-            if (!current || used.has(current)) {
-              element.setAttribute('data-og-internal-id', randomInternalID(used));
-              changed = true;
-            } else {
-              used.add(current);
-            }
-          });
-          return changed;
+          const runtime = window.OpenGraphiteRuntime;
+          return !!(runtime && typeof runtime.isGenerated === 'function' && runtime.isGenerated(element));
         }
 
         function nodeWithID(id) {
-          return allEditableNodes().find((element) => {
-            return selectionIDForElement(element) === id ||
-              (!isPlacementGeneratedElement(element) && elementID(element) === id);
+          if (!id) { return null; }
+          const sessionElement = sessionElementByReference.get(id);
+          if (sessionElement && sessionElement.isConnected) { return sessionElement; }
+          return allInspectableNodes().find((element) => {
+            return selectionIDForElement(element) === id;
           });
         }
 
@@ -2957,12 +3945,12 @@ struct WebCanvasView: NSViewRepresentable {
 
         function selectionScrollContainers(element) {
           const containers = [];
-          let current = element.parentElement;
+          let current = composedParentElement(element);
           while (current && current !== document.documentElement) {
             if (canScrollForSelection(current)) {
               containers.push(current);
             }
-            current = current.parentElement;
+            current = composedParentElement(current);
           }
 
           const root = document.scrollingElement || document.documentElement;
@@ -3038,7 +4026,7 @@ struct WebCanvasView: NSViewRepresentable {
             const element = nodeWithID(currentSelectedID);
             if (element) { return element; }
           }
-          return document.querySelector('[data-og-selected="true"]');
+          return null;
         }
 
         function selectedElements() {
@@ -3047,12 +4035,11 @@ struct WebCanvasView: NSViewRepresentable {
             const element = nodeWithID(id);
             if (element) { elements.push(element); }
           });
-          if (elements.length > 0) { return elements; }
-          return Array.from(document.querySelectorAll('[data-og-selected="true"]'));
+          return elements;
         }
 
         function isFrameElement(element) {
-          return element && element.getAttribute('data-og-type') === 'frame';
+          return !!element && elementSupportsCapability(element, 'receive-children');
         }
 
         function shouldShowFrameGuides() {
@@ -3060,52 +4047,19 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function updateFrameGuideState() {
-          if (shouldShowFrameGuides()) {
-            document.documentElement.setAttribute('data-og-frame-guides', 'true');
-          } else {
-            document.documentElement.removeAttribute('data-og-frame-guides');
-          }
-        }
+          frameGuideAnimations.forEach((animation) => animation.cancel());
+          frameGuideAnimations.clear();
+          if (!shouldShowFrameGuides()) { return; }
 
-        function overlayLabelPositionFor(rect) {
-          return rect && rect.top < 24 ? 'inside' : 'outside';
-        }
-
-        function setFixedOverlayRect(overlay, rect) {
-          if (!overlay || !rect || rect.width <= 0 || rect.height <= 0) {
-            if (overlay) {
-              overlay.style.setProperty('display', 'none');
-            }
-            return;
-          }
-
-          overlay.style.setProperty('display', 'block');
-          overlay.style.setProperty('left', pixelString(rect.left));
-          overlay.style.setProperty('top', pixelString(rect.top));
-          overlay.style.setProperty('width', pixelString(rect.width));
-          overlay.style.setProperty('height', pixelString(rect.height));
-          overlay.setAttribute('data-og-overlay-label-position', overlayLabelPositionFor(rect));
-        }
-
-        function ensureFramePlacementOverlay() {
-          if (framePlacementOverlay && framePlacementOverlay.isConnected) {
-            return framePlacementOverlay;
-          }
-
-          framePlacementOverlay = document.createElement('div');
-          framePlacementOverlay.setAttribute('data-og-editor-artifact', 'true');
-          framePlacementOverlay.setAttribute('data-og-frame-placement-overlay', 'true');
-          framePlacementOverlay.setAttribute('aria-hidden', 'true');
-          framePlacementOverlay.style.setProperty('display', 'none');
-          (document.body || document.documentElement).appendChild(framePlacementOverlay);
-          return framePlacementOverlay;
-        }
-
-        function removeFramePlacementOverlay() {
-          if (framePlacementOverlay) {
-            framePlacementOverlay.remove();
-          }
-          framePlacementOverlay = null;
+          const selected = new Set(selectedElements());
+          allEditableNodes().forEach((element) => {
+            if (!isFrameElement(element) || selected.has(element) || typeof element.animate !== 'function') { return; }
+            const animation = element.animate(
+              [{ outline: '1px dashed rgba(29,155,240,.35)', outlineOffset: '-1px' }],
+              { duration: 1, fill: 'both' }
+            );
+            frameGuideAnimations.set(element, animation);
+          });
         }
 
         function framePlacementViewportRect(placement, event) {
@@ -3114,18 +4068,6 @@ struct WebCanvasView: NSViewRepresentable {
           const width = Math.abs(event.clientX - placement.startClientX);
           const height = Math.abs(event.clientY - placement.startClientY);
           return { left: left, top: top, width: width, height: height };
-        }
-
-        function framePlacementLabel(rect) {
-          return 'Frame ' + Math.round(rect.width) + ' x ' + Math.round(rect.height);
-        }
-
-        function updateFramePlacementOverlay(placement, event) {
-          if (!placement || !event) { return; }
-          const overlay = ensureFramePlacementOverlay();
-          const rect = framePlacementViewportRect(placement, event);
-          overlay.setAttribute('data-og-placement-label', framePlacementLabel(rect));
-          setFixedOverlayRect(overlay, rect);
         }
 
         function selectedElementFramePayload(element) {
@@ -3300,31 +4242,49 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function elementID(element) {
-          return element ? element.getAttribute('data-og-id') || element.getAttribute('data-og-host-id') || '' : '';
+          if (!element) { return ''; }
+          const authoredID = element.getAttribute('data-og-id') || '';
+          if (authoredID) { return authoredID; }
+          const runtime = window.OpenGraphiteRuntime;
+          return runtime && typeof runtime.hostIDFor === 'function' ? runtime.hostIDFor(element) : '';
         }
 
         function sourcePlacementIDForElement(element) {
-          const generated = placementGeneratedRootForElement(element);
-          if (!generated) { return ''; }
-          const placementID = generated.getAttribute('data-og-source-placement') || '';
-          return placementID;
+          const controller = window.OpenGraphiteComponentPlacementReferences;
+          return controller && typeof controller.placementIDFor === 'function'
+            ? controller.placementIDFor(element)
+            : '';
         }
 
         function selectionIDForElement(element) {
           if (!element) { return ''; }
           const sourceID = elementID(element);
-          if (!isPlacementGeneratedElement(element)) { return sourceID; }
+          if (!isPlacementGeneratedElement(element)) {
+            const internalID = nodeInternalID(element);
+            const authoredIDIsUnique = hasUniqueInspectableAttribute(element, 'data-og-id');
+            const internalIDIsUnique = hasUniqueInspectableAttribute(element, 'data-og-internal-id');
+            return (sourceID && authoredIDIsUnique)
+              ? sourceID
+              : (internalID && internalIDIsUnique
+                ? 'ogdom:' + encodeURIComponent(internalID)
+                : sessionReferenceForElement(element));
+          }
           const placementID = sourcePlacementIDForElement(element);
-          const stableNodeID = nodeInternalID(element) || sourceID;
-          if (!placementID || !stableNodeID) { return sourceID; }
+          const stableNodeID = nodeInternalID(element) || sourceID || sessionReferenceForElement(element);
+          if (!placementID || !stableNodeID) { return sourceID || sessionReferenceForElement(element); }
           return 'ogpl:' + encodeURIComponent(placementID) + ':' + encodeURIComponent(stableNodeID);
         }
 
         function sourceElementForPlacementGeneratedElement(element) {
           if (!isPlacementGeneratedElement(element)) { return element; }
+          const controller = window.OpenGraphiteComponentPlacementReferences;
+          if (controller && typeof controller.sourceFor === 'function') {
+            const source = controller.sourceFor(element);
+            if (source) { return source; }
+          }
           const internalID = nodeInternalID(element);
           const sourceID = elementID(element);
-          return Array.from(document.querySelectorAll('[data-og-id]')).find((candidate) => {
+          return allInspectableNodes().find((candidate) => {
             if (candidate === element || isPlacementGeneratedElement(candidate)) { return false; }
             if (internalID) {
               return nodeInternalID(candidate) === internalID;
@@ -3340,27 +4300,22 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function editableElementFromTarget(target) {
-          let element = target;
-          while (element && element.nodeType !== Node.ELEMENT_NODE) {
-            element = element.parentElement;
-          }
-          if (!element) { return null; }
-          return element.closest('[data-og-id]');
+          return inspectableElementFromTarget(target);
         }
 
         function selectableChainFor(element) {
           const chain = [];
           let current = element;
           while (current && current !== document.documentElement) {
-            if (current.hasAttribute && current.hasAttribute('data-og-id')) {
+            if (isInspectableElement(current)) {
               chain.push(current);
             }
-            current = current.parentElement;
+            current = composedParentElement(current);
           }
 
           const rootToLeaf = chain.reverse();
           const withoutPage = rootToLeaf.filter((candidate) => {
-            return (candidate.getAttribute('data-og-type') || '') !== 'page';
+            return !capabilityEvidenceForElement(candidate).isProjectResourceRoot;
           });
           return withoutPage.length > 0 ? withoutPage : rootToLeaf;
         }
@@ -3396,12 +4351,14 @@ struct WebCanvasView: NSViewRepresentable {
 
         function canDragElement(element) {
           if (!element) { return false; }
-          const type = element.getAttribute('data-og-type') || '';
-          return type !== 'page' && !isRuntimeGeneratedNode(element) && !hasLockedAncestor(element);
+          return editableSourceElement(element)
+            && (elementSupportsCapability(element, 'drag-position') || elementSupportsCapability(element, 'reorder-flow'))
+            && !isRuntimeGeneratedNode(element)
+            && !hasLockedAncestor(element);
         }
 
         function isTextElement(element) {
-          return element && (element.getAttribute('data-og-type') || '') === 'text';
+          return !!element && elementSupportsCapability(element, 'edit-text');
         }
 
         function draggableElementForChain(chain) {
@@ -3440,10 +4397,11 @@ struct WebCanvasView: NSViewRepresentable {
         function staticFlowSelector() {
           return [
             'a[href]',
-            '[data-og-type="button"][href]',
-            '[data-og-type="button"][data-og-target]',
-            '[data-og-type="button"][data-og-href]',
-            '[data-og-type="button"][data-og-link]'
+            'area[href]',
+            '[role="link"][href]',
+            '[data-og-target]',
+            '[data-og-href]',
+            '[data-og-link]'
           ].join(',');
         }
 
@@ -3559,47 +4517,130 @@ struct WebCanvasView: NSViewRepresentable {
           postStaticFlowHover(payload);
         }
 
-        function collectNodes() {
+        function resetNodeCollectionContext() {
+          nodeCollectionContext = {
+            authoredSourceElements: null,
+            computedStyles: new WeakMap(),
+            locators: new WeakMap(),
+            references: new WeakMap(),
+            trimmedAttributeCounts: new Map(),
+            rawAttributeCounts: new Map()
+          };
+          allAuthoredSourceElements();
+        }
+
+        function nodePayloadForElement(element, mediaState, includesDetails) {
+          const runtimeMetadata = runtimeMetadataForElement(element);
+          const locator = locatorForElement(element);
+          const payload = {
+            id: selectionIDForElement(element),
+            authoredID: element.getAttribute('data-og-id') || '',
+            standardID: element.getAttribute('id') || '',
+            internalID: element.getAttribute('data-og-internal-id') || '',
+            reference: referenceForElement(element),
+            annotationStatus: annotationStatusForElement(element),
+            referenceStability: referenceStabilityForElement(element),
+            locator: locator,
+            parentReference: parentReferenceForElement(element),
+            tagName: element.tagName.toLowerCase(),
+            legacyTypeHint: element.getAttribute('data-og-type') || '',
+            attributes: operationAttributesForElement(element),
+            role: element.getAttribute('role') || '',
+            componentID: element.getAttribute('data-og-component') || '',
+            componentMaster: (element.tagName || '').toLowerCase() !== 'og-instance' &&
+              (element.tagName || '').toLowerCase().includes('-') &&
+              !!(element.getAttribute('data-og-component') || '').trim() &&
+              Array.from(element.children || []).some((child) => (child.tagName || '').toLowerCase() === 'template'),
+            sourceComponentID: runtimeMetadata ? runtimeMetadata.sourceComponent || '' : '',
+            sourceInstanceID: runtimeMetadata ? runtimeMetadata.sourceInstance || '' : '',
+            sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
+            sourceNodeID: isPlacementGeneratedElement(element)
+              ? elementID(element)
+              : (runtimeMetadata ? runtimeMetadata.sourceID || '' : ''),
+            sourcePlacementID: sourcePlacementIDForElement(element),
+            placementGenerated: isPlacementGeneratedElement(element),
+            textSource: element.getAttribute('data-og-text-source') || '',
+            i18nKey: element.getAttribute('data-i18n-key') || '',
+            iconLibrary: element.getAttribute('data-og-icon-library') || '',
+            iconName: element.getAttribute('data-og-icon-name') || '',
+            iconSource: element.getAttribute('data-og-icon-source') || '',
+            activeMediaQueries: mediaState.activeMediaQueries,
+            unreadableStyleSheetCount: mediaState.unreadableStyleSheetCount,
+            hidden: element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true',
+            hasHiddenAttribute: element.hasAttribute('hidden'),
+            locked: element.getAttribute('data-og-locked') === 'true',
+            depth: depth(element)
+          };
+          if (!includesDetails) { return payload; }
+
+          const computedStyle = computedStylePayload(element);
+          const capabilityPayload = nodeCapabilityPayload(element);
+          payload.capabilities = capabilityPayload.capabilities;
+          payload.capabilityEvidence = capabilityPayload.evidence;
+          payload.layout = layoutModeForComputedStyle(computedStyle);
+          payload.textContent = editablePlainText(element);
+          payload.fallbackTextContent = fallbackPlainText(element);
+          payload.cssVariables = cssVariables(element);
+          payload.computedStyle = computedStyle;
+          payload.resolvedFontFamily = resolvedFontFamily(element);
+          payload.renderingTargets = renderingTargets(element);
+          payload.hidden = isHiddenByComputedStyle(element);
+          return payload;
+        }
+
+        function prepareNodeCollection() {
           if (window.OpenGraphiteComponentPlacementReferences && typeof window.OpenGraphiteComponentPlacementReferences.render === 'function') {
             window.OpenGraphiteComponentPlacementReferences.render();
             if (currentSelectedID) {
               selectNode(currentSelectedID);
             }
           }
-          ensureInternalIDs();
-          const nodes = allEditableNodes().map((element) => ({
-            id: selectionIDForElement(element),
-            internalID: element.getAttribute('data-og-internal-id') || '',
-            tagName: element.tagName.toLowerCase(),
-            type: element.getAttribute('data-og-type') || '',
-            layout: element.getAttribute('data-og-layout') || '',
-            role: element.getAttribute('data-og-role') || '',
-            componentID: element.getAttribute('data-og-component') || '',
-            componentKind: element.getAttribute('data-og-component-kind') || '',
-            sourceComponentID: element.getAttribute('data-og-source-component') || '',
-            sourceInstanceID: element.getAttribute('data-og-source-instance') || '',
-            sourceNodeInternalID: element.getAttribute('data-og-source-node-internal-id') || '',
-            sourceNodeID: isPlacementGeneratedElement(element) ? elementID(element) : '',
-            sourcePlacementID: sourcePlacementIDForElement(element),
-            placementGenerated: isPlacementGeneratedElement(element),
-            textContent: editablePlainText(element),
-            fallbackTextContent: fallbackPlainText(element),
-            textSource: element.getAttribute('data-og-text-source') || '',
-            i18nKey: element.getAttribute('data-i18n-key') || '',
-            iconLibrary: element.getAttribute('data-og-icon-library') || '',
-            iconName: element.getAttribute('data-og-icon-name') || '',
-            iconSource: element.getAttribute('data-og-icon-source') || '',
-            cssVariables: cssVariables(element),
-            resolvedFontFamily: resolvedFontFamily(element),
-            hidden: element.getAttribute('data-og-hidden') === 'true',
-            locked: element.getAttribute('data-og-locked') === 'true',
-            depth: depth(element)
-          }));
+          resetNodeCollectionContext();
+          return activeAuthoredMediaState();
+        }
+
+        function finishNodeCollection(nodes) {
           window.webkit.messageHandlers.openGraphiteNodes.postMessage(nodes);
           refreshFocusIsolation();
           scheduleStaticFlowLinkCollection();
           scheduleSelectionOverlayUpdate();
           return nodes;
+        }
+
+        function collectNodes() {
+          const mediaState = prepareNodeCollection();
+          const nodes = allInspectableNodes().map((element) => {
+            return nodePayloadForElement(element, mediaState, true);
+          });
+          return finishNodeCollection(nodes);
+        }
+
+        function collectLayerNodes() {
+          const mediaState = prepareNodeCollection();
+          const nodes = allInspectableNodes().map((element) => {
+            return nodePayloadForElement(element, mediaState, false);
+          });
+          finishNodeCollection(nodes);
+          if (currentSelectedID) {
+            collectNodeDetails(currentSelectedID, mediaState);
+          }
+          return nodes;
+        }
+
+        function collectNodeDetails(id, existingMediaState) {
+          if (!nodeCollectionContext) { resetNodeCollectionContext(); }
+          const element = nodeWithID(id);
+          if (!element) { return null; }
+          const payload = nodePayloadForElement(
+            element,
+            existingMediaState || activeAuthoredMediaState(),
+            true
+          );
+          const handler = window.webkit && window.webkit.messageHandlers
+            ? window.webkit.messageHandlers.openGraphiteNodeDetails
+            : null;
+          if (handler) { handler.postMessage(payload); }
+          return payload;
         }
 
         function refreshFocusIsolation() {
@@ -3645,9 +4686,6 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function clearSelection() {
-          document.querySelectorAll('[data-og-selected]').forEach((element) => {
-            element.removeAttribute('data-og-selected');
-          });
           currentSelectedID = '';
           currentSelectedIDs = new Set();
           hideSelectionOverlay();
@@ -3674,7 +4712,6 @@ struct WebCanvasView: NSViewRepresentable {
           normalizedIDs.forEach((id) => {
             const element = nodeWithID(id);
             if (!element) { return; }
-            element.setAttribute('data-og-selected', 'true');
             selected.push({ id: id, element: element });
           });
           if (selected.length === 0) { return false; }
@@ -3704,7 +4741,7 @@ struct WebCanvasView: NSViewRepresentable {
           const ids = Array.from(currentSelectedIDs);
           selectNodes(ids, selectedID);
           notifySelection(selectedID);
-          collectNodes();
+          collectNodeDetails(selectedID);
           return true;
         }
 
@@ -3726,8 +4763,7 @@ struct WebCanvasView: NSViewRepresentable {
         function htmlForNodeList(nodes) {
           return Array.from(nodes).map((node) => {
             if (node.nodeType === Node.ELEMENT_NODE) {
-              if (node.getAttribute('data-og-placement-generated') === 'true' ||
-                  node.closest('[data-og-placement-generated="true"]')) {
+              if (isPlacementGeneratedElement(node)) {
                 return '';
               }
               return node.outerHTML;
@@ -3762,7 +4798,11 @@ struct WebCanvasView: NSViewRepresentable {
 
         function fallbackPlainText(element) {
           if (!element) { return ''; }
-          const fallbackHTML = element.getAttribute('data-og-runtime-fallback-html') ?? element.getAttribute('data-og-fallback-text');
+          const i18nRuntime = window.OpenGraphiteI18n;
+          const runtimeFallback = i18nRuntime && typeof i18nRuntime.fallbackHTMLFor === 'function' && element.hasAttribute('data-i18n-key')
+            ? i18nRuntime.fallbackHTMLFor(element)
+            : null;
+          const fallbackHTML = runtimeFallback ?? element.getAttribute('data-og-fallback-text');
           if (fallbackHTML === null) {
             return editablePlainText(element);
           }
@@ -3820,20 +4860,30 @@ struct WebCanvasView: NSViewRepresentable {
 
         function applyTextEditingMetrics(element) {
           const rect = element.getBoundingClientRect();
-          element.style.setProperty('--og-edit-width', pixelString(rect.width));
-          element.style.setProperty('--og-edit-min-height', pixelString(rect.height));
+          element.style.width = pixelString(rect.width);
+          element.style.minHeight = pixelString(rect.height);
         }
 
-        function removeTextEditingMetrics(element) {
-          element.style.removeProperty('--og-edit-width');
-          element.style.removeProperty('--og-edit-min-height');
+        function captureTextEditingPresentation(element) {
+          return {
+            contentEditable: attributeState(element, 'contenteditable'),
+            spellcheck: attributeState(element, 'spellcheck'),
+            width: inlineStyleState(element, 'width'),
+            minHeight: inlineStyleState(element, 'min-height')
+          };
         }
 
-        function removeTextEditingAttributes(element) {
-          element.removeAttribute('data-og-editing');
-          element.removeAttribute('contenteditable');
-          element.removeAttribute('spellcheck');
-          removeTextEditingMetrics(element);
+        function restoreTextEditingPresentation(element, state) {
+          restoreAttributeState(element, 'contenteditable', state ? state.contentEditable : null);
+          restoreAttributeState(element, 'spellcheck', state ? state.spellcheck : null);
+          restoreInlineStyleState(element, 'width', state ? state.width : null);
+          restoreInlineStyleState(element, 'min-height', state ? state.minHeight : null);
+        }
+
+        function applyTextEditingPresentation(element) {
+          applyTextEditingMetrics(element);
+          element.setAttribute('contenteditable', 'plaintext-only');
+          element.setAttribute('spellcheck', 'true');
         }
 
         function replaceTextContents(element, text) {
@@ -3857,22 +4907,27 @@ struct WebCanvasView: NSViewRepresentable {
 
         function setTextContent(id, text, mode) {
           const element = editElementForSelectionID(id);
-          if (!element) { return false; }
+          if (!element || !elementSupportsCapability(element, 'edit-text')) { return false; }
 
           if (mode === 'resolved') {
             replaceTextContents(element, text);
-            collectNodes();
+            collectLayerNodes();
             return true;
           }
 
           const previousActiveText = editablePlainText(element);
           const previousFallbackText = fallbackPlainText(element);
-          const hasRuntimeFallback = element.hasAttribute('data-og-runtime-fallback-html');
+          const i18nRuntime = window.OpenGraphiteI18n;
+          const hasRuntimeFallback = !!(
+            element.hasAttribute('data-i18n-key') &&
+            i18nRuntime &&
+            typeof i18nRuntime.setFallbackHTML === 'function'
+          );
           const hasFallbackText = element.hasAttribute('data-og-fallback-text');
           if (hasRuntimeFallback || hasFallbackText) {
             const fallbackHTML = htmlForPlainText(text);
             if (hasRuntimeFallback) {
-              element.setAttribute('data-og-runtime-fallback-html', fallbackHTML);
+              i18nRuntime.setFallbackHTML(element, fallbackHTML);
             }
             if (hasFallbackText) {
               element.setAttribute('data-og-fallback-text', fallbackHTML);
@@ -3884,7 +4939,7 @@ struct WebCanvasView: NSViewRepresentable {
             replaceTextContents(element, text);
           }
 
-          collectNodes();
+          collectLayerNodes();
           return true;
         }
 
@@ -3907,10 +4962,8 @@ struct WebCanvasView: NSViewRepresentable {
           notifySelection(id);
           editingTextElement = element;
           editingOriginalText = editablePlainText(element);
-          applyTextEditingMetrics(element);
-          element.setAttribute('contenteditable', 'plaintext-only');
-          element.setAttribute('spellcheck', 'true');
-          element.setAttribute('data-og-editing', 'true');
+          editingPresentationState = captureTextEditingPresentation(element);
+          applyTextEditingPresentation(element);
           element.focus({ preventScroll: true });
 
           if (shouldSelectText) {
@@ -3933,7 +4986,8 @@ struct WebCanvasView: NSViewRepresentable {
           editingTextElement = null;
           editingOriginalText = '';
           replaceTextContents(element, nextText);
-          removeTextEditingAttributes(element);
+          restoreTextEditingPresentation(element, editingPresentationState);
+          editingPresentationState = null;
 
           if (shouldRestoreSelection !== false) {
             selectNode(selectedID);
@@ -3945,7 +4999,7 @@ struct WebCanvasView: NSViewRepresentable {
             if (editElement !== element) {
               replaceTextContents(editElement, nextText);
             }
-            collectNodes();
+            collectLayerNodes();
             notifyDocumentChange({
               operation: 'setTextContent',
               nodeID: selectedID,
@@ -3964,70 +5018,107 @@ struct WebCanvasView: NSViewRepresentable {
         }
       }
 
-      function shouldReapplyLocaleFont(key) {
-        if (key === '--og-font-family-default' || key.indexOf('--og-font-family-') === 0) {
-          return true;
-        }
-        return false;
-      }
-
-      function reapplyLocaleFontIfNeeded(keys) {
-        if (!keys.some(shouldReapplyLocaleFont)) { return; }
-          const locale = document.documentElement.getAttribute('data-og-preview-locale') || document.documentElement.lang || '';
-          if (typeof window.__OPENGRAPHITE_APPLY_LOCALE_FONT__ === 'function') {
-            window.__OPENGRAPHITE_APPLY_LOCALE_FONT__(locale);
-          }
-      }
-
       function setCSSVariable(id, key, value) {
         const element = editElementForSelectionID(id);
-        if (!element) { return false; }
+        if (!element || !elementSupportsCapability(element, 'edit-layout')) { return false; }
         applyCSSVariableValue(element, key, value);
-        reapplyLocaleFontIfNeeded([key]);
-        collectNodes();
+        collectLayerNodes();
         return true;
       }
 
       function setCSSVariables(id, values) {
         const element = editElementForSelectionID(id);
-        if (!element || !values || typeof values !== 'object') { return false; }
+        if (!element || !elementSupportsCapability(element, 'edit-layout') ||
+            !values || typeof values !== 'object') { return false; }
         const keys = Object.keys(values);
         keys.forEach((key) => {
           applyCSSVariableValue(element, key, values[key] || '');
         });
-        reapplyLocaleFontIfNeeded(keys);
-        collectNodes();
+        collectLayerNodes();
         return true;
       }
 
       function setCSSVariablesBatch(nodeValues) {
         if (!nodeValues || typeof nodeValues !== 'object') { return false; }
+        const entries = Object.entries(nodeValues);
+        const canApplyEveryEntry = entries.every(([id, values]) => {
+          const element = editElementForSelectionID(id);
+          return !!element && elementSupportsCapability(element, 'edit-layout') &&
+            !!values && typeof values === 'object';
+        });
+        if (!canApplyEveryEntry) { return false; }
         let didApply = false;
-        const changedKeys = new Set();
-        Object.entries(nodeValues).forEach(([id, values]) => {
+        entries.forEach(([id, values]) => {
           const element = editElementForSelectionID(id);
           if (!element || !values || typeof values !== 'object') { return; }
           Object.keys(values).forEach((key) => {
-            changedKeys.add(key);
             applyCSSVariableValue(element, key, values[key] || '');
           });
           didApply = true;
         });
         if (!didApply) { return false; }
-        reapplyLocaleFontIfNeeded(Array.from(changedKeys));
-        collectNodes();
+        collectLayerNodes();
         return true;
       }
 
-        function setAttributeValue(id, name, value) {
+        function setAttributeValue(id, name, value, removesAttribute) {
           const element = editElementForSelectionID(id);
           if (!element) { return false; }
-        if ((value || '').trim().length === 0) {
+        const normalizedName = String(name || '').trim().toLowerCase();
+        const linkAttributes = new Set(['href', 'target', 'rel', 'download']);
+        const mediaAttributes = new Set(['src', 'alt']);
+        const controlAttributes = new Set([
+          'name', 'type', 'placeholder', 'disabled', 'checked', 'selected'
+        ]);
+        const iconAttributes = new Set([
+          'data-og-icon-library', 'data-og-icon-name', 'data-og-icon-source'
+        ]);
+        if (linkAttributes.has(normalizedName)) {
+          const tagName = element.tagName.toLowerCase();
+          const isNativeHyperlink = tagName === 'a' || tagName === 'area';
+          const hasHref = element.hasAttribute('href');
+          const linkRole = firstRecognizedARIARole(element) === 'link';
+          const canEditLink = elementSupportsCapability(element, 'edit-link');
+          if (normalizedName === 'target') {
+            if (!canEditLink || (!isNativeHyperlink && !element.hasAttribute('target'))) { return false; }
+          } else if (!canEditLink || !hasHref || (!isNativeHyperlink && !linkRole)) {
+            return false;
+          }
+        }
+        if (mediaAttributes.has(normalizedName) && !elementSupportsCapability(element, 'edit-media')) {
+          return false;
+        }
+        if (controlAttributes.has(normalizedName) && !elementSupportsCapability(element, 'edit-control')) {
+          return false;
+        }
+        if (normalizedName === 'value') {
+          const valueTag = element.tagName.toLowerCase();
+          const validValueTags = new Set([
+            'button', 'data', 'input', 'li', 'meter', 'option', 'progress'
+          ]);
+          const hasRequiredCapability = elementSupportsCapability(element, 'edit-layout');
+          if (!validValueTags.has(valueTag) || !hasRequiredCapability) { return false; }
+        }
+        if (iconAttributes.has(normalizedName) && !elementSupportsCapability(element, 'edit-icon')) {
+          return false;
+        }
+        if (normalizedName === 'aria-label' &&
+            !elementSupportsCapability(element, 'edit-control')) {
+          return false;
+        }
+        if (normalizedName === 'src' &&
+            !new Set(['audio', 'embed', 'iframe', 'img', 'source', 'track', 'video'])
+              .has(element.tagName.toLowerCase())) { return false; }
+        if (normalizedName === 'alt' && element.tagName.toLowerCase() !== 'img') { return false; }
+        if (normalizedName === 'hidden' && !elementSupportsCapability(element, 'edit-layout')) {
+          return false;
+        }
+        if (removesAttribute === true) {
           element.removeAttribute(name);
         } else {
-          element.setAttribute(name, value);
+          element.setAttribute(name, value == null ? '' : String(value));
         }
-        collectNodes();
+        collectLayerNodes();
         if (name === 'data-og-id') {
           const nextSelectionID = id.indexOf('ogpl:') === 0 ? id : (value || '').trim();
           if (nextSelectionID) {
@@ -4067,14 +5158,14 @@ struct WebCanvasView: NSViewRepresentable {
 
         function editableElementsInside(root) {
           const result = [];
-          function visit(node) {
+          function visit(node, isTopLevel) {
             if (node.nodeType !== Node.ELEMENT_NODE) { return; }
-            if (node.hasAttribute('data-og-id') || node.hasAttribute('data-og-type')) {
+            if (isTopLevel || node.hasAttribute('data-og-id') || node.hasAttribute('data-og-internal-id')) {
               result.push(node);
             }
-            Array.from(node.children).forEach(visit);
+            Array.from(node.children).forEach((child) => visit(child, false));
           }
-          Array.from(root.childNodes).forEach(visit);
+          Array.from(root.childNodes).forEach((node) => visit(node, true));
           return result;
         }
 
@@ -4082,9 +5173,6 @@ struct WebCanvasView: NSViewRepresentable {
           const used = new Set(allEditableNodes().map((element) => element.getAttribute('data-og-id') || ''));
           const usedInternalIDs = new Set(allEditableNodes().map((element) => element.getAttribute('data-og-internal-id') || ''));
           editableElementsInside(fragment).forEach((element) => {
-            if (!element.hasAttribute('data-og-type')) {
-              element.setAttribute('data-og-type', 'frame');
-            }
             const current = element.getAttribute('data-og-id') || element.tagName.toLowerCase();
             let candidate = slug(current);
             let index = 2;
@@ -4099,10 +5187,9 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function textElementFromString(text) {
-          const element = document.createElement('TextBlock');
+          const element = document.createElement('p');
           element.setAttribute('data-og-id', uniqueID('text'));
           element.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => node.getAttribute('data-og-internal-id') || ''))));
-          element.setAttribute('data-og-type', 'text');
           element.textContent = text || '';
           return element;
         }
@@ -4131,11 +5218,6 @@ struct WebCanvasView: NSViewRepresentable {
         function firstEditableID(root) {
           const editable = editableElementsInside(root)[0];
           return editable ? editable.getAttribute('data-og-id') || '' : '';
-        }
-
-        function canReceiveChildren(element) {
-          const type = element.getAttribute('data-og-type') || '';
-          return type === 'frame' || type === 'page' || element.hasAttribute('data-og-layout');
         }
 
         function newInternalID() {
@@ -4167,11 +5249,12 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function createIconElement() {
-          const element = document.createElement('Icon');
+          const element = document.createElement('span');
           const iconName = 'circle';
           element.setAttribute('data-og-id', uniqueID('icon'));
           element.setAttribute('data-og-internal-id', newInternalID());
-          element.setAttribute('data-og-type', 'icon');
+          element.setAttribute('role', 'img');
+          element.setAttribute('aria-label', iconName);
           element.setAttribute('data-og-icon-library', 'lucide');
           element.setAttribute('data-og-icon-name', iconName);
           element.setAttribute('data-og-icon-source', 'inline');
@@ -4181,11 +5264,11 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function createFrameElement() {
-          const element = document.createElement('OpenGraphiteFrame');
+          const element = document.createElement('div');
           element.setAttribute('data-og-id', createFrameID());
           element.setAttribute('data-og-internal-id', newInternalID());
-          element.setAttribute('data-og-type', 'frame');
-          element.setAttribute('data-og-layout', 'vertical');
+          element.style.setProperty('display', 'flex');
+          element.style.setProperty('flex-direction', 'column');
           element.style.setProperty('gap', '0');
           element.style.setProperty('padding', '0');
           return element;
@@ -4290,12 +5373,12 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function selectFrameToolClickTarget(event) {
-          const element = editableElementFromTarget(event.target);
+          const element = editableElementFromTarget(originalEventTarget(event));
           if (!element) { return false; }
           const id = nextSelectionIDForClick(element);
           selectNode(id);
           notifySelection(id);
-          collectNodes();
+          collectLayerNodes();
           return true;
         }
 
@@ -4312,7 +5395,6 @@ struct WebCanvasView: NSViewRepresentable {
 
           pendingFramePlacement = null;
           const frame = createFrameElement();
-          frame.setAttribute('data-og-frame-preview', 'true');
           pending.parent.append(frame);
           framePlacement = {
             pointerID: pending.pointerID,
@@ -4327,7 +5409,6 @@ struct WebCanvasView: NSViewRepresentable {
             didDrag: true
           };
           applyFramePlacementRect(framePlacement, framePlacementRect(framePlacement, event));
-          updateFramePlacementOverlay(framePlacement, event);
           updateFrameGuideState();
           try {
             if (event.pointerId !== undefined && typeof frame.setPointerCapture === 'function') {
@@ -4348,7 +5429,6 @@ struct WebCanvasView: NSViewRepresentable {
           const dragDistance = Math.hypot(rect.width, rect.height);
           framePlacement.didDrag = framePlacement.didDrag || dragDistance >= dragStartThreshold;
           applyFramePlacementRect(framePlacement, rect);
-          updateFramePlacementOverlay(framePlacement, event);
           event.preventDefault();
           event.stopPropagation();
           return true;
@@ -4358,7 +5438,6 @@ struct WebCanvasView: NSViewRepresentable {
           const placement = framePlacement;
           framePlacement = null;
           pendingFramePlacement = null;
-          removeFramePlacementOverlay();
           updateFrameGuideState();
           if (!placement) { return; }
           try {
@@ -4374,14 +5453,13 @@ struct WebCanvasView: NSViewRepresentable {
             rect.height >= minimumFramePlacementSize;
           if (!shouldInsert) {
             placement.frame.remove();
-            collectNodes();
+            collectLayerNodes();
             return;
           }
 
-          placement.frame.removeAttribute('data-og-frame-preview');
           const selectedID = elementID(placement.frame);
           const html = placement.frame.outerHTML;
-          collectNodes();
+          collectLayerNodes();
           selectNode(selectedID);
           notifySelection(selectedID);
           collectStaticFlowLinks();
@@ -4453,25 +5531,18 @@ struct WebCanvasView: NSViewRepresentable {
           return false;
         }
 
-        function applyClickPositionIfNeeded(element, parent, event) {
-          if (!parent || parent.getAttribute('data-og-layout') !== 'absolute') { return; }
-          const parentRect = parent.getBoundingClientRect();
-          element.style.setProperty('left', pixelString(event.clientX - parentRect.left));
-          element.style.setProperty('top', pixelString(event.clientY - parentRect.top));
-        }
-
         function placeCreatedElement(event) {
           const created = createdElementForTool(activeTool);
           if (!created) { return false; }
 
-          const anchor = editableElementFromTarget(event.target) || selectedElement();
+          const anchor = editableElementFromTarget(originalEventTarget(event)) || selectedElement();
           if (!anchor || hasLockedAncestor(anchor)) { return false; }
 
           const appendToAnchor = canReceiveChildren(anchor);
           const parent = appendToAnchor ? anchor : anchor.parentElement;
           if (!parent || hasLockedAncestor(parent)) { return false; }
+          if (!appendToAnchor && !canReceiveChildren(parent)) { return false; }
 
-          applyClickPositionIfNeeded(created, parent, event);
           const position = appendToAnchor ? 'append' : 'after';
           const anchorInternalID = nodeInternalID(anchor);
           if (!anchorInternalID) { return false; }
@@ -4484,7 +5555,7 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           const selectedID = elementID(created);
-          collectNodes();
+          collectLayerNodes();
           selectNode(selectedID);
           notifySelection(selectedID);
           collectStaticFlowLinks();
@@ -4498,32 +5569,124 @@ struct WebCanvasView: NSViewRepresentable {
           return true;
         }
 
-        function setLayout(layout) {
-          const element = editElementForSelectionID(currentSelectedID) || selectedElement();
-          if (!element) { return ''; }
-          element.setAttribute('data-og-layout', layout);
-          return element.getAttribute('data-og-id') || '';
+        function parseScaleAxes(value) {
+          const normalized = String(value || '').trim();
+          if (!normalized || normalized.toLowerCase() === 'none') {
+            return { axes: ['1', '1'], sourceCount: 0 };
+          }
+          const tokens = normalized.split(/\\s+/).filter((token) => token.length > 0);
+          if (tokens.length < 1 || tokens.length > 3) { return null; }
+          const numericScalePattern = /^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?%?$/;
+          if (!tokens.every((token) => numericScalePattern.test(token))) { return null; }
+          if (tokens.length === 1) {
+            return { axes: [tokens[0], tokens[0]], sourceCount: 1 };
+          }
+          return { axes: tokens.slice(), sourceCount: tokens.length };
         }
 
-        function toggleScaleVariable(element, key) {
-          const current = element.style.getPropertyValue(key).trim();
-          if (current === '-1') {
-            element.style.removeProperty(key);
-          } else {
-            element.style.setProperty(key, '-1');
+        function negatedScaleAxis(value) {
+          const normalized = String(value || '').trim();
+          if (normalized.startsWith('-')) {
+            return normalized.slice(1) || '0';
           }
+          if (normalized.startsWith('+')) {
+            return '-' + normalized.slice(1);
+          }
+          return '-' + normalized;
+        }
+
+        function serializedScaleAxes(parsed, axisIndex) {
+          if (!parsed || !Array.isArray(parsed.axes) || parsed.axes.length < 2) { return ''; }
+          const axes = parsed.axes.slice();
+          axes[axisIndex] = negatedScaleAxis(axes[axisIndex]);
+          if (parsed.sourceCount === 3 && axes.length === 3) {
+            return axes.join(' ');
+          }
+          return axes.slice(0, 2).join(' ');
+        }
+
+        function numericScaleAxis(value) {
+          const normalized = String(value || '').trim();
+          const number = Number.parseFloat(normalized);
+          if (!Number.isFinite(number)) { return null; }
+          return normalized.endsWith('%') ? number / 100 : number;
+        }
+
+        function equivalentScaleValues(first, second) {
+          const firstParsed = parseScaleAxes(first);
+          const secondParsed = parseScaleAxes(second);
+          if (!firstParsed || !secondParsed) { return false; }
+          const count = Math.max(firstParsed.axes.length, secondParsed.axes.length, 2);
+          for (let index = 0; index < count; index += 1) {
+            const firstAxis = numericScaleAxis(firstParsed.axes[index] || '1');
+            const secondAxis = numericScaleAxis(secondParsed.axes[index] || '1');
+            if (firstAxis === null || secondAxis === null || Math.abs(firstAxis - secondAxis) > 0.000001) {
+              return false;
+            }
+          }
+          return true;
+        }
+
+        function computedScaleValue(element) {
+          try {
+            return window.getComputedStyle(element).getPropertyValue('scale') || 'none';
+          } catch (_) {
+            return 'none';
+          }
+        }
+
+        function authoredScaleInput(payload) {
+          const hasAuthoredScale = !!payload &&
+            (payload.hasAuthoredScale === true || payload.hasAuthoredScale === 'true');
+          return {
+            isPresent: hasAuthoredScale,
+            value: hasAuthoredScale ? String(payload.authoredScale || '').trim() : ''
+          };
+        }
+
+        function flippedScaleValue(element, axisIndex, scaleInput) {
+          if (!element || (axisIndex !== 0 && axisIndex !== 1)) { return ''; }
+          let parsed = null;
+          if (scaleInput && scaleInput.isPresent) {
+            parsed = parseScaleAxes(scaleInput.value);
+            if (!parsed) { return ''; }
+          } else {
+            const computed = computedScaleValue(element);
+            if (!equivalentScaleValues(computed, '1 1')) { return ''; }
+            parsed = parseScaleAxes('none');
+          }
+          const nextValue = serializedScaleAxes(parsed, axisIndex);
+          if (!nextValue || (window.CSS && typeof window.CSS.supports === 'function' && !window.CSS.supports('scale', nextValue))) {
+            return '';
+          }
+          return nextValue;
+        }
+
+        function flipScaleAxis(element, axisIndex, payload) {
+          const scaleInput = authoredScaleInput(payload);
+          const previousValue = scaleInput.isPresent ? scaleInput.value : '';
+          const nextValue = flippedScaleValue(element, axisIndex, scaleInput);
+          if (!nextValue) { return null; }
+          const priority = element.style.getPropertyPriority('scale') || '';
+          element.style.setProperty('scale', nextValue, priority);
+          if (!equivalentScaleValues(computedScaleValue(element), nextValue) && priority !== 'important') {
+            element.style.setProperty('scale', nextValue, 'important');
+          }
+          return { previousValue: previousValue, value: nextValue };
         }
 
         function layerCandidatesFor(element) {
           const result = [];
           let current = element;
           while (current && current !== document.documentElement) {
-            if (current.hasAttribute && current.hasAttribute('data-og-id')) {
+            if (isInspectableElement(current)) {
+              const capabilityPayload = nodeCapabilityPayload(current);
               result.push({
                 id: selectionIDForElement(current),
                 tagName: current.tagName.toLowerCase(),
-                type: current.getAttribute('data-og-type') || '',
-                role: current.getAttribute('data-og-role') || ''
+                legacyTypeHint: current.getAttribute('data-og-type') || '',
+                capabilities: capabilityPayload.capabilities,
+                role: current.getAttribute('role') || ''
               });
             }
             current = current.parentElement;
@@ -4653,13 +5816,28 @@ struct WebCanvasView: NSViewRepresentable {
           return numericPixelValue(element.style.getPropertyValue(key), fallback);
         }
 
-        function isAbsoluteChild(element) {
-          return element.parentElement &&
-            element.parentElement.getAttribute('data-og-layout') === 'absolute';
+        function computedPosition(element) {
+          if (!element) { return ''; }
+          try {
+            return String(window.getComputedStyle(element).position || '').trim().toLowerCase();
+          } catch (_) {
+            return '';
+          }
+        }
+
+        function participatesInFlow(element) {
+          const position = computedPosition(element);
+          return position !== 'absolute' && position !== 'fixed';
+        }
+
+        function canPositionDrag(element) {
+          return elementSupportsCapability(element, 'drag-position');
         }
 
         function dragStartValue(element, key, absoluteFallback) {
-          return stylePixelValue(element, key, isAbsoluteChild(element) ? absoluteFallback : 0);
+          const position = computedPosition(element);
+          const fallback = position === 'absolute' || position === 'fixed' ? absoluteFallback : 0;
+          return stylePixelValue(element, key, fallback);
         }
 
         function pixelString(value) {
@@ -4668,38 +5846,192 @@ struct WebCanvasView: NSViewRepresentable {
           return normalized + 'px';
         }
 
-        function autoLayoutMode(parent) {
-          const layout = parent ? parent.getAttribute('data-og-layout') || '' : '';
-          return layout === 'vertical' || layout === 'horizontal' ? layout : '';
+        function inlineStyleState(element, property) {
+          const hadStyleAttribute = element.hasAttribute('style');
+          return {
+            hadStyleAttribute: hadStyleAttribute,
+            attributeValue: hadStyleAttribute ? element.getAttribute('style') || '' : '',
+            value: element.style.getPropertyValue(property),
+            priority: element.style.getPropertyPriority(property)
+          };
         }
 
-        function canReorderElement(element) {
+        function restoreInlineStyleState(element, property, state) {
+          if (state && Object.prototype.hasOwnProperty.call(state, 'attributeValue')) {
+            if (state.hadStyleAttribute) {
+              element.setAttribute('style', state.attributeValue);
+            } else {
+              element.removeAttribute('style');
+            }
+            return;
+          }
+          if (state && state.value) {
+            element.style.setProperty(property, state.value, state.priority || '');
+          } else {
+            element.style.removeProperty(property);
+          }
+          if ((!state || !state.hadStyleAttribute) && element.style.length === 0) {
+            element.removeAttribute('style');
+          }
+        }
+
+        function attributeState(element, name) {
+          return {
+            isPresent: element.hasAttribute(name),
+            value: element.getAttribute(name) || ''
+          };
+        }
+
+        function restoreAttributeState(element, name, state) {
+          if (state && state.isPresent) {
+            element.setAttribute(name, state.value);
+          } else {
+            element.removeAttribute(name);
+          }
+        }
+
+        function autoLayoutMode(parent) {
+          if (!parent) { return ''; }
+          const style = computedStylePayload(parent);
+          const display = style.display.toLowerCase();
+          if (display === 'flex' || display === 'inline-flex') {
+            return style.flexDirection.toLowerCase().startsWith('row') ? 'horizontal' : 'vertical';
+          }
+          if (display === 'grid' || display === 'inline-grid') {
+            return style.gridAutoFlow.toLowerCase().startsWith('column') ? 'vertical' : 'horizontal';
+          }
+          if (display === 'inline') { return 'horizontal'; }
+          if (display === 'block' || display === 'flow-root' || display === 'list-item' ||
+              display.startsWith('table')) {
+            return 'vertical';
+          }
+          return '';
+        }
+
+        function reorderFlowSiblings(parent) {
+          return editableElementChildren(parent).filter((child) => {
+            return participatesInFlow(child) && editableSourceElement(child);
+          });
+        }
+
+        function elementOrdersMatch(first, second) {
+          return first.length === second.length && first.every((element, index) => element === second[index]);
+        }
+
+        function visualOrderForReorder(siblings, axis) {
+          const entries = siblings.map((element) => {
+            const rect = visualElementForDragElement(element).getBoundingClientRect();
+            return { element: element, center: reorderAxisValue(axis, rect) };
+          }).sort((first, second) => first.center - second.center);
+          for (let index = 1; index < entries.length; index += 1) {
+            if (Math.abs(entries[index].center - entries[index - 1].center) < 0.5) {
+              return null;
+            }
+          }
+          return entries.map((entry) => entry.element);
+        }
+
+        function measuredDOMInsertionDirection(siblings, axis, allowReverse) {
+          const visualOrder = visualOrderForReorder(siblings, axis);
+          if (!visualOrder) { return ''; }
+          if (elementOrdersMatch(visualOrder, siblings)) { return 'forward'; }
+          if (allowReverse && elementOrdersMatch(visualOrder, siblings.slice().reverse())) { return 'reverse'; }
+          return '';
+        }
+
+        function siblingsShareSingleVisualLine(siblings, axis) {
+          let commonStart = Number.NEGATIVE_INFINITY;
+          let commonEnd = Number.POSITIVE_INFINITY;
+          siblings.forEach((element) => {
+            const rect = visualElementForDragElement(element).getBoundingClientRect();
+            const start = axis === 'x' ? rect.top : rect.left;
+            const end = axis === 'x' ? rect.bottom : rect.right;
+            commonStart = Math.max(commonStart, start);
+            commonEnd = Math.min(commonEnd, end);
+          });
+          return commonStart <= commonEnd + 0.5;
+        }
+
+        function usesDefaultReorderPlacement(element) {
+          try {
+            const style = window.getComputedStyle(element);
+            if (String(style.order || '').trim() !== '0') { return false; }
+            return ['gridRowStart', 'gridRowEnd', 'gridColumnStart', 'gridColumnEnd'].every((key) => {
+              return String(style[key] || '').trim().toLowerCase() === 'auto';
+            });
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function usesDefaultFlexOrder(element) {
+          try {
+            return String(window.getComputedStyle(element).order || '').trim() === '0';
+          } catch (_) {
+            return false;
+          }
+        }
+
+        function reorderLayoutDescriptor(parent) {
+          if (!parent) { return null; }
+          const siblings = reorderFlowSiblings(parent);
+          if (siblings.length < 2) { return null; }
+
+          let style = null;
+          try {
+            style = window.getComputedStyle(parent);
+          } catch (_) {
+            return null;
+          }
+          const display = String(style.display || '').trim().toLowerCase();
+          let axis = '';
+          let allowReverse = false;
+
+          if (display === 'flex' || display === 'inline-flex') {
+            if (String(style.flexWrap || '').trim().toLowerCase() !== 'nowrap') { return null; }
+            if (!siblings.every(usesDefaultFlexOrder)) { return null; }
+            axis = String(style.flexDirection || '').trim().toLowerCase().startsWith('row') ? 'x' : 'y';
+            allowReverse = true;
+          } else if (display === 'grid' || display === 'inline-grid') {
+            if (!siblings.every(usesDefaultReorderPlacement)) { return null; }
+            axis = String(style.gridAutoFlow || '').trim().toLowerCase().startsWith('column') ? 'y' : 'x';
+            if (!siblingsShareSingleVisualLine(siblings, axis)) { return null; }
+            allowReverse = true;
+          } else if (display === 'block' || display === 'flow-root' || display === 'list-item' ||
+                     display.startsWith('table')) {
+            axis = 'y';
+          } else {
+            return null;
+          }
+
+          const domInsertionDirection = measuredDOMInsertionDirection(siblings, axis, allowReverse);
+          if (!domInsertionDirection) { return null; }
+          return { axis: axis, domInsertionDirection: domInsertionDirection };
+        }
+
+        function canReorderElement(element, descriptor) {
           const parent = element ? element.parentElement : null;
+          const layoutDescriptor = descriptor || reorderLayoutDescriptor(parent);
           return canDragElement(element) &&
-            !!autoLayoutMode(parent) &&
-            editableElementChildren(parent).length > 1;
+            elementSupportsCapability(element, 'reorder-flow') &&
+            participatesInFlow(element) &&
+            !!layoutDescriptor &&
+            reorderFlowSiblings(parent).some((child) => child !== element);
         }
 
         function runtimeHostForGeneratedElement(element) {
-          const generated = element && element.closest ?
-            element.closest('[data-og-generated="true"][data-og-source-instance]') :
-            null;
-          if (!generated) { return null; }
-
-          const host = generated.closest('og-instance[data-og-expanded]');
-          if (!host) { return null; }
-
-          const sourceInstanceID = generated.getAttribute('data-og-source-instance') || '';
-          const hostID = elementID(host);
-          return !sourceInstanceID || sourceInstanceID === hostID ? host : null;
+          const runtime = window.OpenGraphiteRuntime;
+          if (!runtime || typeof runtime.isGenerated !== 'function' || !runtime.isGenerated(element)) {
+            return null;
+          }
+          return typeof runtime.instanceFor === 'function' ? runtime.instanceFor(element) : null;
         }
 
         function visualElementForDragElement(element) {
           if (!element) { return null; }
-          if (element.matches && element.matches('og-instance[data-og-expanded]')) {
-            return Array.from(element.children).find((child) => {
-              return child.getAttribute('data-og-generated') === 'true';
-            }) || element;
+          const runtime = window.OpenGraphiteRuntime;
+          if (runtime && typeof runtime.isExpanded === 'function' && runtime.isExpanded(element)) {
+            return typeof runtime.generatedRootFor === 'function' ? runtime.generatedRootFor(element) || element : element;
           }
           return element;
         }
@@ -4718,16 +6050,12 @@ struct WebCanvasView: NSViewRepresentable {
           return null;
         }
 
-        function reorderAxisForLayout(layout) {
-          return layout === 'horizontal' ? 'x' : 'y';
-        }
-
         function reorderAxisValue(axis, rect) {
           return axis === 'x' ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
         }
 
         function reorderPositionAlreadyApplied(drag, target, position) {
-          const siblings = editableElementChildren(drag.parent);
+          const siblings = editableElementChildren(drag.parent).filter(participatesInFlow);
           const sourceIndex = siblings.indexOf(drag.element);
           const targetIndex = siblings.indexOf(target);
           if (sourceIndex < 0 || targetIndex < 0) { return true; }
@@ -4737,13 +6065,13 @@ struct WebCanvasView: NSViewRepresentable {
           return sourceIndex === targetIndex + 1;
         }
 
-        function cleanupReorderAnimationStyles(element) {
+        function cancelReorderAnimation(element) {
           if (!element) { return; }
-          element.removeAttribute('data-og-reorder-animating');
-          element.removeAttribute('data-og-reorder-preparing');
-          element.removeAttribute('data-og-reorder-animation');
-          element.style.removeProperty('--og-reorder-x');
-          element.style.removeProperty('--og-reorder-y');
+          const animation = reorderAnimations.get(element);
+          if (animation) {
+            animation.cancel();
+            reorderAnimations.delete(element);
+          }
         }
 
         function animateReorderSiblings(parent, draggedElement, mutate) {
@@ -4756,8 +6084,6 @@ struct WebCanvasView: NSViewRepresentable {
 
           mutate();
 
-          const token = String(++reorderAnimationToken);
-          const animated = [];
           siblings.forEach((child) => {
             const previousRect = previousRects.get(child);
             if (!previousRect) { return; }
@@ -4766,54 +6092,64 @@ struct WebCanvasView: NSViewRepresentable {
             const deltaX = previousRect.left - nextRect.left;
             const deltaY = previousRect.top - nextRect.top;
             if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) { return; }
-
-            visualChild.setAttribute('data-og-reorder-animation', token);
-            visualChild.setAttribute('data-og-reorder-preparing', 'true');
-            visualChild.setAttribute('data-og-reorder-animating', 'true');
-            visualChild.style.setProperty('--og-reorder-x', pixelString(deltaX));
-            visualChild.style.setProperty('--og-reorder-y', pixelString(deltaY));
-            animated.push(visualChild);
-          });
-
-          if (animated.length === 0) { return; }
-
-          window.requestAnimationFrame(function() {
-            animated.forEach((child) => {
-              if (child.getAttribute('data-og-reorder-animation') !== token) { return; }
-              child.removeAttribute('data-og-reorder-preparing');
-              child.style.setProperty('--og-reorder-x', '0px');
-              child.style.setProperty('--og-reorder-y', '0px');
-            });
-          });
-
-          window.setTimeout(function() {
-            animated.forEach((child) => {
-              if (child.getAttribute('data-og-reorder-animation') === token) {
-                cleanupReorderAnimationStyles(child);
+            cancelReorderAnimation(visualChild);
+            const animation = visualChild.animate(
+              [
+                { translate: pixelString(deltaX) + ' ' + pixelString(deltaY) },
+                { translate: '0px 0px' }
+              ],
+              {
+                duration: 160,
+                easing: 'cubic-bezier(.2,0,.2,1)',
+                composite: 'add'
               }
-            });
-          }, 190);
+            );
+            reorderAnimations.set(visualChild, animation);
+            animation.addEventListener('finish', function() {
+              if (reorderAnimations.get(visualChild) === animation) {
+                reorderAnimations.delete(visualChild);
+              }
+            }, { once: true });
+          });
         }
 
         function reorderPlacementForDrag(drag) {
-          const siblings = editableElementChildren(drag.parent).filter((child) => child !== drag.element);
+          const siblings = editableElementChildren(drag.parent).filter((child) => {
+            return child !== drag.element && participatesInFlow(child) && editableSourceElement(child);
+          });
           if (siblings.length === 0) { return null; }
 
-          const dragRect = drag.visualElement.getBoundingClientRect();
+          const visualSiblings = visualOrderForReorder(siblings, drag.axis);
+          if (!visualSiblings) { return null; }
+
+          const baseRect = drag.baseRect || drag.visualElement.getBoundingClientRect();
+          const dragRect = {
+            left: baseRect.left + (drag.deltaX || 0),
+            top: baseRect.top + (drag.deltaY || 0),
+            width: baseRect.width,
+            height: baseRect.height
+          };
           const dragCenter = reorderAxisValue(drag.axis, dragRect);
-          for (const sibling of siblings) {
+          for (const sibling of visualSiblings) {
             const rect = visualElementForDragElement(sibling).getBoundingClientRect();
             const siblingCenter = reorderAxisValue(drag.axis, rect);
             if (dragCenter < siblingCenter) {
-              return { target: sibling, position: 'before' };
+              return {
+                target: sibling,
+                position: drag.domInsertionDirection === 'reverse' ? 'after' : 'before'
+              };
             }
           }
 
-          return { target: siblings[siblings.length - 1], position: 'after' };
+          return {
+            target: visualSiblings[visualSiblings.length - 1],
+            position: drag.domInsertionDirection === 'reverse' ? 'before' : 'after'
+          };
         }
 
         function applyReorderPlacement(drag, placement) {
           if (!placement || !placement.target || placement.target === drag.element) { return; }
+          if (!editableSourceElement(placement.target)) { return; }
           if (reorderPositionAlreadyApplied(drag, placement.target, placement.position)) { return; }
 
           animateReorderSiblings(drag.parent, drag.element, function() {
@@ -4828,20 +6164,15 @@ struct WebCanvasView: NSViewRepresentable {
 
         function draggedBaseRect(drag) {
           const element = drag.visualElement || drag.element;
-          const previousX = element.style.getPropertyValue('--og-drag-x') || '';
-          const previousY = element.style.getPropertyValue('--og-drag-y') || '';
-          element.style.setProperty('--og-drag-x', '0px');
-          element.style.setProperty('--og-drag-y', '0px');
-          const rect = element.getBoundingClientRect();
-          if (previousX) {
-            element.style.setProperty('--og-drag-x', previousX);
-          } else {
-            element.style.removeProperty('--og-drag-x');
+          const deltaX = drag.deltaX || 0;
+          const deltaY = drag.deltaY || 0;
+          if (drag.translationAnimation) {
+            drag.translationAnimation.cancel();
+            drag.translationAnimation = null;
           }
-          if (previousY) {
-            element.style.setProperty('--og-drag-y', previousY);
-          } else {
-            element.style.removeProperty('--og-drag-y');
+          const rect = element.getBoundingClientRect();
+          if (deltaX !== 0 || deltaY !== 0) {
+            applyReorderDragTranslation(drag, deltaX, deltaY);
           }
           return rect;
         }
@@ -4850,8 +6181,10 @@ struct WebCanvasView: NSViewRepresentable {
           const baseRect = draggedBaseRect(drag);
           const nextX = event.clientX - drag.pointerOffsetX - baseRect.left;
           const nextY = event.clientY - drag.pointerOffsetY - baseRect.top;
-          drag.visualElement.style.setProperty('--og-drag-x', pixelString(nextX));
-          drag.visualElement.style.setProperty('--og-drag-y', pixelString(nextY));
+          drag.baseRect = baseRect;
+          drag.deltaX = nextX;
+          drag.deltaY = nextY;
+          applyReorderDragTranslation(drag, nextX, nextY);
           drag.didMove = true;
         }
 
@@ -4861,47 +6194,89 @@ struct WebCanvasView: NSViewRepresentable {
           updateReorderDraggedElementPosition(drag, event);
         }
 
+        function applyPositionDragTranslation(drag, deltaX, deltaY) {
+          if (!drag || !drag.element || typeof drag.element.animate !== 'function') { return false; }
+          const keyframes = [{ translate: pixelString(deltaX) + ' ' + pixelString(deltaY) }];
+          if (drag.translationAnimation && drag.translationAnimation.effect &&
+              typeof drag.translationAnimation.effect.setKeyframes === 'function') {
+            drag.translationAnimation.effect.setKeyframes(keyframes);
+            return true;
+          }
+          drag.translationAnimation = drag.element.animate(
+            keyframes,
+            { duration: 1, fill: 'both', composite: 'add' }
+          );
+          drag.translationAnimation.pause();
+          drag.translationAnimation.currentTime = 0;
+          return true;
+        }
+
+        function applyReorderDragTranslation(drag, deltaX, deltaY) {
+          const element = drag && (drag.visualElement || drag.element);
+          if (!element || typeof element.animate !== 'function') { return false; }
+          const keyframes = [{ translate: pixelString(deltaX) + ' ' + pixelString(deltaY) }];
+          if (drag.translationAnimation && drag.translationAnimation.effect &&
+              typeof drag.translationAnimation.effect.setKeyframes === 'function') {
+            drag.translationAnimation.effect.setKeyframes(keyframes);
+            return true;
+          }
+          if (drag.translationAnimation) {
+            drag.translationAnimation.cancel();
+          }
+          drag.translationAnimation = element.animate(
+            keyframes,
+            { duration: 1, fill: 'both', composite: 'add' }
+          );
+          drag.translationAnimation.pause();
+          drag.translationAnimation.currentTime = 0;
+          return true;
+        }
+
         function updateDraggedElementPosition(drag, event) {
           const deltaX = event.clientX - drag.startClientX;
           const deltaY = event.clientY - drag.startClientY;
-          const nextX = drag.startX + deltaX;
-          const nextY = drag.startY + deltaY;
-          drag.element.style.setProperty('left', pixelString(nextX));
-          drag.element.style.setProperty('top', pixelString(nextY));
+          drag.deltaX = deltaX;
+          drag.deltaY = deltaY;
+          applyPositionDragTranslation(drag, deltaX, deltaY);
           drag.didMove = true;
         }
 
         function cleanupActiveDragStyles(drag) {
           if (!drag || !drag.element) { return; }
-          Array.from(new Set([drag.element, drag.visualElement].filter(Boolean))).forEach((element) => {
-            element.removeAttribute('data-og-dragging');
-            element.removeAttribute('data-og-reorder-dragging');
-            element.style.removeProperty('--og-drag-x');
-            element.style.removeProperty('--og-drag-y');
-          });
+          if (drag.presentationAnimation) {
+            drag.presentationAnimation.cancel();
+          }
+          if (drag.translationAnimation) {
+            drag.translationAnimation.cancel();
+          }
         }
 
         function restoreReorderOrigin(drag) {
           if (!drag || !drag.parent || drag.element.parentElement !== drag.parent) { return; }
           animateReorderSiblings(drag.parent, drag.element, function() {
-            if (drag.originalNextSibling &&
-                drag.originalNextSibling.parentNode === drag.parent &&
-                drag.originalNextSibling !== drag.element) {
-              drag.parent.insertBefore(drag.element, drag.originalNextSibling);
-            } else {
-              drag.parent.appendChild(drag.element);
-            }
+            restoreReorderOriginWithoutAnimation(drag);
           });
         }
 
+        function restoreReorderOriginWithoutAnimation(drag) {
+          if (!drag || !drag.parent || drag.element.parentElement !== drag.parent) { return; }
+          if (drag.originalNextSibling &&
+              drag.originalNextSibling.parentNode === drag.parent &&
+              drag.originalNextSibling !== drag.element) {
+            drag.parent.insertBefore(drag.element, drag.originalNextSibling);
+          } else {
+            drag.parent.appendChild(drag.element);
+          }
+        }
+
         function reorderEditPayload(drag) {
-          const siblings = editableElementChildren(drag.parent);
+          const siblings = editableElementChildren(drag.parent).filter(participatesInFlow);
           const finalIndex = siblings.indexOf(drag.element);
           if (finalIndex < 0 || finalIndex === drag.startIndex) { return null; }
 
           const previousSibling = finalIndex > 0 ? siblings[finalIndex - 1] : null;
           const nextSibling = finalIndex < siblings.length - 1 ? siblings[finalIndex + 1] : null;
-          if (previousSibling) {
+          if (previousSibling && editableSourceElement(previousSibling)) {
             return {
               operation: 'moveNode',
               nodeID: drag.selectedID,
@@ -4910,7 +6285,7 @@ struct WebCanvasView: NSViewRepresentable {
               position: 'after'
             };
           }
-          if (nextSibling) {
+          if (nextSibling && editableSourceElement(nextSibling)) {
             return {
               operation: 'moveNode',
               nodeID: drag.selectedID,
@@ -4924,7 +6299,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         function beginPendingDrag(event) {
           if (activeTool !== 'select' || event.button !== primaryPointerButton) { return; }
-          const element = editableElementFromTarget(event.target);
+          const element = editableElementFromTarget(originalEventTarget(event));
           if (!element) { return; }
 
           const chain = selectableChainFor(element);
@@ -4934,7 +6309,7 @@ struct WebCanvasView: NSViewRepresentable {
           pendingDrag = {
             pointerID: event.pointerId,
             element: dragElement,
-            selectedID: elementID(dragElement),
+            selectedID: selectionIDForElement(dragElement),
             startClientX: event.clientX,
             startClientY: event.clientY
           };
@@ -4953,7 +6328,12 @@ struct WebCanvasView: NSViewRepresentable {
           const visualElement = visualElementForDragElement(element);
           const startRect = visualElement.getBoundingClientRect();
           const layout = autoLayoutMode(element.parentElement);
-          if (canReorderElement(element)) {
+          const reorderDescriptor = reorderLayoutDescriptor(element.parentElement);
+          if (layout && participatesInFlow(element) && !canReorderElement(element, reorderDescriptor)) {
+            pendingDrag = null;
+            return false;
+          }
+          if (canReorderElement(element, reorderDescriptor)) {
             activeDrag = {
               mode: 'reorder',
               pointerID: pendingDrag.pointerID,
@@ -4965,16 +6345,17 @@ struct WebCanvasView: NSViewRepresentable {
               startClientY: pendingDrag.startClientY,
               pointerOffsetX: pendingDrag.startClientX - startRect.left,
               pointerOffsetY: pendingDrag.startClientY - startRect.top,
-              axis: reorderAxisForLayout(layout),
+              axis: reorderDescriptor.axis,
+              domInsertionDirection: reorderDescriptor.domInsertionDirection,
               originalNextSibling: element.nextSibling,
-              startIndex: editableElementChildren(element.parentElement).indexOf(element),
+              startIndex: editableElementChildren(element.parentElement).filter(participatesInFlow).indexOf(element),
+              deltaX: 0,
+              deltaY: 0,
+              translationAnimation: null,
               didMove: false,
               didReorder: false
             };
-            visualElement.setAttribute('data-og-reorder-dragging', 'true');
-            visualElement.style.setProperty('--og-drag-x', '0px');
-            visualElement.style.setProperty('--og-drag-y', '0px');
-          } else {
+          } else if (canPositionDrag(element)) {
             activeDrag = {
               mode: 'position',
               pointerID: pendingDrag.pointerID,
@@ -4988,10 +6369,31 @@ struct WebCanvasView: NSViewRepresentable {
                 'left': element.style.getPropertyValue('left') || '',
                 'top': element.style.getPropertyValue('top') || ''
               },
+              previousStyleStates: {
+                'left': inlineStyleState(element, 'left'),
+                'top': inlineStyleState(element, 'top')
+              },
+              deltaX: 0,
+              deltaY: 0,
+              translationAnimation: null,
               didMove: false
             };
+          } else {
+            pendingDrag = null;
+            return false;
           }
-          (activeDrag.visualElement || element).setAttribute('data-og-dragging', 'true');
+          const dragVisualElement = activeDrag.visualElement || element;
+          if (typeof dragVisualElement.animate === 'function') {
+            activeDrag.presentationAnimation = dragVisualElement.animate(
+              [{
+                cursor: 'grabbing',
+                filter: 'drop-shadow(0 14px 24px rgba(0,0,0,.28))',
+                pointerEvents: activeDrag.mode === 'reorder' ? 'none' : 'auto',
+                zIndex: '2147483647'
+              }],
+              { duration: 1, fill: 'both' }
+            );
+          }
           pendingDrag = null;
           suppressNextClick = true;
           selectNode(selectedID);
@@ -5019,12 +6421,8 @@ struct WebCanvasView: NSViewRepresentable {
         }
 
         function restorePositionDragValues(drag) {
-          Object.entries(drag.previousValues || {}).forEach(([key, value]) => {
-            if ((value || '').trim().length === 0) {
-              drag.element.style.removeProperty(key);
-            } else {
-              drag.element.style.setProperty(key, value);
-            }
+          Object.entries(drag.previousStyleStates || {}).forEach(([key, state]) => {
+            restoreInlineStyleState(drag.element, key, state);
           });
         }
 
@@ -5034,15 +6432,18 @@ struct WebCanvasView: NSViewRepresentable {
             restoreReorderOrigin(drag);
           } else if (drag.didMove && drag.didReorder) {
             edit = reorderEditPayload(drag);
+            if (!edit) {
+              restoreReorderOrigin(drag);
+            }
           }
 
           cleanupActiveDragStyles(drag);
           if (!edit) {
-            collectNodes();
+            collectLayerNodes();
             return;
           }
 
-          collectNodes();
+          collectLayerNodes();
           notifyDocumentChange(edit);
         }
 
@@ -5056,18 +6457,22 @@ struct WebCanvasView: NSViewRepresentable {
             clearNodeDragPreview();
             return;
           }
-          cleanupActiveDragStyles(drag);
           if (cancelled) {
+            cleanupActiveDragStyles(drag);
             restorePositionDragValues(drag);
-            collectNodes();
+            collectLayerNodes();
             clearNodeDragPreview();
             return;
           }
           if (!drag.didMove) {
+            cleanupActiveDragStyles(drag);
             clearNodeDragPreview();
             return;
           }
-          collectNodes();
+          drag.element.style.setProperty('left', pixelString(drag.startX + (drag.deltaX || 0)));
+          drag.element.style.setProperty('top', pixelString(drag.startY + (drag.deltaY || 0)));
+          cleanupActiveDragStyles(drag);
+          collectLayerNodes();
           notifyDocumentChange({
             operation: 'setCSSVariables',
             nodeID: drag.selectedID,
@@ -5081,25 +6486,117 @@ struct WebCanvasView: NSViewRepresentable {
           clearNodeDragPreview();
         }
 
+        function suspendTransientStateForSerialization() {
+          const state = { editing: null, drag: null, frame: null, placements: null };
+
+          if (editingTextElement && editingPresentationState) {
+            state.editing = {
+              element: editingTextElement,
+              livePresentation: captureTextEditingPresentation(editingTextElement)
+            };
+            restoreTextEditingPresentation(editingTextElement, editingPresentationState);
+          }
+
+          if (activeDrag && activeDrag.element) {
+            if (activeDrag.mode === 'reorder') {
+              state.drag = {
+                mode: 'reorder',
+                element: activeDrag.element,
+                parent: activeDrag.parent,
+                nextSibling: activeDrag.element.nextSibling
+              };
+              restoreReorderOriginWithoutAnimation(activeDrag);
+            } else {
+              state.drag = {
+                mode: 'position',
+                element: activeDrag.element,
+                liveLeft: inlineStyleState(activeDrag.element, 'left'),
+                liveTop: inlineStyleState(activeDrag.element, 'top')
+              };
+              restorePositionDragValues(activeDrag);
+            }
+          }
+
+          if (framePlacement && framePlacement.frame && framePlacement.frame.isConnected) {
+            state.frame = {
+              element: framePlacement.frame,
+              parent: framePlacement.frame.parentNode,
+              nextSibling: framePlacement.frame.nextSibling
+            };
+            framePlacement.frame.remove();
+          }
+          const placementController = window.OpenGraphiteComponentPlacementReferences;
+          if (placementController && typeof placementController.suspend === 'function') {
+            state.placements = placementController.suspend();
+          }
+          return state;
+        }
+
+        function resumeTransientStateAfterSerialization(state) {
+          if (!state || typeof state !== 'object') { return; }
+
+          const placementController = window.OpenGraphiteComponentPlacementReferences;
+          if (placementController && typeof placementController.resume === 'function') {
+            placementController.resume(state.placements);
+          }
+
+          if (state.frame && state.frame.parent && state.frame.parent.isConnected) {
+            state.frame.parent.insertBefore(
+              state.frame.element,
+              state.frame.nextSibling && state.frame.nextSibling.parentNode === state.frame.parent
+                ? state.frame.nextSibling
+                : null
+            );
+          }
+
+          if (state.drag && state.drag.element && state.drag.element.isConnected) {
+            if (state.drag.mode === 'reorder') {
+              if (state.drag.parent && state.drag.parent.isConnected) {
+                state.drag.parent.insertBefore(
+                  state.drag.element,
+                  state.drag.nextSibling && state.drag.nextSibling.parentNode === state.drag.parent
+                    ? state.drag.nextSibling
+                    : null
+                );
+              }
+            } else {
+              restoreInlineStyleState(state.drag.element, 'left', state.drag.liveLeft);
+              restoreInlineStyleState(state.drag.element, 'top', state.drag.liveTop);
+            }
+          }
+
+          if (state.editing && state.editing.element && state.editing.element.isConnected) {
+            restoreTextEditingPresentation(state.editing.element, state.editing.livePresentation);
+          }
+        }
+
         function copyPayload() {
-          ensureInternalIDs();
           const visualElement = selectedElement();
           if (!visualElement) {
             return { id: '', internalID: '', html: '', text: '' };
           }
           const element = editElementForSelectionID(currentSelectedID) || visualElement;
-          const clone = element.cloneNode(true);
-          clone.querySelectorAll('[data-og-placement-generated="true"]').forEach((generated) => {
-            generated.remove();
-          });
-        return {
-          id: elementID(element),
-          internalID: element.getAttribute('data-og-internal-id') || '',
-          html: clone.outerHTML,
-          text: (clone.textContent || '').trim(),
-          cssVariables: cssVariables(element)
-        };
-      }
+          const placementController = window.OpenGraphiteComponentPlacementReferences;
+          const placementState = placementController && typeof placementController.suspend === 'function'
+            ? placementController.suspend()
+            : null;
+          try {
+            const clone = element.cloneNode(true);
+            return {
+              id: selectionIDForElement(element),
+              internalID: element.getAttribute('data-og-internal-id') || '',
+              reference: referenceForElement(element),
+              referenceStability: referenceStabilityForElement(element),
+              html: clone.outerHTML,
+              text: (clone.textContent || '').trim(),
+              cssVariables: cssVariables(element)
+            };
+          } finally {
+            if (placementController && typeof placementController.resume === 'function') {
+              placementController.resume(placementState);
+            }
+          }
+        }
 
         function replaceDocumentHTML(html, selectedID) {
           const parsedDocument = new DOMParser().parseFromString(html || '', 'text/html');
@@ -5108,10 +6605,20 @@ struct WebCanvasView: NSViewRepresentable {
           }
 
           pendingDrag = null;
+          if (activeDrag) {
+            cleanupActiveDragStyles(activeDrag);
+          }
           activeDrag = null;
           pendingFramePlacement = null;
+          if (framePlacement && framePlacement.frame) {
+            framePlacement.frame.remove();
+          }
           framePlacement = null;
-          removeFramePlacementOverlay();
+          frameGuideAnimations.forEach((animation) => animation.cancel());
+          frameGuideAnimations.clear();
+          if (window.OpenGraphiteFocusIsolation) {
+            window.OpenGraphiteFocusIsolation.clear();
+          }
           hideSelectionOverlay();
           clearSelectionOverlayUpdateTimer();
           clearNodeDragPreview();
@@ -5119,12 +6626,13 @@ struct WebCanvasView: NSViewRepresentable {
           selectionOverlayFrame = null;
           editingTextElement = null;
           editingOriginalText = '';
+          editingPresentationState = null;
           const nextRoot = document.importNode(parsedDocument.documentElement, true);
           document.documentElement.replaceWith(nextRoot);
           currentSelectedID = '';
           currentSelectedIDs = new Set();
           installEditorSelectionStyle();
-          collectNodes();
+          collectLayerNodes();
 
           if (selectedID && nodeWithID(selectedID)) {
             selectNode(selectedID);
@@ -5140,7 +6648,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         function editableElementChildren(parent) {
           return Array.from(parent ? parent.children : []).filter((child) => {
-            return child.hasAttribute('data-og-id') || child.hasAttribute('data-og-host-id');
+            return isInspectableElement(child) || isExpandedRuntimeInstance(child);
           });
         }
 
@@ -5155,16 +6663,24 @@ struct WebCanvasView: NSViewRepresentable {
           const selectedInternalID = nodeInternalID(element);
           let edit = null;
           const isLocked = element && element.getAttribute('data-og-locked') === 'true';
+          if (element && !editableSourceElement(element)) {
+            return { success: false, selectedID: selectedID, requiresAdoption: true };
+          }
           if (isLocked && command !== 'toggleLocked') {
             return { success: false, selectedID: selectedID };
           }
 
           if (command === 'pasteHere') {
             if (!element) { return { success: false, selectedID: '' }; }
+            const canAppend = elementSupportsCapability(element, 'receive-children');
+            const canInsertAfter = elementSupportsCapability(element, 'group');
+            if (!canAppend && !canInsertAfter) {
+              return { success: false, selectedID: selectedID };
+            }
             const fragment = fragmentFromPayload(payload || {});
             const html = fragmentHTML(fragment);
             selectedID = firstEditableID(fragment);
-            const position = canReceiveChildren(element) ? 'append' : 'after';
+            const position = canAppend ? 'append' : 'after';
             edit = {
               operation: 'insertHTML',
               anchorInternalID: selectedInternalID,
@@ -5177,6 +6693,9 @@ struct WebCanvasView: NSViewRepresentable {
               element.after(fragment);
             }
           } else if (command === 'pasteReplace') {
+            if (!elementSupportsCapability(element, 'group')) {
+              return { success: false, selectedID: selectedID };
+            }
             const fragment = fragmentFromPayload(payload || {});
             const html = fragmentHTML(fragment);
             selectedID = firstEditableID(fragment);
@@ -5187,42 +6706,64 @@ struct WebCanvasView: NSViewRepresentable {
             };
             element.replaceWith(fragment);
           } else if (command === 'delete') {
-            const parentEditable = element.parentElement ? element.parentElement.closest('[data-og-id]') : null;
-            selectedID = parentEditable ? elementID(parentEditable) : '';
+            if (!elementSupportsCapability(element, 'group')) {
+              return { success: false, selectedID: selectedID };
+            }
+            const parentEditable = element.parentElement ? inspectableElementFromTarget(element.parentElement) : null;
+            selectedID = parentEditable ? selectionIDForElement(parentEditable) : '';
             edit = {
               operation: 'deleteNode',
               nodeInternalID: selectedInternalID
             };
             element.remove();
           } else if (command === 'moveFront') {
-            const siblings = editableElementChildren(element.parentElement).filter((child) => child !== element);
+            if (!elementSupportsCapability(element, 'reorder-flow')) {
+              return { success: false, selectedID: selectedID };
+            }
+            const siblings = editableElementChildren(element.parentElement).filter((child) => {
+              return child !== element && canReorderFlowChild(child, element.parentElement);
+            });
             const target = siblings[siblings.length - 1];
             if (!target) { return { success: false, selectedID: selectedID }; }
+            if (!editableSourceElement(target)) {
+              return { success: false, selectedID: selectedID, requiresAdoption: true };
+            }
             edit = {
               operation: 'moveNode',
               nodeInternalID: selectedInternalID,
               targetInternalID: nodeInternalID(target),
               position: 'after'
             };
-            element.parentElement.appendChild(element);
+            target.after(element);
           } else if (command === 'moveBack') {
-            const siblings = editableElementChildren(element.parentElement).filter((child) => child !== element);
+            if (!elementSupportsCapability(element, 'reorder-flow')) {
+              return { success: false, selectedID: selectedID };
+            }
+            const siblings = editableElementChildren(element.parentElement).filter((child) => {
+              return child !== element && canReorderFlowChild(child, element.parentElement);
+            });
             const target = siblings[0];
             if (!target) { return { success: false, selectedID: selectedID }; }
+            if (!editableSourceElement(target)) {
+              return { success: false, selectedID: selectedID, requiresAdoption: true };
+            }
             edit = {
               operation: 'moveNode',
               nodeInternalID: selectedInternalID,
               targetInternalID: nodeInternalID(target),
               position: 'before'
             };
-            element.parentElement.insertBefore(element, element.parentElement.firstChild);
+            target.before(element);
           } else if (command === 'wrapFrame') {
-            const frame = document.createElement('OpenGraphiteFrame');
+            if (!elementSupportsCapability(element, 'group')) {
+              return { success: false, selectedID: selectedID };
+            }
+            const frame = document.createElement('div');
             selectedID = createFrameID();
             frame.setAttribute('data-og-id', selectedID);
             frame.setAttribute('data-og-internal-id', randomInternalID(new Set(allEditableNodes().map((node) => nodeInternalID(node)))));
-            frame.setAttribute('data-og-type', 'frame');
-            frame.setAttribute('data-og-layout', 'vertical');
+            frame.style.setProperty('display', 'flex');
+            frame.style.setProperty('flex-direction', 'column');
             frame.style.setProperty('gap', '0');
             frame.style.setProperty('padding', '0');
             element.before(frame);
@@ -5233,11 +6774,14 @@ struct WebCanvasView: NSViewRepresentable {
               html: frame.outerHTML
             };
           } else if (command === 'ungroup') {
+            if (!elementSupportsCapability(element, 'ungroup')) {
+              return { success: false, selectedID: selectedID };
+            }
             const children = Array.from(element.childNodes);
             if (children.length === 0) { return { success: false, selectedID: selectedID }; }
             const html = htmlForNodeList(children);
-            const firstChild = children.find((child) => child.nodeType === Node.ELEMENT_NODE && child.hasAttribute('data-og-id'));
-            selectedID = firstChild ? elementID(firstChild) : '';
+            const firstChild = children.find((child) => child.nodeType === Node.ELEMENT_NODE && isInspectableElement(child));
+            selectedID = firstChild ? selectionIDForElement(firstChild) : '';
             edit = {
               operation: 'replaceNodeHTML',
               nodeInternalID: selectedInternalID,
@@ -5246,16 +6790,28 @@ struct WebCanvasView: NSViewRepresentable {
             children.forEach((child) => element.parentElement.insertBefore(child, element));
             element.remove();
           } else if (command === 'setLayout') {
+            if (!elementSupportsCapability(element, 'edit-layout')) {
+              return { success: false, selectedID: selectedID };
+            }
             const nextLayout = (payload && payload.layout) || 'vertical';
-            const previousValue = element.getAttribute('data-og-layout') || '';
-            element.setAttribute('data-og-layout', nextLayout);
-            selectedID = elementID(element);
+            const previousValues = {
+              'display': element.style.getPropertyValue('display') || '',
+              'flex-direction': element.style.getPropertyValue('flex-direction') || ''
+            };
+            const values = nextLayout === 'horizontal'
+              ? { 'display': 'flex', 'flex-direction': 'row' }
+              : nextLayout === 'grid'
+                ? { 'display': 'grid' }
+                : nextLayout === 'block'
+                  ? { 'display': 'block' }
+                  : { 'display': 'flex', 'flex-direction': 'column' };
+            Object.entries(values).forEach(([key, value]) => applyCSSVariableValue(element, key, value));
+            selectedID = selectionIDForElement(element);
             edit = {
-              operation: 'setAttribute',
+              operation: 'setCSSVariables',
               nodeInternalID: selectedInternalID,
-              name: 'data-og-layout',
-              value: nextLayout,
-              previousValue: previousValue
+              values: values,
+              previousValues: previousValues
             };
           } else if (command === 'pasteCSSVariables') {
             const values = {};
@@ -5277,21 +6833,28 @@ struct WebCanvasView: NSViewRepresentable {
               previousValues: previousValues
             };
           } else if (command === 'toggleHidden') {
-            const previousValue = element.getAttribute('data-og-hidden') || '';
-            const nextValue = previousValue === 'true' ? '' : 'true';
+            if (!elementSupportsCapability(element, 'edit-layout')) {
+              return { success: false, selectedID: selectedID };
+            }
+            const hadHiddenAttribute = element.hasAttribute('hidden');
+            const previousValue = hadHiddenAttribute ? element.getAttribute('hidden') || '' : '';
+            const nextValue = hadHiddenAttribute ? '' : 'hidden';
             if (nextValue) {
-              element.setAttribute('data-og-hidden', nextValue);
+              element.setAttribute('hidden', nextValue);
             } else {
-              element.removeAttribute('data-og-hidden');
+              element.removeAttribute('hidden');
             }
             edit = {
               operation: 'setAttribute',
               nodeInternalID: selectedInternalID,
-              name: 'data-og-hidden',
+              name: 'hidden',
               value: nextValue,
-              previousValue: previousValue
+              previousValue: previousValue,
+              previousAttributePresent: hadHiddenAttribute,
+              removeAttribute: hadHiddenAttribute
             };
           } else if (command === 'toggleLocked') {
+            const hadLockedAttribute = element.hasAttribute('data-og-locked');
             const previousValue = element.getAttribute('data-og-locked') || '';
             const nextValue = previousValue === 'true' ? '' : 'true';
             if (nextValue) {
@@ -5304,33 +6867,35 @@ struct WebCanvasView: NSViewRepresentable {
               nodeInternalID: selectedInternalID,
               name: 'data-og-locked',
               value: nextValue,
-              previousValue: previousValue
+              previousValue: previousValue,
+              previousAttributePresent: hadLockedAttribute,
+              removeAttribute: hadLockedAttribute && !nextValue
             };
           } else if (command === 'flipHorizontal') {
-            const previousValue = element.style.getPropertyValue('--og-scale-x') || '';
-            toggleScaleVariable(element, '--og-scale-x');
+            const scaleChange = flipScaleAxis(element, 0, payload || {});
+            if (!scaleChange) { return { success: false, selectedID: selectedID }; }
             edit = {
               operation: 'setCSSVariable',
               nodeInternalID: selectedInternalID,
-              key: '--og-scale-x',
-              value: element.style.getPropertyValue('--og-scale-x') || '',
-              previousValue: previousValue
+              key: 'scale',
+              value: scaleChange.value,
+              previousValue: scaleChange.previousValue
             };
           } else if (command === 'flipVertical') {
-            const previousValue = element.style.getPropertyValue('--og-scale-y') || '';
-            toggleScaleVariable(element, '--og-scale-y');
+            const scaleChange = flipScaleAxis(element, 1, payload || {});
+            if (!scaleChange) { return { success: false, selectedID: selectedID }; }
             edit = {
               operation: 'setCSSVariable',
               nodeInternalID: selectedInternalID,
-              key: '--og-scale-y',
-              value: element.style.getPropertyValue('--og-scale-y') || '',
-              previousValue: previousValue
+              key: 'scale',
+              value: scaleChange.value,
+              previousValue: scaleChange.previousValue
             };
           } else {
             return { success: false, selectedID: selectedID };
           }
 
-          collectNodes();
+          collectLayerNodes();
           if (selectedID) {
             selectNode(selectedID);
             notifySelection(selectedID);
@@ -5341,8 +6906,9 @@ struct WebCanvasView: NSViewRepresentable {
 
         window.OpenGraphite = {
           collectNodes: collectNodes,
+          collectLayerNodes: collectLayerNodes,
+          collectNodeDetails: collectNodeDetails,
           collectStaticFlowLinks: collectStaticFlowLinks,
-          ensureInternalIDs: ensureInternalIDs,
           installEditorSelectionStyle: installEditorSelectionStyle,
           selectNode: selectNode,
           selectNodes: selectNodes,
@@ -5359,12 +6925,14 @@ struct WebCanvasView: NSViewRepresentable {
           setTextContent: setTextContent,
           copyPayload: copyPayload,
           replaceDocumentHTML: replaceDocumentHTML,
+          suspendTransientStateForSerialization: suspendTransientStateForSerialization,
+          resumeTransientStateAfterSerialization: resumeTransientStateAfterSerialization,
           runCommand: runCommand
         };
 
         document.addEventListener('pointerdown', function(event) {
           if (editingTextElement) {
-            if (editingTextElement.contains(event.target)) { return; }
+            if (editingTextElement.contains(originalEventTarget(event))) { return; }
             finishTextEditing(false);
           }
           if (beginPendingFramePlacement(event)) {
@@ -5375,7 +6943,7 @@ struct WebCanvasView: NSViewRepresentable {
 
         document.addEventListener('mousedown', function(event) {
           if (editingTextElement) {
-            if (editingTextElement.contains(event.target)) { return; }
+            if (editingTextElement.contains(originalEventTarget(event))) { return; }
             finishTextEditing(false);
           }
           if (beginPendingFramePlacement(event)) {
@@ -5384,7 +6952,7 @@ struct WebCanvasView: NSViewRepresentable {
         }, activePointerOptions);
 
         document.addEventListener('pointermove', function(event) {
-          updateStaticFlowHoverFromTarget(event.target);
+          updateStaticFlowHoverFromTarget(originalEventTarget(event));
           updateScrollStateAt(event.clientX, event.clientY);
           if (updateFramePlacement(event)) {
             return;
@@ -5395,7 +6963,7 @@ struct WebCanvasView: NSViewRepresentable {
         }, activePointerOptions);
 
         document.addEventListener('pointerover', function(event) {
-          updateStaticFlowHoverFromTarget(event.target);
+          updateStaticFlowHoverFromTarget(originalEventTarget(event));
         }, passivePointerOptions);
 
         document.addEventListener('pointerout', function(event) {
@@ -5438,8 +7006,8 @@ struct WebCanvasView: NSViewRepresentable {
         }, activePointerOptions);
 
         document.addEventListener('dragstart', function(event) {
-          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
-          if (activeTool !== 'select' || !editableElementFromTarget(event.target)) { return; }
+          if (editingTextElement && editingTextElement.contains(originalEventTarget(event))) { return; }
+          if (activeTool !== 'select' || !editableElementFromTarget(originalEventTarget(event))) { return; }
           event.preventDefault();
           event.stopPropagation();
         }, activePointerOptions);
@@ -5486,17 +7054,17 @@ struct WebCanvasView: NSViewRepresentable {
         }, { capture: true });
 
         document.addEventListener('focusout', function(event) {
-          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          if (!editingTextElement || originalEventTarget(event) !== editingTextElement) { return; }
           finishTextEditing(false);
         }, true);
 
         document.addEventListener('input', function(event) {
-          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          if (!editingTextElement || originalEventTarget(event) !== editingTextElement) { return; }
           notifyTextEditingChange(editingTextElement);
         }, true);
 
         document.addEventListener('paste', function(event) {
-          if (!editingTextElement || event.target !== editingTextElement) { return; }
+          if (!editingTextElement || originalEventTarget(event) !== editingTextElement) { return; }
           const text = event.clipboardData ? event.clipboardData.getData('text/plain') : '';
           if (text.length === 0) { return; }
           event.preventDefault();
@@ -5526,6 +7094,7 @@ struct WebCanvasView: NSViewRepresentable {
         }, passivePointerOptions);
 
         window.addEventListener('resize', function() {
+          scheduleNodeCollection();
           scheduleStaticFlowLinkCollection();
           scheduleSelectionOverlayUpdate();
         }, passivePointerOptions);
@@ -5547,17 +7116,17 @@ struct WebCanvasView: NSViewRepresentable {
             return;
           }
 
-          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          if (editingTextElement && editingTextElement.contains(originalEventTarget(event))) { return; }
           if (activeTool !== 'select') {
             if (activeTool === 'frame') {
-              const element = editableElementFromTarget(event.target);
+              const element = editableElementFromTarget(originalEventTarget(event));
               if (element) {
                 event.preventDefault();
                 event.stopPropagation();
                 const id = nextSelectionIDForClick(element);
                 selectNode(id);
                 notifySelection(id);
-                collectNodes();
+                collectNodeDetails(id);
                 return;
               }
               event.preventDefault();
@@ -5570,7 +7139,7 @@ struct WebCanvasView: NSViewRepresentable {
             }
             return;
           }
-          const element = editableElementFromTarget(event.target);
+          const element = editableElementFromTarget(originalEventTarget(event));
           if (!element) { return; }
           event.preventDefault();
           event.stopPropagation();
@@ -5590,13 +7159,13 @@ struct WebCanvasView: NSViewRepresentable {
           }
           selectNode(id);
           notifySelection(id);
-          collectNodes();
+          collectNodeDetails(id);
         }, true);
 
         document.addEventListener('dblclick', function(event) {
-          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
+          if (editingTextElement && editingTextElement.contains(originalEventTarget(event))) { return; }
           if (activeTool !== 'select') { return; }
-          const element = editableElementFromTarget(event.target);
+          const element = editableElementFromTarget(originalEventTarget(event));
           if (!element) { return; }
           const textElement = textElementForEditing(element, clickSequenceStartSelectedID);
           if (!textElement) { return; }
@@ -5607,15 +7176,15 @@ struct WebCanvasView: NSViewRepresentable {
         }, true);
 
         document.addEventListener('contextmenu', function(event) {
-          if (editingTextElement && editingTextElement.contains(event.target)) { return; }
-          const element = editableElementFromTarget(event.target);
+          if (editingTextElement && editingTextElement.contains(originalEventTarget(event))) { return; }
+          const element = editableElementFromTarget(originalEventTarget(event));
           if (!element) { return; }
           event.preventDefault();
           event.stopPropagation();
-          const id = activeTool === 'select' ? nextSelectionIDForClick(element) : elementID(element);
+          const id = activeTool === 'select' ? nextSelectionIDForClick(element) : selectionIDForElement(element);
           selectNode(id);
           notifySelection(id);
-          collectNodes();
+          collectNodeDetails(id);
           const focusElement = nodeWithID(id) || element;
           window.webkit.messageHandlers.openGraphiteContextMenu.postMessage({
             id: id,
@@ -5627,7 +7196,7 @@ struct WebCanvasView: NSViewRepresentable {
         }, true);
 
         document.addEventListener('opengraphite:components-ready', function() {
-          collectNodes();
+          collectLayerNodes();
           collectStaticFlowLinks();
           if (currentSelectedID) {
             selectNode(currentSelectedID);
@@ -5637,7 +7206,7 @@ struct WebCanvasView: NSViewRepresentable {
       installEditorSelectionStyle();
 
       setTimeout(function() {
-        collectNodes();
+        collectLayerNodes();
         collectStaticFlowLinks();
         postScrollState(emptyScrollState(false));
       }, 0);

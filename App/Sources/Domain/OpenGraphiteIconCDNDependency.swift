@@ -37,7 +37,7 @@ struct OpenGraphiteIconCDNDependency: Equatable, Hashable, Identifiable {
 }
 
 /// 論理名（日本語）: アイコンCDN依存性検出器
-/// 概要: OpenGraphite HTML と companion CSS から `data-og-icon-source="cdn"` の icon node を検出し、依存性一覧向けに集約します。
+/// 概要: OpenGraphite HTML と companion CSS の標準 mask propertyから`data-og-icon-source="cdn"`のicon provenanceを検出し、依存性一覧向けに集約します。
 enum OpenGraphiteIconCDNDependencyScanner {
     /// 論理名（日本語）: 読み込み済みprojectからのアイコンCDN依存性検出関数
     /// 処理概要: Project が保持する page と component master HTML を読み、CDN icon 依存を集約します。
@@ -70,6 +70,7 @@ enum OpenGraphiteIconCDNDependencyScanner {
 
         for source in sources {
             let html = source.html
+            let graphNodes = OpenGraphiteHTMLDocument(html: html).nodes(companionCSS: source.companionCSS)
             for match in iconNodeMatches(in: html) {
                 guard let tagRange = Range(match.range(at: 0), in: html) else { continue }
                 let tag = String(html[tagRange])
@@ -77,9 +78,28 @@ enum OpenGraphiteIconCDNDependencyScanner {
                 let iconName = normalizedAttribute("data-og-icon-name", in: tag)
                 let internalID = attribute("data-og-internal-id", in: tag)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let iconURL = internalID.flatMap { source.companionCSS?.cssVariables(forNodeInternalID: $0)["--og-icon-url"] } ?? ""
+                let displayID = attribute("data-og-id", in: tag)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let standardID = attribute("id", in: tag)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let graphNode = graphNodes.first { node in
+                    if let internalID, !internalID.isEmpty {
+                        return node.internalID == internalID
+                    }
+                    if let displayID, !displayID.isEmpty, node.id == displayID {
+                        return true
+                    }
+                    guard let standardID, !standardID.isEmpty else { return false }
+                    return node.attributes["id"] == standardID || node.id == standardID
+                }
+                let maskTarget = graphNode?.renderingTargets.first { $0.kind == "mask" }
+                let iconURL = maskTarget?.resolvedValues["mask-image"]
+                    ?? maskTarget?.resolvedValues["-webkit-mask-image"]
+                    ?? maskTarget?.authoredValues["mask-image"]
+                    ?? maskTarget?.authoredValues["-webkit-mask-image"]
+                    ?? ""
                 let context = [
-                    String(html[tagRange.lowerBound..<contextEndIndex(from: tagRange.upperBound, in: html)]),
+                    tag,
                     iconURL
                 ].joined(separator: "\n")
                 let descriptor = cdnDescriptor(library: library, context: context)
@@ -172,10 +192,6 @@ enum OpenGraphiteIconCDNDependencyScanner {
             return nil
         }
         return String(tag[valueRange])
-    }
-
-    private static func contextEndIndex(from startIndex: String.Index, in html: String) -> String.Index {
-        html.index(startIndex, offsetBy: 700, limitedBy: html.endIndex) ?? html.endIndex
     }
 
     private static func cdnDescriptor(library: String, context: String) -> CDNDescriptor {

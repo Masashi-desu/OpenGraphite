@@ -1,14 +1,160 @@
+/*
+ * Page-local presentation baselines for the authored sample elements.
+ * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
+ */
+:where(
+  baseline,
+  devicebadge,
+  devicelabel,
+  devicemeta,
+  devicevalue,
+  drawingsurface,
+  drawprompt,
+  headercopy,
+  inkworkspace,
+  paddevice,
+  padheader,
+  padlabel,
+  practicepad,
+  pressureends,
+  pressurelabel,
+  pressureline,
+  pressurescale,
+  sourceitem,
+  sourcelabel,
+  sourcestrip,
+  sourcevalue,
+  steplabel,
+  toolcard,
+  toolcopy,
+  toolhint,
+  toolicon,
+  toolrail,
+  tooltext,
+  tooltitle,
+  trylabel,
+  trypanel,
+  trytext,
+  tutorialheader,
+  tutoriallead,
+  tutorialstylusink,
+  tutorialtitle
+) {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: auto;
+  max-width: none;
+  flex: initial;
+  margin: 0;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 0 solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  transform-origin: center;
+  gap: 0;
+  align-items: stretch;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  position: relative;
+}
+
+:where(
+  baseline,
+  devicebadge,
+  drawingsurface,
+  headercopy,
+  inkworkspace,
+  padheader,
+  practicepad,
+  pressureline,
+  pressurescale,
+  sourceitem,
+  sourcestrip,
+  toolcard,
+  toolcopy,
+  toolrail,
+  trypanel,
+  tutorialheader,
+  tutorialstylusink
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+:where(
+  devicelabel,
+  devicemeta,
+  devicevalue,
+  drawprompt,
+  paddevice,
+  padlabel,
+  pressureends,
+  pressurelabel,
+  sourcelabel,
+  sourcevalue,
+  steplabel,
+  toolhint,
+  toolicon,
+  tooltext,
+  tooltitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+) {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.2;
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-align: inherit;
+}
+
+:where(
+  devicelabel,
+  devicemeta,
+  devicevalue,
+  drawprompt,
+  paddevice,
+  padlabel,
+  pressureends,
+  pressurelabel,
+  sourcelabel,
+  sourcevalue,
+  steplabel,
+  toolhint,
+  toolicon,
+  tooltext,
+  tooltitle,
+  trylabel,
+  trytext,
+  tutoriallead,
+  tutorialtitle
+):where(:not([hidden]), [hidden="until-found" i]) {
+  display: block;
+}
+
+
 [data-og-internal-id="tutinkroot010"] {
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   padding: 48px;
   gap: 30px;
   background: #0b0c13;
   color: #f7f6fc;
-  --og-font-family-default: var(--font-family-ui);
-  --og-font-family-ja: var(--font-family-ja);
+  font-family: var(--font-family-ui);
+}
+
+[data-og-internal-id="tutinkroot010"]:lang(ja) {
+  font-family: var(--font-family-ja);
 }
 
 [data-og-internal-id="tutinkheader10"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 30px;
   align-items: flex-end;
@@ -16,6 +162,8 @@
 }
 
 [data-og-internal-id="tutinkheadcopy"] {
+  display: flex;
+  flex-direction: column;
   max-width: 790px;
   gap: 12px;
 }
@@ -46,6 +194,8 @@
 }
 
 [data-og-internal-id="tutinkdevice10"] {
+  display: flex;
+  flex-direction: column;
   width: 250px;
   gap: 6px;
   padding: 17px 19px;
@@ -73,6 +223,8 @@
 }
 
 [data-og-internal-id="tutinkworkspace"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   min-height: 520px;
   gap: 18px;
@@ -80,6 +232,8 @@
 }
 
 [data-og-internal-id="tutinktoolrail"] {
+  display: flex;
+  flex-direction: column;
   width: 390px;
   min-width: 390px;
   gap: 12px;
@@ -88,6 +242,8 @@
 [data-og-internal-id="tutinkpentool0"],
 [data-og-internal-id="tutinkeraser00"],
 [data-og-internal-id="tutinklasso000"] {
+  display: flex;
+  flex-direction: row;
   gap: 15px;
   padding: 17px;
   align-items: center;
@@ -125,6 +281,8 @@
 [data-og-internal-id="tutinkpencopy0"],
 [data-og-internal-id="tutinkerasercp"],
 [data-og-internal-id="tutinklassocp0"] {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
 }
 
@@ -154,6 +312,8 @@
 }
 
 [data-og-internal-id="tutinkpad0010"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 520px;
   gap: 14px;
@@ -164,6 +324,9 @@
 }
 
 [data-og-internal-id="tutinkpadhead0"] {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   width: 100%;
   justify-content: space-between;
 }
@@ -175,6 +338,8 @@
 }
 
 [data-og-internal-id="tutinkdrawarea"] {
+  display: block;
+  position: relative;
   flex: 1 1 auto;
   min-height: 350px;
   overflow: hidden;
@@ -215,6 +380,8 @@
 }
 
 [data-og-internal-id="tutinkpressure"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 12px;
   align-items: center;
@@ -237,6 +404,8 @@
 }
 
 [data-og-internal-id="tutinksource10"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 10px;
   align-items: stretch;
@@ -245,6 +414,8 @@
 [data-og-internal-id="tutinksourcei1"],
 [data-og-internal-id="tutinksourcei2"],
 [data-og-internal-id="tutinksourcei3"] {
+  display: flex;
+  flex-direction: column;
   flex: 1 1 0;
   gap: 5px;
   padding: 14px 16px;
@@ -262,6 +433,8 @@
 }
 
 [data-og-internal-id="tutinktrypanel"] {
+  display: flex;
+  flex-direction: row;
   width: 100%;
   gap: 22px;
   padding: 18px 22px;
@@ -275,4 +448,27 @@
   color: #cfebeb;
   font-size: 13px;
   line-height: 1.6;
+}
+@media (max-width: 760px) {
+  [data-og-internal-id="tutinkroot010"] {
+    padding: 24px;
+  }
+
+  [data-og-internal-id="tutinkheader10"],
+  [data-og-internal-id="tutinkworkspace"],
+  [data-og-internal-id="tutinkpentool0"],
+  [data-og-internal-id="tutinkeraser00"],
+  [data-og-internal-id="tutinklasso000"],
+  [data-og-internal-id="tutinkpadhead0"],
+  [data-og-internal-id="tutinkpressure"],
+  [data-og-internal-id="tutinksource10"],
+  [data-og-internal-id="tutinktrypanel"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  [data-og-internal-id="tutinktoolrail"] {
+    width: 100%;
+    min-width: 0;
+  }
 }

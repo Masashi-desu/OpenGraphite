@@ -7,50 +7,58 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
     <link rel="stylesheet" href="./tutorial-components-states.css">
+      <script src="../OpenGraphite.runtime.js" defer></script>
   </head>
   <body>
-    <ComponentTutorial data-og-id="component-tutorial-states" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutcmpstaroot">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstahead">
-        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutcmpstastep">COMPONENTS TUTORIAL · 03</StepLabel>
-        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutcmpstatitl">Placement で別状態を並べる</TutorialTitle>
-        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutcmpstalead">Placement は同じ Master を別状態でプレビューする参照表示です。Clone を編集しても保存先は Master なので、全 Placement が同期します。</TutorialLead>
+    <ComponentTutorial data-og-id="component-tutorial-states" data-og-internal-id="tutcmpstaroot">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutcmpstahead">
+        <StepLabel data-og-id="step-label" data-og-internal-id="tutcmpstastep">COMPONENTS TUTORIAL · 03</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutcmpstatitl">Placement で別状態を並べる</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutcmpstalead">Placement は同じ Master を別状態でプレビューする参照表示です。Clone を編集しても保存先は Master なので、全 Placement が同期します。</TutorialLead>
       </TutorialHeader>
 
-      <PlacementLegend data-og-id="placement-legend" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstalegend">
-        <LegendItem data-og-id="legend-master" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstalegmas"><LegendDot data-og-id="legend-master-dot" data-og-type="frame" data-og-internal-id="tutcmpstamdot"></LegendDot><LegendText data-og-id="legend-master-text" data-og-type="text" data-og-internal-id="tutcmpstamtext">Master · 編集の正本</LegendText></LegendItem>
-        <LegendItem data-og-id="legend-placement" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstalegpla"><LegendDot data-og-id="legend-placement-dot" data-og-type="frame" data-og-internal-id="tutcmpstapdot"></LegendDot><LegendText data-og-id="legend-placement-text" data-og-type="text" data-og-internal-id="tutcmpstaptext">Placement · 参照プレビュー</LegendText></LegendItem>
-        <LegendItem data-og-id="legend-mode" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstalegmod"><LegendDot data-og-id="legend-mode-dot" data-og-type="frame" data-og-internal-id="tutcmpstadotmod"></LegendDot><LegendText data-og-id="legend-mode-text" data-og-type="text" data-og-internal-id="tutcmpstatextmod">Mode · 表示状態</LegendText></LegendItem>
+      <PlacementLegend data-og-id="placement-legend" data-og-internal-id="tutcmpstalegend">
+        <LegendItem data-og-id="legend-master" data-og-internal-id="tutcmpstalegmas"><LegendDot data-og-id="legend-master-dot" data-og-internal-id="tutcmpstamdot"></LegendDot><LegendText data-og-id="legend-master-text" data-og-internal-id="tutcmpstamtext">Master · 編集の正本</LegendText></LegendItem>
+        <LegendItem data-og-id="legend-placement" data-og-internal-id="tutcmpstalegpla"><LegendDot data-og-id="legend-placement-dot" data-og-internal-id="tutcmpstapdot"></LegendDot><LegendText data-og-id="legend-placement-text" data-og-internal-id="tutcmpstaptext">Placement · 参照プレビュー</LegendText></LegendItem>
+        <LegendItem data-og-id="legend-mode" data-og-internal-id="tutcmpstalegmod"><LegendDot data-og-id="legend-mode-dot" data-og-internal-id="tutcmpstadotmod"></LegendDot><LegendText data-og-id="legend-mode-text" data-og-internal-id="tutcmpstatextmod">Runtime · host state</LegendText></LegendItem>
       </PlacementLegend>
 
-      <StateWorkbench data-og-id="state-workbench" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstawork">
-        <StateRow data-og-id="master-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstamrow">
-          <RowLabel data-og-id="master-row-label" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstamrlbl"><RowEyebrow data-og-id="master-row-eyebrow" data-og-type="text" data-og-internal-id="tutcmpstamrey">SOURCE</RowEyebrow><RowTitle data-og-id="master-row-title" data-og-type="text" data-og-internal-id="tutcmpstamrtit">Master</RowTitle><RowText data-og-id="master-row-text" data-og-type="text" data-og-internal-id="tutcmpstamrtxt">ここを変更すると下の Placement も更新されます。</RowText></RowLabel>
-          <StateCard data-og-id="tutorial-state-card-master" data-og-type="frame" data-og-layout="vertical" data-og-component="tutorial-state-card" data-og-component-kind="master" data-og-part="root" data-og-internal-id="tutcmpstatemst">
-            <StateTop data-og-id="state-card-top" data-og-type="frame" data-og-layout="horizontal" data-og-part="header" data-og-internal-id="tutcmpstatetop">
-              <StateIcon data-og-id="state-card-icon" data-og-type="icon" data-og-icon-library="lucide" data-og-icon-name="panel-top" data-og-icon-source="inline" data-og-part="icon" data-og-internal-id="tutcmpstaicon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path></svg></StateIcon>
-              <StateIdentity data-og-id="state-card-identity" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstaident"><StateTitle data-og-id="state-card-title" data-og-type="text" data-og-slot="title" data-og-part="title" data-og-internal-id="tutcmpstatitle">Inspector panel</StateTitle><StateMeta data-og-id="state-card-meta" data-og-type="text" data-og-part="meta" data-og-internal-id="tutcmpstameta">Editable properties</StateMeta></StateIdentity>
+      <StateWorkbench data-og-id="state-workbench" data-og-internal-id="tutcmpstawork">
+        <StateRow data-og-id="master-row" data-og-internal-id="tutcmpstamrow">
+          <RowLabel data-og-id="master-row-label" data-og-internal-id="tutcmpstamrlbl"><RowEyebrow data-og-id="master-row-eyebrow" data-og-internal-id="tutcmpstamrey">SOURCE</RowEyebrow><RowTitle data-og-id="master-row-title" data-og-internal-id="tutcmpstamrtit">Master</RowTitle><RowText data-og-id="master-row-text" data-og-internal-id="tutcmpstamrtxt">ここを変更すると下の Placement も更新されます。</RowText></RowLabel>
+          <tutorial-state-card data-og-id="tutorial-state-card-master" data-og-component="tutorial-state-card" part="root" data-og-internal-id="tutcmpstatemst"><template>
+    <link rel="stylesheet" href="./tutorial-components-states.css">
+            <StateTop data-og-id="state-card-top" part="header" data-og-internal-id="tutcmpstatetop">
+              <StateIcon data-og-id="state-card-icon" data-og-icon-library="lucide" data-og-icon-name="panel-top" data-og-icon-source="inline" part="icon" data-og-internal-id="tutcmpstaicon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path></svg></StateIcon>
+              <StateIdentity data-og-id="state-card-identity" data-og-internal-id="tutcmpstaident"><slot name="title"><StateTitle data-og-id="state-card-title" part="title" data-og-internal-id="tutcmpstatitle">Inspector panel</StateTitle></slot><StateMeta data-og-id="state-card-meta" part="meta" data-og-internal-id="tutcmpstameta">Editable properties</StateMeta></StateIdentity>
             </StateTop>
-            <StateBody data-og-id="state-card-body" data-og-type="text" data-og-slot="body" data-og-part="body" data-og-state-hidden="collapsed" data-og-internal-id="tutcmpstabody">選択中オブジェクトの Layout、Appearance、Typography を編集します。</StateBody>
-            <StateSummary data-og-id="state-card-summary" data-og-type="text" data-og-hidden="true" data-og-state-visible="collapsed" data-og-part="summary" data-og-internal-id="tutcmpstasumm">3 property groups</StateSummary>
-            <StateAction data-og-id="state-card-action" data-og-type="button" data-og-part="action" data-og-state-hidden="collapsed" data-og-internal-id="tutcmpstaactn">Open Inspector</StateAction>
-          </StateCard>
+            <slot name="body"><StateBody data-og-id="state-card-body" part="body" data-og-internal-id="tutcmpstabody">選択中オブジェクトの Layout、Appearance、Typography を編集します。</StateBody></slot>
+            <StateSummary data-og-id="state-card-summary" part="summary" data-og-internal-id="tutcmpstasumm">3 property groups</StateSummary>
+            <StateAction data-og-id="state-card-action" part="action" data-og-internal-id="tutcmpstaactn">Open Inspector</StateAction>
+            <StateLoading data-og-id="state-card-loading" part="loading" data-og-internal-id="tutcmpstaload">Loading properties…</StateLoading>
+
+  </template></tutorial-state-card>
         </StateRow>
 
-        <PlacementRow data-og-id="placement-row" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstaprow">
-          <PlacementLesson data-og-id="expanded-placement-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstaexpls">
-            <PlacementHeading data-og-id="expanded-placement-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstaexphead"><PlacementTitle data-og-id="expanded-placement-title" data-og-type="text" data-og-internal-id="tutcmpstaexptit">Expanded</PlacementTitle><ModeBadge data-og-id="expanded-mode-badge" data-og-type="text" data-og-internal-id="tutcmpstaexpbad">mode: expanded</ModeBadge></PlacementHeading>
-            <og-placement data-og-id="state-card-expanded-placement" data-og-type="frame" data-og-layout="vertical" data-og-role="component-placement" data-og-source-component-internal-id="tutcompstates01" data-og-source-node-internal-id="tutcmpstatemst" data-og-placement-mode="expanded" data-og-internal-id="tutcmpstaexppl"></og-placement>
+        <PlacementRow data-og-id="placement-row" data-og-internal-id="tutcmpstaprow">
+          <PlacementLesson data-og-id="expanded-placement-lesson" data-og-internal-id="tutcmpstaexpls">
+            <PlacementHeading data-og-id="expanded-placement-heading" data-og-internal-id="tutcmpstaexphead"><PlacementTitle data-og-id="expanded-placement-title" data-og-internal-id="tutcmpstaexptit">Expanded</PlacementTitle><ModeBadge data-og-id="expanded-mode-badge" data-og-internal-id="tutcmpstaexpbad">mode: expanded</ModeBadge></PlacementHeading>
+            <og-placement data-og-id="state-card-expanded-placement" data-og-source-component-internal-id="tutcompstates01" data-og-source-node-internal-id="tutcmpstatemst" data-og-internal-id="tutcmpstaexppl"></og-placement>
           </PlacementLesson>
-          <PlacementLesson data-og-id="collapsed-placement-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpstacolls">
-            <PlacementHeading data-og-id="collapsed-placement-heading" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstacolhead"><PlacementTitle data-og-id="collapsed-placement-title" data-og-type="text" data-og-internal-id="tutcmpstacoltit">Collapsed</PlacementTitle><ModeBadge data-og-id="collapsed-mode-badge" data-og-type="text" data-og-internal-id="tutcmpstacolbad">mode: collapsed</ModeBadge></PlacementHeading>
-            <og-placement data-og-id="state-card-collapsed-placement" data-og-type="frame" data-og-layout="vertical" data-og-role="component-placement" data-og-source-component-internal-id="tutcompstates01" data-og-source-node-internal-id="tutcmpstatemst" data-og-placement-mode="collapsed" data-og-internal-id="tutcmpstacolpl"></og-placement>
+          <PlacementLesson data-og-id="loading-placement-lesson" data-og-internal-id="tutcmpstaloadls">
+            <PlacementHeading data-og-id="loading-placement-heading" data-og-internal-id="tutcmpstaloadhead"><PlacementTitle data-og-id="loading-placement-title" data-og-internal-id="tutcmpstaloadtit">Loading</PlacementTitle><ModeBadge data-og-id="loading-mode-badge" data-og-internal-id="tutcmpstaloadbad">class: is-loading</ModeBadge></PlacementHeading>
+            <og-placement data-og-id="state-card-loading-placement" data-og-source-component-internal-id="tutcompstates01" data-og-source-node-internal-id="tutcmpstatemst" data-og-internal-id="tutcmpstaloadpl"></og-placement>
+          </PlacementLesson>
+          <PlacementLesson data-og-id="collapsed-placement-lesson" data-og-internal-id="tutcmpstacolls">
+            <PlacementHeading data-og-id="collapsed-placement-heading" data-og-internal-id="tutcmpstacolhead"><PlacementTitle data-og-id="collapsed-placement-title" data-og-internal-id="tutcmpstacoltit">Collapsed</PlacementTitle><ModeBadge data-og-id="collapsed-mode-badge" data-og-internal-id="tutcmpstacolbad">mode: collapsed</ModeBadge></PlacementHeading>
+            <og-placement data-og-id="state-card-collapsed-placement" data-og-source-component-internal-id="tutcompstates01" data-og-source-node-internal-id="tutcmpstatemst" data-og-internal-id="tutcmpstacolpl"></og-placement>
           </PlacementLesson>
         </PlacementRow>
       </StateWorkbench>
 
-      <SyncTask data-og-id="sync-task" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpstasync">
-        <TaskLabel data-og-id="task-label" data-og-type="text" data-og-internal-id="tutcmpstatasklb">TRY IT</TaskLabel>
-        <TaskText data-og-id="task-text" data-og-type="text" data-og-internal-id="tutcmpstatasktx">いずれかの Placement 内で Title の文字サイズを変更し、Master ともう一方の Placement が同時に変わることを確認します。</TaskText>
+      <SyncTask data-og-id="sync-task" data-og-internal-id="tutcmpstasync">
+        <TaskLabel data-og-id="task-label" data-og-internal-id="tutcmpstatasklb">TRY IT</TaskLabel>
+        <TaskText data-og-id="task-text" data-og-internal-id="tutcmpstatasktx">いずれかの Placement 内で Title の文字サイズを変更し、Master ともう一方の Placement が同時に変わることを確認します。</TaskText>
       </SyncTask>
     </ComponentTutorial>
   </body>

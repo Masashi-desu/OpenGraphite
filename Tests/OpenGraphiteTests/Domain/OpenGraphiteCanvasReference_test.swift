@@ -137,6 +137,87 @@ struct OpenGraphiteCanvasReferenceTests {
             )
         }
     }
+
+    /// 論理名（日本語）: 軽量HTML参照対象解決テスト
+    /// 概要: 全Agent graphを生成しない参照専用APIが、任意階層nodeとproject rootを1回のtree走査で区別することを確認します。
+    @Test("参照専用HTML APIは任意階層nodeとPage rootを区別する")
+    func testLightweightReferenceTargetDistinguishesNestedNodeAndPageRoot() throws {
+        // コンディション：Page rootと深い参照nodeを持つHTMLを用意する（Given）
+        let fixture = try CanvasReferenceTestFixture.make()
+        defer { fixture.remove() }
+        let html = try String(contentsOf: fixture.pageHTMLURL, encoding: .utf8)
+        let document = OpenGraphiteHTMLDocument(html: html)
+
+        // 検証内容：参照専用APIでnested node、Page root、重複IDを解決する（When）
+        let nested = document.referenceTarget(
+            internalID: "nested-opaque",
+            isProjectRegisteredResource: true
+        )
+        let root = document.referenceTarget(
+            internalID: "page-root-opaque",
+            isProjectRegisteredResource: true
+        )
+        let duplicateDocument = OpenGraphiteHTMLDocument(
+            html: "<main><span data-og-internal-id=\"duplicate\"></span><i data-og-internal-id=\"duplicate\"></i></main>"
+        )
+
+        // 期待値：nested nodeは表示用情報を返し、rootはguard可能、重複identityは曖昧解決しない（Then）
+        #expect(nested?.id == "nested-object")
+        #expect(nested?.internalID == "nested-opaque")
+        #expect(nested?.tagName == "label")
+        #expect((nested?.depth ?? 0) >= 2)
+        #expect(nested?.isProjectResourceRoot == false)
+        #expect(root?.isProjectResourceRoot == true)
+        #expect(duplicateDocument.referenceTarget(internalID: "duplicate") == nil)
+    }
+
+    /// 論理名（日本語）: Main参照解決性能計測テスト
+    /// 概要: Main chapterの実HTMLで全Agent graph生成と参照専用tree走査を同一process内で計測し、対象nodeの同値性を確認します。
+    @Test("Main実HTMLの参照専用解決時間を計測する")
+    func testMainSampleReferenceResolutionPerformance() throws {
+        // コンディション：Main chapterのhero-copy参照元HTMLをrepository正本から読み込む（Given）
+        let repositoryURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let html = try String(
+            contentsOf: repositoryURL.appendingPathComponent("public/index.html"),
+            encoding: .utf8
+        )
+        let targetInternalID = "1rl4q0jsthuim"
+
+        // 検証内容：旧参照経路相当の全graph生成と、新しい参照専用解決を個別に計測する（When）
+        let graphStart = DispatchTime.now().uptimeNanoseconds
+        let graphNodes = OpenGraphiteHTMLDocument(html: html).nodes(
+            isProjectRegisteredResource: true
+        )
+        let graphElapsed = DispatchTime.now().uptimeNanoseconds - graphStart
+
+        let targetStart = DispatchTime.now().uptimeNanoseconds
+        let target = OpenGraphiteHTMLDocument(html: html).referenceTarget(
+            internalID: targetInternalID,
+            isProjectRegisteredResource: true
+        )
+        let targetElapsed = DispatchTime.now().uptimeNanoseconds - targetStart
+
+        let graphMilliseconds = Double(graphElapsed) / 1_000_000
+        let targetMilliseconds = Double(targetElapsed) / 1_000_000
+        let speedup = targetElapsed == 0 ? 0 : Double(graphElapsed) / Double(targetElapsed)
+        print(
+            String(
+                format: "CANVAS_REFERENCE_PERF fullGraph=%.3fms targeted=%.3fms ratio=%.1fx",
+                graphMilliseconds,
+                targetMilliseconds,
+                speedup
+            )
+        )
+
+        // 期待値：両経路は同じhero-copyを返し、参照専用結果はPage rootではない（Then）
+        #expect(graphNodes.first { $0.internalID == targetInternalID }?.id == "hero-copy")
+        #expect(target?.id == "hero-copy")
+        #expect(target?.isProjectResourceRoot == false)
+    }
 }
 
 /// 論理名（日本語）: キャンバス参照テストFixture

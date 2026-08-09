@@ -246,6 +246,81 @@ struct CSSPairVariableField: View {
     }
 }
 
+/// 論理名（日本語）: CSS個別scaleフィールド
+/// 概要: 標準`scale` propertyを単純な2D値ではX/Y軸、関数値・3D値・keywordではraw値として編集します。
+///
+/// プロパティ:
+/// - `value`: 現在の標準`scale`値。
+/// - `onCommit`: serialize後の標準`scale`値を反映する処理。
+struct CSSScaleVariableField: View {
+    var value: String
+    var onCommit: (String) -> Void
+
+    @State private var scaleValue: CSSScaleValue
+
+    /// 論理名（日本語）: CSS個別scaleフィールド初期化関数
+    /// 処理概要: authored値を安全な2軸入力またはraw入力へ分類します。
+    ///
+    /// - Parameters:
+    ///   - value: 現在の標準`scale`値。
+    ///   - onCommit: serialize後の標準`scale`値を反映する処理。
+    init(value: String, onCommit: @escaping (String) -> Void) {
+        self.value = value
+        self.onCommit = onCommit
+        _scaleValue = State(initialValue: CSSScaleValue(cssString: value))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CSSControlHeader(key: "scale", trailingValue: scaleValue.cssString)
+            if scaleValue.usesAxisFields {
+                HStack(spacing: 6) {
+                    axisField(label: "X", text: $scaleValue.x)
+                    axisField(label: "Y", text: $scaleValue.y)
+                }
+            } else {
+                CSSSmallTextField(
+                    label: "Raw",
+                    text: $scaleValue.rawValue,
+                    icon: InspectorParameterIcon.cssVariable("scale"),
+                    scrubProfile: nil,
+                    onCommit: commitIfChanged
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: value) { _, newValue in
+            scaleValue = CSSScaleValue(cssString: newValue)
+        }
+    }
+
+    /// 論理名（日本語）: scale軸入力生成関数
+    /// 処理概要: XまたはY軸をunitless/percentage対応スクラバー付きフィールドとして生成します。
+    ///
+    /// - Parameters:
+    ///   - label: 軸ラベル。
+    ///   - text: 対象軸値のbinding。
+    /// - Returns: 1軸分の入力フィールド。
+    private func axisField(label: String, text: Binding<String>) -> some View {
+        CSSSmallTextField(
+            label: label,
+            text: text,
+            icon: InspectorParameterIcon.cssSubfield(label: label, key: "scale"),
+            scrubProfile: InspectorScrubProfile.forCSSKey("scale"),
+            onCommit: commitIfChanged
+        )
+    }
+
+    /// 論理名（日本語）: CSS個別scale変更時適用関数
+    /// 処理概要: 未変更の1値/raw sourceはそのまま保ち、軸を変更した場合だけ明示的な`<x> <y>`へ直列化します。
+    private func commitIfChanged() {
+        let nextValue = scaleValue.cssString(preservingUnchanged: value)
+        scaleValue = CSSScaleValue(cssString: nextValue)
+        guard nextValue != value.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        onCommit(nextValue)
+    }
+}
+
 /// 論理名（日本語）: CSS位置オフセット変数グループ
 /// 概要: `top`、`right`、`bottom`、`left` を狭い Inspector 幅に収まる縦配置で編集します。
 ///

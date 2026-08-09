@@ -1,7 +1,7 @@
 # Pseudo Class State Contract TODO
 
 作成日: 2026-07-06
-更新日: 2026-07-06
+更新日: 2026-08-09
 分類: WebAssets
 状態: Active
 
@@ -11,8 +11,8 @@
 
 ## スコープ
 
-- 対象: companion CSS 上の `[data-og-internal-id="..."]:<pseudo>` rule の編集契約、許可疑似クラス allowlist、Inspector / Canvas の状態 preview、CLI / MCP の state 指定。
-- 対象外: placement の `data-og-placement-mode`（構造状態。既存契約を維持し、CSS 疑似状態とは役割分離する）、`@media`（[ResponsiveMediaQueryContract TODO](ResponsiveMediaQueryContract.md)）。
+- 対象: companion CSS 上の authored selector に続く `:<pseudo>` rule の編集契約、許可疑似クラス allowlist、Inspector / Canvas の状態 preview、CLI / MCP の state 指定。optional な `[data-og-internal-id="..."]` selector だけを前提にしない。
+- 対象外: placement / component state の標準 runtime / CSS 契約（[Source of Truth Contract](../../../specs/SourceOfTruthContract.md#placement-contract)）、`@media`（[ResponsiveMediaQueryContract TODO](ResponsiveMediaQueryContract.md)）。
 
 ## 人間側の意思決定
 
@@ -20,11 +20,11 @@
 
 ## 草案（判断材料）
 
-- 保存形: companion CSS の `[data-og-internal-id="x"]:hover { ... }` を編集対象 rule にする。
+- 保存形: companion CSS の既存 authored selector（例: `#primary-action:hover`、`site-action:hover`、注釈済み node の `[data-og-internal-id="x"]:hover`）を編集対象 rule にし、独自 state IR は作らない。
 - allowlist 候補: `:hover`, `:focus`, `:focus-visible`, `:active`, `:disabled`。`OpenGraphite.contract.json` に追加し、対象外の疑似クラス・複合 selector は read-only として扱う。
 - preview 再現: WebKit の forced pseudo-class 相当が使えない場合、runtime-only の状態 class / 属性注入で再現し、保存 HTML には残さない（Runtime-Only Attribute Contract と同じ扱い）。
 - CLI: `node style set --state hover --var background --value ...`。graph には state scope 付き declaration として表現する。
-- `data-og-placement-mode`（表示状態の構造切替）と CSS 疑似状態（インタラクション状態）の役割分離を spec に明記する。
+- project runtime が持つ表示状態と CSS 疑似状態の役割分離を spec に明記し、OpenGraphite 固有の `data-og-placement-mode` を新しい契約の前提にしない。
 
 ## 直列タスク
 

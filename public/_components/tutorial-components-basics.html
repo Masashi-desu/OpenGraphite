@@ -7,47 +7,52 @@
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
     <link rel="stylesheet" href="./tutorial-components-basics.css">
+      <script src="../OpenGraphite.runtime.js" defer></script>
   </head>
   <body>
-    <ComponentTutorial data-og-id="component-tutorial-basics" data-og-type="page" data-og-layout="vertical" data-og-internal-id="tutcmpbasroot">
-      <TutorialHeader data-og-id="tutorial-header" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpbashead">
-        <StepLabel data-og-id="step-label" data-og-type="text" data-og-internal-id="tutcmpbasstep">COMPONENTS TUTORIAL · 01</StepLabel>
-        <TutorialTitle data-og-id="tutorial-title" data-og-type="text" data-og-internal-id="tutcmpbastitl">Component Master の構造</TutorialTitle>
-        <TutorialLead data-og-id="tutorial-lead" data-og-type="text" data-og-internal-id="tutcmpbaslead">Master は再利用される構造と見た目の正本です。Root・Part・Slot の役割を、2つの小さな Master で確認します。</TutorialLead>
+    <ComponentTutorial data-og-id="component-tutorial-basics" data-og-internal-id="tutcmpbasroot">
+      <TutorialHeader data-og-id="tutorial-header" data-og-internal-id="tutcmpbashead">
+        <StepLabel data-og-id="step-label" data-og-internal-id="tutcmpbasstep">COMPONENTS TUTORIAL · 01</StepLabel>
+        <TutorialTitle data-og-id="tutorial-title" data-og-internal-id="tutcmpbastitl">Component Master の構造</TutorialTitle>
+        <TutorialLead data-og-id="tutorial-lead" data-og-internal-id="tutcmpbaslead">Master は Custom Element host と template で表す再利用構造の正本です。標準 part と slot の役割を、2つの小さな Master で確認します。</TutorialLead>
       </TutorialHeader>
 
-      <AnatomyGuide data-og-id="anatomy-guide" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpbasguide">
-        <GuideItem data-og-id="guide-root" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpgroot01"><GuideNumber data-og-id="guide-root-number" data-og-type="text" data-og-internal-id="tutcmpgrootnum">01 · ROOT</GuideNumber><GuideText data-og-id="guide-root-text" data-og-type="text" data-og-internal-id="tutcmpgroottxt">data-og-component と master を持つ共有範囲</GuideText></GuideItem>
-        <GuideItem data-og-id="guide-part" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpgpart01"><GuideNumber data-og-id="guide-part-number" data-og-type="text" data-og-internal-id="tutcmpgpartnum">02 · PART</GuideNumber><GuideText data-og-id="guide-part-text" data-og-type="text" data-og-internal-id="tutcmpgparttxt">内部の意味ある部品につける安定名</GuideText></GuideItem>
-        <GuideItem data-og-id="guide-slot" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpgslot01"><GuideNumber data-og-id="guide-slot-number" data-og-type="text" data-og-internal-id="tutcmpgslotnum">03 · SLOT</GuideNumber><GuideText data-og-id="guide-slot-text" data-og-type="text" data-og-internal-id="tutcmpgslottxt">Instance ごとに差し替えられる内容</GuideText></GuideItem>
+      <AnatomyGuide data-og-id="anatomy-guide" data-og-internal-id="tutcmpbasguide">
+        <GuideItem data-og-id="guide-root" data-og-internal-id="tutcmpgroot01"><GuideNumber data-og-id="guide-root-number" data-og-internal-id="tutcmpgrootnum">01 · HOST</GuideNumber><GuideText data-og-id="guide-root-text" data-og-internal-id="tutcmpgroottxt">data-og-component で参照する hyphenated Custom Element</GuideText></GuideItem>
+        <GuideItem data-og-id="guide-part" data-og-internal-id="tutcmpgpart01"><GuideNumber data-og-id="guide-part-number" data-og-internal-id="tutcmpgpartnum">02 · PART</GuideNumber><GuideText data-og-id="guide-part-text" data-og-internal-id="tutcmpgparttxt">Shadow DOM の公開 styling hook に使う標準 part</GuideText></GuideItem>
+        <GuideItem data-og-id="guide-slot" data-og-internal-id="tutcmpgslot01"><GuideNumber data-og-id="guide-slot-number" data-og-internal-id="tutcmpgslotnum">03 · SLOT</GuideNumber><GuideText data-og-id="guide-slot-text" data-og-internal-id="tutcmpgslottxt">Instance content を受け取る標準 slot name</GuideText></GuideItem>
       </AnatomyGuide>
 
-      <MasterStage data-og-id="master-stage" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpbasstage">
-        <MasterLesson data-og-id="button-master-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpbtnlesson">
-          <LessonLabel data-og-id="button-master-label" data-og-type="text" data-og-internal-id="tutcmpbtnlabel">MASTER A · ACTION</LessonLabel>
-          <TutorialAction data-og-id="tutorial-action-master" data-og-type="button" data-og-component="tutorial-action" data-og-component-kind="master" data-og-part="root" data-og-slot="label" data-og-internal-id="tutcmpactionmst">Continue</TutorialAction>
-          <LessonCode data-og-id="button-master-code" data-og-type="text" data-og-internal-id="tutcmpbtncode">component: tutorial-action
+      <MasterStage data-og-id="master-stage" data-og-internal-id="tutcmpbasstage">
+        <MasterLesson data-og-id="button-master-lesson" data-og-internal-id="tutcmpbtnlesson">
+          <LessonLabel data-og-id="button-master-label" data-og-internal-id="tutcmpbtnlabel">MASTER A · ACTION</LessonLabel>
+          <tutorial-action data-og-id="tutorial-action-master" data-og-component="tutorial-action" part="root" data-og-internal-id="tutcmpactionmst"><template>
+    <link rel="stylesheet" href="./tutorial-components-basics.css"><slot name="label">Continue</slot>
+  </template></tutorial-action>
+          <LessonCode data-og-id="button-master-code" data-og-internal-id="tutcmpbtncode">component: tutorial-action
 part: root
 slot: label</LessonCode>
-          <LessonTask data-og-id="button-master-task" data-og-type="text" data-og-internal-id="tutcmpbtntask">TRY：Master の Padding と Radius を変更</LessonTask>
+          <LessonTask data-og-id="button-master-task" data-og-internal-id="tutcmpbtntask">TRY：Master の Padding と Radius を変更</LessonTask>
         </MasterLesson>
 
-        <MasterLesson data-og-id="badge-master-lesson" data-og-type="frame" data-og-layout="vertical" data-og-internal-id="tutcmpbadgeless">
-          <LessonLabel data-og-id="badge-master-label" data-og-type="text" data-og-internal-id="tutcmpbadgelbl">MASTER B · STATUS</LessonLabel>
-          <TutorialBadge data-og-id="tutorial-badge-master" data-og-type="frame" data-og-layout="horizontal" data-og-component="tutorial-badge" data-og-component-kind="master" data-og-part="root" data-og-internal-id="tutcmpbadgemst">
-            <BadgeDot data-og-id="badge-dot" data-og-type="frame" data-og-part="indicator" data-og-internal-id="tutcmpbadgedot"></BadgeDot>
-            <BadgeText data-og-id="badge-text" data-og-type="text" data-og-slot="label" data-og-part="label" data-og-internal-id="tutcmpbadgetxt">Ready</BadgeText>
-          </TutorialBadge>
-          <LessonCode data-og-id="badge-master-code" data-og-type="text" data-og-internal-id="tutcmpbadgecode">component: tutorial-badge
+        <MasterLesson data-og-id="badge-master-lesson" data-og-internal-id="tutcmpbadgeless">
+          <LessonLabel data-og-id="badge-master-label" data-og-internal-id="tutcmpbadgelbl">MASTER B · STATUS</LessonLabel>
+          <tutorial-badge data-og-id="tutorial-badge-master" data-og-component="tutorial-badge" part="root" data-og-internal-id="tutcmpbadgemst"><template>
+    <link rel="stylesheet" href="./tutorial-components-basics.css">
+            <BadgeDot data-og-id="badge-dot" part="indicator" data-og-internal-id="tutcmpbadgedot"></BadgeDot>
+            <slot name="label"><BadgeText data-og-id="badge-text" part="label" data-og-internal-id="tutcmpbadgetxt">Ready</BadgeText></slot>
+
+  </template></tutorial-badge>
+          <LessonCode data-og-id="badge-master-code" data-og-internal-id="tutcmpbadgecode">component: tutorial-badge
 parts: indicator / label
 slot: label</LessonCode>
-          <LessonTask data-og-id="badge-master-task" data-og-type="text" data-og-internal-id="tutcmpbadgetask">TRY：Dot の色を変更し共有部品を理解</LessonTask>
+          <LessonTask data-og-id="badge-master-task" data-og-internal-id="tutcmpbadgetask">TRY：Dot の色を変更し共有部品を理解</LessonTask>
         </MasterLesson>
       </MasterStage>
 
-      <SourceRule data-og-id="source-rule" data-og-type="frame" data-og-layout="horizontal" data-og-internal-id="tutcmpbasrule">
-        <RuleLabel data-og-id="rule-label" data-og-type="text" data-og-internal-id="tutcmpbasrlbl">SOURCE OF TRUTH</RuleLabel>
-        <RuleText data-og-id="rule-text" data-og-type="text" data-og-internal-id="tutcmpbasrtxt">構造はこの HTML、各 Master のデザイン値は tutorial-components-basics.css に保存されます。</RuleText>
+      <SourceRule data-og-id="source-rule" data-og-internal-id="tutcmpbasrule">
+        <RuleLabel data-og-id="rule-label" data-og-internal-id="tutcmpbasrlbl">SOURCE OF TRUTH</RuleLabel>
+        <RuleText data-og-id="rule-text" data-og-internal-id="tutcmpbasrtxt">構造はこの HTML、各 Master のデザイン値は tutorial-components-basics.css に保存されます。</RuleText>
       </SourceRule>
     </ComponentTutorial>
   </body>

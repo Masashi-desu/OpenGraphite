@@ -1311,33 +1311,20 @@ private struct CanvasProjectView: View {
             }
 
             ForEach(references, id: \.internalID) { reference in
-                if let target = try? store.resolveCanvasReferenceID(reference.referenceID) {
-                    CanvasReferenceObjectView(
-                        store: store,
-                        reference: reference,
-                        target: target,
-                        zoom: zoom
-                    )
-                    .offset(
-                        x: CGFloat(reference.x) - bounds.minX,
-                        y: CGFloat(reference.y) - bounds.minY
-                    )
-                    .zIndex(
-                        store.selectedCanvasReferenceID == reference.internalID
-                            ? CanvasProjectLayerOrder.selectedReference
-                            : CanvasProjectLayerOrder.reference
-                    )
-                } else {
-                    CanvasBrokenReferenceView(
-                        store: store,
-                        reference: reference
-                    )
-                    .offset(
-                        x: CGFloat(reference.x) - bounds.minX,
-                        y: CGFloat(reference.y) - bounds.minY
-                    )
-                    .zIndex(CanvasProjectLayerOrder.reference)
-                }
+                CanvasReferenceResolutionView(
+                    store: store,
+                    reference: reference,
+                    zoom: zoom
+                )
+                .offset(
+                    x: CGFloat(reference.x) - bounds.minX,
+                    y: CGFloat(reference.y) - bounds.minY
+                )
+                .zIndex(
+                    store.selectedCanvasReferenceID == reference.internalID
+                        ? CanvasProjectLayerOrder.selectedReference
+                        : CanvasProjectLayerOrder.reference
+                )
             }
 
             if store.previewDisplayMode == .flow, store.selectedCanvasSegment == .pages {
@@ -1721,7 +1708,10 @@ private struct CanvasReferenceInputPopover: View {
     }
 
     var body: some View {
-        let resolution = resolvedReference
+        let normalizedReferenceID = referenceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolution = normalizedReferenceID.isEmpty
+            ? OpenGraphiteCanvasReferenceResolutionState.idle
+            : store.canvasReferenceResolutionState(for: normalizedReferenceID)
 
         VStack(alignment: .leading, spacing: 12) {
             Text("参照IDからオブジェクトを追加")
@@ -1785,17 +1775,48 @@ private struct CanvasReferenceInputPopover: View {
         .onAppear {
             isReferenceFieldFocused = true
         }
+        .task(id: store.canvasReferenceResolutionRequestID(for: normalizedReferenceID)) {
+            guard !normalizedReferenceID.isEmpty else { return }
+            await store.prepareCanvasReferenceResolution(for: normalizedReferenceID)
+        }
     }
+}
 
-    /// 論理名（日本語）: 入力中参照解決結果
-    /// 概要: SwiftUI描画時点の参照IDを解決し、プレビュー対象または利用者向けエラーを返します。
-    private var resolvedReference: (target: OpenGraphiteResolvedCanvasReference?, errorMessage: String?) {
-        let normalized = referenceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return (nil, nil) }
-        do {
-            return (try store.resolveCanvasReferenceID(normalized), nil)
-        } catch {
-            return (nil, error.localizedDescription)
+/// 論理名（日本語）: キャンバス参照非同期解決View
+/// 概要: Canvas Projectの描画をHTML解決から分離し、読込中は操作可能なplaceholderを表示します。
+///
+/// プロパティ:
+/// - `store`: revisionキャッシュとbackground解決を保持するEditorStore。
+/// - `reference`: Canvas直下の参照配置。
+/// - `zoom`: 現在のCanvas拡大率。
+private struct CanvasReferenceResolutionView: View {
+    @ObservedObject var store: EditorStore
+    var reference: OpenGraphiteCanvasReference
+    var zoom: Double
+
+    var body: some View {
+        let state = store.canvasReferenceResolutionState(for: reference.referenceID)
+        Group {
+            switch state {
+            case .resolved(let target):
+                CanvasReferenceObjectView(
+                    store: store,
+                    reference: reference,
+                    target: target,
+                    zoom: zoom
+                )
+            case .failed(let message):
+                CanvasBrokenReferenceView(
+                    store: store,
+                    reference: reference,
+                    errorMessage: message
+                )
+            case .idle, .loading:
+                CanvasLoadingReferenceView(reference: reference)
+            }
+        }
+        .task(id: store.canvasReferenceResolutionRequestID(for: reference.referenceID)) {
+            await store.prepareCanvasReferenceResolution(for: reference.referenceID)
         }
     }
 }
@@ -2010,12 +2031,13 @@ private struct CanvasDocumentBody<Content: View>: View {
 private struct CanvasBrokenReferenceView: View {
     @ObservedObject var store: EditorStore
     var reference: OpenGraphiteCanvasReference
+    var errorMessage: String? = nil
 
     var body: some View {
         ContentUnavailableView(
             "参照を解決できません",
             systemImage: "exclamationmark.link",
-            description: Text(reference.referenceID)
+            description: Text(errorMessage ?? reference.referenceID)
         )
         .frame(width: CGFloat(reference.width), height: CGFloat(reference.height))
         .background(Color(nsColor: .textBackgroundColor))
@@ -2033,6 +2055,27 @@ private struct CanvasBrokenReferenceView: View {
                 store.deleteCanvasReference(id: reference.internalID)
             }
         }
+    }
+}
+
+/// 論理名（日本語）: キャンバス参照読込View
+/// 概要: background HTML解決中もCanvasのscroll / selectionを塞がない固定サイズplaceholderを表示します。
+///
+/// プロパティ:
+/// - `reference`: placeholderの配置サイズとaccessibility labelに使う参照配置。
+private struct CanvasLoadingReferenceView: View {
+    var reference: OpenGraphiteCanvasReference
+
+    var body: some View {
+        ProgressView("参照を読み込み中…")
+            .frame(width: CGFloat(reference.width), height: CGFloat(reference.height))
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.orange.opacity(0.6), lineWidth: 1)
+            )
+            .accessibilityLabel("参照オブジェクトを読み込み中")
     }
 }
 
@@ -2489,7 +2532,8 @@ private struct CanvasDocumentView: View {
         guard !ids.isEmpty else { return false }
         return ids.allSatisfy { id in
             guard let selectedNode = store.nodes.first(where: { $0.id == id }) else { return false }
-            return selectedNode.type != "page"
+            return !selectedNode.capabilityEvidence.isProjectResourceRoot
+                && selectedNode.supports(.editLayout)
                 && !selectedNode.isLocked
                 && !selectedNode.isPlacementGenerated
                 && !selectedNode.internalID.isEmpty
