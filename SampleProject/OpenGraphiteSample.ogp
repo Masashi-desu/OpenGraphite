@@ -415,7 +415,31 @@
         {
           "id" : "design-system",
           "canvas" : {
-            "height" : 4300,
+            "height" : 2100,
+            "width" : 1180,
+            "name" : "Overview",
+            "y" : 0,
+            "x" : 0
+          },
+          "internalID" : "3bgx6phkz3jv5",
+          "path" : "_components\/design-system.html"
+        },
+        {
+          "id" : "design-system-atoms",
+          "canvas" : {
+            "height" : 17000,
+            "width" : 1180,
+            "name" : "Atoms",
+            "y" : 0,
+            "x" : 1260
+          },
+          "internalID" : "dssystematoms01",
+          "path" : "_components\/design-system-atoms.html"
+        },
+        {
+          "id" : "design-system-components",
+          "canvas" : {
+            "height" : 7800,
             "previewContext" : {
               "placementMocks" : {
                 "docsnavcollapsedplacement" : {
@@ -431,12 +455,48 @@
               }
             },
             "width" : 1180,
-            "name" : "Desktop",
+            "name" : "Components",
             "y" : 0,
-            "x" : 1120
+            "x" : 2520
           },
-          "internalID" : "3bgx6phkz3jv5",
-          "path" : "_components\/design-system.html"
+          "internalID" : "dssystemcomp01",
+          "path" : "_components\/design-system-components.html"
+        },
+        {
+          "id" : "design-system-templates",
+          "canvas" : {
+            "height" : 2400,
+            "width" : 1180,
+            "name" : "Templates",
+            "y" : 0,
+            "x" : 3780
+          },
+          "internalID" : "dssystemtempl01",
+          "path" : "_components\/design-system-templates.html"
+        },
+        {
+          "id" : "design-system-pages",
+          "canvas" : {
+            "height" : 1950,
+            "width" : 1180,
+            "name" : "Pages",
+            "y" : 0,
+            "x" : 5040
+          },
+          "internalID" : "dssystempages01",
+          "path" : "_components\/design-system-pages.html"
+        },
+        {
+          "id" : "design-system-guidelines",
+          "canvas" : {
+            "height" : 3800,
+            "width" : 1180,
+            "name" : "Guidelines",
+            "y" : 0,
+            "x" : 6300
+          },
+          "internalID" : "dssystemguide01",
+          "path" : "_components\/design-system-guidelines.html"
         }
       ],
       "id" : "main",

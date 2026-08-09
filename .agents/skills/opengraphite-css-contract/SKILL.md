@@ -89,7 +89,7 @@ component 参照では、master を component canvas HTML に置き、page 側�
 
 ```html
 <link rel="stylesheet" href="OpenGraphite.css">
-<link rel="opengraphite-components" href="_components/design-system.html">
+<link rel="opengraphite-components" href="_components/design-system-components.html">
 <script src="OpenGraphite.runtime.js" defer></script>
 ```
 

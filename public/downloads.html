@@ -14,21 +14,22 @@
     <script src="./i18n.js" defer></script>
   </head>
   <body>
-    <link rel="opengraphite-components" href="./_components/design-system.html">
-<OpenGraphitePage data-og-id="page" data-og-internal-id="a40992e00b6c">
+    <link rel="opengraphite-components" href="./_components/design-system-components.html">
   <og-instance data-og-id="site-header" data-og-component="site-header" data-og-internal-id="a4c5c6e43d11">
-  <div slot="nav" style="display: contents">
-    <a href="./index.html" data-og-id="nav-home" data-og-internal-id="60447086753d">
+    <a slot="nav" href="./index.html" data-og-id="nav-home" data-og-internal-id="60447086753d">
       <NavLabel data-og-id="nav-home-label" data-og-text-source="binding" data-i18n-key="site.nav.home" data-og-internal-id="downloadsnavhomelabel" data-og-text-variant-eng="Home">ホーム</NavLabel>
     </a>
-    <a href="./downloads.html" data-og-id="nav-downloads" data-og-internal-id="f6d325d312e5">
+    <a slot="nav" href="./downloads.html" aria-current="page" data-og-id="nav-downloads" data-og-internal-id="f6d325d312e5">
       <NavLabel data-og-id="nav-downloads-label" data-og-text-source="binding" data-i18n-key="site.nav.downloads" data-og-internal-id="downloadsnavdownloadslabel" data-og-text-variant-eng="Downloads">ダウンロード</NavLabel>
     </a>
-    <a href="./docs.html" data-og-id="nav-docs" data-og-internal-id="b991bf4b9a72">
+    <a slot="nav" href="./docs.html" data-og-id="nav-docs" data-og-internal-id="b991bf4b9a72">
       <NavLabel data-og-id="nav-docs-label" data-og-text-source="binding" data-i18n-key="site.nav.docs" data-og-internal-id="downloadsnavdocslabel" data-og-text-variant-eng="Docs">ドキュメント</NavLabel>
     </a>
-  </div>
+    <a slot="nav" class="site-header-switcher" href="./_components/design-system.html" data-og-id="nav-design-system" data-og-internal-id="downloadsnavdesignsystem">
+      <NavLabel data-og-id="nav-design-system-label" data-og-text-source="binding" data-i18n-key="site.nav.designSystem" data-og-internal-id="downloadsnavdesignsystemlabel" data-og-text-variant-eng="Design System">デザインシステム</NavLabel>
+    </a>
 </og-instance>
+<OpenGraphitePage data-og-id="page" data-og-internal-id="a40992e00b6c">
   <DownloadsViewportFrame data-og-id="downloads-viewport-frame" data-og-internal-id="c6d8b2e4a119">
   <DownloadIntro data-og-id="downloads-hero" data-og-internal-id="407e00b97947">
   <EyebrowText data-og-id="downloads-eyebrow" data-og-text-source="binding" data-i18n-key="downloads.hero.eyebrow" data-og-internal-id="f3e07d64565c" data-og-text-variant-eng="Installation guide">導入方法</EyebrowText>
@@ -69,11 +70,12 @@ cd OpenGraphite</CommandBlock>
     <CommandBlock data-og-id="download-sample-code" data-og-internal-id="downloadsamplecode20260613">./script/build_and_run.sh --verify
 SampleProject/OpenGraphiteSample.ogp
 public/index.html
-public/_components/design-system.html</CommandBlock>
+public/_components/design-system-components.html</CommandBlock>
   </div>
 </og-instance>
 </DownloadsViewportFrame>
 </OpenGraphitePage>
 <script src="./OpenGraphite.runtime.js" defer></script>
+<script src="./_components/site-header.js" defer></script>
   </body>
 </html>

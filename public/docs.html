@@ -10,24 +10,26 @@
     <link rel="stylesheet" href="./docs.css">
     <link rel="stylesheet" href="./_components/design-system.css">
     <script src="./OpenGraphite.runtime.js" defer></script>
+    <script src="./_components/site-header.js" defer></script>
     <script src="./i18n.js" defer></script>
     <script src="./docs-code.js" defer></script>
   </head>
   <body>
-    <link rel="opengraphite-components" href="./_components/design-system.html">
+    <link rel="opengraphite-components" href="./_components/design-system-components.html">
     <OpenGraphitePage class="docs-page" data-og-id="page" data-og-internal-id="ef8e793c1658">
       <og-instance data-og-id="site-header" data-og-component="site-header" data-og-internal-id="9887112f291a">
-        <div slot="nav" style="display: contents">
-          <a href="./index.html" data-og-id="nav-home" data-og-internal-id="b6fad7f280fb">
+          <a slot="nav" href="./index.html" data-og-id="nav-home" data-og-internal-id="b6fad7f280fb">
             <NavLabel data-og-id="nav-home-label" data-og-text-source="binding" data-i18n-key="site.nav.home" data-og-internal-id="docsnavhomelabel" data-og-text-variant-eng="Home">ホーム</NavLabel>
           </a>
-          <a href="./downloads.html" data-og-id="nav-downloads" data-og-internal-id="f643c144d6ee">
+          <a slot="nav" href="./downloads.html" data-og-id="nav-downloads" data-og-internal-id="f643c144d6ee">
             <NavLabel data-og-id="nav-downloads-label" data-og-text-source="binding" data-i18n-key="site.nav.downloads" data-og-internal-id="docsnavdownloadslabel" data-og-text-variant-eng="Downloads">ダウンロード</NavLabel>
           </a>
-          <a href="./docs.html" aria-current="page" data-og-id="nav-docs" data-og-internal-id="b61ca0c3c3e9">
+          <a slot="nav" href="./docs.html" aria-current="page" data-og-id="nav-docs" data-og-internal-id="b61ca0c3c3e9">
             <NavLabel data-og-id="nav-docs-label" data-og-text-source="binding" data-i18n-key="site.nav.docs" data-og-internal-id="docsnavdocslabel" data-og-text-variant-eng="Docs">ドキュメント</NavLabel>
           </a>
-        </div>
+          <a slot="nav" class="site-header-switcher" href="./_components/design-system.html" data-og-id="nav-design-system" data-og-internal-id="docsnavdesignsystem">
+            <NavLabel data-og-id="nav-design-system-label" data-og-text-source="binding" data-i18n-key="site.nav.designSystem" data-og-internal-id="docsnavdesignsystemlabel" data-og-text-variant-eng="Design System">デザインシステム</NavLabel>
+          </a>
       </og-instance>
 
       <main class="docs-frame" data-og-id="docs-frame" data-og-internal-id="docsframe0001">

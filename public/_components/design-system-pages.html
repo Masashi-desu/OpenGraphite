@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pages · OpenGraphite Design System</title>
+  <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+  <link rel="stylesheet" href="./design-system-docs.css">
+  <link rel="stylesheet" href="./design-system-pages.css">
+  <link rel="opengraphite-components" href="./design-system-components.html">
+  <script src="../OpenGraphite.runtime.js" defer></script>
+  <script src="./site-header.js" defer></script>
+</head>
+<body class="ds-doc-page ds-pages-page">
+  <og-instance data-og-id="site-header" data-og-component="site-header">
+    <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+    <a slot="nav" href="./design-system.html">Overview</a>
+    <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+    <a slot="nav" href="./design-system-components.html">Components</a>
+    <a slot="nav" href="./design-system-templates.html">Templates</a>
+    <a slot="nav" href="./design-system-pages.html" aria-current="page">Pages</a>
+    <a slot="nav" href="./design-system-guidelines.html">Guidelines</a>
+    <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+  </og-instance>
+
+  <main class="ds-doc-main">
+    <section class="ds-doc-section" id="page-inventory">
+      <header class="ds-section-header"><span class="ds-section-index">PAGES</span><div class="ds-section-heading-copy"><h2>Page inventory</h2><p>同じHTML sourceを日本語/英語のpreview contextで確認し、localeごとの別正本を増やしません。</p></div></header>
+      <div class="ds-page-grid">
+        <article class="ds-page-card"><div class="ds-status-row"><span class="ds-status is-live">Live</span><span class="ds-status">JA / ENG</span></div><h3>Home</h3><p>価値提案、設計原則、機能導線をEditorial templateで構成します。</p><div class="ds-tag-row"><span class="ds-tag">site-header</span><span class="ds-tag">feature-card</span><span class="ds-tag">principle-item</span></div><a href="../index.html">source page →</a></article>
+        <article class="ds-page-card"><div class="ds-status-row"><span class="ds-status is-live">Live</span><span class="ds-status">JA / ENG</span></div><h3>Downloads</h3><p>利用条件、availability、install actionを短いdecision pathに整理します。</p><div class="ds-tag-row"><span class="ds-tag">site-header</span><span class="ds-tag">content-section</span><span class="ds-tag">feature-card</span></div><a href="../downloads.html">source page →</a></article>
+        <article class="ds-page-card"><div class="ds-status-row"><span class="ds-status is-live">Live</span><span class="ds-status">JA / ENG</span></div><h3>Docs</h3><p>正本モデル、編集面、CLI/MCP、verificationをDocumentation templateで説明します。</p><div class="ds-tag-row"><span class="ds-tag">docs-navigation</span><span class="ds-tag">doc-row</span><span class="ds-tag">code-viewer</span></div><a href="../docs.html">source page →</a></article>
+      </div>
+    </section>
+
+    <section class="ds-doc-section" id="page-attributes">
+      <header class="ds-section-header"><span class="ds-section-index">ATTRIBUTES</span><div class="ds-section-heading-copy"><h2>Page attributes</h2><p>完成ページをレビューするときの共通セクションです。</p></div></header>
+      <dl class="ds-attribute-grid">
+        <div><dt>Purpose</dt><dd>誰が、何を判断または完了するページかを一文で定義。</dd></div><div><dt>Template</dt><dd>使用する骨格と、意図的な例外を記録。</dd></div><div><dt>Components</dt><dd>利用masterとpage固有DOMの境界を列挙。</dd></div><div><dt>Content</dt><dd>title、lead、action、empty/error、i18n keyを確認。</dd></div><div><dt>States</dt><dd>default、loading、empty、error、success、locale、responsive。</dd></div><div><dt>Quality</dt><dd>semantic、keyboard、focus、contrast、reflow、performance。</dd></div>
+      </dl>
+    </section>
+
+    <section class="ds-doc-section" id="page-matrix">
+      <header class="ds-section-header"><span class="ds-section-index">MATRIX</span><div class="ds-section-heading-copy"><h2>Required preview matrix</h2><p>ページごとに最低限確認する実コンテンツの組み合わせです。</p></div></header>
+      <div class="ds-card-grid ds-page-matrix">
+        <article class="ds-card"><code>Locale</code><h3>JA / ENG</h3><p>同じDOMへlocale resourceを解決し、root <code>font-family</code> と <code>:lang()</code> の結果を確認。</p></article>
+        <article class="ds-card"><code>Viewport</code><h3>Desktop / Mobile</h3><p>DOM order、navigation、card grid、code wrapping、target sizeを実viewportで確認。</p></article>
+        <article class="ds-card"><code>Preference</code><h3>Reduced motion</h3><p>情報を失わずtransitionを抑制し、操作feedbackを即時状態でも理解可能にする。</p></article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

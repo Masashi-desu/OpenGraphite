@@ -1,0 +1,10 @@
+/* Page-specific template diagrams. */
+
+.ds-template-canvas-marketing {
+  grid-template-columns: 1fr;
+  grid-template-rows: 64px 150px minmax(250px, auto) 90px;
+}
+
+.ds-template-canvas-marketing .is-hero {
+  background: var(--color-surface-active);
+}

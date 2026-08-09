@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Components · OpenGraphite Design System</title>
+  <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+  <link rel="stylesheet" href="./design-system-docs.css">
+  <link rel="stylesheet" href="./design-system-components.css">
+  <script src="../OpenGraphite.runtime.js" defer></script>
+  <script src="./site-header.js" defer></script>
+</head>
+<body class="ds-doc-page">
+  <og-instance data-og-id="site-header" data-og-component="site-header">
+    <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+    <a slot="nav" href="./design-system.html">Overview</a>
+    <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+    <a slot="nav" href="./design-system-components.html" aria-current="page">Components</a>
+    <a slot="nav" href="./design-system-templates.html">Templates</a>
+    <a slot="nav" href="./design-system-pages.html">Pages</a>
+    <a slot="nav" href="./design-system-guidelines.html">Guidelines</a>
+    <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+  </og-instance>
+
+  <main class="ds-doc-main">
+    <section class="ds-doc-section" id="component-contract">
+      <header class="ds-section-header">
+        <span class="ds-section-index">CONTRACT</span>
+        <div class="ds-section-heading-copy">
+          <h2>Component attributes</h2>
+          <p>Componentの構造と利用条件を、共通の属性で整理します。</p>
+        </div>
+      </header>
+      <div class="ds-attribute-contract" aria-label="Required component attributes">
+        <span>Atomic level</span><span>Anatomy</span><span>Slots / attributes</span><span>Variants / states</span><span>Layout / responsive</span><span>Behavior</span><span>Accessibility</span><span>Usage</span>
+      </div>
+    </section>
+
+    <section class="ds-doc-section" id="molecules">
+      <header class="ds-section-header">
+        <span class="ds-section-index">MOLECULES</span>
+        <div class="ds-section-heading-copy">
+          <h2>Molecules</h2>
+          <p>単一の短い目的を果たす、小さな部品の組み合わせです。</p>
+        </div>
+      </header>
+      <div class="ds-component-list">
+        <article class="ds-component-entry" id="section-heading">
+          <header class="ds-component-summary"><span class="ds-status">Molecule</span><h3>Section heading</h3><code>&lt;section-heading&gt;</code><p>章のeyebrowとtitleを一貫した階層で提示します。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="section-heading"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>eyebrow + title</dd></div><div><dt>API</dt><dd><code>slot="eyebrow"</code>、<code>slot="title"</code></dd></div><div><dt>Variants / states</dt><dd>Variantなし。文言差分はslotで渡す。</dd></div><div><dt>Layout</dt><dd>縦stack。親幅に追従し、見出しは自然改行。</dd></div><div><dt>Accessibility</dt><dd>利用側で文書階層に合う見出しsemanticを保持する。</dd></div><div><dt>Usage</dt><dd>大きなcontent sectionの入口。短いeyebrowを推奨。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="feature-card">
+          <header class="ds-component-summary"><span class="ds-status">Molecule</span><h3>Feature card</h3><code>&lt;feature-card&gt;</code><p>機能やavailabilityをeyebrow、title、bodyで要約します。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="feature-card" variant="availability"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>eyebrow + title + supporting body</dd></div><div><dt>API</dt><dd><code>eyebrow</code>、<code>title</code>、<code>body</code> slots</dd></div><div><dt>Variants / states</dt><dd><code>variant="availability"</code> をhostで表現。</dd></div><div><dt>Layout</dt><dd>縦stack、token化されたgapとcard padding。</dd></div><div><dt>Accessibility</dt><dd>色だけで状態を伝えず、title/bodyにも状態を書く。</dd></div><div><dt>Usage</dt><dd>機能紹介、release availability、短い要約。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="principle-item">
+          <header class="ds-component-summary"><span class="ds-status">Molecule</span><h3>Principle item</h3><code>&lt;principle-item&gt;</code><p>番号付きの原則を、titleと本文で説明します。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="principle-item"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>number + title + explanatory body</dd></div><div><dt>API</dt><dd><code>number</code>、<code>title</code>、<code>body</code> slots</dd></div><div><dt>Variants / states</dt><dd>状態なし。順序は親listの情報設計に従う。</dd></div><div><dt>Layout</dt><dd>番号railと本文。狭い幅では縦方向へreflow。</dd></div><div><dt>Accessibility</dt><dd>順序に意味がある場合は利用側で<code>ol</code>を使う。</dd></div><div><dt>Usage</dt><dd>原則、手順、優先順位、decision heuristic。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="doc-row">
+          <header class="ds-component-summary"><span class="ds-status">Molecule</span><h3>Doc row</h3><code>&lt;doc-row&gt;</code><p>index、title、説明、metaを横断的に揃える文書行です。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="doc-row"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>index + title + body + meta</dd></div><div><dt>API</dt><dd><code>index</code>、<code>title</code>、<code>body</code>、<code>meta</code></dd></div><div><dt>Variants / states</dt><dd>単一variant。metaは省略可能。</dd></div><div><dt>Layout</dt><dd>3-column document row。mobileでは縦stack。</dd></div><div><dt>Accessibility</dt><dd>indexだけに意味を依存せずtitleで内容を識別する。</dd></div><div><dt>Usage</dt><dd>機能一覧、API一覧、仕様の章立て。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="doc-code-row">
+          <header class="ds-component-summary"><span class="ds-status">Molecule</span><h3>Doc code row</h3><code>&lt;doc-code-row&gt;</code><p>doc rowに実行可能なcode例を加えた派生部品です。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="doc-code-row"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>index + title + body + code block</dd></div><div><dt>API</dt><dd><code>index</code>、<code>title</code>、<code>body</code>、<code>code</code></dd></div><div><dt>Variants / states</dt><dd>単一variant。codeは改行を保持する。</dd></div><div><dt>Layout</dt><dd>doc rowと同じgrid。codeは横overflowを避ける。</dd></div><div><dt>Accessibility</dt><dd>code前後に目的と結果を自然文で説明する。</dd></div><div><dt>Usage</dt><dd>CLI、MCP、設定、短いHTML/CSS例。</dd></div>
+            </dl>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="ds-doc-section" id="organisms">
+      <header class="ds-section-header">
+        <span class="ds-section-index">ORGANISMS</span>
+        <div class="ds-section-heading-copy">
+          <h2>Organisms</h2>
+          <p>ページ内で独立した責務を持つ機能ブロックです。構造とinteractionの境界を明示します。</p>
+        </div>
+      </header>
+      <div class="ds-component-list">
+        <article class="ds-component-entry" id="site-header">
+          <header class="ds-component-summary"><span class="ds-status">Organism</span><h3>Site header</h3><code>&lt;site-header&gt;</code><p>ブランドと主要navigationを束ねるglobal headerです。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="site-header">
+              <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+              <a slot="nav" href="./design-system.html" aria-current="page">Overview</a>
+              <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+              <a slot="nav" href="./design-system-components.html">Components</a>
+              <a slot="nav" href="./design-system-templates.html">Templates</a>
+              <a slot="nav" href="./design-system-pages.html">Pages</a>
+              <a slot="nav" href="./design-system-guidelines.html">Guidelines</a>
+              <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+            </og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>app mark + brand link + menu toggle + primary navigation</dd></div><div><dt>API</dt><dd><code>slot="brand"</code>、繰り返し可能な<code>slot="nav"</code></dd></div><div><dt>Variants / states</dt><dd>現在位置は<code>aria-current="page"</code>、領域間の切替は<code>site-header-switcher</code>で示す。</dd></div><div><dt>Layout</dt><dd>brandを左、navigationを右へ配置。収まらない場合は高さを変えずmenuへ切り替える。</dd></div><div><dt>Behavior</dt><dd>実際のcontent幅を測定し、menuの開閉と<code>aria-expanded</code>を同期する。</dd></div><div><dt>Accessibility</dt><dd>navigation landmark、識別可能なlink text、native button、Escapeで閉じる操作を提供する。</dd></div><div><dt>Usage</dt><dd>Web pagesとDesign Systemで共通利用し、文言と遷移先はslotで渡す。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="content-section">
+          <header class="ds-component-summary"><span class="ds-status">Organism</span><h3>Content section</h3><code>&lt;content-section&gt;</code><p>主説明と補助actionを2-columnで配置します。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview"><og-instance data-og-component="content-section"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>content copy + optional aside action</dd></div><div><dt>API</dt><dd><code>title</code>、<code>body</code>、<code>aside</code> slots</dd></div><div><dt>Variants / states</dt><dd>asideの有無で情報密度を調整。</dd></div><div><dt>Layout</dt><dd>content + aside。mobileでは本文を先に縦stack。</dd></div><div><dt>Accessibility</dt><dd>action labelは遷移先や結果を具体的に記述。</dd></div><div><dt>Usage</dt><dd>リポジトリ、download補足、関連documentation。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="docs-navigation">
+          <header class="ds-component-summary"><span class="ds-status">Organism</span><h3>Docs navigation</h3><code>&lt;docs-navigation&gt;</code><p>長い文書を移動するcollapsible navigationです。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview ds-preview-navigation"><og-instance data-og-component="docs-navigation" variant="collapsible"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>section links + collapse / open control</dd></div><div><dt>API</dt><dd>host <code>variant</code> と固定navigation structure</dd></div><div><dt>Variants / states</dt><dd><code>collapsible</code>、<code>collapsed</code>。preview stateは.ogp。</dd></div><div><dt>Behavior</dt><dd>controlがhost variantと<code>aria-expanded</code>を同期。</dd></div><div><dt>Accessibility</dt><dd>button label、keyboard操作、現在位置を色以外でも表現。</dd></div><div><dt>Usage</dt><dd>Docs templateの左rail。短いページでは使用しない。</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <article class="ds-component-entry" id="code-viewer">
+          <header class="ds-component-summary"><span class="ds-status">Organism</span><h3>Code viewer</h3><code>&lt;code-viewer&gt;</code><p>code、preview、copy actionを一つの学習面にまとめます。</p></header>
+          <div class="ds-component-body">
+            <div class="ds-component-preview ds-preview-code"><og-instance data-og-component="code-viewer"></og-instance></div>
+            <dl class="ds-attribute-grid">
+              <div><dt>Anatomy</dt><dd>language + actions + code panel + preview panel</dd></div><div><dt>API</dt><dd><code>language</code>、<code>code</code>、<code>preview</code> slots</dd></div><div><dt>Variants / states</dt><dd>host <code>variant="preview"</code>、tabの<code>aria-pressed</code>。</dd></div><div><dt>Behavior</dt><dd>copy feedbackとcode / preview切替。source panelを直接書換えない。</dd></div><div><dt>Accessibility</dt><dd>icon buttonにlabel、選択状態をARIAで公開、focusを保持。</dd></div><div><dt>Usage</dt><dd>HTML/CSS/CLI例と実表示を同じ文脈で比較。</dd></div>
+            </dl>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  <div class="ds-component-registry" data-og-id="component-registry" data-og-internal-id="dssystemregistry01" hidden>
+  <site-header data-og-id="site-header-master" data-og-component="site-header" part="root" data-og-internal-id="a05d1aed996e"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <header class="site-header-shell" part="header">
+      <div class="site-header-brand" part="brand" data-og-id="brand" data-og-internal-id="1fb90cdd0c5d">
+        <span class="site-header-brand-mark" data-og-id="brand-mark" data-og-icon-library="opengraphite" data-og-icon-name="app-icon" data-og-icon-source="library" data-og-internal-id="ede9102ca6b3"><img src="./assets/OpenGraphite.png" alt="OpenGraphite app icon"></span>
+        <slot name="brand"><a class="site-header-brand-link" href="../index.html" data-og-id="brand-text" data-og-internal-id="6db41df13f5b">OpenGraphite</a></slot>
+      </div>
+      <button class="site-header-menu-toggle" type="button" aria-controls="site-header-navigation" aria-expanded="false" aria-label="Open navigation menu" title="Open menu" part="menu-toggle" data-og-id="menu-toggle" data-og-internal-id="siteheadermenutoggle01">
+        <span class="site-header-menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+      <nav id="site-header-navigation" class="site-header-nav" aria-label="Primary navigation" part="navigation" data-og-id="nav" data-og-internal-id="b8ce955a1152">
+        <slot name="nav">
+          <a href="../index.html" aria-current="page" data-og-id="nav-home" data-og-internal-id="87110b95d8e4">Home</a>
+          <a href="../downloads.html" data-og-id="nav-downloads" data-og-internal-id="2074c7d72674">Downloads</a>
+          <a href="../docs.html" data-og-id="nav-docs" data-og-internal-id="68127218491e">Docs</a>
+          <a class="site-header-switcher" href="./design-system.html" data-og-id="nav-design-system" data-og-internal-id="dssystemnavlink01">Design System</a>
+        </slot>
+      </nav>
+    </header>
+  </template></site-header>
+
+
+
+
+
+
+
+  <section-heading data-og-id="section-heading-master" data-og-component="section-heading" part="root" data-og-internal-id="08b1e1f4206d"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <slot name="eyebrow"><sectioneyebrow data-og-id="section-heading-eyebrow" data-og-internal-id="53ee28564070">Section</sectioneyebrow></slot>
+    <slot name="title"><sectiontitle data-og-id="section-heading-title" data-og-internal-id="2764cc3ea223">Section title</sectiontitle></slot>
+
+  </template></section-heading>
+
+  <feature-card data-og-id="feature-card-master" data-og-component="feature-card" part="root" variant="availability" data-og-internal-id="3af881fc5123"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <slot name="eyebrow"><featurecardeyebrow data-og-id="feature-card-eyebrow" data-og-internal-id="145cc0fd1bb3">Reusable asset</featurecardeyebrow></slot>
+    <slot name="title"><featurecardtitle data-og-id="feature-card-title" data-og-internal-id="57d89af48b12">Availability-ready card</featurecardtitle></slot>
+    <slot name="body"><featurecardtext data-og-id="feature-card-body" data-og-internal-id="a5361e02489c">Availability and supporting details stay together in one reusable summary.</featurecardtext></slot>
+
+  </template></feature-card>
+
+  <principle-item data-og-id="principle-item-master" data-og-component="principle-item" part="root" data-og-internal-id="57ad7a45ba32"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <slot name="number"><itemnumber data-og-id="number" data-og-internal-id="684884157065">01 / SOURCE</itemnumber></slot>
+    <itembody data-og-id="principle-item-body-frame" data-og-internal-id="3312f3794d2e">
+      <slot name="title"><itemtitle data-og-id="principle-item-title" data-og-internal-id="7dd4b4bc3b02">HTMLが正本</itemtitle></slot>
+      <slot name="body"><itemtext data-og-id="principle-item-body" data-og-internal-id="145c551ac871">OpenGraphite.appで編集した内容は、exportではなく開いているHTMLそのものへ同期されます。</itemtext></slot>
+    </itembody>
+
+  </template></principle-item>
+
+
+
+  <content-section data-og-id="content-section-master" data-og-component="content-section" part="root" data-og-internal-id="bd428d328309"><template>
+    <link rel="stylesheet" href="./design-system.css"><contentcopy data-og-id="content-section-copy" data-og-internal-id="d570fbb0bfb0"><slot name="title"><sectiontitle data-og-id="content-section-title" data-og-internal-id="9a08e58079f0">Repository</sectiontitle></slot><slot name="body"><sectiontext data-og-id="content-section-body" data-og-internal-id="3dab652df33a">OpenGraphite.app、OpenGraphite.css、ogkiln、MCP serverのソースがまとまっています。</sectiontext></slot></contentcopy><slot name="aside"><contentaside data-og-id="content-section-aside" data-og-internal-id="74d1674521fe"><a href="../docs.html" data-og-id="aside-action" data-og-internal-id="9a2e8aee85ca">Read more</a></contentaside></slot>
+  </template></content-section>
+
+<docsnavstage data-og-id="docs-navigation-stage" data-og-internal-id="docsnavstage001">
+<docs-navigation data-og-id="docs-navigation-master" data-og-component="docs-navigation" part="root" data-og-internal-id="docsnavroot001" variant="collapsible"><template>
+    <link rel="stylesheet" href="./design-system.css">
+  <a class="docs-nav-expanded-only" href="#source-model" data-og-id="docs-nav-source-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.source" data-og-text-variant-eng="Source model" data-og-internal-id="docsnavsourcelink">正本モデル</a>
+  <a class="docs-nav-expanded-only" href="#project-scope" data-og-id="docs-nav-project-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.project" data-og-text-variant-eng="Project scope" data-og-internal-id="docsnavprojectlink">project scope</a>
+  <a class="docs-nav-expanded-only" href="#reference-ids" data-og-id="docs-nav-reference-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.refs" data-og-text-variant-eng="Reference IDs" data-og-internal-id="docsnavreflink">参照 ID</a>
+  <a class="docs-nav-expanded-only" href="#editable-nodes" data-og-id="docs-nav-nodes-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.nodes" data-og-text-variant-eng="Editable nodes" data-og-internal-id="docsnavnodeslink">編集可能 node</a>
+  <a class="docs-nav-expanded-only" href="#components-slots" data-og-id="docs-nav-components-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.components" data-og-text-variant-eng="Components and slots" data-og-internal-id="docsnavcomponentslink">components / slots</a>
+  <a class="docs-nav-expanded-only" href="#placement-mocks" data-og-id="docs-nav-placement-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.placement" data-og-text-variant-eng="Placement mocks" data-og-internal-id="docsnavplacementlink">placement mock</a>
+  <a class="docs-nav-expanded-only" href="#i18n-resources" data-og-id="docs-nav-i18n-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.i18n" data-og-text-variant-eng="i18n resources" data-og-internal-id="docsnavi18nlink">i18n resource</a>
+  <a class="docs-nav-expanded-only" href="#command-surface" data-og-id="docs-nav-command-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.commands" data-og-text-variant-eng="Command surface" data-og-internal-id="docsnavcommandlink">command surface</a>
+  <a class="docs-nav-expanded-only" href="#node-edits" data-og-id="docs-nav-edits-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.edits" data-og-text-variant-eng="Node edits" data-og-internal-id="docsnaveditslink">node edits</a>
+  <a class="docs-nav-expanded-only" href="#verify-build" data-og-id="docs-nav-verify-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.verify" data-og-text-variant-eng="Migrate, verify, and build" data-og-internal-id="docsnavverifylink">migrate / verify / build</a>
+  <a class="docs-nav-expanded-only" href="#mcp-interface" data-og-id="docs-nav-mcp-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.mcp" data-og-text-variant-eng="MCP interface" data-og-internal-id="docsnavmcplink">MCP interface</a>
+  <docsnavfooter data-og-id="docs-navigation-footer" data-og-internal-id="docsnavfooter01">
+  <docsnavfootervalue class="docs-nav-expanded-only" data-og-id="docs-navigation-footer-value" data-og-internal-id="docsnavfootervalue" data-og-icon-library="lucide" data-og-icon-name="panel-left-close" data-og-icon-source="cdn" role="button" tabindex="0" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation" onclick="const root=this.getRootNode().host;root.setAttribute('variant','collapsible collapsed');this.setAttribute('aria-expanded','false');"><span aria-hidden="true" class="og-style-design-system-001"></span></docsnavfootervalue>
+  <button class="docs-nav-collapsed-only" data-og-id="docs-navigation-collapsed-toggle" data-og-internal-id="docsnavcollapsedtoggle" type="button" aria-label="Open navigation" aria-expanded="false" title="Open navigation" onclick="const root=this.getRootNode().host;root.setAttribute('variant','collapsible');this.setAttribute('aria-expanded','true');">
+    <Icon data-og-id="docs-navigation-collapsed-toggle-icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-open" data-og-icon-source="cdn" data-og-internal-id="6bvkutkor6t6"><span aria-hidden="true" class="og-style-design-system-002"></span></Icon>
+  </button>
+</docsnavfooter>
+
+  </template></docs-navigation>
+<og-placement data-og-id="placement-docs-navigation-collapsed" data-og-internal-id="docsnavcollapsedplacement" data-og-source-component-internal-id="dssystemcomp01" data-og-source-node-internal-id="docsnavroot001"></og-placement></docsnavstage>
+
+  <doc-row data-og-id="doc-row-master" data-og-component="doc-row" part="root" data-og-internal-id="ccd141a83690"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <slot name="index"><docindex data-og-id="doc-row-index" data-og-internal-id="b43223484a4a">01</docindex></slot>
+    <slot name="title"><doctitle data-og-id="doc-row-title" data-og-internal-id="4937788b4d20">OpenGraphite.app</doctitle></slot>
+    <docbody data-og-id="doc-row-body-frame" data-og-internal-id="1c4a8cdbbb68">
+      <slot name="body"><doctext data-og-id="doc-row-body" data-og-internal-id="0b97ee07b2ad">`.ogp` からHTMLとCSSを解決し、Canvas、Layers、Inspectorで編集します。</doctext></slot>
+      <slot name="meta"><docmeta data-og-id="meta" data-og-internal-id="278c8deac3dc">Canvas / Layers / Inspector</docmeta></slot>
+    </docbody>
+
+  </template></doc-row>
+
+  <doc-code-row data-og-id="doc-code-row-master" data-og-component="doc-code-row" part="root" data-og-internal-id="5eac543198de"><template>
+    <link rel="stylesheet" href="./design-system.css">
+    <slot name="index"><docindex data-og-id="doc-code-row-index" data-og-internal-id="6ce7875268ea">03</docindex></slot>
+    <slot name="title"><doctitle data-og-id="doc-code-row-title" data-og-internal-id="bf61802645a5">OpenGraphite CLI</doctitle></slot>
+    <docbody data-og-id="doc-code-row-body-frame" data-og-internal-id="a1a3f9fa3e99">
+      <slot name="body"><doctext data-og-id="doc-code-row-body" data-og-internal-id="5f20ea6ad5ff">`ogkiln` は構造取得、検証、node単位編集を同じコマンド体系で提供します。</doctext></slot>
+      <slot name="code"><codetext data-og-id="code" data-og-internal-id="277fc82699fa">./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json</codetext></slot>
+    </docbody>
+
+  </template></doc-code-row>
+  <codeviewerstage data-og-id="code-viewer-stage" data-og-internal-id="7f59dfcf1e20">
+    <code-viewer data-og-id="code-viewer-master" data-og-component="code-viewer" part="root" data-code-viewer-root="true" data-og-internal-id="hrbifdygbcig"><template>
+    <link rel="stylesheet" href="./design-system.css">
+  <codeviewerbar data-og-id="code-viewer-toolbar" data-og-internal-id="js8iass53wn6">
+    <slot name="language"><codeviewerlanguage data-og-id="code-viewer-language" data-og-internal-id="2b4280qxj8c8l">HTML</codeviewerlanguage></slot>
+    <codevieweractions data-og-id="code-viewer-actions" data-og-internal-id="nth7xc9ej5bc">
+      <button data-og-id="code-viewer-copy" type="button" aria-label="Copy code" title="Copy code" onclick="const root=this.closest('[data-code-viewer-root]');const code=root?.querySelector('[data-code-viewer-code]')?.textContent?.trim()||'';const done=()=>{this.style.setProperty('background','var(--color-control-flash)');window.setTimeout(()=>this.style.setProperty('background','transparent'),900);};if(navigator.clipboard&amp;&amp;window.isSecureContext){navigator.clipboard.writeText(code).then(done,done);}else{const area=document.createElement('textarea');area.value=code;document.body.appendChild(area);area.select();document.execCommand('copy');area.remove();done();}" data-og-internal-id="1qlvjr39w6qtl">
+        <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"><rect x="10" y="17" width="21" height="21" rx="5"></rect><rect x="18" y="9" width="21" height="21" rx="5"></rect></svg>
+      </button>
+      <codeviewerswitch data-og-id="code-viewer-switch" data-og-internal-id="1d8vc4dxu4djp">
+        <button data-og-id="code-viewer-code-button" type="button" aria-label="Show code" title="Show code" aria-pressed="true" data-code-viewer-tab="code" onclick="const root=this.closest('[data-code-viewer-root]');const view='code';root.querySelectorAll('[data-code-viewer-panel]').forEach((panel)=>{panel.hidden=panel.getAttribute('data-code-viewer-panel')!==view;});root.querySelectorAll('[data-code-viewer-tab]').forEach((button)=>{const active=button.getAttribute('data-code-viewer-tab')===view;button.setAttribute('aria-pressed',active?'true':'false');button.style.setProperty('background',active?'var(--color-control-active)':'var(--color-control-track)');button.style.setProperty('border',active?'var(--border-control-active)':'var(--border-transparent)');});" data-og-internal-id="2rprfd5sv0w8p">
+          <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 15l-6 9 6 9"></path><path d="M31 15l6 9-6 9"></path><path d="M20 36h8"></path></svg>
+        </button>
+        <button data-og-id="code-viewer-preview-button" type="button" aria-label="Show preview" title="Show preview" aria-pressed="false" data-code-viewer-tab="preview" onclick="const root=this.closest('[data-code-viewer-root]');const view='preview';root.querySelectorAll('[data-code-viewer-panel]').forEach((panel)=>{panel.hidden=panel.getAttribute('data-code-viewer-panel')!==view;});root.querySelectorAll('[data-code-viewer-tab]').forEach((button)=>{const active=button.getAttribute('data-code-viewer-tab')===view;button.setAttribute('aria-pressed',active?'true':'false');button.style.setProperty('background',active?'var(--color-control-active)':'var(--color-control-track)');button.style.setProperty('border',active?'var(--border-control-active)':'var(--border-transparent)');});" data-og-internal-id="3i0eyoookzec6">
+          <svg aria-hidden="true" viewBox="0 0 48 48" width="17" height="17" fill="currentColor"><path d="M17 11v26l23-13z"></path></svg>
+        </button>
+      </codeviewerswitch>
+    </codevieweractions>
+  </codeviewerbar>
+  <codeviewerpanels data-og-id="code-viewer-panels" data-og-internal-id="23awq1bi1fipc">
+    <slot name="code"><pre data-og-id="code-viewer-code" data-code-viewer-panel="code" data-code-viewer-code="true" data-og-internal-id="qzz4btct7o3f"><span class="og-style-design-system-003">&lt;</span><span class="og-style-design-system-004">div</span> <span class="og-style-design-system-005">class</span><span class="og-style-design-system-006">=</span><span class="og-style-design-system-007">&quot;dialog&quot;</span><span class="og-style-design-system-008">&gt;</span>
+  <span class="og-style-design-system-009">Hello</span>
+<span class="og-style-design-system-010">&lt;/</span><span class="og-style-design-system-011">div</span><span class="og-style-design-system-012">&gt;</span></pre></slot>
+    <slot name="preview"><codeviewerpreview data-og-id="code-viewer-preview" data-code-viewer-panel="preview" data-og-internal-id="3r8b4trg390ep">
+      <codeviewerpreviewdialog data-og-id="code-viewer-preview-dialog" data-og-internal-id="3768zm71pwa62">
+        <codeviewerpreviewtext data-og-id="code-viewer-preview-text" data-og-internal-id="1qdkhqo41ekv6">Hello</codeviewerpreviewtext>
+      </codeviewerpreviewdialog>
+    </codeviewerpreview></slot>
+  </codeviewerpanels>
+
+  </template></code-viewer>
+    <og-placement data-og-id="placement-code-viewer-preview" data-og-source-component-internal-id="dssystemcomp01" data-og-source-node-internal-id="hrbifdygbcig" data-og-internal-id="67a2e12dbed8"></og-placement>
+  </codeviewerstage>
+  </div>
+</body>
+</html>

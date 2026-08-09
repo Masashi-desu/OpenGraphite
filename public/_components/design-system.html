@@ -1,269 +1,81 @@
 <!doctype html>
-<html lang="ja"><head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>OpenGraphite Design System</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&amp;family=JetBrains+Mono:wght@400;600&amp;family=Noto+Sans:wght@400;500;600;700;800;900&amp;family=Noto+Sans+JP:wght@400;500;700;800&amp;display=swap">
-    <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
-    <link rel="stylesheet" href="./design-system.css">
-      <script src="../OpenGraphite.runtime.js" defer></script>
-  </head>
-  <body>
-<designsystemlibrary data-og-id="design-system-page" data-og-internal-id="42addef8c515">
-  <libraryheader data-og-id="design-system-header" data-og-internal-id="282ba16a0682">
-    <libraryeyebrow data-og-id="design-system-eyebrow" data-og-internal-id="aff91f4c9370">
-      Design system
-    </libraryeyebrow>
-    <librarytitle data-og-id="design-system-title" data-og-internal-id="855ffbd20e72">
-      OpenGraphite Page System
-    </librarytitle>
-    <librarylead data-og-id="design-system-lead" data-og-internal-id="76148abe1ab9">
-      Pages share the same dark workspace palette, tight editorial spacing, and CLI-editable component masters.
-    </librarylead>
-  </libraryheader>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenGraphite Design System</title>
+  <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+  <link rel="stylesheet" href="./design-system-docs.css">
+  <link rel="opengraphite-components" href="./design-system-components.html">
+  <script src="../OpenGraphite.runtime.js" defer></script>
+  <script src="./site-header.js" defer></script>
+</head>
+<body class="ds-doc-page ds-doc-overview-page">
+  <og-instance data-og-id="site-header" data-og-component="site-header">
+    <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+    <a slot="nav" href="./design-system.html" aria-current="page">Overview</a>
+    <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+    <a slot="nav" href="./design-system-components.html">Components</a>
+    <a slot="nav" href="./design-system-templates.html">Templates</a>
+    <a slot="nav" href="./design-system-pages.html">Pages</a>
+    <a slot="nav" href="./design-system-guidelines.html">Guidelines</a>
+    <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+  </og-instance>
 
-  <designsystemoverview data-og-id="design-system-overview" data-og-internal-id="dssystemoverview20260628">
-    <overviewcopy data-og-id="design-system-overview-copy" data-og-internal-id="dssystemcopy20260628">
-      <overvieweyebrow data-og-id="design-system-overview-eyebrow" data-og-internal-id="dssystemeyebrow20260628">Token source</overvieweyebrow>
-      <overviewtitle data-og-id="design-system-overview-title" data-og-internal-id="dssystemtitle20260628">CSS Custom Properties are the project design system.</overviewtitle>
-      <overviewlead data-og-id="design-system-overview-lead" data-og-internal-id="dssystemlead20260628">This component documents the same tokens used by Home, Downloads, Docs, and shared component masters. Values live in <code>CSS/OpenGraphite.css</code>; page styles consume them with <code>var(--token-name)</code>.</overviewlead>
-    </overviewcopy>
-    <overviewmatrix data-og-id="design-system-token-matrix" data-og-internal-id="dssystemmatrix20260628">
-      <tokenpanel data-og-id="design-system-color-panel" data-og-internal-id="dssystemcolorpanel20260628">
-        <tokenpaneltitle data-og-id="design-system-color-title" data-og-internal-id="dssystemcolortitle20260628">Color atoms</tokenpaneltitle>
-        <tokenitem data-og-id="design-system-color-canvas" data-og-internal-id="dssystemcolorcanvas20260628">
-          <tokensample data-og-id="design-system-color-canvas-swatch" data-og-internal-id="dssystemcanvaswatch20260628"></tokensample>
-          <tokenitemcopy data-og-id="design-system-color-canvas-copy" data-og-internal-id="dssystemcanvascopy20260628">
-            <tokenlabel data-og-id="design-system-color-canvas-label" data-og-internal-id="dssystemcanvaslabel20260628">Canvas</tokenlabel>
-            <tokencode data-og-id="design-system-color-canvas-code" data-og-internal-id="dssystemcanvascode20260628">--color-canvas</tokencode>
-          </tokenitemcopy>
-        </tokenitem>
-        <tokenitem data-og-id="design-system-color-surface" data-og-internal-id="dssystemcolorsurface20260628">
-          <tokensample data-og-id="design-system-color-surface-swatch" data-og-internal-id="dssystemsurfaceswatch20260628"></tokensample>
-          <tokenitemcopy data-og-id="design-system-color-surface-copy" data-og-internal-id="dssystemsurfacecopy20260628">
-            <tokenlabel data-og-id="design-system-color-surface-label" data-og-internal-id="dssystemsurfacelabel20260628">Surface</tokenlabel>
-            <tokencode data-og-id="design-system-color-surface-code" data-og-internal-id="dssystemsurfacecode20260628">--color-surface</tokencode>
-          </tokenitemcopy>
-        </tokenitem>
-        <tokenitem data-og-id="design-system-color-accent" data-og-internal-id="dssystemcoloraccent20260628">
-          <tokensample data-og-id="design-system-color-accent-swatch" data-og-internal-id="dssystemaccentswatch20260628"></tokensample>
-          <tokenitemcopy data-og-id="design-system-color-accent-copy" data-og-internal-id="dssystemaccentcopy20260628">
-            <tokenlabel data-og-id="design-system-color-accent-label" data-og-internal-id="dssystemaccentlabel20260628">Accent</tokenlabel>
-            <tokencode data-og-id="design-system-color-accent-code" data-og-internal-id="dssystemaccentcode20260628">--color-accent</tokencode>
-          </tokenitemcopy>
-        </tokenitem>
-      </tokenpanel>
-      <tokenpanel data-og-id="design-system-scale-panel" data-og-internal-id="dssystemscalepanel20260628">
-        <tokenpaneltitle data-og-id="design-system-scale-title" data-og-internal-id="dssystemscaletitle20260628">Type and spacing</tokenpaneltitle>
-        <scaleexample data-og-id="design-system-type-display" data-og-internal-id="dssystemdisplay20260628">Display / --font-size-hero-title</scaleexample>
-        <scaleexample data-og-id="design-system-type-body" data-og-internal-id="dssystembody20260628">Body copy / --font-size-body</scaleexample>
-        <scalechips data-og-id="design-system-space-scale" data-og-internal-id="dssystemspacechips20260628">
-          <scalechip data-og-id="design-system-space-small" data-og-internal-id="dssystemspacesmall20260628">8</scalechip>
-          <scalechip data-og-id="design-system-space-medium" data-og-internal-id="dssystemspacemedium20260628">16</scalechip>
-          <scalechip data-og-id="design-system-space-large" data-og-internal-id="dssystemspacelarge20260628">32</scalechip>
-        </scalechips>
-        <tokencode data-og-id="design-system-scale-code" data-og-internal-id="dssystemscalecode20260628">--space-small / --space-medium / --space-large</tokencode>
-      </tokenpanel>
-      <tokenpanel data-og-id="design-system-usage-panel" data-og-internal-id="dssystemusagepanel20260628">
-        <tokenpaneltitle data-og-id="design-system-usage-title" data-og-internal-id="dssystemusagetitle20260628">Usage contract</tokenpaneltitle>
-        <usagecopy data-og-id="design-system-usage-copy" data-og-internal-id="dssystemusagecopy20260628">Project tokens stay in <code>:root</code>. Component and page CSS references tokens instead of repeating raw colors, sizes, borders, and shadows.</usagecopy>
-        <usagecode data-og-id="design-system-usage-code" data-og-internal-id="dssystemusagecode20260628">background: var(--color-surface);
-border: var(--border-subtle);
-font-size: var(--font-size-body);</usagecode>
-      </tokenpanel>
-    </overviewmatrix>
-    <atomcoverage data-og-id="design-system-atom-coverage" data-og-internal-id="dssystemcoverage20260628">
-      <coverageheading data-og-id="design-system-atom-coverage-title" data-og-internal-id="dssystemcoveragetitle20260628">Atom coverage</coverageheading>
-      <coveragecopy data-og-id="design-system-atom-coverage-copy" data-og-internal-id="dssystemcoveragecopy20260628">Defined atoms cover color, typography, spacing, sizing, radius, border, shadow, motion, opacity, layer, interaction, media, iconography, and responsive breakpoint references.</coveragecopy>
-      <coveragechips data-og-id="design-system-atom-coverage-chips" data-og-internal-id="dssystemcoveragechips20260628">
-        <coveragechip data-og-id="atom-color" data-og-internal-id="dssystematomcolor20260628">color</coveragechip>
-        <coveragechip data-og-id="atom-type" data-og-internal-id="dssystematomtype20260628">type</coveragechip>
-        <coveragechip data-og-id="atom-space" data-og-internal-id="dssystematomspace20260628">space</coveragechip>
-        <coveragechip data-og-id="atom-shape" data-og-internal-id="dssystematomshape20260628">shape</coveragechip>
-        <coveragechip data-og-id="atom-border" data-og-internal-id="dssystematomborder20260628">border</coveragechip>
-        <coveragechip data-og-id="atom-motion" data-og-internal-id="dssystematommotion20260628">motion</coveragechip>
-        <coveragechip data-og-id="atom-state" data-og-internal-id="dssystematomstate20260628">state</coveragechip>
-        <coveragechip data-og-id="atom-layer" data-og-internal-id="dssystematomlayer20260628">layer</coveragechip>
-        <coveragechip data-og-id="atom-media" data-og-internal-id="dssystematommedia20260628">media</coveragechip>
-      </coveragechips>
-    </atomcoverage>
-    <atomgallery data-og-id="atom-example-gallery" data-og-internal-id="dssystemgallery20260629">
-      <atomgalleryheading data-og-id="atom-example-gallery-title" data-og-internal-id="dssystemgallerytitle20260629">Visual atom examples</atomgalleryheading>
-      <atomgrid data-og-id="atom-example-grid" data-og-internal-id="dssystemgrid20260629">
-        <atomexample data-og-id="atom-example-color" data-og-internal-id="dssystemexcolor20260629"><atomlabel data-og-id="atom-example-color-label" data-og-internal-id="dssystemexcolorlabel20260629">color</atomlabel><atomvisual data-og-id="atom-example-color-visual" data-og-internal-id="dssystemexcolorvisual20260629"><atomswatch data-og-id="atom-color-canvas" data-og-internal-id="dssystemexcolorcanvas20260629"></atomswatch><atomswatch data-og-id="atom-color-surface" data-og-internal-id="dssystemexcolorsurface20260629"></atomswatch><atomswatch data-og-id="atom-color-accent" data-og-internal-id="dssystemexcoloraccent20260629"></atomswatch></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-font" data-og-internal-id="dssystemexfont20260629"><atomlabel data-og-id="atom-example-font-label" data-og-internal-id="dssystemexfontlabel20260629">font</atomlabel><atomvisual data-og-id="atom-example-font-visual" data-og-internal-id="dssystemexfontvisual20260629"><atomtype data-og-id="atom-font-display" data-og-internal-id="dssystemexfontdisplay20260629">Display</atomtype><atomtype data-og-id="atom-font-body" data-og-internal-id="dssystemexfontbody20260629">Body and label scale</atomtype></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-line" data-og-internal-id="dssystemexline20260629"><atomlabel data-og-id="atom-example-line-label" data-og-internal-id="dssystemexlinelabel20260629">line</atomlabel><atomvisual data-og-id="atom-example-line-visual" data-og-internal-id="dssystemexlinevisual20260629"><atomline data-og-id="atom-line-tight" data-og-internal-id="dssystemexlinetight20260629">Tight<br>line</atomline><atomline data-og-id="atom-line-body" data-og-internal-id="dssystemexlinebody20260629">Readable<br>body copy</atomline></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-space" data-og-internal-id="dssystemexspace20260629"><atomlabel data-og-id="atom-example-space-label" data-og-internal-id="dssystemexspacelabel20260629">space</atomlabel><atomvisual data-og-id="atom-example-space-visual" data-og-internal-id="dssystemexspacevisual20260629"><spacebar data-og-id="atom-space-small" data-og-internal-id="dssystemexspacesmall20260629"></spacebar><spacebar data-og-id="atom-space-medium" data-og-internal-id="dssystemexspacemedium20260629"></spacebar><spacebar data-og-id="atom-space-large" data-og-internal-id="dssystemexspacelarge20260629"></spacebar></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-size" data-og-internal-id="dssystemexsize20260629"><atomlabel data-og-id="atom-example-size-label" data-og-internal-id="dssystemexsizelabel20260629">size</atomlabel><atomvisual data-og-id="atom-example-size-visual" data-og-internal-id="dssystemexsizevisual20260629"><sizebar data-og-id="atom-size-readable" data-og-internal-id="dssystemexsizereadable20260629"></sizebar><sizebar data-og-id="atom-size-action" data-og-internal-id="dssystemexsizeaction20260629"></sizebar></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-radius" data-og-internal-id="dssystemexradius20260629"><atomlabel data-og-id="atom-example-radius-label" data-og-internal-id="dssystemexradiuslabel20260629">radius</atomlabel><atomvisual data-og-id="atom-example-radius-visual" data-og-internal-id="dssystemexradiusvisual20260629"><radiusbox data-og-id="atom-radius-xs" data-og-internal-id="dssystemexradiusxs20260629"></radiusbox><radiusbox data-og-id="atom-radius-card" data-og-internal-id="dssystemexradiuscard20260629"></radiusbox><radiusbox data-og-id="atom-radius-pill" data-og-internal-id="dssystemexradiuspill20260629"></radiusbox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-border" data-og-internal-id="dssystemexborder20260629"><atomlabel data-og-id="atom-example-border-label" data-og-internal-id="dssystemexborderlabel20260629">border</atomlabel><atomvisual data-og-id="atom-example-border-visual" data-og-internal-id="dssystemexbordervisual20260629"><borderbox data-og-id="atom-border-subtle" data-og-internal-id="dssystemexbordersubtle20260629"></borderbox><borderbox data-og-id="atom-border-strong" data-og-internal-id="dssystemexborderstrong20260629"></borderbox><borderbox data-og-id="atom-border-accent" data-og-internal-id="dssystemexborderaccent20260629"></borderbox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-shadow" data-og-internal-id="dssystemexshadow20260629"><atomlabel data-og-id="atom-example-shadow-label" data-og-internal-id="dssystemexshadowlabel20260629">shadow</atomlabel><atomvisual data-og-id="atom-example-shadow-visual" data-og-internal-id="dssystemexshadowvisual20260629"><shadowcard data-og-id="atom-shadow-card" data-og-internal-id="dssystemexshadowcard20260629"></shadowcard><shadowcard data-og-id="atom-shadow-panel" data-og-internal-id="dssystemexshadowpanel20260629"></shadowcard></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-button" data-og-internal-id="dssystemexbutton20260629"><atomlabel data-og-id="atom-example-button-label" data-og-internal-id="dssystemexbuttonlabel20260629">button</atomlabel><atomvisual data-og-id="atom-example-button-visual" data-og-internal-id="dssystemexbuttonvisual20260629"><button data-og-id="atom-button-primary" data-og-internal-id="dssystemexbuttonprimary20260629">Primary</button><button data-og-id="atom-button-secondary" data-og-internal-id="dssystemexbuttonsecondary20260629">Secondary</button></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-card" data-og-internal-id="dssystemexcard20260629"><atomlabel data-og-id="atom-example-card-label" data-og-internal-id="dssystemexcardlabel20260629">card</atomlabel><atomvisual data-og-id="atom-example-card-visual" data-og-internal-id="dssystemexcardvisual20260629"><cardtitle data-og-id="atom-card-title" data-og-internal-id="dssystemexcardtitle20260629">Reusable surface</cardtitle><cardcopy data-og-id="atom-card-copy" data-og-internal-id="dssystemexcardcopy20260629">Padding and surface atom.</cardcopy></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-code" data-og-internal-id="dssystemexcode20260629"><atomlabel data-og-id="atom-example-code-label" data-og-internal-id="dssystemexcodelabel20260629">code</atomlabel><atomvisual data-og-id="atom-example-code-visual" data-og-internal-id="dssystemexcodevisual20260629">const token = "var(--color-accent)"</atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-state" data-og-internal-id="dssystemexstate20260629"><atomlabel data-og-id="atom-example-state-label" data-og-internal-id="dssystemexstatelabel20260629">state</atomlabel><atomvisual data-og-id="atom-example-state-visual" data-og-internal-id="dssystemexstatevisual20260629"><statechip data-og-id="atom-state-rest" data-og-internal-id="dssystemexstaterest20260629">rest</statechip><statechip data-og-id="atom-state-active" data-og-internal-id="dssystemexstateactive20260629">active</statechip></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-focus" data-og-internal-id="dssystemexfocus20260629"><atomlabel data-og-id="atom-example-focus-label" data-og-internal-id="dssystemexfocuslabel20260629">focus</atomlabel><atomvisual data-og-id="atom-example-focus-visual" data-og-internal-id="dssystemexfocusvisual20260629"><focusbox data-og-id="atom-focus-selected" data-og-internal-id="dssystemexfocusselected20260629"></focusbox><focusbox data-og-id="atom-focus-editing" data-og-internal-id="dssystemexfocusediting20260629"></focusbox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-icon" data-og-internal-id="dssystemexicon20260629"><atomlabel data-og-id="atom-example-icon-label" data-og-internal-id="dssystemexiconlabel20260629">icon</atomlabel><atomvisual data-og-id="atom-example-icon-visual" data-og-internal-id="dssystemexiconvisual20260629"><iconbox data-og-id="atom-icon-small" data-og-internal-id="dssystemexiconsmall20260629"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></iconbox><iconbox data-og-id="atom-icon-panel" data-og-internal-id="dssystemexiconpanel20260629"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4h14v16H5z"></path><path d="M9 4v16"></path></svg></iconbox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-media" data-og-internal-id="dssystemexmedia20260629"><atomlabel data-og-id="atom-example-media-label" data-og-internal-id="dssystemexmedialabel20260629">media</atomlabel><atomvisual data-og-id="atom-example-media-visual" data-og-internal-id="dssystemexmediavisual20260629"><mediabox data-og-id="atom-media-cover" data-og-internal-id="dssystemexmediacover20260629"></mediabox><mediabox data-og-id="atom-media-contain" data-og-internal-id="dssystemexmediacontain20260629"></mediabox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-motion" data-og-internal-id="dssystemexmotion20260629"><atomlabel data-og-id="atom-example-motion-label" data-og-internal-id="dssystemexmotionlabel20260629">motion</atomlabel><atomvisual data-og-id="atom-example-motion-visual" data-og-internal-id="dssystemexmotionvisual20260629"><motiondot data-og-id="atom-motion-dot-a" data-og-internal-id="dssystemexmotiona20260629"></motiondot><motiondot data-og-id="atom-motion-dot-b" data-og-internal-id="dssystemexmotionb20260629"></motiondot><motiondot data-og-id="atom-motion-dot-c" data-og-internal-id="dssystemexmotionc20260629"></motiondot></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-opacity" data-og-internal-id="dssystemexopacity20260629"><atomlabel data-og-id="atom-example-opacity-label" data-og-internal-id="dssystemexopacitylabel20260629">opacity</atomlabel><atomvisual data-og-id="atom-example-opacity-visual" data-og-internal-id="dssystemexopacityvisual20260629"><opacitybox data-og-id="atom-opacity-low" data-og-internal-id="dssystemexopacitylow20260629"></opacitybox><opacitybox data-og-id="atom-opacity-mid" data-og-internal-id="dssystemexopacitymid20260629"></opacitybox><opacitybox data-og-id="atom-opacity-high" data-og-internal-id="dssystemexopacityhigh20260629"></opacitybox></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-layer" data-og-internal-id="dssystemexlayer20260629"><atomlabel data-og-id="atom-example-layer-label" data-og-internal-id="dssystemexlayerlabel20260629">layer</atomlabel><atomvisual data-og-id="atom-example-layer-visual" data-og-internal-id="dssystemexlayervisual20260629"><layercard data-og-id="atom-layer-media" data-og-internal-id="dssystemexlayermedia20260629"></layercard><layercard data-og-id="atom-layer-content" data-og-internal-id="dssystemexlayercontent20260629"></layercard><layercard data-og-id="atom-layer-sticky" data-og-internal-id="dssystemexlayersticky20260629"></layercard></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-scrollbar" data-og-internal-id="dssystemexscrollbar20260629"><atomlabel data-og-id="atom-example-scrollbar-label" data-og-internal-id="dssystemexscrollbarlabel20260629">scrollbar</atomlabel><atomvisual data-og-id="atom-example-scrollbar-visual" data-og-internal-id="dssystemexscrollbarvisual20260629"><scrollline data-og-id="atom-scroll-line-a" data-og-internal-id="dssystemexscrolla20260629"></scrollline><scrollline data-og-id="atom-scroll-line-b" data-og-internal-id="dssystemexscrollb20260629"></scrollline><scrollline data-og-id="atom-scroll-line-c" data-og-internal-id="dssystemexscrollc20260629"></scrollline><scrollthumb data-og-id="atom-scroll-thumb" data-og-internal-id="dssystemexscrollthumb20260629"></scrollthumb></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-breakpoint" data-og-internal-id="dssystemexbreakpoint20260629"><atomlabel data-og-id="atom-example-breakpoint-label" data-og-internal-id="dssystemexbreakpointlabel20260629">breakpoint</atomlabel><atomvisual data-og-id="atom-example-breakpoint-visual" data-og-internal-id="dssystemexbreakpointvisual20260629"><breakframe data-og-id="atom-break-desktop" data-og-internal-id="dssystemexbreakdesktop20260629"></breakframe><breakframe data-og-id="atom-break-mobile" data-og-internal-id="dssystemexbreakmobile20260629"></breakframe></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-og" data-og-internal-id="dssystemexog20260629"><atomlabel data-og-id="atom-example-og-label" data-og-internal-id="dssystemexoglabel20260629">standard theme</atomlabel><atomvisual data-og-id="atom-example-og-visual" data-og-internal-id="dssystemexogvisual20260629"><ogsample data-og-id="atom-og-page" data-og-internal-id="dssystemexogpage20260629">page background</ogsample><ogsample data-og-id="atom-og-accent" data-og-internal-id="dssystemexogaccent20260629">accent foreground</ogsample></atomvisual></atomexample>
-        <atomexample data-og-id="atom-example-text" data-og-internal-id="dssystemextext20260629"><atomlabel data-og-id="atom-example-text-label" data-og-internal-id="dssystemextextlabel20260629">text</atomlabel><atomvisual data-og-id="atom-example-text-visual" data-og-internal-id="dssystemextextvisual20260629"><textsample data-og-id="atom-text-label" data-og-internal-id="dssystemextextupper20260629">uppercase label</textsample><textsample data-og-id="atom-text-normal" data-og-internal-id="dssystemextextnormal20260629">normal reading text</textsample></atomvisual></atomexample>
-      </atomgrid>
-    </atomgallery>
-  </designsystemoverview>
+  <main class="ds-doc-main" data-og-id="design-system-page" data-og-internal-id="42addef8c515">
+    <section class="ds-doc-section" aria-labelledby="documentation-pages-title">
+      <header class="ds-section-header">
+        <span class="ds-section-index">MAP</span>
+        <div class="ds-section-heading-copy">
+          <h2 id="documentation-pages-title">Documentation pages</h2>
+          <p>作る対象と判断したい内容に合わせて、詳細を持つページへ進みます。</p>
+        </div>
+      </header>
+      <nav class="ds-overview-route-grid" aria-label="Design system pages">
+        <a class="ds-overview-route" href="./design-system-atoms.html" data-og-id="overview-route-atoms" data-og-internal-id="dssystemrouteatoms01">
+          <strong>Atoms</strong>
+          <p>色、文字、余白、形、状態、media、motionのtokenと見本。</p>
+          <small>Foundations &amp; examples →</small>
+        </a>
+        <a class="ds-overview-route" href="./design-system-components.html" data-og-id="overview-route-components" data-og-internal-id="dssystemroutecomponents01">
+          <strong>Components</strong>
+          <p>MoleculeとOrganismの構造、公開API、状態、利用契約。</p>
+          <small>Component contracts →</small>
+        </a>
+        <a class="ds-overview-route" href="./design-system-templates.html" data-og-id="overview-route-templates" data-og-internal-id="dssystemroutetemplates01">
+          <strong>Templates</strong>
+          <p>componentの配置、情報優先度、slot、responsive reflow。</p>
+          <small>Composition rules →</small>
+        </a>
+        <a class="ds-overview-route" href="./design-system-pages.html" data-og-id="overview-route-pages" data-og-internal-id="dssystemroutepages01">
+          <strong>Pages</strong>
+          <p>実content、locale、viewport、stateを通したsystemの検証。</p>
+          <small>Page inventory →</small>
+        </a>
+        <a class="ds-overview-route" href="./design-system-guidelines.html" data-og-id="overview-route-guidelines" data-og-internal-id="dssystemrouteguidelines01">
+          <strong>Guidelines</strong>
+          <p>interaction、content、accessibility、motion、governanceの横断規則。</p>
+          <small>Shared rules →</small>
+        </a>
+      </nav>
+    </section>
 
-  <tokenrow data-og-id="design-token-row" data-og-internal-id="695eb7803a0c">
-    <tokenswatch data-og-id="token-ink" data-og-internal-id="e86f3c667be8">
-      <tokenname data-og-id="token-ink-name" data-og-internal-id="f7dda01ca751">Surface / ink</tokenname>
-      <tokenvalue data-og-id="token-ink-value" data-og-internal-id="817fc2dd009d">#08090a</tokenvalue>
-    </tokenswatch>
-    <tokenswatch data-og-id="token-paper" data-og-internal-id="b6a163d1886b">
-      <tokenname data-og-id="token-paper-name" data-og-internal-id="be7163addd41">Accent / chalk</tokenname>
-      <tokenvalue data-og-id="token-paper-value" data-og-internal-id="aa8569ee2efb">#f5f7f8</tokenvalue>
-    </tokenswatch>
-    <tokenswatch data-og-id="token-line" data-og-internal-id="725f2131bcb1">
-      <tokenname data-og-id="token-line-name" data-og-internal-id="2bfa22ab957d">Rule / line</tokenname>
-      <tokenvalue data-og-id="token-line-value" data-og-internal-id="065712f2f8e5">#30363d</tokenvalue>
-    </tokenswatch>
-  </tokenrow>
-
-  <site-header data-og-id="site-header-master" data-og-component="site-header" part="root" data-og-internal-id="a05d1aed996e"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <headerbrand data-og-id="brand" data-og-internal-id="1fb90cdd0c5d">
-      <brandmark data-og-id="brand-mark" data-og-icon-library="opengraphite" data-og-icon-name="app-icon" data-og-icon-source="library" data-og-internal-id="ede9102ca6b3"><img src="./assets/OpenGraphite.png" alt="OpenGraphite app icon"></brandmark>
-      <slot name="brand"><brandtext data-og-id="brand-text" data-og-internal-id="6db41df13f5b">
-        OpenGraphite
-      </brandtext></slot>
-    </headerbrand>
-    <slot name="nav"><headernav data-og-id="nav" data-og-internal-id="b8ce955a1152">
-      <a href="../index.html" data-og-id="nav-home" data-og-internal-id="87110b95d8e4">Home</a>
-      <a href="../downloads.html" data-og-id="nav-downloads" data-og-internal-id="2074c7d72674">Downloads</a>
-      <a href="../docs.html" data-og-id="nav-docs" data-og-internal-id="68127218491e">Docs</a>
-    </headernav></slot>
-
-  </template></site-header>
-
-
-
-
-
-
-
-  <section-heading data-og-id="section-heading-master" data-og-component="section-heading" part="root" data-og-internal-id="08b1e1f4206d"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <slot name="eyebrow"><sectioneyebrow data-og-id="section-heading-eyebrow" data-og-internal-id="53ee28564070">Section</sectioneyebrow></slot>
-    <slot name="title"><sectiontitle data-og-id="section-heading-title" data-og-internal-id="2764cc3ea223">Section title</sectiontitle></slot>
-
-  </template></section-heading>
-
-  <feature-card data-og-id="feature-card-master" data-og-component="feature-card" part="root" variant="availability" data-og-internal-id="3af881fc5123"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <slot name="eyebrow"><featurecardeyebrow data-og-id="feature-card-eyebrow" data-og-internal-id="145cc0fd1bb3">Reusable asset</featurecardeyebrow></slot>
-    <slot name="title"><featurecardtitle data-og-id="feature-card-title" data-og-internal-id="57d89af48b12">Availability-ready card</featurecardtitle></slot>
-    <slot name="body"><featurecardtext data-og-id="feature-card-body" data-og-internal-id="a5361e02489c">This master is edited through ogkiln and expanded for production builds.</featurecardtext></slot>
-
-  </template></feature-card>
-
-  <principle-item data-og-id="principle-item-master" data-og-component="principle-item" part="root" data-og-internal-id="57ad7a45ba32"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <slot name="number"><itemnumber data-og-id="number" data-og-internal-id="684884157065">01 / SOURCE</itemnumber></slot>
-    <itembody data-og-id="principle-item-body-frame" data-og-internal-id="3312f3794d2e">
-      <slot name="title"><itemtitle data-og-id="principle-item-title" data-og-internal-id="7dd4b4bc3b02">HTMLが正本</itemtitle></slot>
-      <slot name="body"><itemtext data-og-id="principle-item-body" data-og-internal-id="145c551ac871">OpenGraphite.appで編集した内容は、exportではなく開いているHTMLそのものへ同期されます。</itemtext></slot>
-    </itembody>
-
-  </template></principle-item>
-
-
-
-  <content-section data-og-id="content-section-master" data-og-component="content-section" part="root" data-og-internal-id="bd428d328309"><template>
-    <link rel="stylesheet" href="./design-system.css"><contentcopy data-og-id="content-section-copy" data-og-internal-id="d570fbb0bfb0"><slot name="title"><sectiontitle data-og-id="content-section-title" data-og-internal-id="9a08e58079f0">Repository</sectiontitle></slot><slot name="body"><sectiontext data-og-id="content-section-body" data-og-internal-id="3dab652df33a">OpenGraphite.app、OpenGraphite.css、ogkiln、MCP serverのソースがまとまっています。</sectiontext></slot></contentcopy><slot name="aside"><contentaside data-og-id="content-section-aside" data-og-internal-id="74d1674521fe"><a href="../docs.html" data-og-id="aside-action" data-og-internal-id="9a2e8aee85ca">Read more</a></contentaside></slot>
-  </template></content-section>
-
-<docsnavstage data-og-id="docs-navigation-stage" data-og-internal-id="docsnavstage001">
-<docs-navigation data-og-id="docs-navigation-master" data-og-component="docs-navigation" part="root" data-og-internal-id="docsnavroot001" variant="collapsible"><template>
-    <link rel="stylesheet" href="./design-system.css">
-  <a class="docs-nav-expanded-only" href="#source-model" data-og-id="docs-nav-source-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.source" data-og-text-variant-eng="Source model" data-og-internal-id="docsnavsourcelink">正本モデル</a>
-  <a class="docs-nav-expanded-only" href="#project-scope" data-og-id="docs-nav-project-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.project" data-og-text-variant-eng="Project scope" data-og-internal-id="docsnavprojectlink">project scope</a>
-  <a class="docs-nav-expanded-only" href="#reference-ids" data-og-id="docs-nav-reference-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.refs" data-og-text-variant-eng="Reference IDs" data-og-internal-id="docsnavreflink">参照 ID</a>
-  <a class="docs-nav-expanded-only" href="#editable-nodes" data-og-id="docs-nav-nodes-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.nodes" data-og-text-variant-eng="Editable nodes" data-og-internal-id="docsnavnodeslink">編集可能 node</a>
-  <a class="docs-nav-expanded-only" href="#components-slots" data-og-id="docs-nav-components-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.components" data-og-text-variant-eng="Components and slots" data-og-internal-id="docsnavcomponentslink">components / slots</a>
-  <a class="docs-nav-expanded-only" href="#placement-mocks" data-og-id="docs-nav-placement-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.placement" data-og-text-variant-eng="Placement mocks" data-og-internal-id="docsnavplacementlink">placement mock</a>
-  <a class="docs-nav-expanded-only" href="#i18n-resources" data-og-id="docs-nav-i18n-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.i18n" data-og-text-variant-eng="i18n resources" data-og-internal-id="docsnavi18nlink">i18n resource</a>
-  <a class="docs-nav-expanded-only" href="#command-surface" data-og-id="docs-nav-command-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.commands" data-og-text-variant-eng="Command surface" data-og-internal-id="docsnavcommandlink">command surface</a>
-  <a class="docs-nav-expanded-only" href="#node-edits" data-og-id="docs-nav-edits-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.edits" data-og-text-variant-eng="Node edits" data-og-internal-id="docsnaveditslink">node edits</a>
-  <a class="docs-nav-expanded-only" href="#verify-build" data-og-id="docs-nav-verify-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.verify" data-og-text-variant-eng="Migrate, verify, and build" data-og-internal-id="docsnavverifylink">migrate / verify / build</a>
-  <a class="docs-nav-expanded-only" href="#mcp-interface" data-og-id="docs-nav-mcp-link" data-og-text-source="binding" data-i18n-key="docs.nav.item.mcp" data-og-text-variant-eng="MCP interface" data-og-internal-id="docsnavmcplink">MCP interface</a>
-  <docsnavfooter data-og-id="docs-navigation-footer" data-og-internal-id="docsnavfooter01">
-  <docsnavfootervalue class="docs-nav-expanded-only" data-og-id="docs-navigation-footer-value" data-og-internal-id="docsnavfootervalue" data-og-icon-library="lucide" data-og-icon-name="panel-left-close" data-og-icon-source="cdn" role="button" tabindex="0" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation" onclick="const root=this.getRootNode().host;root.setAttribute('variant','collapsible collapsed');this.setAttribute('aria-expanded','false');"><span aria-hidden="true" class="og-style-design-system-001"></span></docsnavfootervalue>
-  <button class="docs-nav-collapsed-only" data-og-id="docs-navigation-collapsed-toggle" data-og-internal-id="docsnavcollapsedtoggle" type="button" aria-label="Open navigation" aria-expanded="false" title="Open navigation" onclick="const root=this.getRootNode().host;root.setAttribute('variant','collapsible');this.setAttribute('aria-expanded','true');">
-    <Icon data-og-id="docs-navigation-collapsed-toggle-icon" data-og-icon-library="lucide" data-og-icon-name="panel-left-open" data-og-icon-source="cdn" data-og-internal-id="6bvkutkor6t6"><span aria-hidden="true" class="og-style-design-system-002"></span></Icon>
-  </button>
-</docsnavfooter>
-
-  </template></docs-navigation>
-<og-placement data-og-id="placement-docs-navigation-collapsed" data-og-internal-id="docsnavcollapsedplacement" data-og-source-component-internal-id="3bgx6phkz3jv5" data-og-source-node-internal-id="docsnavroot001"></og-placement></docsnavstage>
-
-  <doc-row data-og-id="doc-row-master" data-og-component="doc-row" part="root" data-og-internal-id="ccd141a83690"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <slot name="index"><docindex data-og-id="doc-row-index" data-og-internal-id="b43223484a4a">01</docindex></slot>
-    <slot name="title"><doctitle data-og-id="doc-row-title" data-og-internal-id="4937788b4d20">OpenGraphite.app</doctitle></slot>
-    <docbody data-og-id="doc-row-body-frame" data-og-internal-id="1c4a8cdbbb68">
-      <slot name="body"><doctext data-og-id="doc-row-body" data-og-internal-id="0b97ee07b2ad">`.ogp` からHTMLとCSSを解決し、Canvas、Layers、Inspectorで編集します。</doctext></slot>
-      <slot name="meta"><docmeta data-og-id="meta" data-og-internal-id="278c8deac3dc">Canvas / Layers / Inspector</docmeta></slot>
-    </docbody>
-
-  </template></doc-row>
-
-  <doc-code-row data-og-id="doc-code-row-master" data-og-component="doc-code-row" part="root" data-og-internal-id="5eac543198de"><template>
-    <link rel="stylesheet" href="./design-system.css">
-    <slot name="index"><docindex data-og-id="doc-code-row-index" data-og-internal-id="6ce7875268ea">03</docindex></slot>
-    <slot name="title"><doctitle data-og-id="doc-code-row-title" data-og-internal-id="bf61802645a5">OpenGraphite CLI</doctitle></slot>
-    <docbody data-og-id="doc-code-row-body-frame" data-og-internal-id="a1a3f9fa3e99">
-      <slot name="body"><doctext data-og-id="doc-code-row-body" data-og-internal-id="5f20ea6ad5ff">`ogkiln` は構造取得、検証、node単位編集を同じコマンド体系で提供します。</doctext></slot>
-      <slot name="code"><codetext data-og-id="code" data-og-internal-id="277fc82699fa">./Scripts/ogkiln validate SampleProject/OpenGraphiteSample.ogp --json</codetext></slot>
-    </docbody>
-
-  </template></doc-code-row>
-  <codeviewerstage data-og-id="code-viewer-stage" data-og-internal-id="7f59dfcf1e20">
-    <code-viewer data-og-id="code-viewer-master" data-og-component="code-viewer" part="root" data-code-viewer-root="true" data-og-internal-id="hrbifdygbcig"><template>
-    <link rel="stylesheet" href="./design-system.css">
-  <codeviewerbar data-og-id="code-viewer-toolbar" data-og-internal-id="js8iass53wn6">
-    <slot name="language"><codeviewerlanguage data-og-id="code-viewer-language" data-og-internal-id="2b4280qxj8c8l">HTML</codeviewerlanguage></slot>
-    <codevieweractions data-og-id="code-viewer-actions" data-og-internal-id="nth7xc9ej5bc">
-      <button data-og-id="code-viewer-copy" type="button" aria-label="Copy code" title="Copy code" onclick="const root=this.closest('[data-code-viewer-root]');const code=root?.querySelector('[data-code-viewer-code]')?.textContent?.trim()||'';const done=()=>{this.style.setProperty('background','var(--color-control-flash)');window.setTimeout(()=>this.style.setProperty('background','transparent'),900);};if(navigator.clipboard&amp;&amp;window.isSecureContext){navigator.clipboard.writeText(code).then(done,done);}else{const area=document.createElement('textarea');area.value=code;document.body.appendChild(area);area.select();document.execCommand('copy');area.remove();done();}" data-og-internal-id="1qlvjr39w6qtl">
-        <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"><rect x="10" y="17" width="21" height="21" rx="5"></rect><rect x="18" y="9" width="21" height="21" rx="5"></rect></svg>
-      </button>
-      <codeviewerswitch data-og-id="code-viewer-switch" data-og-internal-id="1d8vc4dxu4djp">
-        <button data-og-id="code-viewer-code-button" type="button" aria-label="Show code" title="Show code" aria-pressed="true" data-code-viewer-tab="code" onclick="const root=this.closest('[data-code-viewer-root]');const view='code';root.querySelectorAll('[data-code-viewer-panel]').forEach((panel)=>{panel.hidden=panel.getAttribute('data-code-viewer-panel')!==view;});root.querySelectorAll('[data-code-viewer-tab]').forEach((button)=>{const active=button.getAttribute('data-code-viewer-tab')===view;button.setAttribute('aria-pressed',active?'true':'false');button.style.setProperty('background',active?'var(--color-control-active)':'var(--color-control-track)');button.style.setProperty('border',active?'var(--border-control-active)':'var(--border-transparent)');});" data-og-internal-id="2rprfd5sv0w8p">
-          <svg aria-hidden="true" viewBox="0 0 48 48" width="18" height="18" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M17 15l-6 9 6 9"></path><path d="M31 15l6 9-6 9"></path><path d="M20 36h8"></path></svg>
-        </button>
-        <button data-og-id="code-viewer-preview-button" type="button" aria-label="Show preview" title="Show preview" aria-pressed="false" data-code-viewer-tab="preview" onclick="const root=this.closest('[data-code-viewer-root]');const view='preview';root.querySelectorAll('[data-code-viewer-panel]').forEach((panel)=>{panel.hidden=panel.getAttribute('data-code-viewer-panel')!==view;});root.querySelectorAll('[data-code-viewer-tab]').forEach((button)=>{const active=button.getAttribute('data-code-viewer-tab')===view;button.setAttribute('aria-pressed',active?'true':'false');button.style.setProperty('background',active?'var(--color-control-active)':'var(--color-control-track)');button.style.setProperty('border',active?'var(--border-control-active)':'var(--border-transparent)');});" data-og-internal-id="3i0eyoookzec6">
-          <svg aria-hidden="true" viewBox="0 0 48 48" width="17" height="17" fill="currentColor"><path d="M17 11v26l23-13z"></path></svg>
-        </button>
-      </codeviewerswitch>
-    </codevieweractions>
-  </codeviewerbar>
-  <codeviewerpanels data-og-id="code-viewer-panels" data-og-internal-id="23awq1bi1fipc">
-    <slot name="code"><pre data-og-id="code-viewer-code" data-code-viewer-panel="code" data-code-viewer-code="true" data-og-internal-id="qzz4btct7o3f"><span class="og-style-design-system-003">&lt;</span><span class="og-style-design-system-004">div</span> <span class="og-style-design-system-005">class</span><span class="og-style-design-system-006">=</span><span class="og-style-design-system-007">&quot;dialog&quot;</span><span class="og-style-design-system-008">&gt;</span>
-  <span class="og-style-design-system-009">Hello</span>
-<span class="og-style-design-system-010">&lt;/</span><span class="og-style-design-system-011">div</span><span class="og-style-design-system-012">&gt;</span></pre></slot>
-    <slot name="preview"><codeviewerpreview data-og-id="code-viewer-preview" data-code-viewer-panel="preview" data-og-internal-id="3r8b4trg390ep">
-      <codeviewerpreviewdialog data-og-id="code-viewer-preview-dialog" data-og-internal-id="3768zm71pwa62">
-        <codeviewerpreviewtext data-og-id="code-viewer-preview-text" data-og-internal-id="1qdkhqo41ekv6">Hello</codeviewerpreviewtext>
-      </codeviewerpreviewdialog>
-    </codeviewerpreview></slot>
-  </codeviewerpanels>
-
-  </template></code-viewer>
-    <og-placement data-og-id="placement-code-viewer-preview" data-og-source-component-internal-id="3bgx6phkz3jv5" data-og-source-node-internal-id="hrbifdygbcig" data-og-internal-id="67a2e12dbed8"></og-placement>
-  </codeviewerstage>
-</designsystemlibrary>
-
-</body></html>
+    <section class="ds-doc-section" aria-labelledby="system-flow-title">
+      <header class="ds-section-header">
+        <span class="ds-section-index">FLOW</span>
+        <div class="ds-section-heading-copy">
+          <h2 id="system-flow-title">How the pages work together</h2>
+          <p>Atomic Designの構成順と、全階層に適用する品質規則を分けて管理します。</p>
+        </div>
+      </header>
+      <ol class="ds-overview-flow">
+        <li><strong>Atoms</strong><span>共有値と最小表現を選ぶ。</span></li>
+        <li><strong>Components</strong><span>小さな表現を再利用可能な契約へ組み合わせる。</span></li>
+        <li><strong>Templates</strong><span>contentを入れる前に骨格と読順を決める。</span></li>
+        <li><strong>Pages</strong><span>実contentでsystemが成立するか検証する。</span></li>
+        <li><strong>Guidelines</strong><span>すべての階層へinteractionと品質基準を適用する。</span></li>
+      </ol>
+    </section>
+  </main>
+</body>
+</html>

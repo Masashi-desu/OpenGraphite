@@ -301,7 +301,7 @@ CLI / MCP / Project Inspector は、design token の一覧、依存 selector、�
 | `data-og-internal-id` | 任意 | 表示名や役割から独立した stable `ogref` 用 identity。欠落時は session reference を使う。 | `a4e19c02f6b8` |
 | `data-og-type` | legacy inputのみ | 旧分類 hint を `legacyTypeHint` として読めるが、capability の根拠、描画 selector、新規生成には使わない。 | `page`, `frame`, `text`, `button`, `image`, `icon` |
 | `data-og-component` | 任意 | component master または `<og-instance>` が参照する component ID。 | `site-header`, `feature-card` |
-| `data-og-source-component-internal-id` | 任意 | component placement が参照する component canvas の内部 ID。 | `3bgx6phkz3jv5` |
+| `data-og-source-component-internal-id` | 任意 | component placement が参照する component canvas の内部 ID。 | `dssystemcomp01` |
 | `data-og-source-node-internal-id` | 任意 | component placement が参照する source node の内部 ID。 | `hrbifdygbcig` |
 | `data-og-icon-library` | 任意 | icon node が参照するアイコンライブラリ。現行のページ配置 UI は `lucide` を生成する。 | `lucide` |
 | `data-og-icon-name` | 任意 | ライブラリ内の icon ID。Lucide では kebab-case 名を保持する。 | `circle`, `arrow-right` |
@@ -482,7 +482,7 @@ placement hostは要素名だけで判定できる`<og-placement>`として表�
 <og-placement
   data-og-id="code-viewer-preview-placement"
   data-og-internal-id="67a2e12dbed8"
-  data-og-source-component-internal-id="3bgx6phkz3jv5"
+  data-og-source-component-internal-id="dssystemcomp01"
   data-og-source-node-internal-id="hrbifdygbcig">
 </og-placement>
 ```

@@ -3,11 +3,8 @@
  * Semantic element names and exact authored IDs keep these rules out of unknown HTML.
  */
 :where(
-  [data-og-internal-id="60447086753d"],
-  [data-og-internal-id="b991bf4b9a72"],
   [data-og-internal-id="downloadsprima20260613"],
   [data-og-internal-id="downloadssecond20260613"],
-  [data-og-internal-id="f6d325d312e5"],
   actionrow,
   buttonlabel,
   commandblock,
@@ -81,11 +78,8 @@
 }
 
 :where(
-  [data-og-internal-id="60447086753d"],
-  [data-og-internal-id="b991bf4b9a72"],
   [data-og-internal-id="downloadsprima20260613"],
-  [data-og-internal-id="downloadssecond20260613"],
-  [data-og-internal-id="f6d325d312e5"]
+  [data-og-internal-id="downloadssecond20260613"]
 ) {
   gap: var(--space-small);
   min-height: var(--button-min-height);
@@ -104,22 +98,16 @@
 }
 
 :where(
-  [data-og-internal-id="60447086753d"],
-  [data-og-internal-id="b991bf4b9a72"],
   [data-og-internal-id="downloadsprima20260613"],
-  [data-og-internal-id="downloadssecond20260613"],
-  [data-og-internal-id="f6d325d312e5"]
+  [data-og-internal-id="downloadssecond20260613"]
 ):where(:not([hidden]), [hidden="until-found" i]) {
   display: inline-flex;
 }
 
 @media (max-width: 760px) {
   :where(
-    [data-og-internal-id="60447086753d"],
-    [data-og-internal-id="b991bf4b9a72"],
     [data-og-internal-id="downloadsprima20260613"],
-    [data-og-internal-id="downloadssecond20260613"],
-    [data-og-internal-id="f6d325d312e5"]
+    [data-og-internal-id="downloadssecond20260613"]
   ) {
     width: 100%;
   }
@@ -147,36 +135,12 @@
   font-family:var(--font-family-eng);
 }
 
-[data-og-internal-id="60447086753d"] {
-  padding:var(--button-padding-compact);
-  border-radius:var(--radius-small);
-  background:var(--color-canvas);
-  color:var(--color-text-soft);
-  border:var(--border-strong);
-}
-
 [data-og-internal-id="downloadsnavhomelabel"] {
   line-height:var(--line-height-tight);
 }
 
-[data-og-internal-id="f6d325d312e5"] {
-  padding:var(--button-padding-compact);
-  border-radius:var(--radius-small);
-  background:var(--color-accent);
-  color:var(--color-accent-foreground);
-  border:var(--border-accent);
-}
-
 [data-og-internal-id="downloadsnavdownloadslabel"] {
   line-height:var(--line-height-tight);
-}
-
-[data-og-internal-id="b991bf4b9a72"] {
-  padding:var(--button-padding-compact);
-  border-radius:var(--radius-small);
-  background:var(--color-canvas);
-  color:var(--color-text-soft);
-  border:var(--border-strong);
 }
 
 [data-og-internal-id="downloadsnavdocslabel"] {

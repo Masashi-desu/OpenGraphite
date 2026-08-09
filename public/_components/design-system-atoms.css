@@ -1,0 +1,170 @@
+/* Atom catalogue cards reuse the component documentation anatomy. */
+
+.ds-atom-page [data-og-internal-id="dssystemgallery20260629"],
+.ds-atom-page [data-og-internal-id="dssystemgrid20260629"] {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: var(--space-lg);
+}
+
+.ds-atom-card .ds-atom-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.ds-atom-card .ds-atom-preview atomexample {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: var(--space-sm);
+  justify-content: flex-start;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: var(--border-subtle);
+  border-radius: 0;
+}
+
+.ds-atom-card .ds-atom-preview atomexample:last-child {
+  border-bottom: 0;
+}
+
+.ds-atom-card .ds-atom-preview atomvisual {
+  flex: 0 0 auto;
+  min-height: 200px;
+  padding: var(--space-lg);
+  background:
+    linear-gradient(var(--color-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-border) 1px, transparent 1px),
+    var(--color-surface-code);
+  background-size: 24px 24px;
+  border-top: var(--border-subtle);
+  border-bottom: var(--border-subtle);
+}
+
+.ds-atom-card .ds-atom-preview atomlabel {
+  display: block;
+  padding: var(--space-lg) var(--space-lg) 0;
+  color: var(--color-text);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-strong);
+  letter-spacing: var(--font-letter-spacing-normal);
+  text-transform: none;
+}
+
+.ds-atom-card .ds-atom-preview atomcaption,
+.ds-atom-card .ds-atom-preview atomnote {
+  display: block;
+  padding-right: var(--space-lg);
+  padding-left: var(--space-lg);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-body);
+}
+
+.ds-atom-card .ds-atom-preview atomlabel + atomvisual,
+.ds-atom-card .ds-atom-preview atomcaption + atomvisual {
+  margin-top: var(--space-small);
+}
+
+.ds-atom-card .ds-atom-preview atomnote {
+  min-height: 0;
+  padding-top: var(--space-medium);
+  padding-bottom: var(--space-lg);
+}
+
+.ds-atom-card .ds-atom-contract {
+  margin: 0 var(--space-lg) var(--space-lg);
+}
+
+.ds-atom-card .ds-component-summary p {
+  max-width: 76ch;
+}
+
+.ds-atom-card .ds-color-token-preview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-medium);
+}
+
+.ds-atom-card .ds-color-token-preview {
+  flex-direction: row;
+  align-items: center;
+}
+
+.ds-atom-card .ds-color-token-preview atomswatch {
+  width: calc(var(--size-action) + var(--space-medium));
+  height: calc(var(--size-action) + var(--space-medium));
+  flex: 0 0 calc(var(--size-action) + var(--space-medium));
+}
+
+.ds-atom-card .ds-color-token-preview div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.ds-atom-card .ds-color-token-preview code,
+.ds-atom-card .ds-color-token-preview strong {
+  color: var(--color-text-soft);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-body-small);
+  line-height: var(--line-height-body);
+}
+
+.ds-atom-card .ds-color-rule-swatch {
+  background: var(--color-border);
+}
+
+.ds-atom-card .ds-atom-code-preview {
+  width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  color: var(--color-code-text);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-body-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-code);
+  white-space: pre;
+}
+
+.ds-atom-card .ds-atom-code-preview code {
+  color: inherit;
+  font: inherit;
+}
+
+.ds-atom-card .ds-code-keyword {
+  color: var(--color-code-tag);
+}
+
+.ds-atom-card .ds-code-variable {
+  color: var(--color-code-attribute);
+}
+
+.ds-atom-card .ds-code-operator {
+  color: var(--color-code-punctuation);
+}
+
+.ds-atom-card .ds-code-string {
+  color: var(--color-code-string);
+}
+
+.ds-atom-page atomgalleryheading {
+  padding-bottom: var(--space-small);
+  border-bottom: var(--border-subtle);
+}
+
+@media (max-width: 760px) {
+  .ds-atom-card .ds-atom-preview atomexample {
+    min-height: 0;
+  }
+}

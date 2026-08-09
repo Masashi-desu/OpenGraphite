@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Templates · OpenGraphite Design System</title>
+  <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+  <link rel="stylesheet" href="./design-system-docs.css">
+  <link rel="stylesheet" href="./design-system-templates.css">
+  <link rel="opengraphite-components" href="./design-system-components.html">
+  <script src="../OpenGraphite.runtime.js" defer></script>
+  <script src="./site-header.js" defer></script>
+</head>
+<body class="ds-doc-page">
+  <og-instance data-og-id="site-header" data-og-component="site-header">
+    <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+    <a slot="nav" href="./design-system.html">Overview</a>
+    <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+    <a slot="nav" href="./design-system-components.html">Components</a>
+    <a slot="nav" href="./design-system-templates.html" aria-current="page">Templates</a>
+    <a slot="nav" href="./design-system-pages.html">Pages</a>
+    <a slot="nav" href="./design-system-guidelines.html">Guidelines</a>
+    <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+  </og-instance>
+
+  <main class="ds-doc-main">
+    <section class="ds-doc-section" id="docs-template">
+      <header class="ds-section-header"><span class="ds-section-index">DOCUMENTATION</span><div class="ds-section-heading-copy"><h2>Documentation template</h2><p>長い技術文書を探索し、説明とcode例を交互に読むための骨格です。</p></div></header>
+      <article class="ds-template-diagram">
+        <div class="ds-template-meta"><span class="ds-status is-live">In use</span><h3>Docs</h3><p><code>site-header</code>、<code>docs-navigation</code>、<code>doc-row</code>、<code>doc-code-row</code>、<code>code-viewer</code>を組み合わせます。</p><div class="ds-tag-row"><span class="ds-tag">dense content</span><span class="ds-tag">sticky rail</span><span class="ds-tag">code-first</span></div></div>
+        <div class="ds-template-canvas" aria-label="Documentation template layout"><div class="ds-template-block is-header">site-header</div><div class="ds-template-block">docs-navigation</div><div class="ds-template-block is-content">section-heading<br>doc-row<br>doc-code-row<br>code-viewer</div><div class="ds-template-block is-footer">related links / next action</div></div>
+      </article>
+      <dl class="ds-attribute-grid">
+        <div><dt>Anatomy</dt><dd>global header、local navigation、article、related action。</dd></div><div><dt>Content slots</dt><dd>page title、lead、section sequence、code/preview、next link。</dd></div><div><dt>Responsive</dt><dd>navigationをcollapseし、本文を先に一列で表示。</dd></div><div><dt>State</dt><dd>navigation collapsed、code/preview、localeをhost/.ogpで分離。</dd></div><div><dt>Accessibility</dt><dd>landmark、見出し階層、skip可能なnavigation、codeの説明。</dd></div><div><dt>When to use</dt><dd>複数章、参照頻度が高い情報、手順やAPIを含むページ。</dd></div>
+      </dl>
+    </section>
+
+    <section class="ds-doc-section" id="marketing-template">
+      <header class="ds-section-header"><span class="ds-section-index">EDITORIAL</span><div class="ds-section-heading-copy"><h2>Editorial marketing template</h2><p>製品価値、原則、機能、行動導線を短いstoryとして見せる骨格です。</p></div></header>
+      <article class="ds-template-diagram">
+        <div class="ds-template-meta"><span class="ds-status is-live">In use</span><h3>Home / Downloads</h3><p><code>site-header</code>、<code>section-heading</code>、<code>feature-card</code>、<code>principle-item</code>、<code>content-section</code>を組み合わせます。</p><div class="ds-tag-row"><span class="ds-tag">editorial</span><span class="ds-tag">action-led</span><span class="ds-tag">scannable</span></div></div>
+        <div class="ds-template-canvas ds-template-canvas-marketing" aria-label="Editorial template layout"><div class="ds-template-block is-header">site-header</div><div class="ds-template-block is-hero">hero / primary action</div><div class="ds-template-block is-content">section-heading<br>feature-card grid<br>principle-item list</div><div class="ds-template-block is-footer">content-section / secondary action</div></div>
+      </article>
+      <dl class="ds-attribute-grid">
+        <div><dt>Anatomy</dt><dd>global header、hero、proof/content、principles、closing action。</dd></div><div><dt>Content slots</dt><dd>eyebrow、title、lead、primary action、feature copy、secondary action。</dd></div><div><dt>Responsive</dt><dd>visualよりtitle/actionを優先し、card gridを1列へreflow。</dd></div><div><dt>State</dt><dd>availabilityやdownload statusはcomponent variantと本文で示す。</dd></div><div><dt>Accessibility</dt><dd>CTAを具体的に命名し、heroの装飾と本文情報を分離。</dd></div><div><dt>When to use</dt><dd>製品紹介、download、release、campaign landing。</dd></div>
+      </dl>
+    </section>
+
+    <section class="ds-doc-section" id="template-rules">
+      <header class="ds-section-header"><span class="ds-section-index">RULES</span><div class="ds-section-heading-copy"><h2>Template composition rules</h2><p>Atomic Designの階層を守りながら、実装とデザインの責務を混ぜないための規則です。</p></div></header>
+      <div class="ds-card-grid">
+        <article class="ds-card"><code>01 / Structure</code><h3>DOM order first</h3><p>視覚配置より先に、読む順序とkeyboard順序が自然なDOMを決めます。</p></article>
+        <article class="ds-card"><code>02 / Layout</code><h3>Standard CSS</h3><p>Flex/Grid、gap、padding、breakpointをcompanion CSSの標準propertyで表します。</p></article>
+        <article class="ds-card"><code>03 / Difference</code><h3>Explicit source</h3><p>共有はmaster、差分はslot/page CSS、previewだけの値は.ogpに保持します。</p></article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

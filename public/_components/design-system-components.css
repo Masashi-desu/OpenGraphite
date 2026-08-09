@@ -1,0 +1,83 @@
+/* Page-specific adjustments for the component catalogue. */
+
+.ds-component-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ds-component-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-lg);
+  row-gap: var(--space-small);
+  padding: var(--space-lg);
+}
+
+.ds-component-summary .ds-status {
+  grid-column: 1;
+  justify-self: start;
+}
+
+.ds-component-summary h3 {
+  grid-column: 1;
+}
+
+.ds-component-summary code {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+}
+
+.ds-component-summary p {
+  grid-column: 1 / -1;
+  max-width: 72ch;
+}
+
+.ds-component-body {
+  gap: 0;
+}
+
+.ds-component-preview {
+  min-height: 220px;
+  padding: var(--space-lg);
+  border: 0;
+  border-top: var(--border-subtle);
+  border-bottom: var(--border-subtle);
+  border-radius: 0;
+}
+
+.ds-attribute-grid {
+  margin: var(--space-lg);
+}
+
+.ds-preview-navigation {
+  min-height: 430px;
+  align-items: flex-start;
+}
+
+.ds-preview-code {
+  min-height: 320px;
+}
+
+@media (max-width: 760px) {
+  .ds-component-summary {
+    grid-template-columns: 1fr;
+    padding: var(--space-medium);
+  }
+
+  .ds-component-summary code {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .ds-component-preview {
+    padding: var(--space-medium);
+  }
+
+  .ds-attribute-grid {
+    margin: var(--space-medium);
+  }
+}

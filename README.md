@@ -148,14 +148,14 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln project page add SampleProject/OpenGraphiteSample.ogp --page-id archive --path archive.html --x 4440 --y 0
 ./Scripts/ogkiln project page place SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --name Desktop --x 3040 --y 0
 ./Scripts/ogkiln project component create SampleProject/OpenGraphiteSample.ogp --collection-id component-main --component-id shared-ui --path _components/shared-ui.html --title 'Shared UI' --body-file shared-ui.body.html
-./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --name Desktop --width 1180 --height 1900
+./Scripts/ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --name Desktop --width 1180 --height 1900
 ./Scripts/ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id <shared-ui-internal-id> --delete-file
 ./Scripts/ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --chapter-id main --output screenshots/canvas.png
 ./Scripts/ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png
 ./Scripts/ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:2opic2blumreb:fb1954bc9811 --output screenshots/doc-cli.png
 ./Scripts/ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
 ./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --json
-./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --json
+./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --json
 ./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --page-id tutorial-objects --json
 ./Scripts/ogkiln page graph SampleProject/OpenGraphiteSample.ogp --page-id tutorial-auto-layout --active-media '(max-width: 760px)' --json
 ./Scripts/ogkiln node adopt SampleProject/OpenGraphiteSample.ogp --page-id tutorial-objects --reference '<session-reference-from-graph>' --scope node --json
@@ -166,7 +166,7 @@ Inspect and edit project-registered OpenGraphite HTML with `ogkiln`. The CLI edi
 ./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap --value 32px
 ./Scripts/ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id tutorial-auto-layout --id tutlayhrow0002 --var flex-direction --value column --active-media '(max-width: 760px)'
 ./Scripts/ogkiln node style remove SampleProject/OpenGraphiteSample.ogp --page-id tutorial-auto-layout --id tutlayhrow0002 --var flex-direction --active-media '(max-width: 760px)'
-./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Availability-ready card'
+./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --id 57d89af48b12 --value 'Availability-ready card'
 ./Scripts/ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
 ./Scripts/ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 72222bd6f11e --position prepend --html '<Header data-og-id="site-header"></Header>'
 ./Scripts/ogkiln node move SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id efeaffcc2273 --target 3aefceddb042 --position after

@@ -464,24 +464,24 @@ ogkiln project component place SampleProject/OpenGraphiteSample.ogp --component-
 ogkiln project component remove SampleProject/OpenGraphiteSample.ogp --component-id <aux-ui-internal-id>
 ogkiln screenshot canvas SampleProject/OpenGraphiteSample.ogp --chapter-id main --output screenshots/canvas.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --output screenshots/docs.png
-ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --output screenshots/design-system.png
+ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --output screenshots/design-system-components.png
 ogkiln screenshot page SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:2opic2blumreb --width 390 --height 900 --full-page --output screenshots/docs-mobile.png
 ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:2opic2blumreb:fb1954bc9811 --output screenshots/doc-cli.png
-ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:component-node:component-main:3bgx6phkz3jv5:3af881fc5123 --output screenshots/feature-card.png
+ogkiln screenshot node SampleProject/OpenGraphiteSample.ogp --id ogref:component-node:component-main:dssystemcomp01:3af881fc5123 --output screenshots/feature-card.png
 ogkiln build SampleProject/OpenGraphiteSample.ogp --output dist
 ogkiln node query SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --capability edit-link --capability edit-text --text-contains Docs --json
-ogkiln node query SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --capability receive-children --capability edit-layout --json
+ogkiln node query SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --capability receive-children --capability edit-layout --json
 ogkiln node get SampleProject/OpenGraphiteSample.ogp --id ogref:node:1gibtxulofmr0:kl1xxsgkiuue:3aefceddb042 --json
 ogkiln node adopt SampleProject/OpenGraphiteSample.ogp --page-id tutorial-objects --reference <session-reference> --scope node --json
 ogkiln node adopt SampleProject/OpenGraphiteSample.ogp --page-id tutorial-objects --reference <target-reference-from-dry-run> --scope node --apply --json
 ogkiln node style set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap --value 32px
-ogkiln node style set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 3af881fc5123 --var padding --value 48px
+ogkiln node style set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --id 3af881fc5123 --var padding --value 48px
 ogkiln node style remove SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --var gap
 ogkiln node attr set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 121eafb2db25 --name href --value './index.html'
 ogkiln node text set SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id eace7f6a5b08 --value 'OpenGraphite'
-ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 57d89af48b12 --value 'Reusable card'
+ogkiln node text set SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --id 57d89af48b12 --value 'Reusable card'
 ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 72222bd6f11e --position prepend --html '<Header data-og-id="site-header"></Header>'
-ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:3bgx6phkz3jv5 --id 42addef8c515 --position append --html '<feature-card data-og-id="feature-card-master" data-og-component="feature-card" part="root"><template><slot>Fallback</slot></template></feature-card>'
+ogkiln node html insert SampleProject/OpenGraphiteSample.ogp --component-id ogref:component:component-main:dssystemcomp01 --id dssystemregistry01 --position append --html '<feature-card data-og-id="feature-card-master" data-og-component="feature-card" part="root"><template><slot>Fallback</slot></template></feature-card>'
 ogkiln node html replace SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id 3aefceddb042 --html '<Hero data-og-id="hero"></Hero>'
 ogkiln node delete SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id <node-internal-id>
 ogkiln node move SampleProject/OpenGraphiteSample.ogp --page-id ogref:page:1gibtxulofmr0:kl1xxsgkiuue --id efeaffcc2273 --target 3aefceddb042 --position after

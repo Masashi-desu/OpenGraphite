@@ -69,51 +69,6 @@ select {
   background-size: 32px 32px;
 }
 
-.docs-page > og-instance {
-  display: block;
-}
-
-:where(
-  [data-og-internal-id="b6fad7f280fb"],
-  [data-og-internal-id="f643c144d6ee"],
-  [data-og-internal-id="b61ca0c3c3e9"]
-) {
-  display: inline-flex;
-  min-height: var(--button-min-height);
-  padding: var(--button-padding-compact);
-  align-items: center;
-  justify-content: center;
-  border: var(--border-strong);
-  border-radius: var(--radius-small);
-  background: var(--color-canvas);
-  color: var(--color-text-soft);
-  font-weight: var(--font-weight-button);
-  line-height: var(--line-height-tight);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-:where(
-  [data-og-internal-id="b6fad7f280fb"],
-  [data-og-internal-id="f643c144d6ee"],
-  [data-og-internal-id="b61ca0c3c3e9"]
-):hover,
-:where(
-  [data-og-internal-id="b6fad7f280fb"],
-  [data-og-internal-id="f643c144d6ee"],
-  [data-og-internal-id="b61ca0c3c3e9"]
-):focus-visible {
-  border-color: var(--color-text-soft);
-  color: var(--color-text);
-  outline: none;
-}
-
-[data-og-internal-id="b61ca0c3c3e9"] {
-  border: var(--border-accent);
-  background: var(--color-accent);
-  color: var(--color-accent-foreground);
-}
-
 :where(
   [data-og-internal-id="docsnavhomelabel"],
   [data-og-internal-id="docsnavdownloadslabel"],
@@ -678,14 +633,6 @@ pre code {
 }
 
 @media (max-width: 680px) {
-  :where(
-    [data-og-internal-id="b6fad7f280fb"],
-    [data-og-internal-id="f643c144d6ee"],
-    [data-og-internal-id="b61ca0c3c3e9"]
-  ) {
-    width: 100%;
-  }
-
   .docs-frame {
     width: min(calc(100% - 28px), var(--docs-page-max));
     padding-top: 26px;

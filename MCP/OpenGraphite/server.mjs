@@ -213,9 +213,9 @@ function readResource(uri) {
     case "opengraphite://pages/sample/home/html":
       return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "index.html"), "utf8"));
     case "opengraphite://components/sample/design-system/graph":
-      return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--component-id", "ogref:component:component-main:3bgx6phkz3jv5", "--json"]).stdout);
+      return textResource(uri, "application/json", runOgkiln(["page", "graph", "SampleProject/OpenGraphiteSample.ogp", "--component-id", "ogref:component:component-main:dssystemcomp01", "--json"]).stdout);
     case "opengraphite://components/sample/design-system/html":
-      return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "_components", "design-system.html"), "utf8"));
+      return textResource(uri, "text/html", readFileSync(join(repoRoot, "public", "_components", "design-system-components.html"), "utf8"));
     default:
       throw new Error(`Unknown resource: ${uri}`);
   }

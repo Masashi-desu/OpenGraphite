@@ -1,0 +1,8 @@
+/* Page-specific guideline details. */
+
+.ds-doc-section > .ds-checklist {
+  padding: var(--space-content);
+  background: var(--color-surface);
+  border: var(--border-subtle);
+  border-radius: var(--radius-card);
+}

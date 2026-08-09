@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guidelines · OpenGraphite Design System</title>
+  <link rel="stylesheet" href="../../CSS/OpenGraphite.css">
+  <link rel="stylesheet" href="./design-system-docs.css">
+  <link rel="stylesheet" href="./design-system-guidelines.css">
+  <link rel="opengraphite-components" href="./design-system-components.html">
+  <script src="../OpenGraphite.runtime.js" defer></script>
+  <script src="./site-header.js" defer></script>
+</head>
+<body class="ds-doc-page">
+  <og-instance data-og-id="site-header" data-og-component="site-header">
+    <a slot="brand" href="./design-system.html">OpenGraphite DS</a>
+    <a slot="nav" href="./design-system.html">Overview</a>
+    <a slot="nav" href="./design-system-atoms.html">Atoms</a>
+    <a slot="nav" href="./design-system-components.html">Components</a>
+    <a slot="nav" href="./design-system-templates.html">Templates</a>
+    <a slot="nav" href="./design-system-pages.html">Pages</a>
+    <a slot="nav" href="./design-system-guidelines.html" aria-current="page">Guidelines</a>
+    <a slot="nav" class="site-header-switcher" href="../index.html">Web Pages</a>
+  </og-instance>
+
+  <main class="ds-doc-main">
+    <section class="ds-doc-section" id="interaction">
+      <header class="ds-section-header"><span class="ds-section-index">INTERACTION</span><div class="ds-section-heading-copy"><h2>Interaction & state</h2><p>操作可能性、状態、feedbackを同じ語彙とsource境界で表現します。</p></div></header>
+      <div class="ds-guideline-grid">
+        <article class="ds-guideline-card"><h3>State vocabulary</h3><ul class="ds-checklist"><li>rest / hover / focus / active / disabled</li><li>loading / empty / error / success</li><li>expanded / collapsed / selected</li></ul></article>
+        <article class="ds-guideline-card"><h3>Standard source</h3><ul class="ds-checklist"><li>ARIAは標準attribute</li><li>component stateはhost <code>variant</code></li><li>preview-only stateは.ogp mock</li><li><code>--color-focus</code>はfocus indicatorだけに使用</li><li>elevationは共有<code>--shadow-*</code>を加工せず使用</li></ul></article>
+        <article class="ds-guideline-card"><h3>Feedback</h3><ul class="ds-checklist"><li>100ms以内に操作受付を示す</li><li>色だけに依存しない</li><li>失敗時は回復方法を添える</li></ul></article>
+      </div>
+      <div class="ds-do-dont"><div><strong>Do</strong><p><code>aria-expanded</code> と表示状態を同期し、keyboardとpointerに同じ結果を提供します。</p></div><div><strong>Don’t</strong><p>editor previewのための一時状態をsource HTMLへ固定しません。</p></div></div>
+    </section>
+
+    <section class="ds-doc-section" id="content">
+      <header class="ds-section-header"><span class="ds-section-index">CONTENT</span><div class="ds-section-heading-copy"><h2>Content & localization</h2><p>短く正確なcopyと、locale resource / fallbackの責務を明確にします。</p></div></header>
+      <div class="ds-guideline-grid">
+        <article class="ds-guideline-card"><h3>Voice</h3><p>直接的、具体的、source-first。抽象的なmarketing語より、何ができてどこへ保存されるかを書く。</p></article>
+        <article class="ds-guideline-card"><h3>Action labels</h3><p>「Click here」ではなく「Read Docs」「Download OpenGraphite」のように結果を明示。</p></article>
+        <article class="ds-guideline-card"><h3>i18n</h3><p>翻訳文はlocale resource。HTML fallback、<code>data-i18n-key</code>、root <code>:lang()</code> typographyを分離。</p></article>
+      </div>
+      <dl class="ds-attribute-grid"><div><dt>Terminology</dt><dd>Page、Component、Canvas、source、master、slotを一貫して使用。</dd></div><div><dt>Numbers</dt><dd>単位、範囲、version、commandを省略せず記述。</dd></div><div><dt>Error copy</dt><dd>起きたこと、影響、次の行動を順に説明。</dd></div></dl>
+    </section>
+
+    <section class="ds-doc-section" id="accessibility">
+      <header class="ds-section-header"><span class="ds-section-index">ACCESSIBILITY</span><div class="ds-section-heading-copy"><h2>Accessibility</h2><p>component、template、pageのすべてで満たす最低条件です。</p></div></header>
+      <div class="ds-card-grid">
+        <article class="ds-card"><code>Semantics</code><h3>Native first</h3><p>button、link、nav、header、main、headingを目的どおりに使い、roleで不要に再実装しません。</p></article>
+        <article class="ds-card"><code>Keyboard</code><h3>Full path</h3><p>すべてのactionへ到達でき、focus順がDOM orderと一致し、trapから抜けられること。</p></article>
+        <article class="ds-card"><code>Perception</code><h3>More than color</h3><p>text、icon、shape、ARIAを組み合わせ、contrastと200% zoomでも情報を維持。</p></article>
+      </div>
+      <ul class="ds-checklist"><li>icon-only controlは識別可能な<code>aria-label</code>を持つ。</li><li>focus indicatorを削除せず、背景とのcontrastを維持する。</li><li>heading levelを見た目の大きさではなく文書階層で選ぶ。</li><li>画像は目的に合うalt、装飾画像は空altまたはpresentationとして扱う。</li></ul>
+    </section>
+
+    <section class="ds-doc-section" id="motion">
+      <header class="ds-section-header"><span class="ds-section-index">MOTION</span><div class="ds-section-heading-copy"><h2>Motion</h2><p>移動を装飾ではなく、関係と状態変化の理解に限定します。</p></div></header>
+      <dl class="ds-attribute-grid">
+        <div><dt>Duration</dt><dd>micro feedback 120–180ms、panel transition 180–260msを基準。</dd></div><div><dt>Easing</dt><dd>enterは減速、exitは短く、連続操作を待たせない。</dd></div><div><dt>Property</dt><dd>opacity / translateを優先し、layout thrashを避ける。</dd></div><div><dt>Reduced motion</dt><dd><code>prefers-reduced-motion</code>で移動を抑え、情報は即時表示。</dd></div><div><dt>Persistence</dt><dd>drag/reorder previewはsession-onlyで、authored transformを上書きしない。</dd></div><div><dt>Feedback</dt><dd>完了、失敗、選択の意味が静止状態でも理解できる。</dd></div>
+      </dl>
+    </section>
+
+    <section class="ds-doc-section" id="responsive">
+      <header class="ds-section-header"><span class="ds-section-index">RESPONSIVE</span><div class="ds-section-heading-copy"><h2>Responsive behavior</h2><p>device名ではなく、contentが破綻する点でlayoutを切り替えます。</p></div></header>
+      <div class="ds-guideline-grid">
+        <article class="ds-guideline-card"><h3>Priority</h3><p>title、primary action、本文、補助visualの順で重要情報を維持。</p></article>
+        <article class="ds-guideline-card"><h3>Reflow</h3><p>3-column → 2-column → 1-column。横scrollで本文を隠さない。</p></article>
+        <article class="ds-guideline-card"><h3>Targets</h3><p>狭幅でも操作target、focus ring、code wrapping、navigation labelを保持。</p></article>
+      </div>
+      <div class="ds-do-dont"><div><strong>Do</strong><p>実際の<code>@media</code>条件とviewportのcomputed resultを同じ条件で検証します。</p></div><div><strong>Don’t</strong><p>desktop DOMとmobile DOMを重複させ、contentやARIAの別正本を作りません。</p></div></div>
+    </section>
+
+    <section class="ds-doc-section" id="governance">
+      <header class="ds-section-header"><span class="ds-section-index">GOVERNANCE</span><div class="ds-section-heading-copy"><h2>Governance & contribution</h2><p>変更理由、source、利用例、検証を同じ変更単位に保ちます。</p></div></header>
+      <ol class="ds-governance-flow">
+        <li><strong>01 / Propose</strong>問題、利用者、Atomic level、再利用範囲を記述。</li>
+        <li><strong>02 / Author</strong>HTML master、companion CSS、token、page usageを更新。</li>
+        <li><strong>03 / Verify</strong>構造、state、keyboard、responsive、locale、buildを確認。</li>
+        <li><strong>04 / Release</strong>breaking change、migration、version、documentationを同期。</li>
+      </ol>
+      <div class="ds-card-grid">
+        <article class="ds-card"><code>Source</code><h3>One truth</h3><p>masterはCollection内HTML、design valueは標準CSS、project-wide共有値はCSS Custom Properties。</p></article>
+        <article class="ds-card"><code>Change</code><h3>Keep the unit whole</h3><p>component、利用ページ、documentation、test/validationを理由なく別変更へ分断しない。</p></article>
+        <article class="ds-card"><code>Gate</code><h3>Definition of done</h3><p><code>ogkiln validate</code>、screenshot、build、<code>Scripts/quality_gate.sh</code>を完走。</p></article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
