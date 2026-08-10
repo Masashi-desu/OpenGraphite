@@ -60,6 +60,27 @@
 
 .ds-preview-code {
   min-height: 320px;
+  gap: var(--space-lg);
+}
+
+.ds-code-viewer-variant {
+  display: flex;
+  flex: 0 1 440px;
+  flex-direction: column;
+  gap: var(--space-small);
+  min-width: 0;
+}
+
+.ds-code-viewer-variant > og-instance {
+  width: 100%;
+}
+
+.ds-code-viewer-variant-label {
+  color: var(--color-text-soft);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-label);
+  letter-spacing: var(--font-letter-spacing-normal);
+  line-height: var(--line-height-tight);
 }
 
 @media (max-width: 760px) {
@@ -75,6 +96,15 @@
 
   .ds-component-preview {
     padding: var(--space-medium);
+  }
+
+  .ds-preview-code {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ds-code-viewer-variant {
+    flex-basis: auto;
   }
 
   .ds-attribute-grid {

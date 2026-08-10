@@ -122,8 +122,12 @@
                 <article><h3>Generated output</h3><p data-og-text-source="binding" data-i18n-key="docs.ops.contract.generated" data-og-text-variant-eng="Runtime-expanded DOM, screenshots, and static build output are derived artifacts. Review and edit their source resources instead.">runtime展開DOM、screenshot、static build outputは派生物です。対応するsource resourceをreview・編集します。</p></article>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>html</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="html">&lt;!doctype html&gt;
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">html</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="html">&lt;!doctype html&gt;
 &lt;html lang="ja"&gt;
   &lt;head&gt;
     &lt;meta charset="utf-8"&gt;
@@ -137,6 +141,7 @@
     &lt;/main&gt;
   &lt;/body&gt;
 &lt;/html&gt;</code></pre>
+                </og-instance>
               </div>
             </section>
 
@@ -149,8 +154,12 @@
                 </div>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
 PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
 
 ./Scripts/ogkiln project inspect "$PROJECT" --json
@@ -160,6 +169,7 @@ PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
   --page-id "$PAGE" \
   --capability edit-text \
   --json</code></pre>
+                </og-instance>
               </div>
               <div class="decision-list">
                 <div><strong>1</strong><p data-og-text-source="binding" data-i18n-key="docs.ops.inspect.step.scope" data-og-text-variant-eng="Confirm the resolved root, htmlRoot, cssLibrary, Chapters, Collections, pages, and components.">resolved root、htmlRoot、cssLibrary、Chapters、Collections、pages、componentsを確認します。</p></div>
@@ -178,8 +188,12 @@ PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
               </div>
               <h3 data-og-text-source="binding" data-i18n-key="docs.ops.edit.adopt.title" data-og-text-variant-eng="Adopt only when stable identity is needed">stable identityが必要なときだけadopt</h3>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
 PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
 
 # 1. Dry-run: review the source diff and returned targetReference.
@@ -194,11 +208,16 @@ PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
   --reference '&lt;target-reference-from-dry-run&gt;' \
   --scope node \
   --apply</code></pre>
+                </og-instance>
               </div>
               <h3 data-og-text-source="binding" data-i18n-key="docs.ops.edit.write.title" data-og-text-variant-eng="Use the operation that matches the capability">capabilityに対応するoperationを使う</h3>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
 PAGE='&lt;copied-page-ogref&gt;'
 NODE='&lt;copied-stable-node-ogref&gt;'
 
@@ -206,14 +225,19 @@ NODE='&lt;copied-stable-node-ogref&gt;'
 ./Scripts/ogkiln node text set "$PROJECT" --page-id "$PAGE" --id "$NODE" --value '更新後の本文'
 ./Scripts/ogkiln node attr set "$PROJECT" --page-id "$PAGE" --id "$NODE" --name aria-label --value '明確なラベル'
 ./Scripts/ogkiln validate "$PROJECT" --json</code></pre>
+                </og-instance>
               </div>
               <div class="notice notice-warning">
                 <strong data-og-text-source="binding" data-i18n-key="docs.ops.edit.cssguard.title" data-og-text-variant-eng="CSS write guard">CSS write guard</strong>
                 <p data-og-text-source="binding" data-i18n-key="docs.ops.edit.cssguard.body" data-og-text-variant-eng="Before node style set/remove, inspect the same active media conditions and require complete CSS provenance for that target. Never bypass incomplete-css-provenance-write-blocked by editing generated output.">node style set/removeの前に同じactive media条件で検査し、対象のCSS provenanceがcompleteであることを確認します。incomplete-css-provenance-write-blockedを生成物編集で迂回しません。</p>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">MEDIA='(max-width: 760px)'
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">MEDIA='(max-width: 760px)'
 
 ./Scripts/ogkiln node get "$PROJECT" \
   --page-id "$PAGE" \
@@ -228,6 +252,7 @@ NODE='&lt;copied-stable-node-ogref&gt;'
   --var gap \
   --value 24px \
   --active-media "$MEDIA"</code></pre>
+                </og-instance>
               </div>
             </section>
 
@@ -240,8 +265,12 @@ NODE='&lt;copied-stable-node-ogref&gt;'
                 </div>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>html</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="html">&lt;!-- Component resource: public/_components/cards.html --&gt;
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">html</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="html">&lt;!-- Component resource: public/_components/cards.html --&gt;
 &lt;feature-card data-og-component="feature-card"&gt;
   &lt;template&gt;
     &lt;article part="surface"&gt;
@@ -258,11 +287,16 @@ NODE='&lt;copied-stable-node-ogref&gt;'
   &lt;span slot="title"&gt;Production-ready card&lt;/span&gt;
   &lt;p&gt;Page-owned content stays in the page source.&lt;/p&gt;
 &lt;/og-instance&gt;</code></pre>
+                </og-instance>
               </div>
               <h3 data-og-text-source="binding" data-i18n-key="docs.ops.components.preview.title" data-og-text-variant-eng="Preview state belongs to the canvas manifest">preview stateはcanvas manifestに置く</h3>
               <div class="code-panel">
-                <div class="code-toolbar"><span>json</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="json">{
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">json</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="json">{
   "previewContext": {
     "placementMocks": {
       "placement-internal-id": {
@@ -273,6 +307,7 @@ NODE='&lt;copied-stable-node-ogref&gt;'
     }
   }
 }</code></pre>
+                </og-instance>
               </div>
               <p class="section-note" data-og-text-source="binding" data-i18n-key="docs.ops.components.preview.body" data-og-text-variant-eng="Preview values are projected only onto generated clones. They never enter source HTML or static build output. Internal-ID lookup wins; display-ID is fallback only, and both entries are never merged.">preview値は生成cloneにだけ投影され、source HTMLやstatic build outputには入りません。internal-ID lookupを優先し、display-IDはfallbackだけに使い、両entryはmergeしません。</p>
             </section>
@@ -286,16 +321,25 @@ NODE='&lt;copied-stable-node-ogref&gt;'
                 </div>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>html</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="html">&lt;h1
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">html</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="html">&lt;h1
   data-og-text-source="binding"
   data-i18n-key="home.title"&gt;
   OpenGraphiteへようこそ
 &lt;/h1&gt;</code></pre>
+                </og-instance>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">./Scripts/ogkiln i18n inspect "$PROJECT" --page-id "$PAGE" --locales ja,eng --json
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">./Scripts/ogkiln i18n inspect "$PROJECT" --page-id "$PAGE" --locales ja,eng --json
 ./Scripts/ogkiln i18n resource set "$PROJECT" \
   --page-id "$PAGE" \
   --locale eng \
@@ -305,6 +349,7 @@ NODE='&lt;copied-stable-node-ogref&gt;'
   --page-id "$PAGE" \
   --locale ja \
   --value '"Noto Sans JP", sans-serif'</code></pre>
+                </og-instance>
               </div>
             </section>
 
@@ -317,8 +362,12 @@ NODE='&lt;copied-stable-node-ogref&gt;'
                 </div>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">PROJECT='SampleProject/OpenGraphiteSample.ogp'
 PAGE='ogref:page:1gibtxulofmr0:kl1xxsgkiuue'
 OUTPUT_DIR="$(mktemp -d)"
 
@@ -328,6 +377,7 @@ OUTPUT_DIR="$(mktemp -d)"
   --output "$OUTPUT_DIR/home.png" \
   --full-page
 ./Scripts/ogkiln build "$PROJECT" --output "$OUTPUT_DIR/dist"</code></pre>
+                </og-instance>
               </div>
               <ol class="verify-list">
                 <li><strong data-og-text-source="binding" data-i18n-key="docs.ops.verify.check.validation" data-og-text-variant-eng="Validation">Validation</strong><span data-og-text-source="binding" data-i18n-key="docs.ops.verify.check.validation.body" data-og-text-variant-eng="No error diagnostics; every warning is reviewed and explained.">error diagnosticが0件で、warningをすべてreview・説明できる。</span></li>
@@ -346,13 +396,22 @@ OUTPUT_DIR="$(mktemp -d)"
                 </div>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">cd /absolute/path/to/OpenGraphite
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">cd /absolute/path/to/OpenGraphite
 node MCP/OpenGraphite/server.mjs</code></pre>
+                </og-instance>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>json</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="json">{
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">json</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="json">{
   "mcpServers": {
     "OpenGraphite": {
       "command": "node",
@@ -362,6 +421,7 @@ node MCP/OpenGraphite/server.mjs</code></pre>
     }
   }
 }</code></pre>
+                </og-instance>
               </div>
               <p class="section-note" data-og-text-source="binding" data-i18n-key="docs.ops.mcp.note" data-og-text-variant-eng="Read operations never add annotation. Mutation tools require an explicit project and stable target, and return the same structured diagnostics as the CLI.">read operationはannotationを追加しません。mutation toolは明示projectとstable targetを要求し、CLIと同じstructured diagnosticsを返します。</p>
             </section>
@@ -403,13 +463,18 @@ node MCP/OpenGraphite/server.mjs</code></pre>
                 <p data-og-text-source="binding" data-i18n-key="docs.ops.contributors.notice.body" data-og-text-variant-eng="Use project.yml as the XcodeGen source of truth and never edit OpenGraphite.xcodeproj directly. Keep implementation, tests, documentation, skills, and Tutorials synchronized in the same change.">project.ymlをXcodeGenの正本とし、OpenGraphite.xcodeprojを直接編集しません。実装、test、documentation、skill、Tutorialsを同じ変更単位で同期します。</p>
               </div>
               <div class="code-panel">
-                <div class="code-toolbar"><span>bash</span><button type="button" data-copy-code aria-label="Copy code / コードをコピー"><span data-copy-label data-og-text-source="binding" data-i18n-key="docs.ops.copy" data-og-text-variant-eng="Copy">コピー</span></button></div>
-                <pre tabindex="0"><code data-language="bash">git clone https://github.com/Masashi-desu/OpenGraphite.git
+                <og-instance class="docs-code-viewer" data-og-component="code-viewer" variant="code-only">
+                  <span class="docs-code-language" slot="language">bash</span>
+                  <span class="docs-code-label" slot="copy-label" data-og-text-source="binding" data-i18n-key="docs.ops.copyCode" data-og-text-variant-eng="Copy code">コードをコピー</span>
+                  <span slot="copied-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copied" data-og-text-variant-eng="Copied">コピーしました</span>
+                  <span slot="copy-error-label" hidden data-og-text-source="binding" data-i18n-key="docs.ops.copyFailed" data-og-text-variant-eng="Copy failed">コピーできませんでした</span>
+                  <pre slot="code" data-code-viewer-code tabindex="0"><code data-language="bash">git clone https://github.com/Masashi-desu/OpenGraphite.git
 cd OpenGraphite
 brew install xcodegen
 ./Scripts/build.sh
 ./script/build_and_run.sh --verify
 ./Scripts/quality_gate.sh</code></pre>
+                </og-instance>
               </div>
               <ul class="check-list">
                 <li><span aria-hidden="true">✓</span><span data-og-text-source="binding" data-i18n-key="docs.ops.contributors.check.project" data-og-text-variant-eng="Change project.yml when project generation changes; treat OpenGraphite.xcodeproj as generated output.">project生成を変える場合はproject.ymlを変更し、OpenGraphite.xcodeprojは生成物として扱う。</span></li>

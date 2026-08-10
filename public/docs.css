@@ -348,25 +348,19 @@ select {
 
 .code-panel {
   margin: 20px 0;
-  overflow: hidden;
-  border: 1px solid var(--docs-border-strong);
-  border-radius: var(--docs-radius);
-  background: var(--docs-code-bg);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
 }
 
-.code-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 0 10px 0 16px;
-  border-bottom: 1px solid var(--docs-border);
-  background: var(--docs-surface);
+.docs-code-viewer {
+  display: block;
+  width: 100%;
 }
 
-.code-toolbar > span {
-  color: var(--docs-text-dim);
+.docs-code-viewer > code-viewer {
+  width: 100%;
+}
+
+.docs-code-language {
+  color: var(--docs-text-soft);
   font-family: var(--docs-font-mono);
   font-size: 11px;
   font-weight: 700;
@@ -374,30 +368,23 @@ select {
   text-transform: uppercase;
 }
 
-.code-toolbar button {
-  min-width: 68px;
-  padding: 6px 10px;
-  border: 1px solid var(--docs-border-strong);
-  border-radius: 6px;
+.docs-code-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.docs-code-viewer pre[slot="code"] {
+  width: 100%;
+  padding: 0;
   background: transparent;
-  color: var(--docs-text-soft);
-  cursor: pointer;
-  font-family: var(--docs-font-mono);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.code-toolbar button:hover,
-.code-toolbar button:focus-visible {
-  border-color: var(--docs-accent);
-  color: var(--docs-text);
-  outline: none;
-}
-
-.code-toolbar button[data-copy-state="done"] {
-  border-color: var(--docs-accent);
-  background: var(--docs-accent-soft);
-  color: var(--docs-accent);
 }
 
 pre {

@@ -66,53 +66,6 @@ function highlightCodeBlocks() {
   });
 }
 
-function copiedLabel() {
-  const language = (document.documentElement.lang || "ja").toLowerCase();
-  return language.startsWith("en") ? "Copied" : "コピー済み";
-}
-
-async function writeClipboard(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const area = document.createElement("textarea");
-  area.value = text;
-  area.setAttribute("readonly", "");
-  area.style.position = "fixed";
-  area.style.opacity = "0";
-  document.body.append(area);
-  area.select();
-  document.execCommand("copy");
-  area.remove();
-}
-
-function installCopyButtons() {
-  document.querySelectorAll("[data-copy-code]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const code = button.closest(".code-panel")?.querySelector("pre code");
-      const label = button.querySelector("[data-copy-label]");
-      if (!code || !label) { return; }
-
-      const originalLabel = label.textContent || "";
-      try {
-        await writeClipboard((code.textContent || "").replace(/\n$/, ""));
-        button.dataset.copyState = "done";
-        label.textContent = copiedLabel();
-      } catch (_) {
-        button.dataset.copyState = "error";
-      }
-
-      window.setTimeout(() => {
-        delete button.dataset.copyState;
-        label.textContent = originalLabel;
-      }, 1400);
-    });
-  });
-}
-
 document.addEventListener("DOMContentLoaded", () => {
   highlightCodeBlocks();
-  installCopyButtons();
 });
